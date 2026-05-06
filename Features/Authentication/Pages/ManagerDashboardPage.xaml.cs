@@ -30,7 +30,6 @@ public partial class ManagerDashboardPage : ContentPage
         WelcomeLabel.Text = user == null
             ? "Manager session"
             : $"Signed in as {user.Name} ({user.Role})";
-        SummaryLabel.Text = "Quick access to all manager modules";
         Title = "Manager Dashboard";
 
         StartTimeUpdates();
@@ -156,8 +155,8 @@ public partial class ManagerDashboardPage : ContentPage
             var grid = this.FindByName<Grid>("ButtonGrid");
             if (grid != null)
             {
-                grid.RowSpacing = 50 * scaleFactor;
-                grid.ColumnSpacing = 70 * scaleFactor;
+                grid.RowSpacing = 60 * scaleFactor;
+                grid.ColumnSpacing = 80 * scaleFactor;
             }
 
             System.Diagnostics.Debug.WriteLine($"Manager dashboard responsive sizing: Scale={scaleFactor:F2}");

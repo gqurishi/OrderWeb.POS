@@ -1926,6 +1926,53 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async Task<bool> SendUnsentItemsInlineForPaymentAsync()
+        {
+            if (_isUltraFastSendInProgress)
+            {
+                return false;
+            }
+
+            var pendingSendCount = _currentOrder.Items.Count(i => i.SendStatus == ItemSendStatus.NotSent);
+            if (pendingSendCount == 0)
+            {
+                return true;
+            }
+
+            EnsureCurrentOrderIdentity();
+            _isUltraFastSendInProgress = true;
+            try
+            {
+                var printSnapshot = CloneOrderForSend(_currentOrder);
+
+                foreach (var item in _currentOrder.Items.Where(i => i.SendStatus == ItemSendStatus.NotSent))
+                {
+                    item.SendStatus = ItemSendStatus.Sent;
+                    item.SentAt = DateTime.Now;
+                    item.FailureReason = null;
+                }
+
+                _currentOrder.Status = TableOrderStatus.Sent;
+                _currentOrder.UpdatedAt = DateTime.Now;
+
+                _ = ProcessUltraFastSendPipelineAsync(printSnapshot);
+                _ = Task.Run(async () => await FinalizeTableSessionAfterSendAsync());
+
+                if (ToastNotification != null)
+                {
+                    var toastMessage = $"Order sent ✓ ({pendingSendCount} item{(pendingSendCount == 1 ? string.Empty : "s")})";
+                    _ = ToastNotification.ShowAsync("Success", toastMessage, NotificationType.Success, 1000);
+                }
+
+                AppDataRefreshService.RequestRefresh();
+                return true;
+            }
+            finally
+            {
+                _isUltraFastSendInProgress = false;
+            }
+        }
+
         private async Task ProcessUltraFastSendPipelineAsync(TableOrder printSnapshot)
         {
             try
@@ -2416,10 +2463,7 @@ namespace POS_in_NET.Pages
                 var sendFirst = await sendFirstDialog.ShowAsync();
                 if (sendFirst)
                 {
-                    // Attempt to send items first
-                    OnSendClicked(this, EventArgs.Empty);
-                    // Just give it a short await to let send start, we don't await the void returning method.
-                    await Task.Delay(1500); 
+                    await SendUnsentItemsInlineForPaymentAsync();
                 }
             }
 
@@ -2823,13 +2867,12 @@ namespace POS_in_NET.Pages
         private async Task PrintReceipt(decimal total, decimal tip)
         {
             // TODO: Implement actual receipt printing
-            // For now, simulate print delay
-            await Task.Delay(500);
-            
+            // Keep this non-blocking for payment UX speed.
             // In real implementation:
             // - Connect to printer service
             // - Format receipt with order items, totals, tip, etc.
             // - Send to printer
+            await Task.CompletedTask;
         }
 
         private async Task CloseTable()
@@ -2842,8 +2885,15 @@ namespace POS_in_NET.Pages
             }
             else
             {
-                // Navigate back to Visual Table Layout for dine-in orders
-                await Shell.Current.GoToAsync("//visuallayout");
+                // Dine-in: pop back to existing layout page instantly when possible.
+                if (Navigation?.NavigationStack?.Count > 1)
+                {
+                    await Navigation.PopAsync(animated: false);
+                }
+                else
+                {
+                    await Shell.Current.GoToAsync("//visuallayout");
+                }
             }
         }
 

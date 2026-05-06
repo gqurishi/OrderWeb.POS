@@ -86,7 +86,8 @@ namespace POS_in_NET.Pages
 
             SubscribeToRefreshEvents();
             StartAutoRefreshPolling();
-            await LoadFloorsAndTables(showLoading: true, loadingMessage: "Loading layout...");
+            var shouldShowLoader = !_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue;
+            await LoadFloorsAndTables(showLoading: shouldShowLoader, loadingMessage: "Loading layout...");
             UpdateAdminToolsVisibility();
         }
 
@@ -755,6 +756,16 @@ namespace POS_in_NET.Pages
             _isTableSelectionInProgress = true;
             try
             {
+                var hasKnownSession = table.CurrentSession != null || table.CurrentSessionId.HasValue;
+                var hasCachedOpenOrder = ActiveTableOrderCacheService.TryGetOpenOrderByTableNumber(table.TableNumber, out _);
+                var isLikelyFreshTable = table.Status == TableStatus.Available && !hasKnownSession && !hasCachedOpenOrder;
+
+                if (isLikelyFreshTable)
+                {
+                    ShowCoverPopup(table, tableView);
+                    return;
+                }
+
                 var context = await ResolveTableOrderContextAsync(table);
                 var shouldOpenExistingFlow = context.SessionId.HasValue
                     || !string.IsNullOrWhiteSpace(context.ExistingOrderId)
@@ -1010,7 +1021,6 @@ namespace POS_in_NET.Pages
                     sessionId,
                     existingOrderId);
                 await Navigation.PushAsync(fastOrderPage, animated: false);
-                AppDataRefreshService.RequestRefresh();
                 return;
             }
 
@@ -1034,8 +1044,6 @@ namespace POS_in_NET.Pages
                     System.Diagnostics.Debug.WriteLine($"[VisualTable] Session link warning: {linkResult.message}");
                 }
             }
-
-            AppDataRefreshService.RequestRefresh();
 
             var effectiveCoverCount = table.CurrentSession?.PartySize > 0
                 ? table.CurrentSession.PartySize
