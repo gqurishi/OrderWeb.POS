@@ -181,6 +181,8 @@ Additional documentation available:
 - `VAT_SYSTEM_SUMMARY.md` - VAT calculation guide
 - `POSTCODE_LOOKUP_GUIDE.md` - Address lookup setup
 - `LABEL_PRINTER_INTEGRATION.md` - Label printing guide
+- `ORDER_LIFECYCLE_PHASE1.md` - Canonical local POS order lifecycle contract
+- `ORDER_LIFECYCLE_PHASE2_MARIADB.md` - MariaDB schema contract for lifecycle, payments, and audit logs
 
 ## 🤝 Contributing
 

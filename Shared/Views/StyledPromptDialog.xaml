@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Views.StyledPromptDialog"
+             BackgroundColor="#80000000"
+             VerticalOptions="Fill"
+             HorizontalOptions="Fill">
+    <Grid VerticalOptions="Center"
+          HorizontalOptions="Center"
+          Padding="40">
+        <Border BackgroundColor="White"
+                Stroke="#DCE3EE"
+                StrokeThickness="1"
+                Padding="28"
+                WidthRequest="500"
+                VerticalOptions="Center"
+                HorizontalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="24"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.14" Radius="18" Offset="0,8"/>
+            </Border.Shadow>
+
+            <VerticalStackLayout Spacing="18">
+                <Border BackgroundColor="#2563EB"
+                        Stroke="#FFFFFF"
+                        StrokeThickness="2"
+                        WidthRequest="64"
+                        HeightRequest="64"
+                        HorizontalOptions="Center"
+                        Margin="0,0,0,8">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="32"/>
+                    </Border.StrokeShape>
+                    <Label Text="i"
+                           FontSize="32"
+                           FontAttributes="Bold"
+                           TextColor="White"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"/>
+                </Border>
+
+                <Label x:Name="TitleLabel"
+                       FontSize="21"
+                       FontAttributes="Bold"
+                       TextColor="#1F2937"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"/>
+
+                <Label x:Name="MessageLabel"
+                       FontSize="14"
+                       TextColor="#6B7280"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap"/>
+
+                <Border x:Name="InputBorder"
+                        BackgroundColor="#F8FAFC"
+                        Stroke="#D8E1ED"
+                        StrokeThickness="1"
+                        Padding="13"
+                        Margin="0,4,0,4">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14"/>
+                    </Border.StrokeShape>
+                    <Entry x:Name="InputEntry"
+                           FontSize="15"
+                           TextColor="#1F2937"
+                           PlaceholderColor="#9CA3AF"
+                           BackgroundColor="Transparent"
+                           HeightRequest="42" />
+                </Border>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="15"
+                      Margin="0,10,0,0">
+                    <Button Grid.Column="0"
+                            x:Name="CancelButton"
+                            Text="Cancel"
+                            BackgroundColor="#E2E8F0"
+                            TextColor="#334155"
+                            FontAttributes="Bold"
+                            CornerRadius="13"
+                            HeightRequest="46"
+                            FontSize="15"
+                            Clicked="OnCancelClicked" />
+
+                    <Button Grid.Column="1"
+                            x:Name="OkButton"
+                            Text="Save"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            CornerRadius="13"
+                            HeightRequest="46"
+                            FontSize="15"
+                            Clicked="OnOkClicked" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentView>

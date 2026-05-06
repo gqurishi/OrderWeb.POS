@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             xmlns:chart="clr-namespace:Syncfusion.Maui.Charts;assembly=Syncfusion.Maui.Charts"
+             x:Class="POS_in_NET.Pages.DashboardPage"
+             Title=""
+             BackgroundColor="{StaticResource Background}">
+
+    <Grid RowDefinitions="Auto,*">
+        
+        <!-- Top Bar -->
+        <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+        
+        <!-- Main Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="24" Spacing="24">
+                
+                <!-- KPI Cards -->
+                  <Grid RowDefinitions="Auto" ColumnDefinitions="*,*,*" ColumnSpacing="16">
+                    
+                    <!-- Today's Sales Card -->
+                    <Frame Grid.Row="0" Grid.Column="0" Style="{StaticResource KPICard}">
+                        <VerticalStackLayout Spacing="12">
+                            <HorizontalStackLayout Spacing="12">
+                                <Frame BackgroundColor="#DCFCE7" 
+                                       CornerRadius="24" 
+                                       HeightRequest="48" 
+                                       WidthRequest="48"
+                                       Padding="0"
+                                       HasShadow="False">
+                                    <Label Text="£" 
+                                           FontSize="24" 
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="Center" 
+                                           VerticalOptions="Center" />
+                                </Frame>
+                                <VerticalStackLayout VerticalOptions="Center" Spacing="0">
+                                    <Label Text="Today's Sales" 
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label x:Name="TodaysSalesLabel"
+                                           Text="£0.00"
+                                           FontSize="32"
+                                           FontAttributes="Bold"
+                                           TextColor="#10B981" />
+                                </VerticalStackLayout>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Weekly Sales Card -->
+                    <Frame Grid.Row="0" Grid.Column="1" Style="{StaticResource KPICard}">
+                        <VerticalStackLayout Spacing="12">
+                            <HorizontalStackLayout Spacing="12">
+                                <Frame BackgroundColor="#DBEAFE" 
+                                       CornerRadius="24" 
+                                       HeightRequest="48" 
+                                       WidthRequest="48"
+                                       Padding="0"
+                                       HasShadow="False">
+                                    <Label Text="7D" 
+                                           FontSize="20" 
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="Center" 
+                                           VerticalOptions="Center" />
+                                </Frame>
+                                <VerticalStackLayout VerticalOptions="Center" Spacing="0">
+                                     <Label Text="Last 7 Days Sales" 
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label x:Name="WeeklySalesLabel"
+                                           Text="£0.00"
+                                           FontSize="32"
+                                           FontAttributes="Bold"
+                                           TextColor="#3B82F6" />
+                                </VerticalStackLayout>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Today's Orders Card -->
+                    <Frame Grid.Row="0" Grid.Column="2" Style="{StaticResource KPICard}">
+                        <VerticalStackLayout Spacing="12">
+                            <HorizontalStackLayout Spacing="12">
+                                <Frame BackgroundColor="#FEF3C7" 
+                                       CornerRadius="24" 
+                                       HeightRequest="48" 
+                                       WidthRequest="48"
+                                       Padding="0"
+                                       HasShadow="False">
+                                    <Label Text="#" 
+                                           FontSize="24" 
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="Center" 
+                                           VerticalOptions="Center" />
+                                </Frame>
+                                <VerticalStackLayout VerticalOptions="Center" Spacing="0">
+                                    <Label Text="Today's Total Orders" 
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label x:Name="TodaysOrdersLabel"
+                                           Text="0"
+                                           FontSize="32"
+                                           FontAttributes="Bold"
+                                           TextColor="#F59E0B" />
+                                </VerticalStackLayout>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                </Grid>
+
+                <!-- Quick Actions Section -->
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="Quick Actions" 
+                           Style="{StaticResource TitleLarge}" />
+
+                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="16" RowSpacing="16">
+                        <!-- Restaurant/Dine-in Button -->
+                        <Border Grid.Row="0" Grid.Column="0"
+                                BackgroundColor="#E0F2FE"
+                                StrokeThickness="1"
+                                Stroke="#0EA5E9"
+                                Padding="24">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnRestaurantClicked" />
+                            </Border.GestureRecognizers>
+                            <Border.Shadow>
+                                <Shadow Brush="#0EA5E9" Offset="0,2" Radius="8" Opacity="0.1" />
+                            </Border.Shadow>
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Image Source="restaurant.png" WidthRequest="36" HeightRequest="36" />
+                                <Label Text="Restaurant" 
+                                       FontSize="20" 
+                                       FontAttributes="Bold"
+                                       TextColor="#0369A1"
+                                       VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                        </Border>
+
+                        <!-- Collection Button -->
+                        <Border Grid.Row="0" Grid.Column="1"
+                                BackgroundColor="#DCFCE7"
+                                StrokeThickness="1"
+                                Stroke="#22C55E"
+                                Padding="24">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCollectionClicked" />
+                            </Border.GestureRecognizers>
+                            <Border.Shadow>
+                                <Shadow Brush="#22C55E" Offset="0,2" Radius="8" Opacity="0.1" />
+                            </Border.Shadow>
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Image Source="collection.png" WidthRequest="36" HeightRequest="36" />
+                                <Label Text="Collection" 
+                                       FontSize="20" 
+                                       FontAttributes="Bold"
+                                       TextColor="#15803D"
+                                       VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                        </Border>
+
+                        <!-- Delivery Button -->
+                        <Border Grid.Row="1" Grid.Column="0"
+                                BackgroundColor="#F3E8FF"
+                                StrokeThickness="1"
+                                Stroke="#A855F7"
+                                Padding="24">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDeliveryClicked" />
+                            </Border.GestureRecognizers>
+                            <Border.Shadow>
+                                <Shadow Brush="#A855F7" Offset="0,2" Radius="8" Opacity="0.1" />
+                            </Border.Shadow>
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Image Source="delivery.png" WidthRequest="36" HeightRequest="36" />
+                                <Label Text="Delivery" 
+                                       FontSize="20" 
+                                       FontAttributes="Bold"
+                                       TextColor="#7C3AED"
+                                       VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                        </Border>
+
+                        <!-- Today's Sales Button -->
+                        <Border Grid.Row="1" Grid.Column="1"
+                                BackgroundColor="#FEF2F2"
+                                StrokeThickness="1"
+                                Stroke="#F87171"
+                                Padding="24">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTodaysSalesClicked" />
+                            </Border.GestureRecognizers>
+                            <Border.Shadow>
+                                <Shadow Brush="#F87171" Offset="0,2" Radius="8" Opacity="0.1" />
+                            </Border.Shadow>
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Image Source="dashboard.png" WidthRequest="36" HeightRequest="36" />
+                                <Label Text="Today's Sales" 
+                                       FontSize="20" 
+                                       FontAttributes="Bold"
+                                       TextColor="#DC2626"
+                                       VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                        </Border>
+                    </Grid>
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

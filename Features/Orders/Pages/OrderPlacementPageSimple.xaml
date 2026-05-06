@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             xmlns:controls="clr-namespace:POS_in_NET.Controls"
+             x:Class="POS_in_NET.Pages.OrderPlacementPageSimple"
+             Title="Order Placement"
+             BackgroundColor="#F8FAFC">
+
+    <Grid RowDefinitions="Auto,*">
+        
+        <!-- Top Bar -->
+        <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+
+        <!-- Toast Notification Overlay -->
+        <controls:ToastNotification x:Name="ToastNotification"
+                                    Grid.RowSpan="2"
+                                    ZIndex="1000"
+                                    InputTransparent="True"
+                                    Placement="BottomCenter"/>
+        
+        <!-- Main Content -->
+        <Grid Grid.Row="1" ColumnDefinitions="2*,*" ColumnSpacing="15" Padding="15">
+        
+            <!-- LEFT SIDE - Menu Categories and Items -->
+            <Border Grid.Column="0" 
+                BackgroundColor="White" 
+                StrokeThickness="0"
+                Padding="15">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12"/>
+            </Border.StrokeShape>
+            
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="15">
+                <!-- Search Bar (Tap to open keyboard) -->
+                <Border x:Name="SearchBarBorder"
+                        Grid.Row="0" 
+                        BackgroundColor="#F1F5F9" 
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="15,10"
+                        HeightRequest="50">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnSearchBarTapped"/>
+                    </Border.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label x:Name="SearchDisplayLabel"
+                               Grid.Column="0"
+                               Text="Search menu items..."
+                               TextColor="#94A3B8"
+                               FontSize="16"
+                               VerticalOptions="Center"/>
+                        <Button x:Name="ClearSearchButton"
+                                Grid.Column="1"
+                                Text="X"
+                                FontSize="14"
+                                TextColor="#64748B"
+                                BackgroundColor="Transparent"
+                                WidthRequest="35"
+                                HeightRequest="35"
+                                Padding="0"
+                                IsVisible="False"
+                                Clicked="OnClearSearchClicked"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Categories (2 rows with swipe pagination) -->
+                <Grid Grid.Row="1" BackgroundColor="#F1F5F9" Padding="5">
+                    <!-- Page Indicator Dots -->
+                    <IndicatorView x:Name="CategoryIndicator"
+                                   IndicatorColor="#D1D5DB"
+                                   SelectedIndicatorColor="#3B82F6"
+                                   HorizontalOptions="End"
+                                   VerticalOptions="Start"
+                                   Margin="0,5,10,0"
+                                   IndicatorSize="10"
+                                   ZIndex="10"/>
+                    
+                    <!-- Categories CarouselView -->
+                    <CarouselView x:Name="CategoryCarousel"
+                                  HeightRequest="155"
+                                  PeekAreaInsets="0"
+                                  IndicatorView="CategoryIndicator"
+                                  Loop="False"
+                                  IsSwipeEnabled="True">
+                        <CarouselView.ItemTemplate>
+                            <DataTemplate>
+                                <VerticalStackLayout Spacing="12" Padding="0">
+                                    <!-- Category Row 1 (5 buttons) -->
+                                    <HorizontalStackLayout Spacing="12"
+                                                         BindableLayout.ItemsSource="{Binding Row1}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Text="{Binding Name}"
+                                                        BackgroundColor="{Binding Color}"
+                                                        TextColor="White"
+                                                        FontSize="17"
+                                                        FontAttributes="Bold"
+                                                        CornerRadius="12"
+                                                        Padding="25,15"
+                                                        WidthRequest="200"
+                                                        HeightRequest="70"
+                                                        Clicked="OnCategoryButtonClicked"
+                                                        CommandParameter="{Binding}"/>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </HorizontalStackLayout>
+                                    
+                                    <!-- Category Row 2 (5 buttons) -->
+                                    <HorizontalStackLayout Spacing="12"
+                                                         BindableLayout.ItemsSource="{Binding Row2}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Text="{Binding Name}"
+                                                        BackgroundColor="{Binding Color}"
+                                                        TextColor="White"
+                                                        FontSize="17"
+                                                        FontAttributes="Bold"
+                                                        CornerRadius="12"
+                                                        Padding="25,15"
+                                                        WidthRequest="200"
+                                                        HeightRequest="70"
+                                                        Clicked="OnCategoryButtonClicked"
+                                                        CommandParameter="{Binding}"/>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CarouselView.ItemTemplate>
+                    </CarouselView>
+                </Grid>
+                
+                <!-- Sub-Categories (2 rows with swipe pagination, hidden by default) -->
+                <Grid x:Name="SubCategorySection" Grid.Row="2" BackgroundColor="#FAF5FF" Padding="5" IsVisible="False">
+                    <!-- Page Indicator Dots -->
+                    <IndicatorView x:Name="SubCategoryIndicator"
+                                   IndicatorColor="#D1D5DB"
+                                   SelectedIndicatorColor="#8B5CF6"
+                                   HorizontalOptions="End"
+                                   VerticalOptions="Start"
+                                   Margin="0,5,10,0"
+                                   IndicatorSize="10"
+                                   ZIndex="10"/>
+                    
+                    <!-- Sub-Categories CarouselView -->
+                    <CarouselView x:Name="SubCategoryCarousel"
+                                  HeightRequest="135"
+                                  PeekAreaInsets="0"
+                                  IndicatorView="SubCategoryIndicator"
+                                  Loop="False"
+                                  IsSwipeEnabled="True">
+                        <CarouselView.ItemTemplate>
+                            <DataTemplate>
+                                <VerticalStackLayout Spacing="12" Padding="0">
+                                    <!-- Sub-Category Row 1 (5 buttons) -->
+                                    <HorizontalStackLayout Spacing="12"
+                                                         BindableLayout.ItemsSource="{Binding Row1}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Text="{Binding Name}"
+                                                        BackgroundColor="{Binding Color}"
+                                                        TextColor="#1E293B"
+                                                        FontSize="16"
+                                                        FontAttributes="Bold"
+                                                        CornerRadius="10"
+                                                        Padding="20,12"
+                                                        WidthRequest="190"
+                                                        HeightRequest="60"
+                                                        Clicked="OnSubCategoryButtonClicked"
+                                                        CommandParameter="{Binding}"/>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </HorizontalStackLayout>
+                                    
+                                    <!-- Sub-Category Row 2 (5 buttons) -->
+                                    <HorizontalStackLayout Spacing="12"
+                                                         BindableLayout.ItemsSource="{Binding Row2}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Text="{Binding Name}"
+                                                        BackgroundColor="{Binding Color}"
+                                                        TextColor="#1E293B"
+                                                        FontSize="16"
+                                                        FontAttributes="Bold"
+                                                        CornerRadius="10"
+                                                        Padding="20,12"
+                                                        WidthRequest="190"
+                                                        HeightRequest="60"
+                                                        Clicked="OnSubCategoryButtonClicked"
+                                                        CommandParameter="{Binding}"/>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CarouselView.ItemTemplate>
+                    </CarouselView>
+                </Grid>
+                
+                <!-- Menu Items -->
+                <ScrollView Grid.Row="3">
+                    <FlexLayout x:Name="ItemsContainer"
+                              Direction="Row"
+                              Wrap="Wrap"
+                              JustifyContent="Start"
+                              AlignItems="Start"/>
+                </ScrollView>
+            </Grid>
+        </Border>
+        
+        <!-- RIGHT SIDE - Order Panel -->
+        <Border Grid.Column="1" 
+                BackgroundColor="White" 
+                StrokeThickness="0"
+                Padding="15">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12"/>
+            </Border.StrokeShape>
+            
+            <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+                <!-- Table Info with PAY Button -->
+                <Border Grid.Row="0"
+                        BackgroundColor="#F8FAFC"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="15,10"
+                        Margin="0,0,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                            <Label x:Name="OrderIdentityLabel" 
+                                Text="Order # Table 1" 
+                                   FontSize="18" 
+                                   FontAttributes="Bold" 
+                                   TextColor="#0F172A"
+                                   LineBreakMode="TailTruncation"
+                                   MaxLines="1"/>
+                            <HorizontalStackLayout Spacing="8">
+                                <Label x:Name="GuestsLabel" 
+                                       Text="Guests = 2" 
+                                       FontSize="14" 
+                                       TextColor="#475569"
+                                       FontAttributes="Bold"/>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+
+                        <Button Grid.Column="1"
+                               Text="PAYMENT"
+                               BackgroundColor="#F59E0B"
+                               TextColor="White"
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               CornerRadius="8"
+                               WidthRequest="150"
+                               HeightRequest="50"
+                               HorizontalOptions="End"
+                               VerticalOptions="Center"
+                               Clicked="OnPayClicked"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Order Items -->
+                <ScrollView Grid.Row="1">
+                    <VerticalStackLayout x:Name="OrderItemsContainer" Spacing="8"/>
+                </ScrollView>
+                
+                <!-- Action Buttons Card -->
+                <Border Grid.Row="2" Grid.RowSpan="2"
+                        BackgroundColor="White"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        Padding="20"
+                        Margin="0,15,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12,12,0,0"/>
+                    </Border.StrokeShape>
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Opacity="0.05" Radius="8" Offset="0,-2"/>
+                    </Border.Shadow>
+                    
+                    <VerticalStackLayout Spacing="15">
+                        <!-- TOTAL Section -->
+                        <Border BackgroundColor="#F9FAFB"
+                                Stroke="Transparent"
+                                Padding="15"
+                                Margin="0,0,0,5">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8"/>
+                            </Border.StrokeShape>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="TOTAL" 
+                                       FontSize="16" 
+                                       TextColor="#64748B" 
+                                       FontAttributes="Bold"
+                                       VerticalOptions="Center"/>
+                                <Label x:Name="TotalLabel" 
+                                       Grid.Column="1" 
+                                       Text="£0.00" 
+                                       FontSize="24" 
+                                       TextColor="#10B981" 
+                                       FontAttributes="Bold"
+                                       VerticalOptions="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Hidden calculation labels -->
+                        <VerticalStackLayout IsVisible="False">
+                            <Label x:Name="SubtotalLabel" Text="£0.00"/>
+                            <Label x:Name="VATLabel" Text="£0.00"/>
+                            <Grid x:Name="ServiceChargeRow">
+                                <Label x:Name="ServiceChargeLabel" Text="£0.00"/>
+                            </Grid>
+                            <Grid x:Name="DiscountRow">
+                                <Label x:Name="DiscountReasonLabel" Text="Discount"/>
+                                <Label x:Name="DiscountLabel" Text="£0.00"/>
+                            </Grid>
+                        </VerticalStackLayout>
+                        
+                        <!-- Quick Actions Row -->
+                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
+                            <Button Grid.Column="0" 
+                                   Text="SERVICE FEE"
+                                   BackgroundColor="#8B5CF6"
+                                   TextColor="White"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   CornerRadius="10"
+                                   HeightRequest="55"
+                                   Clicked="OnServiceFeeClicked"/>
+                            
+                            <Button Grid.Column="1" 
+                                   Text="NOTES"
+                                   BackgroundColor="#3B82F6"
+                                   TextColor="White"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   CornerRadius="10"
+                                   HeightRequest="55"
+                                   Clicked="OnNotesClicked"/>
+                            
+                            <Button Grid.Column="2" 
+                                   Text="VOID"
+                                   BackgroundColor="#EF4444"
+                                   TextColor="White"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   CornerRadius="10"
+                                   HeightRequest="55"
+                                   Clicked="OnVoidClicked"/>
+                            
+                            <Button Grid.Column="3" 
+                                   Text="MORE ▼"
+                                   BackgroundColor="#64748B"
+                                   TextColor="White"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   CornerRadius="10"
+                                   HeightRequest="55"
+                                   Clicked="OnMoreClicked"/>
+                        </Grid>
+                        
+                        <!-- Main Actions Row -->
+                        <Grid ColumnDefinitions="1.4*,*" ColumnSpacing="12">
+                            <Button Grid.Column="0"
+                                   Text="SEND TO KITCHEN"
+                                   BackgroundColor="#10B981"
+                                   TextColor="White"
+                                   FontSize="17"
+                                   FontAttributes="Bold"
+                                   CornerRadius="12"
+                                   HeightRequest="65"
+                                   Clicked="OnSendClicked"/>
+                            <Button Grid.Column="1"
+                                   Text="PRINT"
+                                   BackgroundColor="#6366F1"
+                                   TextColor="White"
+                                   FontSize="17"
+                                   FontAttributes="Bold"
+                                   CornerRadius="12"
+                                   HeightRequest="65"
+                                   Clicked="OnPrintReceiptClicked"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
+        </Border>
+        
+        <!-- Loading Overlay -->
+        <Grid x:Name="LoadingOverlay" 
+              Grid.ColumnSpan="2"
+              IsVisible="False"
+              BackgroundColor="#80000000">
+            <Border BackgroundColor="White"
+                    WidthRequest="200"
+                    HeightRequest="150"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    StrokeThickness="0"
+                    Padding="20">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12"/>
+                </Border.StrokeShape>
+                <VerticalStackLayout Spacing="15" HorizontalOptions="Center" VerticalOptions="Center">
+                    <ActivityIndicator IsRunning="True"
+                                     Color="#3B82F6"
+                                     WidthRequest="40"
+                                     HeightRequest="40"/>
+                    <Label Text="Loading menu..."
+                           FontSize="16"
+                           FontAttributes="Bold"
+                           TextColor="#1E293B"
+                           HorizontalOptions="Center"/>
+                    <Label Text="Please wait"
+                           FontSize="13"
+                           TextColor="#64748B"
+                           HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+        </Grid>
+    </Grid>
+
+</ContentPage>

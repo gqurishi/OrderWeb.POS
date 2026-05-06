@@ -1,0 +1,715 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.BusinessSettingsPage"
+             Title=""
+             BackgroundColor="{StaticResource Background}">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+        
+        <!-- Top Bar -->
+        <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+        
+        <!-- Modern Tab Bar -->
+        <Frame Grid.Row="1" 
+               BackgroundColor="White"
+               Padding="0"
+               CornerRadius="0"
+               HasShadow="False"
+               BorderColor="#E5E7EB">
+            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Padding="20,16">
+                <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
+                    <!-- Business Info Tab (Active) -->
+                    <Border x:Name="BusinessTabBorder"
+                            BackgroundColor="#E0F2FE"
+                            StrokeThickness="2"
+                            Stroke="#0EA5E9"
+                            Padding="24,12"
+                            MinimumWidthRequest="140"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="#0EA5E9" Radius="8" Opacity="0.2" Offset="0,2"/>
+                        </Border.Shadow>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnBusinessTabClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Business Info" 
+                               TextColor="#0EA5E9"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center"
+                               HorizontalOptions="Center"/>
+                    </Border>
+
+                    <!-- User Tab -->
+                    <Border x:Name="UserTabBorder"
+                            BackgroundColor="White"
+                            StrokeThickness="1"
+                            Stroke="#E5E7EB"
+                            Padding="24,12"
+                            MinimumWidthRequest="100"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnUserTabClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="User" 
+                               TextColor="#6B7280"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center"
+                               HorizontalOptions="Center"/>
+                    </Border>
+
+                    <!-- OrderWeb Connect Tab -->
+                    <Border x:Name="CloudTabBorder"
+                            BackgroundColor="White"
+                            StrokeThickness="1"
+                            Stroke="#E5E7EB"
+                            Padding="24,12"
+                            MinimumWidthRequest="160"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCloudTabClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="OrderWeb Connect" 
+                               TextColor="#6B7280"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center"
+                               HorizontalOptions="Center"/>
+                    </Border>
+
+                    <!-- Postcode Lookup Tab -->
+                    <Border x:Name="PostcodeTabBorder"
+                            BackgroundColor="White"
+                            StrokeThickness="1"
+                            Stroke="#E5E7EB"
+                            Padding="24,12"
+                            MinimumWidthRequest="150"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPostcodeTabClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Postcode Lookup" 
+                               TextColor="#6B7280"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center"
+                               HorizontalOptions="Center"/>
+                    </Border>
+                </HorizontalStackLayout>
+            </ScrollView>
+        </Frame>
+        
+        <!-- Main Content -->
+        <ScrollView Grid.Row="2">
+        <VerticalStackLayout Padding="32" Spacing="24" MaximumWidthRequest="1400" HorizontalOptions="Center">
+            
+            <!-- Header Section -->
+            <VerticalStackLayout Spacing="8" Margin="0,0,0,8">
+                <Label Text="Business Settings" 
+                       FontSize="28" 
+                       FontFamily="OpenSansBold"
+                       TextColor="#1F2937" />
+                <Label Text="Manage your restaurant information and branding" 
+                       FontSize="15" 
+                       FontFamily="OpenSansRegular"
+                       TextColor="#6B7280" />
+            </VerticalStackLayout>
+
+            <!-- Side-by-Side Layout: Business Info (Left) + Preview (Right) -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="24" RowSpacing="24">
+                
+                <!-- LEFT SIDE: Business Information Form -->
+                <Border Grid.Column="0"
+                        BackgroundColor="White"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        Padding="32"
+                        StrokeShape="RoundRectangle 12">
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Radius="10" Opacity="0.05" Offset="0,2" />
+                    </Border.Shadow>
+                    
+                    <VerticalStackLayout Spacing="24">
+                        <!-- Section Title -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Restaurant Information"
+                                   FontSize="20"
+                                   FontFamily="OpenSansBold"
+                                   TextColor="#1F2937" />
+                            <Label Text="Update your business details"
+                                   FontSize="14"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#6B7280" />
+                        </VerticalStackLayout>
+
+                        <!-- Restaurant Name -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Restaurant Name"
+                                   FontSize="14"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#374151" />
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="#D1D5DB"
+                                    StrokeThickness="1"
+                                    Padding="14,12"
+                                    StrokeShape="RoundRectangle 8">
+                                <Entry x:Name="RestaurantNameEntry"
+                                       Placeholder="Enter restaurant name"
+                                       FontSize="15"
+                                       FontFamily="OpenSansRegular"
+                                       BackgroundColor="Transparent"
+                                       TextColor="#1F2937"
+                                       PlaceholderColor="#9CA3AF" />
+                            </Border>
+                            <Label Text="This name appears on login screen and reports"
+                                   FontSize="12"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#9CA3AF" />
+                        </VerticalStackLayout>
+
+                        <!-- Description -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Description"
+                                   FontSize="14"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#374151" />
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="#D1D5DB"
+                                    StrokeThickness="1"
+                                    Padding="14,12"
+                                    StrokeShape="RoundRectangle 8">
+                                <Entry x:Name="DescriptionEntry"
+                                       Placeholder="Enter tagline"
+                                       FontSize="15"
+                                       FontFamily="OpenSansRegular"
+                                       BackgroundColor="Transparent"
+                                       TextColor="#1F2937"
+                                       PlaceholderColor="#9CA3AF" />
+                            </Border>
+                            <Label Text="Short tagline shown on login screen"
+                                   FontSize="12"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#9CA3AF" />
+                        </VerticalStackLayout>
+
+                        <!-- Address -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Address"
+                                   FontSize="14"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#374151" />
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="#D1D5DB"
+                                    StrokeThickness="1"
+                                    Padding="14,12"
+                                    StrokeShape="RoundRectangle 8">
+                                <Editor x:Name="AddressEditor"
+                                        Placeholder="Enter full address"
+                                        FontSize="15"
+                                        FontFamily="OpenSansRegular"
+                                        BackgroundColor="Transparent"
+                                        TextColor="#1F2937"
+                                        HeightRequest="80"
+                                        AutoSize="TextChanges" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Phone & Email Side by Side -->
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                            <!-- Phone Number -->
+                            <VerticalStackLayout Grid.Column="0" Spacing="8">
+                                <Label Text="Phone Number"
+                                       FontSize="14"
+                                       FontFamily="OpenSansSemibold"
+                                       TextColor="#374151" />
+                                <Border BackgroundColor="#F9FAFB"
+                                        Stroke="#D1D5DB"
+                                        StrokeThickness="1"
+                                        Padding="14,12"
+                                        StrokeShape="RoundRectangle 8">
+                                    <Entry x:Name="PhoneEntry"
+                                           Placeholder="Phone number"
+                                           FontSize="15"
+                                           FontFamily="OpenSansRegular"
+                                           BackgroundColor="Transparent"
+                                           TextColor="#1F2937"
+                                           PlaceholderColor="#9CA3AF"
+                                           Keyboard="Telephone" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Email -->
+                            <VerticalStackLayout Grid.Column="1" Spacing="8">
+                                <Label Text="Email Address"
+                                       FontSize="14"
+                                       FontFamily="OpenSansSemibold"
+                                       TextColor="#374151" />
+                                <Border BackgroundColor="#F9FAFB"
+                                        Stroke="#D1D5DB"
+                                        StrokeThickness="1"
+                                        Padding="14,12"
+                                        StrokeShape="RoundRectangle 8">
+                                    <Entry x:Name="EmailEntry"
+                                           Placeholder="Email address"
+                                           FontSize="15"
+                                           FontFamily="OpenSansRegular"
+                                           BackgroundColor="Transparent"
+                                           TextColor="#1F2937"
+                                           PlaceholderColor="#9CA3AF"
+                                           Keyboard="Email" />
+                                </Border>
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <!-- Tax Code -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Tax Code/Registration"
+                                   FontSize="14"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#374151" />
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="#D1D5DB"
+                                    StrokeThickness="1"
+                                    Padding="14,12"
+                                    StrokeShape="RoundRectangle 8">
+                                <Entry x:Name="TaxCodeEntry"
+                                       Placeholder="VAT/Tax ID number"
+                                       FontSize="15"
+                                       FontFamily="OpenSansRegular"
+                                       BackgroundColor="Transparent"
+                                       TextColor="#1F2937"
+                                       PlaceholderColor="#9CA3AF" />
+                            </Border>
+                            <Label Text="Business tax identification number"
+                                   FontSize="12"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#9CA3AF" />
+                        </VerticalStackLayout>
+
+                           <!-- Order Number Settings -->
+                           <VerticalStackLayout Spacing="16" Margin="0,8,0,0">
+                            <Label Text="Order Number Settings"
+                                FontSize="16"
+                                FontFamily="OpenSansSemibold"
+                                TextColor="#374151" />
+
+                            <Label Text="Admin controls the first 3 letters. The app auto-adds order type + 4 digits."
+                                FontSize="12"
+                                FontFamily="OpenSansRegular"
+                                TextColor="#6B7280" />
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                                <VerticalStackLayout Grid.Column="0" Spacing="6">
+                                 <Label Text="Current 3-Letter Code"
+                                     FontSize="13"
+                                     FontFamily="OpenSansSemibold"
+                                     TextColor="#6B7280" />
+                                 <Label x:Name="CurrentOrderPrefixLabel"
+                                     Text="KIT"
+                                     FontSize="22"
+                                     FontFamily="OpenSansBold"
+                                     TextColor="#2563EB" />
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                 <Label Text="Today's Order Count"
+                                     FontSize="13"
+                                     FontFamily="OpenSansSemibold"
+                                     TextColor="#6B7280" />
+                                 <Label x:Name="TodayOrderCountLabel"
+                                     Text="0"
+                                     FontSize="22"
+                                     FontFamily="OpenSansBold"
+                                     TextColor="#10B981" />
+                                </VerticalStackLayout>
+                            </Grid>
+
+                            <Border BackgroundColor="#F8FAFC"
+                                 Stroke="#DBEAFE"
+                                 StrokeThickness="1"
+                                 Padding="16"
+                                 StrokeShape="RoundRectangle 12">
+                                <VerticalStackLayout Spacing="10">
+                                 <Label Text="How it builds KITT0001"
+                                     FontSize="14"
+                                     FontFamily="OpenSansSemibold"
+                                     TextColor="#1E3A8A" />
+                                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                    <Border Grid.Column="0" BackgroundColor="#E0E7FF" StrokeThickness="0" Padding="10,6" StrokeShape="RoundRectangle 8">
+                                        <Label Text="KIT" FontSize="13" FontFamily="OpenSansBold" TextColor="#3730A3" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="+" FontSize="14" TextColor="#6B7280" VerticalTextAlignment="Center" />
+                                    <Border Grid.Column="2" BackgroundColor="#FEF3C7" StrokeThickness="0" Padding="10,6" StrokeShape="RoundRectangle 8">
+                                        <Label Text="T" FontSize="13" FontFamily="OpenSansBold" TextColor="#92400E" />
+                                    </Border>
+                                    <Label Grid.Column="3" Text="+" FontSize="14" TextColor="#6B7280" VerticalTextAlignment="Center" />
+                                    <Border Grid.Column="4" BackgroundColor="#D1FAE5" StrokeThickness="0" Padding="10,6" StrokeShape="RoundRectangle 8">
+                                        <Label Text="0001" FontSize="13" FontFamily="OpenSansBold" TextColor="#065F46" />
+                                    </Border>
+                                 </Grid>
+                                 <Label Text="KIT = admin code, T/C/D = type, 0001 = running number"
+                                     FontSize="12"
+                                     TextColor="#64748B" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="16">
+                                <Label Grid.Row="0" Grid.Column="0" Text="Collection:" FontSize="14" TextColor="#6B7280"/>
+                                <Label Grid.Row="0" Grid.Column="1" x:Name="NextCollectionLabel" Text="KITC0001" FontSize="14" FontFamily="Courier" TextColor="#10B981" FontAttributes="Bold"/>
+
+                                <Label Grid.Row="1" Grid.Column="0" Text="Delivery:" FontSize="14" TextColor="#6B7280"/>
+                                <Label Grid.Row="1" Grid.Column="1" x:Name="NextDeliveryLabel" Text="KITD0001" FontSize="14" FontFamily="Courier" TextColor="#3B82F6" FontAttributes="Bold"/>
+
+                                <Label Grid.Row="2" Grid.Column="0" Text="Table:" FontSize="14" TextColor="#6B7280"/>
+                                <Label Grid.Row="2" Grid.Column="1" x:Name="NextTableLabel" Text="KITT0001" FontSize="14" FontFamily="Courier" TextColor="#F59E0B" FontAttributes="Bold"/>
+                            </Grid>
+
+                            <VerticalStackLayout Spacing="10" MaximumWidthRequest="420" Margin="0,8,0,0">
+                                <Label Text="Business Code (First 3 Letters)"
+                                    FontSize="14"
+                                    FontFamily="OpenSansSemibold"
+                                    TextColor="#374151" />
+                                <Border BackgroundColor="#EFF6FF"
+                                     Stroke="#93C5FD"
+                                     StrokeThickness="1"
+                                     Padding="16,14"
+                                     StrokeShape="RoundRectangle 10">
+                                 <Entry x:Name="OrderPrefixEntry"
+                                     Placeholder="KIT"
+                                     MaxLength="3"
+                                     FontSize="20"
+                                     FontAttributes="Bold"
+                                     BackgroundColor="Transparent"
+                                     TextColor="#1E3A8A"
+                                     PlaceholderColor="#60A5FA"
+                                     HorizontalTextAlignment="Center" />
+                                </Border>
+                                <Label Text="Enter exactly 3 letters (A-Z). Example: KIT, ABC, RAF."
+                                    FontSize="12"
+                                    TextColor="#64748B" />
+                            </VerticalStackLayout>
+                           </VerticalStackLayout>
+
+                        <!-- Label Printer Settings -->
+                        <VerticalStackLayout Spacing="16" Margin="0,8,0,0">
+                            <Label Text="🏷️ Label Printer Configuration"
+                                   FontSize="16"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#374151" />
+                            
+                            <!-- Enable Label Printing Toggle -->
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label Text="Enable Label Printing"
+                                           FontSize="14"
+                                           FontFamily="OpenSansSemibold"
+                                           TextColor="#374151" />
+                                    <Label Text="Automatically print labels for items with label text configured"
+                                           FontSize="12"
+                                           FontFamily="OpenSansRegular"
+                                           TextColor="#9CA3AF" />
+                                </VerticalStackLayout>
+                                <Switch x:Name="LabelPrinterEnabledSwitch"
+                                        Grid.Column="1"
+                                        OnColor="#10B981"
+                                        ThumbColor="White"
+                                        VerticalOptions="Center"
+                                        Toggled="OnLabelPrinterToggled" />
+                            </Grid>
+                            
+                            <!-- Printer IP Configuration -->
+                            <VerticalStackLayout x:Name="LabelPrinterSection" 
+                                               Spacing="12"
+                                               IsVisible="False">
+                                <Grid ColumnDefinitions="2*,*" ColumnSpacing="16">
+                                    <!-- Printer IP -->
+                                    <VerticalStackLayout Grid.Column="0" Spacing="8">
+                                        <Label Text="Brother QL-820NWB IP Address"
+                                               FontSize="14"
+                                               FontFamily="OpenSansSemibold"
+                                               TextColor="#374151" />
+                                        <Border BackgroundColor="#F9FAFB"
+                                                Stroke="#D1D5DB"
+                                                StrokeThickness="1"
+                                                Padding="14,12"
+                                                StrokeShape="RoundRectangle 8">
+                                            <Entry x:Name="LabelPrinterIpEntry"
+                                                   Placeholder="192.168.1.100"
+                                                   FontSize="15"
+                                                   FontFamily="OpenSansRegular"
+                                                   BackgroundColor="Transparent"
+                                                   TextColor="#1F2937"
+                                                   PlaceholderColor="#9CA3AF"
+                                                   Keyboard="Numeric" />
+                                        </Border>
+                                    </VerticalStackLayout>
+
+                                    <!-- Printer Port -->
+                                    <VerticalStackLayout Grid.Column="1" Spacing="8">
+                                        <Label Text="Port"
+                                               FontSize="14"
+                                               FontFamily="OpenSansSemibold"
+                                               TextColor="#374151" />
+                                        <Border BackgroundColor="#F9FAFB"
+                                                Stroke="#D1D5DB"
+                                                StrokeThickness="1"
+                                                Padding="14,12"
+                                                StrokeShape="RoundRectangle 8">
+                                            <Entry x:Name="LabelPrinterPortEntry"
+                                                   Text="9100"
+                                                   FontSize="15"
+                                                   FontFamily="OpenSansRegular"
+                                                   BackgroundColor="Transparent"
+                                                   TextColor="#1F2937"
+                                                   PlaceholderColor="#9CA3AF"
+                                                   Keyboard="Numeric" />
+                                        </Border>
+                                    </VerticalStackLayout>
+                                </Grid>
+                                
+                                <!-- Test Button -->
+                                <Button Text="🖨️ Test Printer Connection"
+                                        BackgroundColor="#3B82F6"
+                                        TextColor="White"
+                                        FontSize="14"
+                                        FontFamily="OpenSansSemibold"
+                                        CornerRadius="8"
+                                        HeightRequest="44"
+                                        HorizontalOptions="Start"
+                                        Clicked="OnTestPrinterClicked">
+                                    <Button.Shadow>
+                                        <Shadow Brush="#3B82F6" Radius="6" Opacity="0.2" Offset="0,2" />
+                                    </Button.Shadow>
+                                </Button>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+
+                        <!-- Print Groups Management -->
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="Print Groups Management"
+                                   FontSize="16"
+                                   FontFamily="OpenSansSemibold"
+                                   TextColor="#1F2937"
+                                   Margin="0,8,0,0" />
+                            
+                            <Label Text="Configure printer routing for kitchen stations (Kitchen, Bar, Grill, etc.)"
+                                   FontSize="13"
+                                   TextColor="#6B7280"
+                                   LineBreakMode="WordWrap" />
+                            
+                            <Button Text="Manage Print Groups"
+                                    BackgroundColor="#8B5CF6"
+                                    TextColor="White"
+                                    FontSize="14"
+                                    FontFamily="OpenSansSemibold"
+                                    CornerRadius="8"
+                                    HeightRequest="44"
+                                    HorizontalOptions="Start"
+                                    Clicked="OnManagePrintGroupsClicked">
+                                <Button.Shadow>
+                                    <Shadow Brush="#8B5CF6" Radius="6" Opacity="0.2" Offset="0,2" />
+                                </Button.Shadow>
+                            </Button>
+                        </VerticalStackLayout>
+
+                        <!-- Action Buttons -->
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,8,0,0">
+                            <Button Grid.Column="0"
+                                    x:Name="SaveButton"
+                                    Text="Save Changes"
+                                    BackgroundColor="#10B981"
+                                    TextColor="White"
+                                    FontSize="15"
+                                    FontFamily="OpenSansSemibold"
+                                    CornerRadius="8"
+                                    HeightRequest="48"
+                                    Clicked="OnSaveClicked">
+                                <Button.Shadow>
+                                    <Shadow Brush="#10B981" Radius="8" Opacity="0.2" Offset="0,2" />
+                                </Button.Shadow>
+                            </Button>
+                            
+                            <Button Grid.Column="1"
+                                    x:Name="ResetButton"
+                                    Text="Reset"
+                                    BackgroundColor="#F3F4F6"
+                                    TextColor="#6B7280"
+                                    FontSize="15"
+                                    FontFamily="OpenSansSemibold"
+                                    CornerRadius="8"
+                                    WidthRequest="100"
+                                    HeightRequest="48"
+                                    BorderWidth="1"
+                                    BorderColor="#D1D5DB"
+                                    Clicked="OnResetClicked" />
+                        </Grid>
+
+                        <!-- Status Message -->
+                        <Label x:Name="StatusLabel"
+                               Text=""
+                               FontSize="14"
+                               FontFamily="OpenSansRegular"
+                               HorizontalOptions="Center"
+                               IsVisible="False" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- RIGHT SIDE: Live Preview -->
+                <Border Grid.Column="1"
+                        BackgroundColor="White"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        Padding="32"
+                        StrokeShape="RoundRectangle 12">
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Radius="10" Opacity="0.05" Offset="0,2" />
+                    </Border.Shadow>
+                    
+                    <VerticalStackLayout Spacing="24">
+                        <!-- Section Title -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Login Screen Preview"
+                                   FontSize="20"
+                                   FontFamily="OpenSansBold"
+                                   TextColor="#1F2937" />
+                            <Label Text="See how your restaurant info will appear to users"
+                                   FontSize="14"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#6B7280" />
+                        </VerticalStackLayout>
+
+                        <!-- Mock Login Screen -->
+                        <Border BackgroundColor="#F9FAFB"
+                                Padding="40,48"
+                                StrokeShape="RoundRectangle 12"
+                                StrokeThickness="1"
+                                Stroke="#D1D5DB"
+                                Margin="0,8,0,0">
+                            <VerticalStackLayout Spacing="24" HorizontalOptions="Center">
+                                
+                                <!-- Logo Placeholder -->
+                                <Border BackgroundColor="#6366F1"
+                                        WidthRequest="88"
+                                        HeightRequest="88"
+                                        StrokeShape="RoundRectangle 20"
+                                        StrokeThickness="0"
+                                        HorizontalOptions="Center">
+                                    <Border.Shadow>
+                                        <Shadow Brush="#6366F1" Radius="16" Opacity="0.3" Offset="0,4" />
+                                    </Border.Shadow>
+                                    <Image Source="mian.png"
+                                           WidthRequest="50"
+                                           HeightRequest="50"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center" />
+                                </Border>
+                                
+                                <!-- Restaurant Name Preview -->
+                                <Label x:Name="PreviewRestaurantName"
+                                       Text="Restaurant POS"
+                                       FontSize="26"
+                                       FontFamily="OpenSansBold"
+                                       TextColor="#1F2937"
+                                       HorizontalOptions="Center" />
+                                
+                                <!-- Description Preview -->
+                                <Label x:Name="PreviewDescription"
+                                       Text="Premium Dining Experience"
+                                       FontSize="15"
+                                       FontFamily="OpenSansRegular"
+                                       TextColor="#6B7280"
+                                       HorizontalOptions="Center"
+                                       Margin="0,-8,0,0" />
+
+                                <!-- Mock PIN Entry -->
+                                <Border BackgroundColor="White"
+                                        Padding="24,20"
+                                        StrokeShape="RoundRectangle 10"
+                                        StrokeThickness="1"
+                                        Stroke="#D1D5DB"
+                                        WidthRequest="220"
+                                        Margin="0,16,0,0">
+                                    <HorizontalStackLayout Spacing="14" HorizontalOptions="Center">
+                                        <Ellipse Fill="#D1D5DB" WidthRequest="14" HeightRequest="14"/>
+                                        <Ellipse Fill="#D1D5DB" WidthRequest="14" HeightRequest="14"/>
+                                        <Ellipse Fill="#D1D5DB" WidthRequest="14" HeightRequest="14"/>
+                                        <Ellipse Fill="#D1D5DB" WidthRequest="14" HeightRequest="14"/>
+                                    </HorizontalStackLayout>
+                                </Border>
+
+                                <!-- Mock Buttons -->
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14" WidthRequest="220" Margin="0,16,0,0">
+                                    <Border Grid.Column="0" BackgroundColor="White" Padding="0" 
+                                            StrokeShape="RoundRectangle 8" Stroke="#D1D5DB" StrokeThickness="1"
+                                            HeightRequest="48">
+                                        <Label Text="1" HorizontalOptions="Center" VerticalOptions="Center"
+                                               TextColor="#374151" FontSize="18" FontFamily="OpenSansSemibold"/>
+                                    </Border>
+                                    <Border Grid.Column="1" BackgroundColor="White" Padding="0" 
+                                            StrokeShape="RoundRectangle 8" Stroke="#D1D5DB" StrokeThickness="1"
+                                            HeightRequest="48">
+                                        <Label Text="2" HorizontalOptions="Center" VerticalOptions="Center"
+                                               TextColor="#374151" FontSize="18" FontFamily="OpenSansSemibold"/>
+                                    </Border>
+                                    <Border Grid.Column="2" BackgroundColor="White" Padding="0" 
+                                            StrokeShape="RoundRectangle 8" Stroke="#D1D5DB" StrokeThickness="1"
+                                            HeightRequest="48">
+                                        <Label Text="3" HorizontalOptions="Center" VerticalOptions="Center"
+                                               TextColor="#374151" FontSize="18" FontFamily="OpenSansSemibold"/>
+                                    </Border>
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+                        
+                        <!-- Info Box -->
+                        <Border BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 8"
+                                Padding="16"
+                                Margin="0,8,0,0">
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Live Preview" 
+                                       FontSize="13"
+                                       FontFamily="OpenSansSemibold"
+                                       TextColor="#1E40AF" />
+                                <Label Text="Changes update instantly as you type. Click Save to apply permanently."
+                                       FontSize="13"
+                                       FontFamily="OpenSansRegular"
+                                       TextColor="#1E40AF"
+                                       LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </VerticalStackLayout>
+                </Border>
+
+            </Grid>
+
+            <!-- Loading Indicator -->
+            <ActivityIndicator x:Name="LoadingIndicator" 
+                               IsVisible="False" 
+                               IsRunning="False" 
+                               Color="{StaticResource Primary}"
+                               HeightRequest="40"
+                               WidthRequest="40"
+                               HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+    </Grid>
+</ContentPage>

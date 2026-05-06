@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                      xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.InventoryPage"
+             Title="Inventory"
+                      BackgroundColor="#F8F9FA">
+       <Grid RowDefinitions="Auto,*">
+              <views:TopBar x:Name="TopBar" Grid.Row="0" />
+
+              <VerticalStackLayout Grid.Row="1" Padding="24" Spacing="12" VerticalOptions="Center">
+                     <Label Text="Inventory"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="28"
+                               HorizontalOptions="Center"
+                               TextColor="#111827" />
+                     <Label Text="Inventory area is currently reserved for Admin access."
+                               FontFamily="OpenSansRegular"
+                               FontSize="15"
+                               HorizontalOptions="Center"
+                               TextColor="#4B5563" />
+              </VerticalStackLayout>
+       </Grid>
+</ContentPage>

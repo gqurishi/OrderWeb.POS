@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.OrderHistoryPage"
+             BackgroundColor="#F8F9FA">
+
+    <Grid RowDefinitions="Auto,*">
+        
+        <!-- Top Bar -->
+        <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+
+        <!-- Main Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20" Spacing="16">
+
+                <!-- Header Actions -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <!-- Date Card -->
+                    <Border Grid.Column="0"
+                            BackgroundColor="#EEF7F2"
+                            Stroke="#B7E4C7"
+                            StrokeThickness="1"
+                            Padding="16"
+                            MinimumHeightRequest="92">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="14"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCalendarClicked"/>
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                            <Label Text="FILTER BY DATE"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   TextColor="#16A34A"/>
+                            <Label x:Name="SelectedDateLabel"
+                                   Text="April 16, 2026"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#14532D"/>
+                            <Label Text="Tap to choose a different date"
+                                   FontSize="11"
+                                   TextColor="#15803D"/>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Search Card -->
+                    <Border Grid.Column="1"
+                            BackgroundColor="#F4ECFF"
+                            Stroke="#D8B4FE"
+                            StrokeThickness="1"
+                            Padding="16"
+                            MinimumHeightRequest="92">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="14"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSearchClicked"/>
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                            <Label Text="SEARCH ORDERS"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   TextColor="#7C3AED"/>
+                            <Label Text="Open search keyboard"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#4C1D95"/>
+                            <Label Text="Find by order number or phone"
+                                   FontSize="11"
+                                   TextColor="#6D28D9"/>
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <!-- Order Type Tabs -->
+                <Frame BackgroundColor="White" 
+                       Padding="0"
+                       CornerRadius="12"
+                       HasShadow="False"
+                       BorderColor="#E5E7EB">
+                    <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" Padding="16">
+                        
+                        <Border x:Name="AllTabBorder"
+                                BackgroundColor="#10B981"
+                                StrokeThickness="0"
+                                Padding="24,10"
+                                HeightRequest="44">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnAllTabClicked"/>
+                            </Border.GestureRecognizers>
+                            <Label x:Name="AllTabLabel"
+                                   Text="All" 
+                                   TextColor="White"
+                                   FontSize="15"
+                                   FontAttributes="Bold"
+                                   VerticalOptions="Center"
+                                   HorizontalOptions="Center"/>
+                        </Border>
+
+                        <Border x:Name="CollectionTabBorder"
+                                BackgroundColor="#F5F5F5"
+                                StrokeThickness="0"
+                                Padding="24,10"
+                                HeightRequest="44">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCollectionTabClicked"/>
+                            </Border.GestureRecognizers>
+                            <Label x:Name="CollectionTabLabel"
+                                   Text="Collection" 
+                                   TextColor="#6B7280"
+                                   FontSize="15"
+                                   FontAttributes="Bold"
+                                   VerticalOptions="Center"
+                                   HorizontalOptions="Center"/>
+                        </Border>
+
+                        <Border x:Name="DeliveryTabBorder"
+                                BackgroundColor="#F5F5F5"
+                                StrokeThickness="0"
+                                Padding="24,10"
+                                HeightRequest="44">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDeliveryTabClicked"/>
+                            </Border.GestureRecognizers>
+                            <Label x:Name="DeliveryTabLabel"
+                                   Text="Delivery" 
+                                   TextColor="#6B7280"
+                                   FontSize="15"
+                                   FontAttributes="Bold"
+                                   VerticalOptions="Center"
+                                   HorizontalOptions="Center"/>
+                        </Border>
+
+                        <Border x:Name="TableTabBorder"
+                                BackgroundColor="#F5F5F5"
+                                StrokeThickness="0"
+                                Padding="24,10"
+                                HeightRequest="44">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTableTabClicked"/>
+                            </Border.GestureRecognizers>
+                            <Label x:Name="TableTabLabel"
+                                   Text="Table" 
+                                   TextColor="#6B7280"
+                                   FontSize="15"
+                                   FontAttributes="Bold"
+                                   VerticalOptions="Center"
+                                   HorizontalOptions="Center"/>
+                        </Border>
+
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Completed Orders Section -->
+                <VerticalStackLayout x:Name="CompletedOrdersLayout" Spacing="12">
+                    <CollectionView x:Name="CompletedOrdersCollection"
+                                    SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame BackgroundColor="White" 
+                                       Padding="16"
+                                       Margin="0,0,0,8"
+                                       CornerRadius="12"
+                                       HasShadow="False"
+                                       BorderColor="#E5E7EB">
+                                    <VerticalStackLayout Spacing="12">
+                                        
+                                        <!-- Order Header -->
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <HorizontalStackLayout Spacing="8" Grid.Column="0">
+                                                <Label Text="{Binding OrderIcon}" 
+                                                       FontSize="20"
+                                                       VerticalOptions="Center"/>
+                                                <Label Text="{Binding OrderId}" 
+                                                       FontSize="18"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#1F2937"
+                                                       VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                            
+                                            <Label Text="{Binding TotalAmount, StringFormat='£{0:F2}'}" 
+                                                   FontSize="20"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#10B981"
+                                                   Grid.Column="1"
+                                                   VerticalOptions="Center"/>
+                                        </Grid>
+
+                                        <!-- Time and Date -->
+                                        <Label Text="{Binding OrderDateTime}" 
+                                               FontSize="14"
+                                               TextColor="#6B7280"/>
+
+                                        <!-- Action Buttons -->
+                                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                            <Border BackgroundColor="#3B82F6"
+                                                    StrokeThickness="0"
+                                                    Padding="12,8"
+                                                    Grid.Column="0">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="8"/>
+                                                </Border.StrokeShape>
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnViewOrderClicked"/>
+                                                </Border.GestureRecognizers>
+                                                <Label Text="👁 View" 
+                                                       TextColor="White"
+                                                       FontSize="13"
+                                                       FontAttributes="Bold"
+                                                       HorizontalOptions="Center"
+                                                       VerticalOptions="Center"/>
+                                            </Border>
+
+                                            <Border BackgroundColor="#8B5CF6"
+                                                    StrokeThickness="0"
+                                                    Padding="12,8"
+                                                    Grid.Column="1">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="8"/>
+                                                </Border.StrokeShape>
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnPrintOrderClicked"/>
+                                                </Border.GestureRecognizers>
+                                                <Label Text="Print" 
+                                                       TextColor="White"
+                                                       FontSize="13"
+                                                       FontAttributes="Bold"
+                                                       HorizontalOptions="Center"
+                                                       VerticalOptions="Center"/>
+                                            </Border>
+
+                                            <Border BackgroundColor="#F59E0B"
+                                                    StrokeThickness="0"
+                                                    Padding="12,8"
+                                                    Grid.Column="2">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="8"/>
+                                                </Border.StrokeShape>
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnRefundOrderClicked"/>
+                                                </Border.GestureRecognizers>
+                                                <Label Text="Refund" 
+                                                       TextColor="White"
+                                                       FontSize="13"
+                                                       FontAttributes="Bold"
+                                                       HorizontalOptions="Center"
+                                                       VerticalOptions="Center"/>
+                                            </Border>
+                                        </Grid>
+
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <!-- Empty State -->
+                    <Label x:Name="CompletedEmptyLabel"
+                           Text="No orders found for this date"
+                           FontSize="16"
+                           TextColor="#9CA3AF"
+                           HorizontalOptions="Center"
+                           Margin="0,40,0,0"
+                           IsVisible="False"/>
+                </VerticalStackLayout>
+
+                <!-- Voided Orders Section -->
+                <VerticalStackLayout x:Name="VoidedOrdersLayout" Spacing="12" IsVisible="False">
+                    
+                    <!-- Separator -->
+                    <Grid ColumnDefinitions="*,Auto,*" Margin="0,20,0,12">
+                        <BoxView BackgroundColor="#E5E7EB" HeightRequest="1" VerticalOptions="Center" Grid.Column="0"/>
+                        <Label Text="Voided Orders" 
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               TextColor="#6B7280"
+                               Padding="12,0"
+                               Grid.Column="1"/>
+                        <BoxView BackgroundColor="#E5E7EB" HeightRequest="1" VerticalOptions="Center" Grid.Column="2"/>
+                    </Grid>
+
+                    <CollectionView x:Name="VoidedOrdersCollection"
+                                    SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame BackgroundColor="#FEF2F2" 
+                                       Padding="16"
+                                       Margin="0,0,0,8"
+                                       CornerRadius="12"
+                                       HasShadow="False"
+                                       BorderColor="#FCA5A5">
+                                    <VerticalStackLayout Spacing="12">
+                                        
+                                        <!-- Order Header -->
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <HorizontalStackLayout Spacing="8" Grid.Column="0">
+                                                <Label Text="VOID" 
+                                                       FontSize="14"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#DC2626"
+                                                       VerticalOptions="Center"/>
+                                                <Label Text="{Binding OrderId}" 
+                                                       FontSize="18"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#DC2626"
+                                                       VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                            
+                                            <Label Text="{Binding TotalAmount, StringFormat='£{0:F2}'}" 
+                                                   FontSize="20"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#DC2626"
+                                                   Grid.Column="1"
+                                                   VerticalOptions="Center"/>
+                                        </Grid>
+
+                                        <!-- Time and Date -->
+                                        <Label Text="{Binding OrderDateTime}" 
+                                               FontSize="14"
+                                               TextColor="#991B1B"/>
+
+                                        <!-- Action Buttons (No Refund for voided) -->
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <Border BackgroundColor="#3B82F6"
+                                                    StrokeThickness="0"
+                                                    Padding="12,8"
+                                                    Grid.Column="0">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="8"/>
+                                                </Border.StrokeShape>
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnViewOrderClicked"/>
+                                                </Border.GestureRecognizers>
+                                                <Label Text="View" 
+                                                       TextColor="White"
+                                                       FontSize="13"
+                                                       FontAttributes="Bold"
+                                                       HorizontalOptions="Center"
+                                                       VerticalOptions="Center"/>
+                                            </Border>
+
+                                            <Border BackgroundColor="#8B5CF6"
+                                                    StrokeThickness="0"
+                                                    Padding="12,8"
+                                                    Grid.Column="1">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="8"/>
+                                                </Border.StrokeShape>
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnPrintOrderClicked"/>
+                                                </Border.GestureRecognizers>
+                                                <Label Text="Print" 
+                                                       TextColor="White"
+                                                       FontSize="13"
+                                                       FontAttributes="Bold"
+                                                       HorizontalOptions="Center"
+                                                       VerticalOptions="Center"/>
+                                            </Border>
+                                        </Grid>
+
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+
+                <!-- Cancel/Back Button -->
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="16" Margin="0,24,0,16">
+                    <Border BackgroundColor="White"
+                            StrokeThickness="2"
+                            Stroke="#D1D5DB"
+                            Padding="40,12"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCancelClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Cancel" 
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               TextColor="#6B7280"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center"/>
+                    </Border>
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

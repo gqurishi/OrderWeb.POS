@@ -57,6 +57,19 @@
                         </Grid>
                     </StackLayout>
 
+                    <!-- Food Menu -->
+                    <StackLayout x:Name="FoodMenuMenuItem" BackgroundColor="Transparent" Padding="16,14">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="foodmenu" />
+                        </StackLayout.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+                            <Image Grid.Column="0" Source="foodmenu.png" WidthRequest="32" HeightRequest="32" 
+                                   HorizontalOptions="Start" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="Food Menu" FontFamily="OpenSansBold" 
+                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
+                        </Grid>
+                    </StackLayout>
+
                     <!-- Live Order -->
                     <StackLayout x:Name="LiveOrderMenuItem" BackgroundColor="Transparent" Padding="16,14">
                         <StackLayout.GestureRecognizers>
@@ -200,19 +213,6 @@
                         </Grid>
                     </StackLayout>
 
-                    <!-- Food Menu -->
-                    <StackLayout x:Name="FoodMenuMenuItem" BackgroundColor="Transparent" Padding="16,14">
-                        <StackLayout.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="foodmenu" />
-                        </StackLayout.GestureRecognizers>
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
-                            <Image Grid.Column="0" Source="foodmenu.png" WidthRequest="32" HeightRequest="32" 
-                                   HorizontalOptions="Start" VerticalOptions="Center"/>
-                            <Label Grid.Column="1" Text="Food Menu" FontFamily="OpenSansBold" 
-                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
-                        </Grid>
-                    </StackLayout>
-
                     <!-- Printers -->
                     <StackLayout x:Name="PrintersMenuItem" BackgroundColor="Transparent" Padding="16,14">
                         <StackLayout.GestureRecognizers>
@@ -244,7 +244,8 @@
 
             <!-- FOOTER - Update All Button -->
             <VerticalStackLayout Grid.Row="2" Padding="14,12,14,14" BackgroundColor="White">
-                <Button Text="Update All"
+                <Button x:Name="SyncDatabaseButton"
+                    Text="Update All"
                         FontFamily="OpenSansSemibold"
                         FontSize="15"
                         TextColor="White"
@@ -281,6 +282,13 @@
             Route="userdashboard"
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
+
+    <!-- Manager Dashboard -->
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ManagerDashboardPage}"
+        Route="managerdashboard"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
 
     <FlyoutItem Title="Restaurant" FlyoutIcon="🏪">
         <ShellContent
@@ -346,6 +354,24 @@
     <ShellContent
         ContentTemplate="{DataTemplate pages:OrderHistoryPage}"
         Route="orderhistory"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ReservationPage}"
+        Route="reservation"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ReportPage}"
+        Route="report"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:InventoryPage}"
+        Route="inventory"
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 

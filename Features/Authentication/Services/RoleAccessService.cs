@@ -1,0 +1,134 @@
+using POS_in_NET.Models;
+
+namespace POS_in_NET.Services;
+
+public class RoleAccessService
+{
+    private static readonly string[] KnownRoutesByPriority =
+    {
+        "managerdashboard",
+        "userdashboard",
+        "visuallayout",
+        "reportdetails",
+        "orderhistory",
+        "printersetup",
+        "weborders",
+        "giftcards",
+        "reservation",
+        "inventory",
+        "restaurant",
+        "collection",
+        "delivery",
+        "liveorder",
+        "foodmenu",
+        "settings",
+        "loyalty",
+        "report",
+        "dashboard",
+        "table",
+        "floor",
+        "login"
+    };
+
+    private static readonly IReadOnlyDictionary<UserRole, HashSet<string>> AllowedRoutesByRole =
+        new Dictionary<UserRole, HashSet<string>>
+        {
+            [UserRole.User] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login", "userdashboard", "restaurant", "collection", "delivery", "liveorder",
+                "visuallayout", "floor", "table"
+            },
+            [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login", "managerdashboard", "restaurant", "collection", "delivery", "liveorder",
+                "visuallayout", "floor", "table", "giftcards", "loyalty", "reservation",
+                "weborders", "orderhistory"
+            },
+            [UserRole.Admin] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login", "dashboard", "managerdashboard", "userdashboard", "restaurant",
+                "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
+                "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
+                "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings"
+            }
+        };
+
+    public string ResolveDashboardRoute(UserRole? role)
+    {
+        return role switch
+        {
+            UserRole.User => "userdashboard",
+            UserRole.Manager => "managerdashboard",
+            UserRole.Admin => "dashboard",
+            _ => "login"
+        };
+    }
+
+    public bool CanAccessRoute(UserRole? role, string route)
+    {
+        var normalized = NormalizeRoute(route);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (normalized.Equals("login", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (role == null)
+        {
+            return false;
+        }
+
+        return AllowedRoutesByRole.TryGetValue(role.Value, out var allowed)
+               && allowed.Contains(normalized);
+    }
+
+    public bool TryResolveRoute(string location, out string route)
+    {
+        route = string.Empty;
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return false;
+        }
+
+        foreach (var knownRoute in KnownRoutesByPriority)
+        {
+            if (location.Contains(knownRoute, StringComparison.OrdinalIgnoreCase))
+            {
+                route = knownRoute;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public bool IsAdmin(UserRole? role) => role == UserRole.Admin;
+    public bool IsManagerOrAdmin(UserRole? role) => role == UserRole.Manager || role == UserRole.Admin;
+
+    private static string NormalizeRoute(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return string.Empty;
+        }
+
+        var normalized = route.Trim().Trim('/');
+        var queryIndex = normalized.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            normalized = normalized[..queryIndex];
+        }
+
+        var slashIndex = normalized.LastIndexOf('/');
+        if (slashIndex >= 0)
+        {
+            normalized = normalized[(slashIndex + 1)..];
+        }
+
+        return normalized;
+    }
+}

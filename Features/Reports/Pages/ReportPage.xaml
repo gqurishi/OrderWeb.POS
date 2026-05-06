@@ -1,0 +1,825 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                      xmlns:views="clr-namespace:POS_in_NET.Views"
+                      xmlns:dataGrid="clr-namespace:Syncfusion.Maui.DataGrid;assembly=Syncfusion.Maui.DataGrid"
+                      xmlns:chart="clr-namespace:Syncfusion.Maui.Charts;assembly=Syncfusion.Maui.Charts"
+                      x:Class="POS_in_NET.Pages.ReportPage"
+                      Title="Reports"
+                                                                             BackgroundColor="#F8F9FA">
+
+       <ContentPage.Resources>
+              <ResourceDictionary>
+                     <Style x:Key="FilterChipButtonStyle" TargetType="Button">
+                            <Setter Property="BackgroundColor" Value="#E2E8F0" />
+                            <Setter Property="TextColor" Value="#0F172A" />
+                            <Setter Property="CornerRadius" Value="12" />
+                            <Setter Property="Padding" Value="16,10" />
+                            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+                            <Setter Property="FontSize" Value="12" />
+                            <Setter Property="BorderColor" Value="#D8E1EC" />
+                            <Setter Property="BorderWidth" Value="1" />
+                     </Style>
+
+                     <Style x:Key="PrimaryActionButtonStyle" TargetType="Button">
+                            <Setter Property="BackgroundColor" Value="#0284C7" />
+                            <Setter Property="TextColor" Value="White" />
+                            <Setter Property="CornerRadius" Value="12" />
+                            <Setter Property="Padding" Value="16,10" />
+                            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+                            <Setter Property="FontSize" Value="12" />
+                     </Style>
+
+                     <Style x:Key="ExportGhostButtonStyle" TargetType="Button" BasedOn="{StaticResource FilterChipButtonStyle}">
+                            <Setter Property="Padding" Value="12,9" />
+                     </Style>
+              </ResourceDictionary>
+       </ContentPage.Resources>
+
+       <Grid>
+              <Grid RowDefinitions="Auto,*"
+                    Padding="0"
+                    RowSpacing="0">
+
+              <views:TopBar x:Name="TopBar" Grid.Row="0" />
+
+              <ScrollView Grid.Row="1"
+                          Orientation="Vertical"
+                          VerticalScrollBarVisibility="Always">
+                     <VerticalStackLayout Spacing="0"
+                                          Padding="0,0,0,20">
+
+              <Border Grid.Row="1"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <VerticalStackLayout Spacing="10">
+                            <VerticalStackLayout>
+                                   <Label Text="Date Range"
+                                          FontFamily="OpenSansSemibold"
+                                          FontSize="13"
+                                          TextColor="#0F172A" />
+                                   <Label Text="{Binding LastUpdatedText}"
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#64748B" />
+                            </VerticalStackLayout>
+
+                            <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="8">
+                                   <Button x:Name="TodayPresetButton" Text="Today" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="SevenDaysPresetButton" Grid.Column="1" Text="7 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="ThirtyDaysPresetButton" Grid.Column="2" Text="30 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="CustomPresetButton" Grid.Column="3" Text="Custom" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="TopSellItemButton" Grid.Column="4" Text="Top Sell Item" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12" IsVisible="{Binding IsCustomRangeVisible, FallbackValue=False}" RowSpacing="8">
+                                   <VerticalStackLayout>
+                                          <Label Text="Start Date" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#0F172A" Margin="0,0,0,6" />
+                                          <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                                 <Button x:Name="StartDateButton"
+                                                         Text="{Binding StartDateDisplay}"
+                                                         Clicked="OnStartDateClicked"
+                                                         BackgroundColor="Transparent"
+                                                         TextColor="#0F172A"
+                                                         FontFamily="OpenSansRegular"
+                                                         FontSize="13"
+                                                         CornerRadius="8"
+                                                         Padding="12,8"
+                                                         HorizontalOptions="FillAndExpand"
+                                                         VerticalOptions="Center"
+                                                         Margin="0" />
+                                          </Border>
+                                   </VerticalStackLayout>
+                                   <VerticalStackLayout Grid.Column="1">
+                                          <Label Text="End Date" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#0F172A" Margin="0,0,0,6" />
+                                          <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                                 <Button x:Name="EndDateButton"
+                                                         Text="{Binding EndDateDisplay}"
+                                                         Clicked="OnEndDateClicked"
+                                                         BackgroundColor="Transparent"
+                                                         TextColor="#0F172A"
+                                                         FontFamily="OpenSansRegular"
+                                                         FontSize="13"
+                                                         CornerRadius="8"
+                                                         Padding="12,8"
+                                                         HorizontalOptions="FillAndExpand"
+                                                         VerticalOptions="Center"
+                                                         Margin="0" />
+                                          </Border>
+                                   </VerticalStackLayout>
+                                   <VerticalStackLayout Grid.Column="2">
+                                          <Label Text=" " FontFamily="OpenSansSemibold" FontSize="11" TextColor="#0F172A" Margin="0,0,0,6" />
+                                          <Button Text="Submit"
+                                                  Clicked="OnSubmitCustomRangeClicked"
+                                                  IsEnabled="{Binding CanSubmitCustomRange}"
+                                                  BackgroundColor="#0284C7"
+                                                  TextColor="White"
+                                                  CornerRadius="8"
+                                                  Padding="18,10"
+                                                  HeightRequest="40"
+                                                  FontFamily="OpenSansSemibold"
+                                                  VerticalOptions="Center" />
+                                   </VerticalStackLayout>
+                            </Grid>
+
+                            <Label Text="Choose a range to refresh KPI and order results"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="11"
+                                   TextColor="#94A3B8" />
+                     </VerticalStackLayout>
+              </Border>
+
+              <Border Grid.Row="2"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <VerticalStackLayout Spacing="14">
+                            <VerticalStackLayout Spacing="4">
+                                   <Label Text="Operational Analytics"
+                                          FontFamily="AlegreyaBold"
+                                          FontSize="28"
+                                          TextColor="#0F172A" />
+                                   <Label Text="Send latency, payment completion, void auditing, and draft abandonment from the event log."
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#64748B" />
+                            </VerticalStackLayout>
+
+                            <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="10">
+                                   <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Orders" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding SummaryOrdersText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="{Binding SummaryOrdersColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Gross" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding SummaryGrossText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="{Binding SummaryGrossColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Net" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding SummaryNetText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="{Binding SummaryNetColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="3" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="VAT" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding SummaryVatText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="{Binding SummaryVatColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="4" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Avg" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding SummaryAverageText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="{Binding SummaryAverageColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                                   <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Send latency" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding OperationalSendLatencyText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalSendLatencyColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Payment completion" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding OperationalPaymentCompletionText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalPaymentCompletionColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Draft abandonment" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding OperationalDraftAbandonmentText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalDraftAbandonmentColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="3" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Void audit" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding OperationalVoidAuditText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalVoidAuditColor}" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+
+                            <Border Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    BackgroundColor="#F8FAFC"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="12">
+                                   <VerticalStackLayout Spacing="10">
+                                          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                                 <Label Text="Sales trend"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="14"
+                                                        TextColor="#0F172A" />
+                                                 <Label Grid.Column="1"
+                                                        Text="{Binding TrendInsightText}"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="12"
+                                                        TextColor="{Binding TrendInsightColor}"
+                                                        HorizontalTextAlignment="End"
+                                                        LineBreakMode="TailTruncation" />
+                                          </Grid>
+
+                                          <chart:SfCartesianChart HeightRequest="210">
+                                                 <chart:SfCartesianChart.XAxes>
+                                                        <chart:DateTimeAxis IntervalType="Days"
+                                                                            EdgeLabelsDrawingMode="Shift" />
+                                                 </chart:SfCartesianChart.XAxes>
+                                                 <chart:SfCartesianChart.YAxes>
+                                                        <chart:NumericalAxis />
+                                                 </chart:SfCartesianChart.YAxes>
+                                                 <chart:LineSeries ItemsSource="{Binding DailyTrend}"
+                                                                   XBindingPath="BusinessDate"
+                                                                   YBindingPath="GrossSales"
+                                                                   ShowDataLabels="False"
+                                                                   EnableTooltip="True"
+                                                                   StrokeWidth="3" />
+                                          </chart:SfCartesianChart>
+                                   </VerticalStackLayout>
+                            </Border>
+
+                            <Grid ColumnDefinitions="*,1.2*" ColumnSpacing="12">
+                                   <VerticalStackLayout Spacing="8">
+                                          <Label Text="Recent voids" FontFamily="OpenSansSemibold" FontSize="14" TextColor="#0F172A" />
+                                          <CollectionView ItemsSource="{Binding VoidAudits}" SelectionMode="None">
+                                                 <CollectionView.EmptyView>
+                                                        <Label Text="No void audits in the selected date range."
+                                                               FontFamily="OpenSansRegular"
+                                                               FontSize="12"
+                                                               TextColor="#64748B" />
+                                                 </CollectionView.EmptyView>
+                                                 <CollectionView.ItemTemplate>
+                                                        <DataTemplate>
+                                                               <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 12" Padding="12" Margin="0,0,0,8">
+                                                                      <VerticalStackLayout Spacing="4">
+                                                                             <Grid ColumnDefinitions="*,Auto">
+                                                                                    <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" />
+                                                                                    <Label Grid.Column="1" Text="{Binding EventAt, StringFormat='{0:dd/MM HH:mm}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                                                                             </Grid>
+                                                                             <Label Text="{Binding Reason}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="WordWrap" />
+                                                                             <Label Text="{Binding ActorName, StringFormat='Actor: {0}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                                                                      </VerticalStackLayout>
+                                                               </Border>
+                                                        </DataTemplate>
+                                                 </CollectionView.ItemTemplate>
+                                          </CollectionView>
+                                   </VerticalStackLayout>
+
+                                   <Border Grid.Column="1" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="8">
+                                                 <Label Text="Audit focus" FontFamily="OpenSansSemibold" FontSize="14" TextColor="#0F172A" />
+                                                 <Label Text="Event log entries drive send latency, payment timing, void reasons, and stale draft cleanup. Summary fields stay on orders for fast dashboards."
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="12"
+                                                        TextColor="#475569"
+                                                        LineBreakMode="WordWrap" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+                     </VerticalStackLayout>
+              </Border>
+
+              <Border Grid.Row="3"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <VerticalStackLayout Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                   <VerticalStackLayout Spacing="4">
+                                          <Label Text="Historical Reports"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="28"
+                                                 TextColor="#0F172A" />
+                                          <Label Text="Quick access to older snapshots and a selectable report browser for period-over-period comparison."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+
+                                   <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                          <Button Text="6 Months Ago"
+                                                  Clicked="OnLoadSixMonthsAgoClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button Text="1 Year Ago"
+                                                  Clicked="OnLoadOneYearAgoClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button Text="Load Browser"
+                                                  Clicked="OnLoadHistoricalReportsClicked"
+                                                  Style="{StaticResource PrimaryActionButtonStyle}" />
+                                   </HorizontalStackLayout>
+                            </Grid>
+
+                            <Border Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    BackgroundColor="#F8FAFC"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="12">
+                                   <VerticalStackLayout Spacing="8">
+                                          <Label Text="Select a snapshot to open it with prior-period and year-ago comparisons."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#475569" />
+                                          <CollectionView ItemsSource="{Binding HistoricalReports}"
+                                                          SelectionMode="Single"
+                                                          SelectionChanged="OnHistoricalReportSelectionChanged">
+                                                 <CollectionView.EmptyView>
+                                                        <Label Text="Loading snapshots..."
+                                                               FontFamily="OpenSansRegular"
+                                                               FontSize="12"
+                                                               TextColor="#64748B" />
+                                                 </CollectionView.EmptyView>
+                                                 <CollectionView.ItemTemplate>
+                                                        <DataTemplate>
+                                                               <Border Stroke="#CBD5E1"
+                                                                       StrokeThickness="1"
+                                                                       BackgroundColor="#FFFFFF"
+                                                                       StrokeShape="RoundRectangle 12"
+                                                                       Padding="12"
+                                                                       Margin="0,0,0,8">
+                                                                      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                                                             <VerticalStackLayout Spacing="2">
+                                                                                    <Label Text="{Binding DisplayName}"
+                                                                                           FontFamily="OpenSansSemibold"
+                                                                                           FontSize="13"
+                                                                                           TextColor="#0F172A" />
+                                                                                    <Label Text="{Binding GeneratedAt, StringFormat='Generated {0:dd MMM yyyy HH:mm}'}"
+                                                                                           FontFamily="OpenSansRegular"
+                                                                                           FontSize="11"
+                                                                                           TextColor="#64748B" />
+                                                                             </VerticalStackLayout>
+                                                                             <VerticalStackLayout Grid.Column="1" Spacing="2" HorizontalOptions="End">
+                                                                                    <Label Text="{Binding TotalRevenue, StringFormat='£{0:F2}'}"
+                                                                                           FontFamily="OpenSansSemibold"
+                                                                                           FontSize="13"
+                                                                                           TextColor="#0F172A"
+                                                                                           HorizontalTextAlignment="End" />
+                                                                                    <Label Text="Tap to compare"
+                                                                                           FontFamily="OpenSansRegular"
+                                                                                           FontSize="11"
+                                                                                           TextColor="#64748B"
+                                                                                           HorizontalTextAlignment="End" />
+                                                                             </VerticalStackLayout>
+                                                                      </Grid>
+                                                               </Border>
+                                                        </DataTemplate>
+                                                 </CollectionView.ItemTemplate>
+                                          </CollectionView>
+                                   </VerticalStackLayout>
+                            </Border>
+
+                            <Border Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    BackgroundColor="#EEF6FF"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="14"
+                                    IsVisible="{Binding IsComparisonPanelVisible}">
+                                   <VerticalStackLayout Spacing="10">
+                                          <Label Text="Historical Comparison"
+                                                 FontFamily="OpenSansSemibold"
+                                                 FontSize="14"
+                                                 TextColor="#0F172A" />
+                                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                                 <Border Stroke="#BFDBFE"
+                                                         StrokeThickness="1"
+                                                         BackgroundColor="#FFFFFF"
+                                                         StrokeShape="RoundRectangle 12"
+                                                         Padding="12">
+                                                        <VerticalStackLayout Spacing="4">
+                                                               <Label Text="Prior Period"
+                                                                      FontFamily="OpenSansSemibold"
+                                                                      FontSize="11"
+                                                                      TextColor="#1E3A8A" />
+                                                               <Label Text="{Binding ComparisonPriorText}"
+                                                                      FontFamily="OpenSansRegular"
+                                                                      FontSize="12"
+                                                                      TextColor="#0F172A"
+                                                                      LineBreakMode="WordWrap" />
+                                                        </VerticalStackLayout>
+                                                 </Border>
+
+                                                 <Border Grid.Column="1"
+                                                         Stroke="#BFDBFE"
+                                                         StrokeThickness="1"
+                                                         BackgroundColor="#FFFFFF"
+                                                         StrokeShape="RoundRectangle 12"
+                                                         Padding="12">
+                                                        <VerticalStackLayout Spacing="4">
+                                                               <Label Text="Year Ago"
+                                                                      FontFamily="OpenSansSemibold"
+                                                                      FontSize="11"
+                                                                      TextColor="#1E3A8A" />
+                                                               <Label Text="{Binding ComparisonYearAgoText}"
+                                                                      FontFamily="OpenSansRegular"
+                                                                      FontSize="12"
+                                                                      TextColor="#0F172A"
+                                                                      LineBreakMode="WordWrap" />
+                                                        </VerticalStackLayout>
+                                                 </Border>
+                                          </Grid>
+                                   </VerticalStackLayout>
+                            </Border>
+                     </VerticalStackLayout>
+              </Border>
+
+              <Border Grid.Row="4"
+                            IsVisible="{Binding IsOrdersReportVisible}"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
+                            <Grid ColumnDefinitions="*,420" ColumnSpacing="16">
+                                   <VerticalStackLayout Spacing="6">
+                                          <Label Text="Detailed All Orders Report"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="40"
+                                                 TextColor="#0F172A" />
+                                          <Label Text="Complete order listing with corrected VAT breakdown for HMRC compliance. Menu prices shown as net amounts (VAT exclusive) with VAT added separately."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+
+                                   <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                          <Border Stroke="#CBD5E1"
+                                                 StrokeThickness="1"
+                                                 StrokeShape="RoundRectangle 14"
+                                                 Padding="12,8"
+                                                 BackgroundColor="#FFFFFF">
+                                                 <Entry Placeholder="Search orders..."
+                                                        Text="{Binding SearchText}"
+                                                        Completed="OnSearchCompleted"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="13"
+                                                        TextColor="#0F172A"
+                                                        PlaceholderColor="#94A3B8"
+                                                        BackgroundColor="Transparent" />
+                                          </Border>
+                                          <Button Grid.Column="1"
+                                                 Text="Search"
+                                                 Clicked="OnSearchClicked"
+                                                 Style="{StaticResource PrimaryActionButtonStyle}" />
+                                   </Grid>
+                            </Grid>
+
+                            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto" ColumnSpacing="10">
+                                   <Button Text="CSV"
+                                          Clicked="OnExportCsvClicked"
+                                          Style="{StaticResource ExportGhostButtonStyle}" />
+
+                                   <Button Grid.Column="1"
+                                          Text="PDF"
+                                          Clicked="OnExportPdfClicked"
+                                          Style="{StaticResource ExportGhostButtonStyle}" />
+                            </Grid>
+
+                            <Grid Grid.Row="2"
+                                  ColumnDefinitions="1.2*,1.2*,0.9*,1.1*,1.0*,1.0*,1.0*"
+                                  ColumnSpacing="10"
+                                  Padding="8,0,8,8">
+                                   <Label Text="Order Number" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="1" Text="Date &amp; Time" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="2" Text="Source" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="3" Text="Customer" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="4" Text="Net Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="5" Text="VAT Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="6" Text="Gross Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                            </Grid>
+
+                            <CollectionView x:Name="OrdersCollection"
+                                            Grid.Row="3"
+                                            ItemsSource="{Binding Orders}"
+                                            SelectionMode="Single"
+                                            SelectionChanged="OnOrderSelectionChanged">
+                                   <CollectionView.EmptyView>
+                                          <VerticalStackLayout Padding="24" HorizontalOptions="Center" VerticalOptions="Center">
+                                                 <Label Text="No orders found for the selected period."
+                                                        TextColor="#64748B"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="14" />
+                                          </VerticalStackLayout>
+                                   </CollectionView.EmptyView>
+                                   <CollectionView.ItemTemplate>
+                                          <DataTemplate>
+                                                 <Border Stroke="#E2E8F0"
+                                                        StrokeThickness="1"
+                                                        BackgroundColor="#FFFFFF"
+                                                        StrokeShape="RoundRectangle 10"
+                                                        Padding="8,10"
+                                                        Margin="0,0,0,8">
+                                                        <Grid ColumnDefinitions="1.2*,1.2*,0.9*,1.1*,1.0*,1.0*,1.0*" ColumnSpacing="10">
+                                                               <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0F172A" />
+                                                               <Label Grid.Column="1" Text="{Binding CreatedAtDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
+                                                               <Label Grid.Column="2" Text="{Binding SourceChannel}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
+                                                               <Label Grid.Column="3" Text="{Binding CustomerName}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
+                                                               <Label Grid.Column="4" Text="{Binding NetSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="5" Text="{Binding VatAmount, StringFormat='£{0:F2}'}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="6" Text="{Binding GrossSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                        </Grid>
+                                                 </Border>
+                                          </DataTemplate>
+                                   </CollectionView.ItemTemplate>
+                            </CollectionView>
+                     </Grid>
+              </Border>
+
+              <Border Grid.Row="4"
+                            IsVisible="{Binding IsTopSellReportVisible}"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="14">
+                            <Grid ColumnDefinitions="*,420" ColumnSpacing="16">
+                                   <VerticalStackLayout Spacing="6">
+                                          <Label Text="Top Sell Item Report"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="40"
+                                                 TextColor="#0F172A" />
+                                          <Label Text="Top selling category and item performance for the selected trading period. Use the 30, 60, or 90 day window to review trends."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+
+                                   <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                          <Border Stroke="#CBD5E1"
+                                                 StrokeThickness="1"
+                                                 StrokeShape="RoundRectangle 14"
+                                                 Padding="12,8"
+                                                 BackgroundColor="#FFFFFF">
+                                                 <Entry Placeholder="Search item or category..."
+                                                        Text="{Binding SearchText}"
+                                                        Completed="OnSearchCompleted"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="13"
+                                                        TextColor="#0F172A"
+                                                        PlaceholderColor="#94A3B8"
+                                                        BackgroundColor="Transparent" />
+                                          </Border>
+                                          <Button Grid.Column="1"
+                                                 Text="Search"
+                                                 Clicked="OnSearchClicked"
+                                                 Style="{StaticResource PrimaryActionButtonStyle}" />
+                                   </Grid>
+                            </Grid>
+
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="14" VerticalOptions="Center">
+                                   <Grid ColumnDefinitions="Auto,Auto,24,Auto,Auto,Auto,24,Auto"
+                                         ColumnSpacing="8"
+                                         VerticalOptions="Center"
+                                         HorizontalOptions="Start">
+                                          <Button x:Name="TopSellFoodButton"
+                                                 Text="Food"
+                                                 Clicked="OnTopSellSectionClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="TopSellDrinkButton"
+                                                 Grid.Column="1"
+                                                 Text="Drink"
+                                                 Clicked="OnTopSellSectionClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+
+                                          <BoxView Grid.Column="2"
+                                                  WidthRequest="1"
+                                                  HeightRequest="28"
+                                                  HorizontalOptions="Center"
+                                                  VerticalOptions="Center"
+                                                  Color="#D1D9E6" />
+
+                                          <Button x:Name="TopSellThirtyDaysButton"
+                                                 Grid.Column="3"
+                                                 Text="30 Days"
+                                                 Clicked="OnTopSellRangeClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="TopSellSixtyDaysButton"
+                                                 Grid.Column="4"
+                                                 Text="60 Days"
+                                                 Clicked="OnTopSellRangeClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="TopSellNinetyDaysButton"
+                                                 Grid.Column="5"
+                                                 Text="90 Days"
+                                                 Clicked="OnTopSellRangeClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+
+                                          <BoxView Grid.Column="6"
+                                                  WidthRequest="1"
+                                                  HeightRequest="28"
+                                                  HorizontalOptions="Center"
+                                                  VerticalOptions="Center"
+                                                  Color="#D1D9E6" />
+
+                                          <Button x:Name="TopSellCustomRangeButton"
+                                                 Grid.Column="7"
+                                                 Text="Custom"
+                                                 Clicked="OnTopSellRangeClicked"
+                                                 Style="{StaticResource FilterChipButtonStyle}" />
+                                   </Grid>
+
+                                   <HorizontalStackLayout Grid.Column="1" Spacing="8" HorizontalOptions="End" VerticalOptions="Center">
+                                          <Button Text="CSV"
+                                                 Clicked="OnExportCsvClicked"
+                                                 Style="{StaticResource ExportGhostButtonStyle}" />
+                                          <Button Text="PDF"
+                                                 Clicked="OnExportPdfClicked"
+                                                 Style="{StaticResource ExportGhostButtonStyle}" />
+                                   </HorizontalStackLayout>
+                            </Grid>
+
+                            <Grid Grid.Row="2"
+                                  Margin="0,12,0,0"
+                                  IsVisible="{Binding IsTopSellCustomRangeVisible}"
+                                  ColumnDefinitions="*,*,Auto"
+                                  ColumnSpacing="10">
+                                   <Button Text="{Binding StartDateDisplay}"
+                                          Clicked="OnStartDateClicked"
+                                          BackgroundColor="#FFFFFF"
+                                          TextColor="#0F172A"
+                                          BorderColor="#CBD5E1"
+                                          BorderWidth="1"
+                                          CornerRadius="10"
+                                          Padding="14,10"
+                                          FontFamily="OpenSansSemibold" />
+                                   <Button Grid.Column="1"
+                                          Text="{Binding EndDateDisplay}"
+                                          Clicked="OnEndDateClicked"
+                                          BackgroundColor="#FFFFFF"
+                                          TextColor="#0F172A"
+                                          BorderColor="#CBD5E1"
+                                          BorderWidth="1"
+                                          CornerRadius="10"
+                                          Padding="14,10"
+                                          FontFamily="OpenSansSemibold" />
+                                   <Button Grid.Column="2"
+                                          Text="Submit"
+                                          Clicked="OnTopSellCustomSubmitClicked"
+                                          IsEnabled="{Binding CanSubmitTopSellCustomRange}"
+                                          Style="{StaticResource PrimaryActionButtonStyle}" />
+                            </Grid>
+
+                                <Border Grid.Row="3"
+                                       BackgroundColor="#F8FAFC"
+                                       Stroke="#E2E8F0"
+                                       StrokeThickness="1"
+                                       StrokeShape="RoundRectangle 10"
+                                       Padding="12,8">
+                                        <Label Text="{Binding TopSellInsightText}"
+                                                 FontFamily="OpenSansSemibold"
+                                                 FontSize="12"
+                                                 TextColor="#334155" />
+                                </Border>
+
+                            <Grid Grid.Row="4">
+                                   <dataGrid:SfDataGrid x:Name="TopSellDataGrid"
+                                                        ItemsSource="{Binding TopItems}"
+                                                        SortingMode="Multiple"
+                                                        AllowTriStateSorting="True"
+                                                        FilterRowPosition="None"
+                                                        SelectionMode="None"
+                                                        NavigationMode="Cell"
+                                                        AutoGenerateColumnsMode="None"
+                                                        ColumnWidthMode="Fill"
+                                                        HeaderRowHeight="46"
+                                                        RowHeight="42"
+                                                        GridLinesVisibility="Horizontal"
+                                                        HeaderGridLinesVisibility="Both"
+                                                        VerticalOptions="FillAndExpand">
+                                          <dataGrid:SfDataGrid.Columns>
+                                                 <dataGrid:DataGridTextColumn MappingName="CategoryName" HeaderText="Category" MinimumWidth="160" />
+                                                 <dataGrid:DataGridTextColumn MappingName="ItemName" HeaderText="Item" MinimumWidth="220" />
+                                                 <dataGrid:DataGridNumericColumn MappingName="TotalQuantity" HeaderText="Qty" MinimumWidth="80" />
+                                                 <dataGrid:DataGridTextColumn MappingName="GrossDisplay" HeaderText="Gross" MinimumWidth="110" />
+                                                 <dataGrid:DataGridTextColumn MappingName="NetDisplay" HeaderText="Net" MinimumWidth="110" />
+                                                 <dataGrid:DataGridTextColumn MappingName="VatDisplay" HeaderText="VAT" MinimumWidth="110" />
+                                          </dataGrid:SfDataGrid.Columns>
+                                   </dataGrid:SfDataGrid>
+
+                                   <Border IsVisible="{Binding IsTopItemsEmpty}"
+                                          BackgroundColor="#CCFFFFFF"
+                                          Stroke="#E2E8F0"
+                                          StrokeThickness="0"
+                                          StrokeShape="RoundRectangle 10"
+                                          HorizontalOptions="Fill"
+                                          VerticalOptions="Fill">
+                                          <Label Text="No top item data found for the selected period."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="14"
+                                                 TextColor="#64748B"
+                                                 HorizontalTextAlignment="Center"
+                                                 VerticalTextAlignment="Center" />
+                                   </Border>
+                            </Grid>
+                     </Grid>
+              </Border>
+
+                     </VerticalStackLayout>
+              </ScrollView>
+
+              </Grid>
+
+              <Grid IsVisible="{Binding IsCalendarPopupVisible}"
+                    BackgroundColor="#7F0F172A"
+                    ZIndex="100">
+                     <Border HorizontalOptions="Center"
+                            VerticalOptions="Center"
+                            WidthRequest="520"
+                            MaximumWidthRequest="620"
+                            Stroke="#D1D5DB"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 18"
+                            Padding="0">
+                            <VerticalStackLayout Spacing="0">
+                                   <Border BackgroundColor="#10B981"
+                                          StrokeThickness="0"
+                                          StrokeShape="RoundRectangle 18,18,0,0"
+                                          Padding="24,18">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="{Binding CalendarPopupTitle}"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="38"
+                                                        TextColor="White" />
+                                                 <Label Text="Choose a trading date"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="14"
+                                                        TextColor="#D1FAE5" />
+                                          </VerticalStackLayout>
+                                   </Border>
+
+                                   <VerticalStackLayout Padding="20" Spacing="14">
+                                          <Grid ColumnDefinitions="Auto,*,Auto"
+                                                VerticalOptions="Center">
+                                                 <Button Text="&#x2039;"
+                                                         Clicked="OnPrevCalendarMonthClicked"
+                                                         BackgroundColor="Transparent"
+                                                         TextColor="#0F172A"
+                                                         FontSize="24"
+                                                         FontFamily="OpenSansSemibold"
+                                                         Padding="6,0" />
+                                                 <Label Grid.Column="1"
+                                                        Text="{Binding CalendarMonthLabel}"
+                                                        HorizontalTextAlignment="Center"
+                                                        VerticalTextAlignment="Center"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="22"
+                                                        TextColor="#0F172A" />
+                                                 <Button Grid.Column="2"
+                                                         Text="&#x203A;"
+                                                         Clicked="OnNextCalendarMonthClicked"
+                                                         BackgroundColor="Transparent"
+                                                         TextColor="#0F172A"
+                                                         FontSize="24"
+                                                         FontFamily="OpenSansSemibold"
+                                                         Padding="6,0" />
+                                          </Grid>
+
+                                          <ContentView x:Name="CalendarDaysHost" />
+
+                                          <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,8,0,0">
+                                                 <Button Text="Cancel"
+                                                         Clicked="OnCancelCalendarPopupClicked"
+                                                         BackgroundColor="#FFFFFF"
+                                                         TextColor="#475569"
+                                                         BorderColor="#CBD5E1"
+                                                         BorderWidth="1"
+                                                         CornerRadius="10"
+                                                         HeightRequest="46"
+                                                         FontFamily="OpenSansSemibold" />
+                                                 <Button Grid.Column="1"
+                                                         Text="Apply"
+                                                         Clicked="OnApplyCalendarPopupClicked"
+                                                         BackgroundColor="#10B981"
+                                                         TextColor="White"
+                                                         CornerRadius="10"
+                                                         HeightRequest="46"
+                                                         FontFamily="OpenSansSemibold" />
+                                          </Grid>
+                                   </VerticalStackLayout>
+                            </VerticalStackLayout>
+                     </Border>
+              </Grid>
+
+       </Grid>
+</ContentPage>

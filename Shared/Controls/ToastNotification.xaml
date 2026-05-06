@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Controls.ToastNotification"
+             x:Name="RootView">
+    
+    <!-- Compact Toast Container - Top Right Corner -->
+    <Border x:Name="ToastBorder"
+            BackgroundColor="White"
+            Stroke="#E5E7EB"
+            StrokeThickness="1"
+            Opacity="0"
+            TranslationX="400"
+            Padding="14,10"
+            Margin="0,20,20,0"
+            WidthRequest="288"
+            HorizontalOptions="End"
+            VerticalOptions="Start">
+        
+        <Border.StrokeShape>
+            <RoundRectangle CornerRadius="12"/>
+        </Border.StrokeShape>
+        
+        <!-- Shadow Effect -->
+        <Border.Shadow>
+            <Shadow Brush="Black"
+                    Offset="0,4"
+                    Radius="12"
+                    Opacity="0.12"/>
+        </Border.Shadow>
+        
+        <Grid ColumnDefinitions="Auto,*,Auto"
+              ColumnSpacing="10">
+            
+            <!-- Compact Icon -->
+            <Border Grid.Column="0"
+                    x:Name="IconContainer"
+                    BackgroundColor="#EEF2FF"
+                    WidthRequest="32"
+                    HeightRequest="32"
+                    VerticalOptions="Center">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="8"/>
+                </Border.StrokeShape>
+                
+                <Label x:Name="IconLabel"
+                       Text="✓"
+                       FontSize="16"
+                       FontAttributes="Bold"
+                      TextColor="#3730A3"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"/>
+            </Border>
+            
+            <!-- Compact Content -->
+            <VerticalStackLayout Grid.Column="1"
+                                 Spacing="1"
+                                 VerticalOptions="Center">
+                
+                <Label x:Name="TitleLabel"
+                       Text="Success"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                      TextColor="#111827"/>
+                
+                <Label x:Name="MessageLabel"
+                       Text="Operation completed"
+                       FontSize="12"
+                      TextColor="#4B5563"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="2"/>
+            </VerticalStackLayout>
+            
+            <!-- Compact Close Button -->
+            <Border Grid.Column="2"
+                    WidthRequest="24"
+                    HeightRequest="24"
+                    BackgroundColor="Transparent"
+                    VerticalOptions="Center">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12"/>
+                </Border.StrokeShape>
+                
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCloseTapped"/>
+                </Border.GestureRecognizers>
+                
+                <Label Text="✕"
+                       FontSize="14"
+                      TextColor="#9CA3AF"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"/>
+            </Border>
+        </Grid>
+    </Border>
+</ContentView>

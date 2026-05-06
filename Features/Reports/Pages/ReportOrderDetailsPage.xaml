@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.ReportOrderDetailsPage"
+             Title="Report Details">
+    <ContentPage.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#ECFEFF" Offset="0" />
+            <GradientStop Color="#F8FAFC" Offset="0.55" />
+            <GradientStop Color="#FFF7ED" Offset="1" />
+        </LinearGradientBrush>
+    </ContentPage.Background>
+
+    <Grid RowDefinitions="Auto,*" Padding="18" RowSpacing="14">
+        <Border BackgroundColor="#0F172A" StrokeShape="RoundRectangle 24" Padding="18">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Order Drill-Down" FontFamily="AlegreyaBold" FontSize="30" TextColor="White" />
+                    <Label Text="Live order detail from MariaDB" FontFamily="OpenSansRegular" FontSize="13" TextColor="#CBD5E1" />
+                </VerticalStackLayout>
+
+                <Button Grid.Column="1"
+                        Text="Close"
+                        Clicked="OnCloseClicked"
+                        BackgroundColor="#E2E8F0"
+                        TextColor="#0F172A"
+                        CornerRadius="14"
+                        Padding="16,10" />
+
+                <Label Grid.Row="1"
+                       Grid.ColumnSpan="2"
+                       Text="{Binding HeaderLine}"
+                       FontFamily="OpenSansSemibold"
+                       FontSize="12"
+                       TextColor="#94A3B8" />
+            </Grid>
+        </Border>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="14">
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Order Number" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.OrderNumber}" FontFamily="AlegreyaBold" FontSize="20" TextColor="#111827" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Total" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.TotalDisplay}" FontFamily="AlegreyaBold" FontSize="20" TextColor="#0F766E" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="2" Spacing="4">
+                            <Label Text="Status" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.Status}" FontFamily="AlegreyaBold" FontSize="20" TextColor="#111827" />
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="1" Spacing="4">
+                            <Label Text="Created" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.CreatedAtDisplay}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#334155" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
+                            <Label Text="Type" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.OrderType}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#334155" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Row="1" Grid.Column="2" Spacing="4">
+                            <Label Text="Source" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                            <Label Text="{Binding Order.SourceChannel}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#334155" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16" IsVisible="{Binding Order.HasCustomerDetails}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Customer" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#0F172A" />
+                        <Label Text="{Binding Order.CustomerName}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#111827" />
+                        <Label Text="{Binding Order.CustomerPhone}" FontFamily="OpenSansRegular" FontSize="13" TextColor="#475569" />
+                        <Label Text="{Binding Order.CustomerEmail}" FontFamily="OpenSansRegular" FontSize="13" TextColor="#475569" />
+                        <Label Text="{Binding Order.CustomerAddress}" FontFamily="OpenSansRegular" FontSize="13" TextColor="#475569" LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Summary" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#0F172A" />
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                            <Label Text="Subtotal" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                            <Label Grid.Column="1" Text="{Binding Order.SubtotalDisplay}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#111827" />
+                            <Label Grid.Row="1" Text="VAT" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                            <Label Grid.Row="1" Grid.Column="1" Text="{Binding Order.TaxDisplay}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#111827" />
+                            <Label Grid.Row="2" Text="Delivery" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                            <Label Grid.Row="2" Grid.Column="1" Text="{Binding Order.DeliveryFeeDisplay}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#111827" />
+                            <Label Grid.Row="3" Text="Total" FontFamily="AlegreyaBold" FontSize="16" TextColor="#0F172A" />
+                            <Label Grid.Row="3" Grid.Column="1" Text="{Binding Order.TotalDisplay}" FontFamily="AlegreyaBold" FontSize="16" TextColor="#0F766E" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Items" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#0F172A" />
+                        <CollectionView ItemsSource="{Binding Order.Lines}" SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Label Text="No line items found." TextColor="#64748B" FontFamily="OpenSansRegular" />
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" BackgroundColor="#F8FAFC" Padding="14" Margin="0,0,0,10">
+                                        <VerticalStackLayout Spacing="6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <VerticalStackLayout Spacing="2">
+                                                    <Label Text="{Binding ItemName}" FontFamily="AlegreyaBold" FontSize="16" TextColor="#111827" />
+                                                    <Label Text="{Binding AddonSummary}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" IsVisible="{Binding HasAddons}" LineBreakMode="WordWrap" />
+                                                    <Label Text="{Binding SpecialInstructions, StringFormat='Note: {0}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#9A3412" IsVisible="{Binding HasInstructions}" LineBreakMode="WordWrap" />
+                                                </VerticalStackLayout>
+                                                <VerticalStackLayout Grid.Column="1" HorizontalOptions="End" Spacing="2">
+                                                    <Label Text="{Binding LineTotalDisplay}" FontFamily="AlegreyaBold" FontSize="16" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                    <Label Text="{Binding QuantityDisplay}" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#0F766E" HorizontalTextAlignment="End" />
+                                                </VerticalStackLayout>
+                                            </Grid>
+
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="12">
+                                                <Label Text="{Binding UnitPriceDisplay}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#475569" />
+                                                <Label Grid.Column="1" Text="{Binding LineVatDisplay, StringFormat='VAT {0}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#475569" />
+                                                <Label Grid.Column="2" Text="{Binding LineNet, StringFormat='Net £{0:F2}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#475569" />
+                                            </Grid>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Special Instructions" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#0F172A" />
+                        <Label Text="{Binding Order.SpecialInstructions}" FontFamily="OpenSansRegular" FontSize="13" TextColor="#475569" LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

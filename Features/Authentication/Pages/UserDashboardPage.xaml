@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.UserDashboardPage"
+             Title="Dashboard"
+             BackgroundColor="White"
+             SizeChanged="OnPageSizeChanged">
+
+    <Grid BackgroundColor="White">
+        <!-- Header -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Header Bar -->
+        <Border Grid.Row="0" 
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="0">
+            <Border.Shadow>
+                <Shadow Brush="#E5E7EB" Radius="4" Opacity="0.1" Offset="0,2"/>
+            </Border.Shadow>
+            
+            <Grid Padding="20" 
+                  HeightRequest="90">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Welcome Message -->
+                <StackLayout Grid.Column="0" 
+                             VerticalOptions="Center">
+                    <Label x:Name="WelcomeLabel"
+                          Text="Welcome to" 
+                           FontFamily="InterMedium" 
+                           FontSize="14" 
+                           TextColor="#6B7280"/>
+                      <Label Text="Restaurant Name" 
+                          FontFamily="InterBold" 
+                          x:Name="HeaderTitleLabel"
+                          FontSize="24" 
+                          TextColor="#1F2937"/>
+                </StackLayout>
+                
+                <!-- Date Time -->
+                <StackLayout Grid.Column="1" 
+                             VerticalOptions="Center" 
+                             HorizontalOptions="End"
+                             Margin="0,0,20,0">
+                    <Label x:Name="DateLabel" 
+                           Text="Monday, December 29, 2025" 
+                           FontFamily="InterMedium" 
+                           FontSize="13" 
+                           TextColor="#374151"
+                           HorizontalOptions="End"/>
+                    <Label x:Name="TimeLabel" 
+                           Text="12:43 AM" 
+                           FontFamily="InterBold" 
+                           FontSize="18" 
+                           TextColor="#3B82F6"
+                           HorizontalOptions="End"/>
+                </StackLayout>
+                
+                <!-- Logout Button -->
+                <Image Grid.Column="2"
+                       Source="outred.png"
+                      WidthRequest="42"
+                      HeightRequest="42"
+                      Margin="0,0,6,0"
+                       HorizontalOptions="End"
+                       VerticalOptions="Center">
+                    <Image.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnLogoutClicked"/>
+                    </Image.GestureRecognizers>
+                </Image>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Area -->
+        <ScrollView Grid.Row="1" 
+                x:Name="MainScrollView"
+                BackgroundColor="White">
+            <StackLayout Spacing="0" 
+                         VerticalOptions="Center"
+                         x:Name="MainStackLayout"
+                         Padding="30"
+                         HorizontalOptions="Center"
+                         MaximumWidthRequest="900">
+                
+                <!-- Title Removed -->
+                
+                <!-- Main Action Buttons - Icon Only Grid -->
+                <Grid RowSpacing="80" 
+                      ColumnSpacing="150"
+                      x:Name="ButtonGrid"
+                      Padding="0"
+                      HorizontalOptions="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Restaurant Button - Icon Only -->
+                    <StackLayout Grid.Row="0" Grid.Column="0"
+                                 Padding="20"
+                                 HorizontalOptions="Center">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnRestaurantClicked"/>
+                        </StackLayout.GestureRecognizers>
+                        <Image Source="restaurant.png" 
+                               x:Name="RestaurantIcon"
+                               WidthRequest="220" 
+                               HeightRequest="220"
+                               HorizontalOptions="Center"/>
+                        <Label Text="Restaurant" 
+                               FontFamily="InterBold" 
+                               x:Name="RestaurantLabel"
+                               FontSize="16" 
+                               TextColor="#1F2937"
+                               HorizontalOptions="Center"
+                               Margin="0,12,0,0"/>
+                    </StackLayout>
+                    
+                    <!-- Delivery Button - Icon Only -->
+                    <StackLayout Grid.Row="0" Grid.Column="1"
+                                 Padding="20"
+                                 HorizontalOptions="Center">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnDeliveryClicked"/>
+                        </StackLayout.GestureRecognizers>
+                        <Image Source="delivery.png" 
+                               x:Name="DeliveryIcon"
+                               WidthRequest="220" 
+                               HeightRequest="220"
+                               HorizontalOptions="Center"/>
+                        <Label Text="Delivery" 
+                               FontFamily="InterBold" 
+                               x:Name="DeliveryLabel"
+                               FontSize="16" 
+                               TextColor="#1F2937"
+                               HorizontalOptions="Center"
+                               Margin="0,12,0,0"/>
+                    </StackLayout>
+                    
+                    <!-- Collection Button - Icon Only -->
+                    <StackLayout Grid.Row="0" Grid.Column="2"
+                                 Padding="20"
+                                 HorizontalOptions="Center">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCollectionClicked"/>
+                        </StackLayout.GestureRecognizers>
+                        <Image Source="collection.png" 
+                               x:Name="CollectionIcon"
+                               WidthRequest="220" 
+                               HeightRequest="220"
+                               HorizontalOptions="Center"/>
+                        <Label Text="Collection" 
+                               FontFamily="InterBold" 
+                               x:Name="CollectionLabel"
+                               FontSize="16" 
+                               TextColor="#1F2937"
+                               HorizontalOptions="Center"
+                               Margin="0,12,0,0"/>
+                    </StackLayout>
+
+                    <!-- Live Order Button - Icon Only -->
+                    <StackLayout Grid.Row="1" Grid.Column="1"
+                                 Padding="20"
+                                 HorizontalOptions="Center">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnLiveOrderClicked"/>
+                        </StackLayout.GestureRecognizers>
+                        <Image Source="liveorder.png"
+                               x:Name="LiveOrderIcon"
+                               WidthRequest="220"
+                               HeightRequest="220"
+                               HorizontalOptions="Center"/>
+                        <Label Text="Live Order"
+                               FontFamily="InterBold"
+                               x:Name="LiveOrderLabel"
+                               FontSize="16"
+                               TextColor="#1F2937"
+                               HorizontalOptions="Center"
+                               Margin="0,12,0,0"/>
+                    </StackLayout>
+                </Grid>
+            </StackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

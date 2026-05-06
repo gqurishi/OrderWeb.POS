@@ -41,7 +41,10 @@ public static class MauiProgram
 
 		// Register Core Services (Lazy initialization for faster startup)
 		builder.Services.AddSingleton<DatabaseService>();
-		builder.Services.AddSingleton<AuthenticationService>();
+		builder.Services.AddSingleton<OrderLifecycleRolloutService>();
+		builder.Services.AddSingleton(_ => AuthenticationService.Instance);
+		builder.Services.AddSingleton<RoleAccessService>();
+		builder.Services.AddSingleton<PermissionService>();
 		builder.Services.AddSingleton<BusinessSettingsService>();
 		
 		// Note: OrderService registered after PrintService for dependency injection
@@ -75,6 +78,12 @@ public static class MauiProgram
 		
 		// Register PDF Receipt Service (Syncfusion PDF Library)
 		builder.Services.AddSingleton<PdfReceiptService>();
+		builder.Services.AddSingleton<DailyReportService>();
+		
+		// Register Report Generation & Scheduling Services
+		builder.Services.AddSingleton<ReportGenerationService>();
+		builder.Services.AddSingleton<ReportSchedulerService>();
+		builder.Services.AddSingleton<ReportHistoryService>();
 		
 		// Register Network Printer Services
 		builder.Services.AddSingleton<NetworkPrinterDatabaseService>();
@@ -112,8 +121,10 @@ public static class MauiProgram
 		// Register Pages
 		builder.Services.AddTransient<LoginPage>();
 		builder.Services.AddTransient<DashboardPage>();
+		builder.Services.AddTransient<ManagerDashboardPage>();
 		// OrderTakingPage removed - using FoodMenuPage instead
 		builder.Services.AddTransient<RestaurantPage>();
+		builder.Services.AddTransient<ReservationPage>();
 		builder.Services.AddTransient<VisualTablePage>();
 		builder.Services.AddTransient<FloorPage>();
 		builder.Services.AddTransient<TablePage>();
@@ -126,6 +137,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<WebOrdersPage>();
 		builder.Services.AddTransient<GiftCardPage>();
 		builder.Services.AddTransient<LoyaltyPointsPage>();
+		builder.Services.AddTransient<ReportPage>();
+		builder.Services.AddTransient<InventoryPage>();
 
 		var app = builder.Build();
 
@@ -147,6 +160,27 @@ public static class MauiProgram
 			catch (Exception ex)
 			{
 				System.Diagnostics.Debug.WriteLine($"⚠️ Cleanup initialization warning: {ex.Message}");
+			}
+		});
+
+		// ✅ Initialize Report Generation Scheduler
+		Task.Run(async () =>
+		{
+			try
+			{
+				// Small delay to let database initialize
+				await Task.Delay(2000);
+				
+				var reportScheduler = app.Services.GetRequiredService<ReportSchedulerService>();
+				
+				// Start automatic report generation scheduler (runs nightly at 11:50 PM)
+				reportScheduler.Start();
+				
+				System.Diagnostics.Debug.WriteLine("✅ Report generation scheduler initialized");
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"⚠️ Report scheduler initialization warning: {ex.Message}");
 			}
 		});
 
