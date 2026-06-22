@@ -75,7 +75,7 @@ public partial class PrinterSetupPage : ContentPage
             _printerService = ServiceHelper.GetService<NetworkPrinterService>();
             _healthService = ServiceHelper.GetService<PrinterHealthService>();
             _queueService = ServiceHelper.GetService<NetworkPrintQueueService>();
-            _printGroupService = ServiceHelper.GetService<PrintGroupService>();
+            _printGroupService = ServiceHelper.GetService<PrintGroupService>() ?? new PrintGroupService();
             
             if (_dbService != null)
             {
@@ -137,6 +137,7 @@ public partial class PrinterSetupPage : ContentPage
             var receiptPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Receipt).ToList();
             var kitchenPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Kitchen).ToList();
             var barPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Bar).ToList();
+            var labelPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Label).ToList();
             var onlinePrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Online).ToList();
             var takeawayPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Takeaway).ToList();
 
@@ -159,6 +160,13 @@ public partial class PrinterSetupPage : ContentPage
             foreach (var printer in barPrinters)
             {
                 BarPrintersContainer.Children.Add(CreatePrinterCard(printer));
+            }
+
+            // Populate label printers
+            NoLabelPrintersLabel.IsVisible = labelPrinters.Count == 0;
+            foreach (var printer in labelPrinters)
+            {
+                LabelPrintersContainer.Children.Add(CreatePrinterCard(printer));
             }
 
             // Populate online order printers
@@ -192,6 +200,9 @@ public partial class PrinterSetupPage : ContentPage
 
         var barChildren = BarPrintersContainer.Children.Where(c => c != NoBarPrintersLabel).ToList();
         foreach (var child in barChildren) BarPrintersContainer.Children.Remove(child);
+
+        var labelChildren = LabelPrintersContainer.Children.Where(c => c != NoLabelPrintersLabel).ToList();
+        foreach (var child in labelChildren) LabelPrintersContainer.Children.Remove(child);
 
         var onlineChildren = OnlinePrintersContainer.Children.Where(c => c != NoOnlinePrintersLabel).ToList();
         foreach (var child in onlineChildren) OnlinePrintersContainer.Children.Remove(child);
@@ -373,6 +384,10 @@ public partial class PrinterSetupPage : ContentPage
         {
             LoadPrintGroupNameAsync(printer.PrintGroupId);
         }
+        else
+        {
+            PrintGroupEntry.Text = string.Empty;
+        }
         
         ConnectionStatusLabel.Text = printer.IsOnline ? "Connected" : "Offline";
         ConnectionStatusLabel.TextColor = printer.IsOnline ? Color.FromArgb("#22C55E") : Color.FromArgb("#EF4444");
@@ -480,6 +495,7 @@ public partial class PrinterSetupPage : ContentPage
         {
             SavePrinterButton.IsEnabled = false;
 
+            var previousPrintGroupId = _editingPrinter?.PrintGroupId;
             var printer = _editingPrinter ?? new NetworkPrinter();
             printer.Name = name;
             printer.IpAddress = ip;
@@ -496,7 +512,7 @@ public partial class PrinterSetupPage : ContentPage
             var printGroupName = PrintGroupEntry.Text?.Trim();
             if (!string.IsNullOrEmpty(printGroupName))
             {
-                printer.PrintGroupId = await GetOrCreatePrintGroupIdAsync(printGroupName);
+                printer.PrintGroupId = await GetOrCreatePrintGroupIdAsync(printGroupName, printer);
             }
             else
             {
@@ -509,6 +525,7 @@ public partial class PrinterSetupPage : ContentPage
                 NetworkPrinterType.Receipt => "#10B981",
                 NetworkPrinterType.Kitchen => "#EF4444",
                 NetworkPrinterType.Bar => "#8B5CF6",
+                NetworkPrinterType.Label => "#22C55E",
                 NetworkPrinterType.Online => "#3B82F6",
                 NetworkPrinterType.Takeaway => "#F97316",
                 _ => "#6366F1"
@@ -521,8 +538,13 @@ public partial class PrinterSetupPage : ContentPage
             }
             else
             {
-                await _dbService.AddPrinterAsync(printer);
+                printer.Id = await _dbService.AddPrinterAsync(printer);
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Printer '{name}' added!");
+            }
+
+            if (!string.Equals(previousPrintGroupId, printer.PrintGroupId, StringComparison.OrdinalIgnoreCase))
+            {
+                await ClearPrintGroupPrinterIfUnusedAsync(previousPrintGroupId, printer.Id);
             }
 
             FormPanel.IsVisible = false;
@@ -539,7 +561,7 @@ public partial class PrinterSetupPage : ContentPage
         }
     }
 
-    private async Task<string> GetOrCreatePrintGroupIdAsync(string groupName)
+    private async Task<string> GetOrCreatePrintGroupIdAsync(string groupName, NetworkPrinter printer)
     {
         if (_printGroupService == null) return string.Empty;
 
@@ -554,7 +576,13 @@ public partial class PrinterSetupPage : ContentPage
             
             if (existingGroup != null)
             {
-                // Return existing group ID
+                existingGroup.PrinterIp = printer.IpAddress;
+                existingGroup.PrinterPort = printer.Port;
+                existingGroup.PrinterType = GetPrintGroupType(printer.PrinterType);
+                existingGroup.IsActive = true;
+                existingGroup.ColorCode = GetColorForGroupName(existingGroup.Name);
+
+                await _printGroupService.UpdatePrintGroupAsync(existingGroup);
                 return existingGroup.Id;
             }
             
@@ -563,6 +591,9 @@ public partial class PrinterSetupPage : ContentPage
             {
                 Id = Guid.NewGuid().ToString(),
                 Name = groupName,
+                PrinterIp = printer.IpAddress,
+                PrinterPort = printer.Port,
+                PrinterType = GetPrintGroupType(printer.PrinterType),
                 ColorCode = GetColorForGroupName(groupName),
                 IsActive = true,
                 DisplayOrder = allGroups.Count
@@ -577,6 +608,42 @@ public partial class PrinterSetupPage : ContentPage
         {
             System.Diagnostics.Debug.WriteLine($"❌ Error creating print group: {ex.Message}");
             return string.Empty;
+        }
+    }
+
+    private async Task ClearPrintGroupPrinterIfUnusedAsync(string? printGroupId, int currentPrinterId)
+    {
+        if (string.IsNullOrWhiteSpace(printGroupId) || _printGroupService == null || _dbService == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var printers = await _dbService.GetAllPrintersAsync();
+            var stillAssigned = printers.Any(printer =>
+                printer.Id != currentPrinterId &&
+                string.Equals(printer.PrintGroupId, printGroupId, StringComparison.OrdinalIgnoreCase) &&
+                printer.IsEnabled);
+
+            if (stillAssigned)
+            {
+                return;
+            }
+
+            var group = await _printGroupService.GetPrintGroupByIdAsync(printGroupId);
+            if (group == null)
+            {
+                return;
+            }
+
+            group.PrinterIp = null;
+            group.PrinterPort = 9100;
+            await _printGroupService.UpdatePrintGroupAsync(group);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"❌ Error clearing print group printer: {ex.Message}");
         }
     }
 
@@ -617,6 +684,17 @@ public partial class PrinterSetupPage : ContentPage
         return "#6366F1"; // Indigo
     }
 
+    private static string GetPrintGroupType(NetworkPrinterType printerType)
+    {
+        return printerType switch
+        {
+            NetworkPrinterType.Bar => "bar",
+            NetworkPrinterType.Receipt or NetworkPrinterType.Online => "receipt",
+            NetworkPrinterType.Label => "label",
+            _ => "kitchen"
+        };
+    }
+
     #endregion
 
     #region Printer Actions
@@ -641,7 +719,7 @@ public partial class PrinterSetupPage : ContentPage
 
         foreach (var printer in printers.Where(p => p.IsEnabled))
         {
-            var result = await _printerService.SendTestPrintAsync(printer);
+            var result = await SendPrinterTestAsync(printer);
             if (result) success++;
             else failed++;
         }
@@ -714,7 +792,7 @@ public partial class PrinterSetupPage : ContentPage
     {
         if (_printerService == null) return;
 
-        var result = await _printerService.SendTestPrintAsync(printer);
+        var result = await SendPrinterTestAsync(printer);
         
         if (result)
         {
@@ -724,6 +802,22 @@ public partial class PrinterSetupPage : ContentPage
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to send test print to '{printer.Name}'");
         }
+    }
+
+    private async Task<bool> SendPrinterTestAsync(NetworkPrinter printer)
+    {
+        if (printer.PrinterType == NetworkPrinterType.Label)
+        {
+            var labelService = new LabelPrintingService(printer.IpAddress, printer.Port, printer.IsEnabled);
+            return await labelService.PrintTestLabelAsync();
+        }
+
+        if (_printerService == null)
+        {
+            return false;
+        }
+
+        return await _printerService.SendTestPrintAsync(printer);
     }
 
     private async Task OnOpenDrawerForPrinterClicked(NetworkPrinter printer)
@@ -752,7 +846,9 @@ public partial class PrinterSetupPage : ContentPage
 
         if (confirm)
         {
+            var printGroupId = printer.PrintGroupId;
             await _dbService.DeletePrinterAsync(printer.Id);
+            await ClearPrintGroupPrinterIfUnusedAsync(printGroupId, printer.Id);
             await LoadPrintersAsync();
         }
     }
@@ -790,6 +886,7 @@ public partial class PrinterSetupPage : ContentPage
     private void OnTypeBarTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Bar);
     private void OnTypeOnlineTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Online);
     private void OnTypeTakeawayTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Takeaway);
+    private void OnTypeLabelTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Label);
 
     private void SelectType(NetworkPrinterType type)
     {
@@ -819,6 +916,11 @@ public partial class PrinterSetupPage : ContentPage
         TypeTakeawayBorder.BackgroundColor = type == NetworkPrinterType.Takeaway ? Color.FromArgb("#F97316") : Color.FromArgb("#F1F5F9");
         if (TypeTakeawayBorder.Content is Label takeawayLabel)
             takeawayLabel.TextColor = type == NetworkPrinterType.Takeaway ? Colors.White : Color.FromArgb("#64748B");
+
+        // Label - green
+        TypeLabelBorder.BackgroundColor = type == NetworkPrinterType.Label ? Color.FromArgb("#22C55E") : Color.FromArgb("#F1F5F9");
+        if (TypeLabelBorder.Content is Label labelLabel)
+            labelLabel.TextColor = type == NetworkPrinterType.Label ? Colors.White : Color.FromArgb("#64748B");
         
         // Auto-set buzzer for kitchen/bar/takeaway
         if (type == NetworkPrinterType.Kitchen || type == NetworkPrinterType.Bar || type == NetworkPrinterType.Takeaway)

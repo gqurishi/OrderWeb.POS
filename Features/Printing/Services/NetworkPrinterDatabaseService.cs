@@ -34,7 +34,7 @@ public class NetworkPrinterDatabaseService
                     ip_address VARCHAR(45) NOT NULL,
                     port INT DEFAULT 9100,
                     brand ENUM('epson', 'star', 'other') DEFAULT 'epson',
-                    printer_type ENUM('receipt', 'kitchen', 'bar', 'label') NOT NULL,
+                    printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL,
                     paper_width ENUM('80mm', '58mm') DEFAULT '80mm',
                     has_cash_drawer BOOLEAN DEFAULT FALSE,
                     has_cutter BOOLEAN DEFAULT TRUE,
@@ -52,15 +52,15 @@ public class NetworkPrinterDatabaseService
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
             await cmd1.ExecuteNonQueryAsync();
 
-            // Create print_queue table
+            // Create network_print_queue table
             using var cmd2 = connection.CreateCommand();
             cmd2.CommandText = @"
-                CREATE TABLE IF NOT EXISTS print_queue (
+                CREATE TABLE IF NOT EXISTS network_print_queue (
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     printer_id INT NOT NULL,
-                    order_id INT NULL,
-                    job_type ENUM('receipt', 'kitchen_ticket', 'test', 'cash_drawer') NOT NULL,
-                    print_data LONGBLOB,
+                    order_id VARCHAR(100) NULL,
+                    job_type VARCHAR(50) NOT NULL DEFAULT 'receipt',
+                    print_data LONGBLOB NOT NULL,
                     status ENUM('pending', 'printing', 'completed', 'failed') DEFAULT 'pending',
                     retry_count INT DEFAULT 0,
                     max_retries INT DEFAULT 5,
@@ -68,11 +68,15 @@ public class NetworkPrinterDatabaseService
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     started_at DATETIME NULL,
                     completed_at DATETIME NULL,
+                    printed_at DATETIME NULL,
+                    last_attempt DATETIME NULL,
                     FOREIGN KEY (printer_id) REFERENCES network_printers(id) ON DELETE CASCADE,
                     INDEX idx_status (status),
                     INDEX idx_printer_status (printer_id, status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
             await cmd2.ExecuteNonQueryAsync();
+
+            await MigratePrinterTablesAsync(connection);
 
             System.Diagnostics.Debug.WriteLine("✅ Printer tables ensured");
         }
@@ -360,7 +364,7 @@ public class NetworkPrinterDatabaseService
             using var connection = await _db.GetConnectionAsync();
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO print_queue 
+                INSERT INTO network_print_queue 
                 (printer_id, order_id, job_type, print_data, status, max_retries)
                 VALUES (@printer, @order, @type, @data, 'pending', @max);
                 SELECT LAST_INSERT_ID();";
@@ -394,7 +398,7 @@ public class NetworkPrinterDatabaseService
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
                 SELECT pq.*, np.name as printer_name, np.ip_address, np.port, np.brand
-                FROM print_queue pq
+                FROM network_print_queue pq
                 JOIN network_printers np ON pq.printer_id = np.id
                 WHERE pq.status = 'pending' AND pq.retry_count < pq.max_retries
                 ORDER BY pq.created_at";
@@ -428,32 +432,36 @@ public class NetworkPrinterDatabaseService
             if (status == PrintJobStatus.Printing)
             {
                 cmd.CommandText = @"
-                    UPDATE print_queue SET 
+                    UPDATE network_print_queue SET 
                         status = @status, 
-                        started_at = NOW()
+                            started_at = NOW(),
+                            last_attempt = NOW()
                     WHERE id = @id";
             }
             else if (status == PrintJobStatus.Completed)
             {
                 cmd.CommandText = @"
-                    UPDATE print_queue SET 
+                        UPDATE network_print_queue SET 
                         status = @status, 
-                        completed_at = NOW()
+                            completed_at = NOW(),
+                            printed_at = NOW(),
+                            last_attempt = NOW()
                     WHERE id = @id";
             }
             else if (status == PrintJobStatus.Failed)
             {
                 cmd.CommandText = @"
-                    UPDATE print_queue SET 
+                        UPDATE network_print_queue SET 
                         status = CASE WHEN retry_count + 1 >= max_retries THEN 'failed' ELSE 'pending' END,
                         retry_count = retry_count + 1,
-                        error_message = @error
+                            error_message = @error,
+                            last_attempt = NOW()
                     WHERE id = @id";
                 cmd.Parameters.AddWithValue("@error", errorMessage ?? (object)DBNull.Value);
             }
             else
             {
-                cmd.CommandText = "UPDATE print_queue SET status = @status WHERE id = @id";
+                    cmd.CommandText = "UPDATE network_print_queue SET status = @status WHERE id = @id";
             }
 
             cmd.Parameters.AddWithValue("@id", jobId);
@@ -465,6 +473,112 @@ public class NetworkPrinterDatabaseService
         {
             System.Diagnostics.Debug.WriteLine($"❌ Error updating job status: {ex.Message}");
         }
+    }
+
+    #endregion
+
+    #region Schema Migration
+
+    private async Task MigratePrinterTablesAsync(MySqlConnection connection)
+    {
+        await ExecuteNonQueryAsync(connection, @"
+            ALTER TABLE network_printers
+            MODIFY COLUMN printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL");
+
+        if (!await ColumnExistsAsync(connection, "network_printers", "print_group_id"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_printers
+                ADD COLUMN print_group_id VARCHAR(36) NULL AFTER notes");
+        }
+
+        await CreateIndexIfMissingAsync(connection, "network_printers", "idx_network_printers_print_group_id", "CREATE INDEX idx_network_printers_print_group_id ON network_printers(print_group_id)");
+        await CreateIndexIfMissingAsync(connection, "network_printers", "idx_network_printers_type_enabled", "CREATE INDEX idx_network_printers_type_enabled ON network_printers(printer_type, is_enabled)");
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "max_retries"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN max_retries INT DEFAULT 5 AFTER retry_count");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "started_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN started_at DATETIME NULL AFTER created_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "completed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN completed_at DATETIME NULL AFTER started_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "printed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN printed_at DATETIME NULL AFTER completed_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "last_attempt"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN last_attempt DATETIME NULL AFTER printed_at");
+        }
+
+        await CreateIndexIfMissingAsync(connection, "network_print_queue", "idx_network_print_queue_status", "CREATE INDEX idx_network_print_queue_status ON network_print_queue(status)");
+        await CreateIndexIfMissingAsync(connection, "network_print_queue", "idx_network_print_queue_printer_status", "CREATE INDEX idx_network_print_queue_printer_status ON network_print_queue(printer_id, status)");
+    }
+
+    private static async Task<bool> ColumnExistsAsync(MySqlConnection connection, string tableName, string columnName)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = @tableName
+              AND COLUMN_NAME = @columnName";
+        cmd.Parameters.AddWithValue("@tableName", tableName);
+        cmd.Parameters.AddWithValue("@columnName", columnName);
+
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private static async Task<bool> IndexExistsAsync(MySqlConnection connection, string tableName, string indexName)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = @tableName
+              AND INDEX_NAME = @indexName";
+        cmd.Parameters.AddWithValue("@tableName", tableName);
+        cmd.Parameters.AddWithValue("@indexName", indexName);
+
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private static async Task CreateIndexIfMissingAsync(MySqlConnection connection, string tableName, string indexName, string sql)
+    {
+        if (!await IndexExistsAsync(connection, tableName, indexName))
+        {
+            await ExecuteNonQueryAsync(connection, sql);
+        }
+    }
+
+    private static async Task ExecuteNonQueryAsync(MySqlConnection connection, string sql)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     #endregion
@@ -503,7 +617,7 @@ public class NetworkPrinterDatabaseService
         {
             Id = reader.GetInt32(reader.GetOrdinal("id")),
             PrinterId = reader.GetInt32(reader.GetOrdinal("printer_id")),
-            OrderId = reader.IsDBNull(reader.GetOrdinal("order_id")) ? null : reader.GetInt32(reader.GetOrdinal("order_id")),
+            OrderId = ReadNullableInt(reader, "order_id"),
             Status = Enum.Parse<PrintJobStatus>(reader.GetString(reader.GetOrdinal("status")), true),
             RetryCount = reader.GetInt32(reader.GetOrdinal("retry_count")),
             MaxRetries = reader.GetInt32(reader.GetOrdinal("max_retries")),
@@ -537,6 +651,23 @@ public class NetworkPrinterDatabaseService
         catch { /* Printer columns not in query */ }
 
         return job;
+    }
+
+    private static int? ReadNullableInt(IDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var value = reader.GetValue(ordinal);
+        if (value is int intValue)
+        {
+            return intValue;
+        }
+
+        return int.TryParse(value.ToString(), out var parsedValue) ? parsedValue : null;
     }
 
     #endregion

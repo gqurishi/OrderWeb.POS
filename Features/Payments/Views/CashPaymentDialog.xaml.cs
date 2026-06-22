@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using POS_in_NET.Services;
 using System;
 using System.Threading.Tasks;
 
@@ -34,6 +35,7 @@ namespace POS_in_NET.Views
 
         public async Task<CashPaymentResult> ShowAsync()
         {
+            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<CashPaymentResult>();
             
             if (Application.Current?.MainPage != null)

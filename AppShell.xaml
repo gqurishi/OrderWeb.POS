@@ -57,6 +57,33 @@
                         </Grid>
                     </StackLayout>
 
+                    <!-- Cash Drawer -->
+                    <StackLayout x:Name="CashDrawerMenuItem" BackgroundColor="Transparent" Padding="16,14">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="cashdrawer" />
+                        </StackLayout.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+                            <Border Grid.Column="0"
+                                    WidthRequest="32"
+                                    HeightRequest="32"
+                                    Stroke="#000000"
+                                    StrokeThickness="2"
+                                    StrokeShape="RoundRectangle 8"
+                                    BackgroundColor="Transparent"
+                                    HorizontalOptions="Start"
+                                    VerticalOptions="Center">
+                                <Label Text="£"
+                                       FontFamily="OpenSansBold"
+                                       FontSize="20"
+                                       TextColor="#000000"
+                                       HorizontalTextAlignment="Center"
+                                       VerticalTextAlignment="Center" />
+                            </Border>
+                            <Label Grid.Column="1" Text="Cash Drawer" FontFamily="OpenSansBold"
+                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
+                        </Grid>
+                    </StackLayout>
+
                     <!-- Food Menu -->
                     <StackLayout x:Name="FoodMenuMenuItem" BackgroundColor="Transparent" Padding="16,14">
                         <StackLayout.GestureRecognizers>

@@ -307,49 +307,98 @@ public class CloudOrderService
     /// </summary>
     private async Task<int> ProcessNewOrdersAsync(List<CloudOrderResponse> cloudOrders)
     {
-        var config = await _databaseService.GetCloudConfigAsync();
-        var autoPrintEnabled = config.GetValueOrDefault("auto_print_enabled", "True") == "True";
         int newOrdersCount = 0;
 
         foreach (var cloudOrder in cloudOrders)
         {
-            try
+            if (await ProcessIncomingCloudOrderAsync(cloudOrder, notifyUi: false))
             {
-                // Check if we already have this order (use UUID, not OrderNumber)
-                if (await OrderAlreadyExistsAsync(cloudOrder.Id))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Order {cloudOrder.OrderNumber} ({cloudOrder.Id}) already exists, skipping");
-                    continue;
-                }
-
-                // Convert cloud order to local order format
-                var localOrder = ConvertCloudOrderToLocal(cloudOrder);
-                
-                // Save order to database
-                var saveResult = await _orderService.SaveOrderAsync(localOrder);
-                
-                if (saveResult.Success)
-                {
-                    newOrdersCount++; // Track new orders
-                    System.Diagnostics.Debug.WriteLine($"✅ Created local order from cloud order {cloudOrder.OrderNumber} ({cloudOrder.Id})");
-                    
-                    // Send "Order Received" confirmation to OrderWeb.net
-                    _ = SendOrderReceivedAsync(cloudOrder.Id, "queued_for_print");
-                    
-                    // Auto-print if enabled
-                    if (autoPrintEnabled)
-                    {
-                        _ = AutoPrintOrderAsync(cloudOrder); // Fire and forget
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error processing cloud order {cloudOrder.OrderNumber}: {ex.Message}");
+                newOrdersCount++;
             }
         }
         
         return newOrdersCount;
+    }
+
+    public async Task<bool> ProcessIncomingCloudOrderAsync(CloudOrderResponse cloudOrder, bool notifyUi = true)
+    {
+        var config = await _databaseService.GetCloudConfigAsync();
+        var autoPrintEnabled = config.GetValueOrDefault("auto_print_enabled", "True") == "True";
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cloudOrder.Id))
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠️ Ignoring cloud order with missing id: {cloudOrder.OrderNumber}");
+                return false;
+            }
+
+            if (await OrderAlreadyExistsAsync(cloudOrder.Id))
+            {
+                System.Diagnostics.Debug.WriteLine($"Order {cloudOrder.OrderNumber} ({cloudOrder.Id}) already exists");
+
+                if (autoPrintEnabled && !await OrderHasPrintJobsAsync(cloudOrder.Id))
+                {
+                    System.Diagnostics.Debug.WriteLine($"🖨️ Existing web order {cloudOrder.OrderNumber} has no print jobs; queueing now");
+                    _ = AutoPrintOrderAsync(cloudOrder);
+                }
+
+                return false;
+            }
+
+            var localOrder = ConvertCloudOrderToLocal(cloudOrder);
+            var saveResult = await _orderService.SaveOrderAsync(localOrder);
+
+            if (!saveResult.Success)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Failed to save cloud order {cloudOrder.OrderNumber}: {saveResult.Message}");
+                return false;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"✅ Created local order from cloud order {cloudOrder.OrderNumber} ({cloudOrder.Id})");
+
+            _ = SendOrderReceivedAsync(cloudOrder.Id, "queued_for_print");
+
+            if (autoPrintEnabled)
+            {
+                _ = AutoPrintOrderAsync(cloudOrder);
+            }
+
+            if (notifyUi)
+            {
+                OnOrdersUpdated?.Invoke();
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error processing cloud order {cloudOrder.OrderNumber}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task<bool> OrderHasPrintJobsAsync(string orderId)
+    {
+        try
+        {
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT COUNT(DISTINCT job_type)
+                FROM network_print_queue
+                WHERE order_id = @orderId
+                  AND job_type IN ('online_receipt', 'takeaway_ticket')";
+            command.Parameters.AddWithValue("@orderId", orderId);
+
+            var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+            return count >= 2;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error checking print jobs for {orderId}: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -543,44 +592,85 @@ public class CloudOrderService
     {
         try
         {
-            // Try to use the new OnlineOrderAutoPrintService first (ESC/POS network printers)
-            if (_autoPrintService != null)
+            if (_autoPrintService == null)
             {
-                var result = await _autoPrintService.PrintOnlineOrderAsync(cloudOrder);
-                if (result.Success)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Auto-printed order {cloudOrder.OrderNumber} via NetworkPrinter");
-                    return;
-                }
-                
-                // If no Online/Takeaway printers are configured, fall back to legacy receipt service
-                if (result.ErrorMessage?.Contains("No Online or Takeaway printers configured") == true)
-                {
-                    System.Diagnostics.Debug.WriteLine($"No Online/Takeaway printers - falling back to ReceiptService");
-                }
-                else
-                {
-                    // Print failed but printers are configured - log the error
-                    System.Diagnostics.Debug.WriteLine($"Network print failed for {cloudOrder.OrderNumber}: {result.ErrorMessage}");
-                    return; // Don't fall back if there was an actual printer error
-                }
+                System.Diagnostics.Debug.WriteLine($"Auto-print service not available for order {cloudOrder.OrderNumber}");
+                return;
             }
-            
-            // Fallback: Use legacy ReceiptService (system printer)
-            var success = await _receiptService.PrintReceiptAsync(cloudOrder);
-            if (success)
+
+            var result = await _autoPrintService.PrintOnlineOrderAsync(cloudOrder);
+            if (result.Success)
             {
-                System.Diagnostics.Debug.WriteLine($"Auto-printed receipt for order {cloudOrder.OrderNumber} (legacy)");
+                System.Diagnostics.Debug.WriteLine($"Queued OrderWeb auto-print for {cloudOrder.OrderNumber} via network printers");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to auto-print receipt for order {cloudOrder.OrderNumber}");
+                System.Diagnostics.Debug.WriteLine($"Network auto-print queue failed for {cloudOrder.OrderNumber}: {result.ErrorMessage}");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error auto-printing receipt for order {cloudOrder.OrderNumber}: {ex.Message}");
         }
+    }
+
+    public async Task<(bool Success, string Message)> QueueWebOrderPrintAsync(Order order)
+    {
+        if (_autoPrintService == null)
+        {
+            return (false, "Auto-print service is not available");
+        }
+
+        try
+        {
+            var cloudOrder = ConvertLocalOrderToCloud(order);
+            var result = await _autoPrintService.PrintOnlineOrderAsync(cloudOrder);
+            return result.Success
+                ? (true, "Receipt and kitchen ticket queued")
+                : (false, result.ErrorMessage ?? "Print queue failed");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    private static CloudOrderResponse ConvertLocalOrderToCloud(Order order)
+    {
+        return new CloudOrderResponse
+        {
+            Id = !string.IsNullOrWhiteSpace(order.CloudOrderId) ? order.CloudOrderId! : order.OrderId,
+            OrderNumber = order.OrderNumber ?? order.OrderId,
+            CustomerName = order.CustomerName,
+            CustomerPhone = order.CustomerPhone,
+            CustomerEmail = order.CustomerEmail,
+            Address = order.CustomerAddress,
+            Total = order.TotalAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            Subtotal = order.SubtotalAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            DeliveryFee = order.DeliveryFee.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            Tax = order.TaxAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            OrderType = order.OrderType,
+            PaymentMethod = order.PaymentMethod,
+            PaymentStatus = order.PaymentStatus.ToString().ToLowerInvariant(),
+            SpecialInstructions = order.SpecialInstructions,
+            ScheduledTime = order.ScheduledTime,
+            CreatedAt = order.CreatedAt,
+            Items = order.Items.Select(item => new CloudOrderItem
+            {
+                Id = item.CloudItemId ?? item.Id,
+                MenuItemId = item.MenuItemId,
+                Name = item.ItemName,
+                Quantity = item.Quantity,
+                Price = item.ItemPrice ?? 0m,
+                SpecialInstructions = item.SpecialInstructions,
+                SelectedAddons = item.Addons.Select(addon => new CloudOrderAddon
+                {
+                    Id = addon.AddonId,
+                    Name = addon.AddonName,
+                    Price = addon.AddonPrice ?? 0m
+                }).ToList()
+            }).ToList()
+        };
     }
 
     /// <summary>

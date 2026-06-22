@@ -24,7 +24,8 @@
                 
                 <!-- Header with Close Button -->
                 <Grid ColumnDefinitions="*,Auto">
-                    <Label Text="SELECT PAYMENT METHOD"
+                    <Label x:Name="TitleLabel"
+                           Text="SELECT PAYMENT METHOD"
                            FontSize="30"
                            FontAttributes="Bold"
                            TextColor="#111827"

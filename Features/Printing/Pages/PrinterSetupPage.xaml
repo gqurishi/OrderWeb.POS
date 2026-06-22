@@ -194,30 +194,50 @@
                         </VerticalStackLayout>
                     </VerticalStackLayout>
 
-                    <!-- Online Order Printers Section -->
+                    <!-- Label Printers Section -->
                     <VerticalStackLayout Spacing="12">
                         <HorizontalStackLayout Spacing="10">
-                            <Label Text="Online Order Printers" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
-                            <Border BackgroundColor="#3B82F6" Padding="8,4" StrokeThickness="0">
+                            <Label Text="Label Printers" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
+                            <Border BackgroundColor="#22C55E" Padding="8,4" StrokeThickness="0">
                                 <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="4"/>
                                 </Border.StrokeShape>
-                                <Label Text="ORDERWEB" FontSize="10" FontAttributes="Bold" TextColor="White"/>
+                                <Label Text="CONTAINER LABELS" FontSize="10" FontAttributes="Bold" TextColor="White"/>
                             </Border>
                         </HorizontalStackLayout>
-                        <VerticalStackLayout x:Name="OnlinePrintersContainer" Spacing="12">
-                            <Label x:Name="NoOnlinePrintersLabel" 
-                                   Text="No online order printers configured" 
+                        <VerticalStackLayout x:Name="LabelPrintersContainer" Spacing="12">
+                            <Label x:Name="NoLabelPrintersLabel" 
+                                   Text="No label printers configured" 
                                    TextColor="#94A3B8" 
                                    FontSize="14"
                                    IsVisible="True"/>
                         </VerticalStackLayout>
                     </VerticalStackLayout>
 
-                    <!-- Takeaway Printers Section -->
+                    <!-- Online Receipt Printers Section -->
                     <VerticalStackLayout Spacing="12">
                         <HorizontalStackLayout Spacing="10">
-                            <Label Text="Takeaway Printers" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
+                            <Label Text="Online Receipt Printers" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
+                            <Border BackgroundColor="#3B82F6" Padding="8,4" StrokeThickness="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="4"/>
+                                </Border.StrokeShape>
+                                <Label Text="ORDERWEB RECEIPT" FontSize="10" FontAttributes="Bold" TextColor="White"/>
+                            </Border>
+                        </HorizontalStackLayout>
+                        <VerticalStackLayout x:Name="OnlinePrintersContainer" Spacing="12">
+                            <Label x:Name="NoOnlinePrintersLabel" 
+                                   Text="No online receipt printers configured" 
+                                   TextColor="#94A3B8" 
+                                   FontSize="14"
+                                   IsVisible="True"/>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+
+                    <!-- Takeaway Kitchen Printers Section -->
+                    <VerticalStackLayout Spacing="12">
+                        <HorizontalStackLayout Spacing="10">
+                            <Label Text="Takeaway Kitchen Printers" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
                             <Border BackgroundColor="#F97316" Padding="8,4" StrokeThickness="0">
                                 <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="4"/>
@@ -227,7 +247,7 @@
                         </HorizontalStackLayout>
                         <VerticalStackLayout x:Name="TakeawayPrintersContainer" Spacing="12">
                             <Label x:Name="NoTakeawayPrintersLabel" 
-                                   Text="No takeaway printers configured" 
+                                   Text="No takeaway kitchen printers configured" 
                                    TextColor="#94A3B8" 
                                    FontSize="14"
                                    IsVisible="True"/>
@@ -428,7 +448,7 @@
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Tapped="OnTypeOnlineTapped"/>
                                         </Border.GestureRecognizers>
-                                        <Label x:Name="TypeOnlineLabel" Text="Online" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                        <Label x:Name="TypeOnlineLabel" Text="Online Receipt" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
                                     </Border>
                                     <Border x:Name="TypeTakeawayBorder" 
                                             BackgroundColor="#F1F5F9" 
@@ -441,7 +461,20 @@
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Tapped="OnTypeTakeawayTapped"/>
                                         </Border.GestureRecognizers>
-                                        <Label x:Name="TypeTakeawayLabel" Text="Takeaway" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                        <Label x:Name="TypeTakeawayLabel" Text="Takeaway Kitchen" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                    </Border>
+                                    <Border x:Name="TypeLabelBorder" 
+                                            BackgroundColor="#F1F5F9" 
+                                            Padding="18,12"
+                                            Margin="0,0,10,10"
+                                            StrokeThickness="0">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="8"/>
+                                        </Border.StrokeShape>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnTypeLabelTapped"/>
+                                        </Border.GestureRecognizers>
+                                        <Label x:Name="TypeLabelLabel" Text="Label" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
                                     </Border>
                                 </FlexLayout>
                             </VerticalStackLayout>
@@ -477,10 +510,10 @@
                                 </HorizontalStackLayout>
                             </VerticalStackLayout>
 
-                            <!-- Print Group Assignment -->
+                            <!-- Print Group / Station Assignment -->
                             <VerticalStackLayout Spacing="8">
-                                <Label Text="Print Group" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Label Text="Enter a print group name for menu item routing (e.g., Kitchen, Bar, Grill)" 
+                                <Label Text="Print Group / Station" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
+                                <Label Text="Create or assign a station name for item routing (e.g., Kitchen, Bar, Grill)" 
                                        FontSize="11" 
                                        TextColor="#94A3B8"
                                        Margin="0,0,0,4"/>
@@ -489,7 +522,7 @@
                                         <RoundRectangle CornerRadius="8"/>
                                     </Border.StrokeShape>
                                     <Entry x:Name="PrintGroupEntry"
-                                           Placeholder="e.g., Kitchen, Bar, Grill, Takeaway, Label Printer"
+                                           Placeholder="e.g., Kitchen, Bar, Grill, Dessert, Tandoor"
                                            FontSize="15"
                                            TextColor="#0F172A"
                                            PlaceholderColor="#94A3B8"

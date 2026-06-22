@@ -65,6 +65,9 @@ public class OnlineOrderAutoPrintService
         _escPosBuilder = escPosBuilder;
         _cloudOrderService = cloudOrderService;
         _databaseService = databaseService;
+
+        _printQueueService.JobCompleted += OnPrintJobCompleted;
+        _printQueueService.JobFailed += OnPrintJobFailed;
         
         Debug.WriteLine("OnlineOrderAutoPrintService initialized");
     }
@@ -86,12 +89,16 @@ public class OnlineOrderAutoPrintService
             var onlinePrinter = await GetDesignatedPrinterAsync(NetworkPrinterType.Online);
             var takeawayPrinter = await GetDesignatedPrinterAsync(NetworkPrinterType.Takeaway);
             
-            if (onlinePrinter == null && takeawayPrinter == null)
+            if (onlinePrinter == null || takeawayPrinter == null)
             {
-                result.ErrorMessage = "No Online or Takeaway printers configured";
-                Debug.WriteLine($"No designated printers found for online orders");
+                var missing = new List<string>();
+                if (onlinePrinter == null) missing.Add("Online Receipt printer");
+                if (takeawayPrinter == null) missing.Add("Takeaway Kitchen printer");
+
+                result.ErrorMessage = $"Missing required printer(s): {string.Join(", ", missing)}";
+                Debug.WriteLine(result.ErrorMessage);
                 
-                // Still send ACK as failed - no printers configured
+                // Configuration failure is terminal, but never report "printed" until physical printing succeeds.
                 await SendPrintAckAsync(order.Id, "failed", result.ErrorMessage, printStartTime);
                 return result;
             }
@@ -131,20 +138,15 @@ public class OnlineOrderAutoPrintService
             }
 
             // Determine overall result
-            if (result.OnlinePrintJobId != null || result.TakeawayPrintJobId != null)
+            if (result.OnlinePrintJobId != null && result.TakeawayPrintJobId != null)
             {
                 result.Success = true;
                 PrintSucceeded?.Invoke(this, order.OrderNumber);
-                
-                // Send success ACK
-                var printDuration = (int)(DateTime.UtcNow - printStartTime).TotalMilliseconds;
-                await SendPrintAckAsync(order.Id, "printed", null, printStartTime, printDuration);
+                Debug.WriteLine($"Order {order.OrderNumber} queued for Online Receipt and Takeaway Kitchen printers");
             }
             else
             {
                 result.ErrorMessage = string.Join("; ", errors);
-                
-                // Send failure ACK
                 await SendPrintAckAsync(order.Id, "failed", result.ErrorMessage, printStartTime);
             }
 
@@ -160,6 +162,201 @@ public class OnlineOrderAutoPrintService
             
             return result;
         }
+    }
+
+    private async void OnPrintJobCompleted(object? sender, PrintJobCompletedEventArgs e)
+    {
+        if (!IsOnlineOrderJob(e.JobType) || string.IsNullOrWhiteSpace(e.OrderId))
+        {
+            return;
+        }
+
+        try
+        {
+            if (!await AreAllOrderPrintJobsCompletedAsync(e.OrderId))
+            {
+                return;
+            }
+
+            var durationMs = await GetOrderPrintDurationMsAsync(e.OrderId);
+            var printStartedAt = await GetOrderPrintStartedAtAsync(e.OrderId);
+            var printerInfo = await GetOrderPrinterInfoAsync(e.OrderId);
+
+            await SendPrintAckAsync(e.OrderId, "printed", null, printStartedAt ?? DateTime.UtcNow, durationMs, printerInfo);
+            await UpdateLocalOrderPrintStatusAsync(e.OrderId, "printed");
+
+            Debug.WriteLine($"✅ Physical print complete for OrderWeb order {e.OrderId}; printed ACK sent");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"❌ Error handling completed print job #{e.JobId}: {ex.Message}");
+        }
+    }
+
+    private async void OnPrintJobFailed(object? sender, PrintJobFailedEventArgs e)
+    {
+        if (!IsOnlineOrderJob(e.JobType) || string.IsNullOrWhiteSpace(e.OrderId))
+        {
+            return;
+        }
+
+        try
+        {
+            var reason = string.IsNullOrWhiteSpace(e.PrinterName)
+                ? e.ErrorMessage
+                : $"{e.PrinterName}: {e.ErrorMessage}";
+
+            var printStartedAt = await GetOrderPrintStartedAtAsync(e.OrderId);
+            var printerInfo = await GetOrderPrinterInfoAsync(e.OrderId);
+
+            await SendPrintAckAsync(e.OrderId, "failed", reason, printStartedAt ?? DateTime.UtcNow, null, printerInfo);
+            await UpdateLocalOrderPrintStatusAsync(e.OrderId, "failed", reason);
+
+            Debug.WriteLine($"❌ Physical print failed for OrderWeb order {e.OrderId}; failed ACK sent");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"❌ Error handling failed print job #{e.JobId}: {ex.Message}");
+        }
+    }
+
+    private static bool IsOnlineOrderJob(string? jobType)
+    {
+        return string.Equals(jobType, "online_receipt", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(jobType, "takeaway_ticket", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> AreAllOrderPrintJobsCompletedAsync(string orderId)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT
+                SUM(CASE WHEN latest.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+                COUNT(*) AS required_count
+            FROM (
+                SELECT q.job_type, q.status
+                FROM network_print_queue q
+                INNER JOIN (
+                    SELECT job_type, MAX(id) AS latest_id
+                    FROM network_print_queue
+                    WHERE order_id = @orderId
+                      AND job_type IN ('online_receipt', 'takeaway_ticket')
+                    GROUP BY job_type
+                ) latest_jobs ON latest_jobs.latest_id = q.id
+            ) latest";
+        command.Parameters.AddWithValue("@orderId", orderId);
+
+        using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return false;
+        }
+
+        var completedCount = reader.IsDBNull(0) ? 0 : Convert.ToInt32(reader.GetValue(0));
+        var requiredCount = reader.IsDBNull(1) ? 0 : Convert.ToInt32(reader.GetValue(1));
+
+        return requiredCount == 2 && completedCount == 2;
+    }
+
+    private async Task<int?> GetOrderPrintDurationMsAsync(string orderId)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT TIMESTAMPDIFF(MICROSECOND, MIN(started_at), MAX(completed_at)) / 1000
+            FROM network_print_queue
+            WHERE order_id = @orderId
+              AND job_type IN ('online_receipt', 'takeaway_ticket')
+              AND started_at IS NOT NULL
+              AND completed_at IS NOT NULL";
+        command.Parameters.AddWithValue("@orderId", orderId);
+
+        var result = await command.ExecuteScalarAsync();
+        return result == null || result == DBNull.Value ? null : Convert.ToInt32(result);
+    }
+
+    private async Task<DateTime?> GetOrderPrintStartedAtAsync(string orderId)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT MIN(started_at)
+            FROM network_print_queue
+            WHERE order_id = @orderId
+              AND job_type IN ('online_receipt', 'takeaway_ticket')
+              AND started_at IS NOT NULL";
+        command.Parameters.AddWithValue("@orderId", orderId);
+
+        var result = await command.ExecuteScalarAsync();
+        return result == null || result == DBNull.Value ? null : Convert.ToDateTime(result);
+    }
+
+    private async Task<Dictionary<string, object>> GetOrderPrinterInfoAsync(string orderId)
+    {
+        var printers = new List<Dictionary<string, object>>();
+
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT q.job_type, q.status, q.retry_count, p.name, p.ip_address, p.port
+            FROM network_print_queue q
+            JOIN network_printers p ON p.id = q.printer_id
+            INNER JOIN (
+                SELECT job_type, MAX(id) AS latest_id
+                FROM network_print_queue
+                WHERE order_id = @orderId
+                  AND job_type IN ('online_receipt', 'takeaway_ticket')
+                GROUP BY job_type
+            ) latest_jobs ON latest_jobs.latest_id = q.id
+            ORDER BY q.job_type";
+        command.Parameters.AddWithValue("@orderId", orderId);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            printers.Add(new Dictionary<string, object>
+            {
+                ["job_type"] = reader["job_type"]?.ToString() ?? "",
+                ["status"] = reader["status"]?.ToString() ?? "",
+                ["retry_count"] = Convert.ToInt32(reader["retry_count"]),
+                ["printer_name"] = reader["name"]?.ToString() ?? "",
+                ["ip_address"] = reader["ip_address"]?.ToString() ?? "",
+                ["port"] = Convert.ToInt32(reader["port"])
+            });
+        }
+
+        return new Dictionary<string, object>
+        {
+            ["printers"] = printers
+        };
+    }
+
+    private async Task UpdateLocalOrderPrintStatusAsync(string orderId, string status, string? error = null)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+
+        using (var schemaCommand = connection.CreateCommand())
+        {
+            schemaCommand.CommandText = @"
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS print_status VARCHAR(20) DEFAULT 'pending',
+                ADD COLUMN IF NOT EXISTS printed_at DATETIME NULL,
+                ADD COLUMN IF NOT EXISTS print_error TEXT NULL";
+            await schemaCommand.ExecuteNonQueryAsync();
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            UPDATE orders
+            SET print_status = @status,
+                printed_at = CASE WHEN @status = 'printed' THEN NOW() ELSE printed_at END,
+                print_error = @error
+            WHERE order_id = @orderId OR cloud_order_id = @orderId";
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@error", error ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@orderId", orderId);
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -519,7 +716,13 @@ public class OnlineOrderAutoPrintService
     /// <summary>
     /// Send print acknowledgment to OrderWeb.net
     /// </summary>
-    private async Task SendPrintAckAsync(string orderId, string status, string? errorReason, DateTime printStartTime, int? durationMs = null)
+    private async Task SendPrintAckAsync(
+        string orderId,
+        string status,
+        string? errorReason,
+        DateTime printStartTime,
+        int? durationMs = null,
+        Dictionary<string, object>? printerInfo = null)
     {
         try
         {
@@ -528,7 +731,8 @@ public class OnlineOrderAutoPrintService
                 status,
                 errorReason,
                 durationMs,
-                printStartTime
+                printStartTime,
+                printerInfo
             );
         }
         catch (Exception ex)

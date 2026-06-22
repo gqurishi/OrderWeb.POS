@@ -32,6 +32,8 @@ public partial class TopBar : ContentView
 
     private void OnMenuClicked(object sender, EventArgs e)
     {
+        ServiceHelper.GetService<InactivityService>()?.ResetActivity();
+
         // Open the Shell flyout menu
         Shell.Current.FlyoutIsPresented = true;
     }
@@ -40,6 +42,7 @@ public partial class TopBar : ContentView
     {
         try
         {
+            ServiceHelper.GetService<InactivityService>()?.ResetActivity();
             System.Diagnostics.Debug.WriteLine("🔴 Logout button clicked");
             
             // Clear authentication immediately - no confirmation

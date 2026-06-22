@@ -9,6 +9,8 @@ public partial class LoginPage : ContentPage
     private readonly BusinessSettingsService _businessService;
     private System.Timers.Timer? _timeTimer;
     private Entry? _currentFocusedEntry;
+    private bool _businessInfoLoaded;
+    private bool _authCacheWarmStarted;
 
     public LoginPage()
     {
@@ -18,19 +20,6 @@ public partial class LoginPage : ContentPage
         
         // Start time updates
         StartTimeUpdates();
-        
-        // Load business info in background - fire and forget
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await LoadBusinessInfoAsync();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Business info init: {ex.Message}");
-            }
-        });
     }
 
     private void StartTimeUpdates()
@@ -98,23 +87,16 @@ public partial class LoginPage : ContentPage
             var pin = PasswordEntry.Text.Trim();
             var result = await _authService.LoginAsync(pin, pin);
 
-            System.Diagnostics.Debug.WriteLine($"PIN Login result: Success={result.Success}, Message={result.Message}");
-            
             if (result.Success && result.User != null)
             {
-                System.Diagnostics.Debug.WriteLine($"Login successful for user: {result.User.Username}, Role: {result.User.Role}");
-                
                 // Role-based navigation
                 string navigationRoute = GetNavigationRouteForRole(result.User.Role);
-                System.Diagnostics.Debug.WriteLine($"Navigating to: {navigationRoute}");
-                
+
                 // Navigate to appropriate dashboard based on user role
                 try
                 {
-                    await MainThread.InvokeOnMainThreadAsync(async () =>
-                    {
-                        await Shell.Current.GoToAsync(navigationRoute, true);
-                    });
+                    // No animation for a faster PIN-to-dashboard transition.
+                    await Shell.Current.GoToAsync(navigationRoute, false);
                 }
                 catch (Exception navEx)
                 {
@@ -193,18 +175,32 @@ public partial class LoginPage : ContentPage
         // Focus on username field IMMEDIATELY - don't wait for anything
         Dispatcher.Dispatch(() => UsernameEntry.Focus());
         
-        // Load business info in background - non-blocking
-        _ = Task.Run(async () =>
+        if (!_authCacheWarmStarted)
         {
-            try
-            {
-                await LoadBusinessInfoAsync();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Business info load error: {ex.Message}");
-            }
-        });
+            _authCacheWarmStarted = true;
+            _ = _authService.WarmAuthenticationCacheAsync();
+        }
+
+        if (_businessInfoLoaded)
+        {
+            return;
+        }
+
+        // Load business info once in background.
+        _ = LoadBusinessInfoOnceAsync();
+    }
+
+    private async Task LoadBusinessInfoOnceAsync()
+    {
+        try
+        {
+            await LoadBusinessInfoAsync();
+            _businessInfoLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Business info load error: {ex.Message}");
+        }
     }
 
     private async Task LoadBusinessInfoAsync()
@@ -265,9 +261,7 @@ public partial class LoginPage : ContentPage
     private void UpdatePINDisplay()
     {
         var pinLength = PasswordEntry.Text?.Length ?? 0;
-        
-        System.Diagnostics.Debug.WriteLine($"📍 UpdatePINDisplay: PIN length = {pinLength}");
-        
+
         // Update dot colors based on PIN length
         Dot1.BackgroundColor = pinLength >= 1 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
         Dot2.BackgroundColor = pinLength >= 2 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
@@ -277,9 +271,7 @@ public partial class LoginPage : ContentPage
         // Auto-login when 4 digits entered
         if (pinLength == 4)
         {
-            System.Diagnostics.Debug.WriteLine("🔐 4 digits entered! Instant auto-login...");
-            
-            // INSTANT login - no delay at all!
+            // Instant login once 4 digits are entered.
             _ = PerformLoginAsync();
         }
     }

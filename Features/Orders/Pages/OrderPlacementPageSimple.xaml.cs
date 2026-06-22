@@ -25,8 +25,12 @@ namespace POS_in_NET.Pages
         private OrderRoutingPrintService _orderRoutingPrintService;
         private OrderNumberService _orderNumberService;
         private OrderLifecycleRolloutService _orderLifecycleRolloutService;
+        private CashDrawerService _cashDrawerService;
+        private DiscountAuditService _discountAuditService;
+        private LoyaltyService _loyaltyService;
         private RoleAccessService _roleAccessService;
         private AuthenticationService _authService;
+        private InactivityService _inactivityService;
         private RestaurantTableService _restaurantTableService;
         private DatabaseService _databaseService;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
@@ -73,6 +77,7 @@ namespace POS_in_NET.Pages
         private bool _hasShownConcurrencyConflict = false;
         private CancellationTokenSource _draftSaveDelayCts = new();
         private readonly SemaphoreSlim _draftSaveLock = new(1, 1);
+        private IDisposable? _idleDraftSaveRegistration;
 
         // Menu Caching
         private static List<MenuCategory>? _cachedCategories;
@@ -124,8 +129,19 @@ namespace POS_in_NET.Pages
             _orderRoutingPrintService = new OrderRoutingPrintService();
             _orderNumberService = new OrderNumberService(_databaseService);
             _orderLifecycleRolloutService = new OrderLifecycleRolloutService(_databaseService);
+            _cashDrawerService = ServiceHelper.GetService<CashDrawerService>()
+                ?? new CashDrawerService(
+                    _databaseService,
+                    ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService(),
+                    ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance);
+            _discountAuditService = ServiceHelper.GetService<DiscountAuditService>()
+                ?? new DiscountAuditService(
+                    _databaseService,
+                    ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance);
+            _loyaltyService = ServiceHelper.GetService<LoyaltyService>() ?? new LoyaltyService(_databaseService);
             _roleAccessService = new RoleAccessService();
             _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
+            _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
             _restaurantTableService = new RestaurantTableService();
         }
 
@@ -148,7 +164,21 @@ namespace POS_in_NET.Pages
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            _inactivityService.Start();
+            _inactivityService.ResetActivity();
+            _inactivityService.TrackPage(this);
+            _idleDraftSaveRegistration ??= _inactivityService.RegisterBeforeIdleReturnHandler(SaveDraftBeforeIdleReturnAsync);
             StartInitialLoadOnce();
+        }
+
+        private async Task SaveDraftBeforeIdleReturnAsync()
+        {
+            if (_isLoadingPersistentOrder || _isFinalizingOrder)
+            {
+                return;
+            }
+
+            await PersistDraftAsync(force: true);
         }
 
         private void StartInitialLoadOnce()
@@ -280,6 +310,9 @@ namespace POS_in_NET.Pages
 
             // Force subscribers (layout/live pages) to reload when user leaves edit screen.
             AppDataRefreshService.RequestRefresh();
+
+            _idleDraftSaveRegistration?.Dispose();
+            _idleDraftSaveRegistration = null;
         }
 
         private async Task LoadDataAsync()
@@ -777,6 +810,7 @@ namespace POS_in_NET.Pages
             _currentOrder.StartTime = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt;
             _currentOrder.CreatedAt = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt;
             _currentOrder.UpdatedAt = loadedOrder.UpdatedAt == default ? DateTime.Now : loadedOrder.UpdatedAt;
+            _currentOrder.Discount = loadedOrder.DiscountAmount;
             _currentOrder.ServiceChargePercent = loadedOrder.DeliveryFee > 0 && loadedOrder.SubtotalAmount > 0
                 ? Math.Round((loadedOrder.DeliveryFee / loadedOrder.SubtotalAmount) * 100m, 2)
                 : _currentOrder.ServiceChargePercent;
@@ -1017,6 +1051,7 @@ namespace POS_in_NET.Pages
                 return false;
             }
 
+            using var idleGuard = _inactivityService.BeginCriticalActivity();
             await _draftSaveLock.WaitAsync();
             try
             {
@@ -1200,7 +1235,7 @@ namespace POS_in_NET.Pages
                 ? _deliveryCustomerPhone
                 : _isCollectionOrder
                     ? _collectionCustomerPhone
-                    : null;
+                    : (!string.IsNullOrWhiteSpace(_currentOrder.CustomerPhone) ? _currentOrder.CustomerPhone : null);
 
             var customerAddress = _isDeliveryOrder ? _deliveryCustomerAddress : null;
             var now = DateTime.Now;
@@ -1212,7 +1247,8 @@ namespace POS_in_NET.Pages
                     Quantity = item.Quantity,
                     ItemPrice = item.UnitPrice,
                     SpecialInstructions = item.Notes,
-                    MenuItemId = item.MenuItemId
+                    MenuItemId = item.MenuItemId,
+                    PrintGroupId = item.PrintGroupId
                 })
                 .ToList();
 
@@ -1225,6 +1261,7 @@ namespace POS_in_NET.Pages
                 CustomerAddress = customerAddress,
                 TotalAmount = _currentOrder.Total,
                 SubtotalAmount = _currentOrder.Subtotal,
+                DiscountAmount = _currentOrder.Discount,
                 DeliveryFee = _currentOrder.ServiceCharge,
                 TaxAmount = _currentOrder.VAT,
                 OrderType = orderType,
@@ -1284,6 +1321,7 @@ namespace POS_in_NET.Pages
 
         private async Task MarkCurrentOrderChangedAsync()
         {
+            _inactivityService.ResetActivity();
             _currentOrder.UpdatedAt = DateTime.Now;
             UpdateDisplay();
             await QueueDraftAutosaveAsync();
@@ -1856,6 +1894,9 @@ namespace POS_in_NET.Pages
 
         private async void OnSendClicked(object? sender, EventArgs e)
         {
+            _inactivityService.ResetActivity();
+            using var idleGuard = _inactivityService.BeginCriticalActivity();
+
             var clickTime = DateTime.Now;
             System.Diagnostics.Debug.WriteLine($"⏱️ [SEND] USER CLICKED SEND TO KITCHEN at {clickTime:HH:mm:ss.fff}");
 
@@ -2009,7 +2050,9 @@ namespace POS_in_NET.Pages
                 }
                 else
                 {
-                    var legacyPrint = await _orderRoutingPrintService.PrintOrderAsync(printSnapshot);
+                    var legacyPrint = IsTakeawayStyleOrder()
+                        ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(printSnapshot, GetCanonicalOrderType())
+                        : await _orderRoutingPrintService.PrintOrderAsync(printSnapshot);
                     if (!legacyPrint.AnyPrinted)
                     {
                         await LogOperationalEventAsync("send_failed", new
@@ -2077,7 +2120,10 @@ namespace POS_in_NET.Pages
             try
             {
                 var printOrder = printSourceOrder ?? _currentOrder;
-                var printResult = await _orderRoutingPrintService.PrintOrderAsync(printOrder);
+                var printResult = IsTakeawayStyleOrder()
+                    ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(printOrder, GetCanonicalOrderType())
+                    : await _orderRoutingPrintService.PrintOrderAsync(printOrder);
+                var labelResult = await PrintLabelsForPrintedItemsAsync(printOrder, printResult.PrintedItemIds);
 
                 var printedDbItemIds = persistedOrder.Items
                     .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && printResult.PrintedItemIds.Contains(item.ClientItemId!))
@@ -2118,9 +2164,22 @@ namespace POS_in_NET.Pages
                 {
                     batchId,
                     printedCount = printResult.PrintedItemIds.Count,
+                    labelAttemptCount = labelResult.Attempted,
+                    labelPrintedCount = labelResult.Printed,
+                    labelFailedCount = labelResult.Failed,
                     failedCount = failedItems.Count,
                     hasFailures = printResult.HasFailures
                 });
+
+                if (labelResult.Failed > 0)
+                {
+                    _ = LogOperationalEventAsync("label_print_failed", new
+                    {
+                        batchId,
+                        failedCount = labelResult.Failed,
+                        errors = labelResult.Errors
+                    });
+                }
 
                 if (printResult.HasFailures)
                 {
@@ -2139,6 +2198,149 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Instant durable send error: {ex.Message}");
             }
         }
+
+        private async Task<LabelPrintSummary> PrintLabelsForPrintedItemsAsync(TableOrder printOrder, ISet<string> printedItemIds)
+        {
+            var summary = new LabelPrintSummary();
+
+            if (printedItemIds.Count == 0)
+            {
+                return summary;
+            }
+
+            var labelTarget = await ResolveLabelPrinterTargetAsync();
+            if (labelTarget == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[LABEL] No enabled label printer configured; skipping labels.");
+                return summary;
+            }
+
+            var labelService = new LabelPrintingService(labelTarget.IpAddress, labelTarget.Port, enabled: true);
+            var labelContext = BuildLabelPrintContext(printOrder);
+
+            foreach (var orderItem in printOrder.Items.Where(item => printedItemIds.Contains(item.Id)))
+            {
+                var menuItem = await ResolveMenuItemForLabelAsync(orderItem.MenuItemId);
+                if (menuItem == null || !ShouldPrintLabel(menuItem))
+                {
+                    continue;
+                }
+
+                summary.Attempted++;
+                var printed = await labelService.PrintItemLabelAsync(menuItem, labelContext, orderItem.Quantity);
+                if (printed)
+                {
+                    summary.Printed++;
+                }
+                else
+                {
+                    summary.Failed++;
+                    summary.Errors.Add($"{orderItem.Name}: label print failed on {labelTarget.Name}");
+                }
+            }
+
+            return summary;
+        }
+
+        private async Task<FoodMenuItem?> ResolveMenuItemForLabelAsync(string? menuItemId)
+        {
+            if (string.IsNullOrWhiteSpace(menuItemId))
+            {
+                return null;
+            }
+
+            var menuItem = _allMenuItems.FirstOrDefault(item => string.Equals(item.Id, menuItemId, StringComparison.OrdinalIgnoreCase));
+            menuItem ??= await _menuItemService.GetItemByIdAsync(menuItemId);
+
+            if (menuItem != null && menuItem.PrintComponentLabels && string.IsNullOrWhiteSpace(menuItem.ComponentLabelsJson))
+            {
+                menuItem.Components = await _menuItemService.GetItemComponentsAsync(menuItem.Id);
+            }
+
+            return menuItem;
+        }
+
+        private static bool ShouldPrintLabel(FoodMenuItem item)
+        {
+            return !string.IsNullOrWhiteSpace(item.LabelText)
+                || (item.PrintComponentLabels
+                    && (!string.IsNullOrWhiteSpace(item.ComponentLabelsJson) || item.Components.Count > 0));
+        }
+
+        private async Task<LabelPrinterTarget?> ResolveLabelPrinterTargetAsync()
+        {
+            try
+            {
+                var printerDb = ServiceHelper.GetService<NetworkPrinterDatabaseService>();
+                if (printerDb != null)
+                {
+                    var labelPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Label);
+                    var labelPrinter = labelPrinters.FirstOrDefault(printer => printer.IsEnabled);
+                    if (labelPrinter != null)
+                    {
+                        return new LabelPrinterTarget(labelPrinter.Name, labelPrinter.IpAddress, labelPrinter.Port);
+                    }
+                }
+
+                var printGroupService = ServiceHelper.GetService<PrintGroupService>() ?? new PrintGroupService();
+                var labelGroup = (await printGroupService.GetActivePrintGroupsAsync())
+                    .FirstOrDefault(group =>
+                        string.Equals(group.PrinterType, "label", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(group.PrinterIp));
+
+                if (labelGroup != null && !string.IsNullOrWhiteSpace(labelGroup.PrinterIp))
+                {
+                    return new LabelPrinterTarget(labelGroup.Name, labelGroup.PrinterIp, labelGroup.PrinterPort);
+                }
+
+                var businessSettings = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+                var businessInfo = await businessSettings.GetBusinessInfoAsync();
+                if (businessInfo?.LabelPrinterEnabled == true && !string.IsNullOrWhiteSpace(businessInfo.LabelPrinterIp))
+                {
+                    return new LabelPrinterTarget("Business Label Printer", businessInfo.LabelPrinterIp, businessInfo.LabelPrinterPort);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LABEL] Failed to resolve label printer: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private string BuildLabelPrintContext(TableOrder printOrder)
+        {
+            var orderReference = !string.IsNullOrWhiteSpace(printOrder.OrderNumber)
+                ? printOrder.OrderNumber
+                : _persistentOrderNumber;
+
+            if (string.IsNullOrWhiteSpace(orderReference))
+            {
+                orderReference = DateTime.Now.ToString("HH:mm");
+            }
+
+            if (_isDeliveryOrder)
+            {
+                return $"Delivery {orderReference}";
+            }
+
+            if (_isCollectionOrder)
+            {
+                return $"Collection {orderReference}";
+            }
+
+            return $"Table {printOrder.TableNumber} · {orderReference}";
+        }
+
+        private sealed class LabelPrintSummary
+        {
+            public int Attempted { get; set; }
+            public int Printed { get; set; }
+            public int Failed { get; set; }
+            public List<string> Errors { get; } = new();
+        }
+
+        private sealed record LabelPrinterTarget(string Name, string IpAddress, int Port);
 
         private async Task HandleSuccessfulSendAsync(int successCount, bool fastExit = false)
         {
@@ -2367,6 +2569,8 @@ namespace POS_in_NET.Pages
 
         private async void OnPrintReceiptClicked(object? sender, EventArgs e)
         {
+            _inactivityService.ResetActivity();
+
             if (_currentOrder.Items.Count == 0)
             {
                 var noItemsDialog = new ModernAlertDialog();
@@ -2374,11 +2578,18 @@ namespace POS_in_NET.Pages
                 await noItemsDialog.ShowAsync();
                 return;
             }
-            
-            // TODO: Implement actual receipt printing logic here
-            // For now, show a confirmation message
+
+            var printed = await PrintReceipt(_currentOrder.Total + _currentOrder.TipAmount, _currentOrder.TipAmount);
             var printDialog = new ModernAlertDialog();
-            printDialog.SetAlert("Printing", $"Receipt for Table {_currentOrder.TableNumber} sent to printer!", "🖨️", "#6366F1", "White");
+            if (printed)
+            {
+                printDialog.SetAlert("Receipt Printed", "Receipt sent to printer.", "🖨️", "#10B981", "White");
+            }
+            else
+            {
+                printDialog.SetAlert("Receipt Failed", "Could not print receipt. Please check the receipt printer setup.", "!", "#EF4444", "White");
+            }
+
             await printDialog.ShowAsync();
         }
 
@@ -2398,8 +2609,6 @@ namespace POS_in_NET.Pages
                 ("Merge Tables", "", true),
                 ("Fire Course", "", _currentOrder.Items.Count > 0),
                 ("Loyalty Points", "", true), // Now enabled
-                ("Split Bill", "", _currentOrder.Items.Count > 0),
-                ("Price Override", "", isManagerOrAdmin), // Manager/Admin only
                 ("Cash Drawer", "", isManagerOrAdmin) // Manager/Admin only
             };
             
@@ -2425,12 +2634,6 @@ namespace POS_in_NET.Pages
                     case "Loyalty Points":
                         await ShowLoyaltyPointsDialog();
                         break;
-                    case "Split Bill":
-                        await ShowSplitBillDialog();
-                        break;
-                    case "Price Override":
-                        await ShowPriceOverrideDialog();
-                        break;
                     case "Cash Drawer":
                         await OpenCashDrawer();
                         break;
@@ -2440,6 +2643,9 @@ namespace POS_in_NET.Pages
 
         private async void OnPayClicked(object? sender, EventArgs e)
         {
+            _inactivityService.ResetActivity();
+            using var idleGuard = _inactivityService.BeginCriticalActivity();
+
             if (_currentOrder.Items.Count == 0)
             {
                 var noItemsDialog = new ModernAlertDialog();
@@ -2474,7 +2680,7 @@ namespace POS_in_NET.Pages
             if (_currentOrder.ServiceCharge == 0)
             {
                 var tipDialog = new TipSelectionDialog();
-                tipDialog.SetOrderTotal(_currentOrder.Subtotal);
+                tipDialog.SetOrderTotal(_currentOrder.Total);
                 tip = await tipDialog.ShowAsync();
                 
                 if (tip == -1) // Cancelled
@@ -2482,7 +2688,7 @@ namespace POS_in_NET.Pages
                     return;
                 }
                 
-                totalDue = _currentOrder.Subtotal + tip;
+                totalDue = _currentOrder.Total + tip;
             }
 
             await EnsureTableSessionContextAsync(skipOrderLink: true, allowSessionOpen: false);
@@ -2490,12 +2696,34 @@ namespace POS_in_NET.Pages
             {
                 await _tableSessionService.MarkSessionPaymentAsync(_tableSessionId.Value);
             }
+
+            var splitPlan = await ShowPaymentSplitPlanDialog(totalDue);
+            if (splitPlan == null)
+            {
+                return;
+            }
             
             // Track remaining balance for partial payments
-            decimal remainingBalance = totalDue;
-            decimal totalPaid = 0;
+            decimal totalPaid = await GetExistingApprovedPaymentTotalAsync();
+            decimal remainingBalance = Math.Max(0, totalDue - totalPaid);
+            splitPlan.ApplyExistingPaid(totalPaid);
+            decimal currentSplitRemaining = splitPlan.GetNextAmount(remainingBalance);
+            var shouldRecordPaymentLines = _rolloutConfig.EnablePaymentLines || splitPlan.IsSplit;
 
-            if (_rolloutConfig.EnablePaymentLines)
+            if (remainingBalance <= 0)
+            {
+                await CompletePayment(totalDue, tip, totalPaid);
+                return;
+            }
+
+            if (totalPaid > 0)
+            {
+                var partialDialog = new ModernAlertDialog();
+                partialDialog.SetAlert("Partial Payment", $"£{totalPaid:F2} already paid. £{remainingBalance:F2} remaining.", "i", "#3B82F6", "White");
+                await partialDialog.ShowAsync();
+            }
+
+            if (shouldRecordPaymentLines)
             {
                 await PersistDraftAsync(force: true, lifecycleOverride: GetDraftLifecycleState());
             }
@@ -2503,15 +2731,28 @@ namespace POS_in_NET.Pages
             // Payment loop for partial payments
             while (remainingBalance > 0)
             {
+                var paymentAmount = splitPlan.IsSplit
+                    ? Math.Min(currentSplitRemaining, remainingBalance)
+                    : remainingBalance;
+
+                if (paymentAmount <= 0)
+                {
+                    paymentAmount = remainingBalance;
+                }
+
                 // Step 2: Show payment method selection
                 var methodDialog = new PaymentMethodDialog();
-                methodDialog.SetAmountDue(remainingBalance, totalDue - remainingBalance > 0 ? totalDue - remainingBalance : 0);
+                methodDialog.SetAmountDue(
+                    paymentAmount,
+                    Math.Max(0, remainingBalance - paymentAmount),
+                    splitPlan.GetPaymentTitle());
                 var paymentMethod = await methodDialog.ShowAsync();
                 
                 if (paymentMethod == PaymentMethod.Cancelled)
                 {
                     if (totalPaid > 0)
                     {
+                        await SavePartialPaymentOrderAsync(totalDue, tip, totalPaid, remainingBalance, splitPlan);
                         // Partial payment already made
                         var partialDialog = new ModernAlertDialog();
                         partialDialog.SetAlert("Partial Payment", $"£{totalPaid:F2} already paid. £{remainingBalance:F2} remaining.", "⚠️", "#F59E0B", "White");
@@ -2524,116 +2765,359 @@ namespace POS_in_NET.Pages
                 await LogOperationalEventAsync("payment_attempt", new
                 {
                     method = paymentMethod.ToString(),
-                    amountDue = remainingBalance
+                    amountDue = paymentAmount,
+                    totalRemaining = remainingBalance,
+                    split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null
                 });
 
-                if (_rolloutConfig.EnablePaymentLines)
+                if (shouldRecordPaymentLines)
                 {
                     var actor = ResolveCurrentActor();
                     await _orderService.RecordPaymentLineAsync(
                         _currentOrder.Id,
                         paymentMethod.ToString(),
-                        remainingBalance,
+                        paymentAmount,
                         "attempted",
                         0,
                         null,
                         actor.ActorName,
-                        new { amountDue = remainingBalance, orderMode = _currentOrder.OrderMode });
+                        new { amountDue = paymentAmount, totalRemaining = remainingBalance, split = splitPlan.ToMetadata(), orderMode = _currentOrder.OrderMode });
                 }
+
+                decimal paidThisAttempt = 0;
 
                 switch (paymentMethod)
                 {
                     case PaymentMethod.Cash:
-                        var cashResult = await ProcessCashPayment(remainingBalance);
+                        var cashResult = await ProcessCashPayment(paymentAmount);
                         if (cashResult.Success)
                         {
+                            paidThisAttempt = cashResult.AmountPaid;
                             await LogOperationalEventAsync("payment_approved", new
                             {
                                 method = "cash",
                                 amountPaid = cashResult.AmountPaid,
-                                remaining = cashResult.Remaining
+                                remaining = Math.Max(0, remainingBalance - cashResult.AmountPaid),
+                                split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null
                             });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", cashResult.AmountPaid, "approved", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", cashResult.AmountPaid, "approved", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount, change = cashResult.Change });
                             }
-                            totalPaid += cashResult.AmountPaid;
-                            remainingBalance = cashResult.Remaining;
                         }
                         else
                         {
-                            await LogOperationalEventAsync("payment_failed", new { method = "cash", amountDue = remainingBalance });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            await LogOperationalEventAsync("payment_failed", new { method = "cash", amountDue = paymentAmount, split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null });
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", remainingBalance, "failed", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", paymentAmount, "failed", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
                             }
                         }
                         break;
                         
                     case PaymentMethod.Card:
-                        var cardResult = await ProcessCardPayment(remainingBalance);
+                        var cardResult = await ProcessCardPayment(paymentAmount);
                         if (cardResult.Success)
                         {
+                            paidThisAttempt = cardResult.AmountPaid;
                             await LogOperationalEventAsync("payment_approved", new
                             {
                                 method = "card",
                                 amountPaid = cardResult.AmountPaid,
-                                remaining = 0m
+                                remaining = Math.Max(0, remainingBalance - cardResult.AmountPaid),
+                                split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null
                             });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", cardResult.AmountPaid, "approved", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", cardResult.AmountPaid, "approved", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
                             }
-                            totalPaid += cardResult.AmountPaid;
-                            remainingBalance = 0;
                         }
                         else
                         {
-                            await LogOperationalEventAsync("payment_failed", new { method = "card", amountDue = remainingBalance });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            await LogOperationalEventAsync("payment_failed", new { method = "card", amountDue = paymentAmount, split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null });
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", remainingBalance, "failed", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", paymentAmount, "failed", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
                             }
                         }
                         break;
                         
                     case PaymentMethod.GiftCard:
-                        var giftResult = await ProcessGiftCardPayment(remainingBalance);
+                        var giftResult = await ProcessGiftCardPayment(paymentAmount);
                         if (giftResult.Success)
                         {
+                            paidThisAttempt = giftResult.AmountApplied;
                             await LogOperationalEventAsync("payment_approved", new
                             {
                                 method = "gift_card",
                                 amountPaid = giftResult.AmountApplied,
-                                remaining = giftResult.Remaining
+                                remaining = Math.Max(0, remainingBalance - giftResult.AmountApplied),
+                                split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null
                             });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", giftResult.AmountApplied, "approved", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", giftResult.AmountApplied, "approved", 0, MaskGiftCardNumber(giftResult.GiftCardNumber), actor.ActorName, new
+                                {
+                                    split = splitPlan.ToMetadata(),
+                                    chargeAmount = paymentAmount,
+                                    giftCardNumber = MaskGiftCardNumber(giftResult.GiftCardNumber),
+                                    previousCardBalance = giftResult.PreviousCardBalance,
+                                    newCardBalance = giftResult.NewCardBalance,
+                                    orderWebMessage = giftResult.OrderWebMessage
+                                });
                             }
-                            totalPaid += giftResult.AmountApplied;
-                            remainingBalance = giftResult.Remaining;
                         }
                         else
                         {
-                            await LogOperationalEventAsync("payment_failed", new { method = "gift_card", amountDue = remainingBalance });
-                            if (_rolloutConfig.EnablePaymentLines)
+                            await LogOperationalEventAsync("payment_failed", new { method = "gift_card", amountDue = paymentAmount, split = splitPlan.IsSplit ? splitPlan.GetPaymentTitle() : null });
+                            if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", remainingBalance, "failed", 0, null, actor.ActorName);
+                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", paymentAmount, "failed", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
                             }
                         }
                         break;
+                }
+
+                if (paidThisAttempt > 0)
+                {
+                    paidThisAttempt = Math.Min(paidThisAttempt, remainingBalance);
+                    totalPaid += paidThisAttempt;
+                    remainingBalance = Math.Max(0, remainingBalance - paidThisAttempt);
+
+                    if (splitPlan.IsSplit)
+                    {
+                        currentSplitRemaining = Math.Max(0, currentSplitRemaining - paidThisAttempt);
+                        if (currentSplitRemaining <= 0.009m && remainingBalance > 0)
+                        {
+                            splitPlan.MarkPartComplete();
+                            currentSplitRemaining = splitPlan.GetNextAmount(remainingBalance);
+                        }
+                    }
+
+                    if (remainingBalance > 0)
+                    {
+                        await SavePartialPaymentOrderAsync(totalDue, tip, totalPaid, remainingBalance, splitPlan);
+                    }
                 }
             }
             
             // Payment complete - print receipt and close table
             await CompletePayment(totalDue, tip, totalPaid);
+        }
+
+        private async Task<PaymentSplitPlan?> ShowPaymentSplitPlanDialog(decimal totalDue)
+        {
+            var dialog = new ModernActionSheetDialog();
+            dialog.SetActionSheetGrid(
+                "Payment",
+                new List<string> { "Pay Full", "Split by 2", "Split by 4", "Split by 6", "Custom Split" },
+                "£",
+                "#059669"
+            );
+
+            var selected = await dialog.ShowAsync();
+            if (selected == null)
+            {
+                return null;
+            }
+
+            if (selected == "Pay Full")
+            {
+                return PaymentSplitPlan.Full(totalDue);
+            }
+
+            if (selected == "Custom Split")
+            {
+                var prompt = new StyledPromptDialog();
+                prompt.SetDialog(
+                    "Custom Split",
+                    "How many ways do you want to split this bill?",
+                    "e.g., 3",
+                    Keyboard.Numeric,
+                    string.Empty,
+                    true
+                );
+
+                var value = await prompt.ShowAsync();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                if (!int.TryParse(value.Trim(), out var customParts) || customParts < 2 || customParts > 20)
+                {
+                    var alert = new ModernAlertDialog();
+                    alert.SetAlert("Invalid Split", "Enter a split number between 2 and 20.", "!", "#EF4444", "White");
+                    await alert.ShowAsync();
+                    return null;
+                }
+
+                return PaymentSplitPlan.Equal(totalDue, customParts);
+            }
+
+            var splitCount = selected switch
+            {
+                "Split by 2" => 2,
+                "Split by 4" => 4,
+                "Split by 6" => 6,
+                _ => 1
+            };
+
+            return splitCount <= 1
+                ? PaymentSplitPlan.Full(totalDue)
+                : PaymentSplitPlan.Equal(totalDue, splitCount);
+        }
+
+        private async Task<decimal> GetExistingApprovedPaymentTotalAsync()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_currentOrder.Id))
+                {
+                    return 0m;
+                }
+
+                var existingOrder = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
+                if (existingOrder?.Id <= 0)
+                {
+                    return 0m;
+                }
+
+                var payments = await _orderService.GetOrderPaymentsAsync(existingOrder.Id);
+                return payments
+                    .Where(payment => string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                    .Sum(payment => payment.Amount);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading existing approved payments: {ex.Message}");
+                return 0m;
+            }
+        }
+
+        private async Task SavePartialPaymentOrderAsync(
+            decimal totalAmount,
+            decimal tip,
+            decimal totalPaid,
+            decimal remainingBalance,
+            PaymentSplitPlan splitPlan)
+        {
+            try
+            {
+                var order = await BuildPersistentOrderSnapshotAsync(LocalLifecycleState.PaymentPartial);
+                if (order == null)
+                {
+                    return;
+                }
+
+                order.TotalAmount = totalAmount;
+                order.PaymentMethod = splitPlan.IsSplit ? "split" : "partial";
+                var saveResult = await _orderService.SaveOrderAsync(order);
+                if (!saveResult.Success)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error saving partial payment order: {saveResult.Message}");
+                    return;
+                }
+
+                await LogOperationalEventAsync("state_changed", new
+                {
+                    to = "payment_partial",
+                    totalAmount,
+                    tip,
+                    totalPaid,
+                    remainingBalance,
+                    split = splitPlan.ToMetadata()
+                }, DateTime.Now);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error saving partial payment order: {ex.Message}");
+            }
+        }
+
+        private sealed class PaymentSplitPlan
+        {
+            private PaymentSplitPlan(decimal totalAmount, int totalParts)
+            {
+                TotalAmount = totalAmount;
+                TotalParts = Math.Max(1, totalParts);
+                CurrentPart = 1;
+                AmountPerPart = TotalParts <= 1
+                    ? totalAmount
+                    : Math.Round(totalAmount / TotalParts, 2, MidpointRounding.AwayFromZero);
+            }
+
+            public decimal TotalAmount { get; }
+            public int TotalParts { get; }
+            public int CurrentPart { get; private set; }
+            public decimal AmountPerPart { get; }
+            public bool IsSplit => TotalParts > 1;
+
+            public static PaymentSplitPlan Full(decimal totalAmount) => new(totalAmount, 1);
+
+            public static PaymentSplitPlan Equal(decimal totalAmount, int totalParts) => new(totalAmount, totalParts);
+
+            public decimal GetNextAmount(decimal remainingBalance)
+            {
+                if (!IsSplit)
+                {
+                    return remainingBalance;
+                }
+
+                var remainingParts = TotalParts - CurrentPart + 1;
+                return remainingParts <= 1
+                    ? remainingBalance
+                    : Math.Min(remainingBalance, AmountPerPart);
+            }
+
+            public void MarkPartComplete()
+            {
+                if (CurrentPart < TotalParts)
+                {
+                    CurrentPart++;
+                }
+            }
+
+            public void ApplyExistingPaid(decimal totalPaid)
+            {
+                if (!IsSplit || totalPaid <= 0 || AmountPerPart <= 0)
+                {
+                    return;
+                }
+
+                var paidRemaining = totalPaid;
+                CurrentPart = 1;
+                while (CurrentPart < TotalParts && paidRemaining >= AmountPerPart - 0.009m)
+                {
+                    paidRemaining -= AmountPerPart;
+                    CurrentPart++;
+                }
+            }
+
+            public string GetPaymentTitle()
+            {
+                return IsSplit
+                    ? $"SPLIT PAYMENT {CurrentPart} OF {TotalParts}"
+                    : "SELECT PAYMENT METHOD";
+            }
+
+            public object ToMetadata()
+            {
+                return new
+                {
+                    isSplit = IsSplit,
+                    totalParts = TotalParts,
+                    currentPart = CurrentPart,
+                    amountPerPart = AmountPerPart,
+                    totalAmount = TotalAmount
+                };
+            }
         }
 
         private async Task<CashPaymentResult> ProcessCashPayment(decimal amountDue)
@@ -2653,8 +3137,21 @@ namespace POS_in_NET.Pages
         private async Task<GiftCardPaymentResult> ProcessGiftCardPayment(decimal amountDue)
         {
             var giftDialog = new GiftCardPaymentDialog();
-            giftDialog.SetAmountDue(amountDue);
+            giftDialog.SetAmountDue(amountDue, _currentOrder?.Id);
             return await giftDialog.ShowAsync();
+        }
+
+        private static string? MaskGiftCardNumber(string? cardNumber)
+        {
+            if (string.IsNullOrWhiteSpace(cardNumber))
+            {
+                return null;
+            }
+
+            var trimmed = cardNumber.Trim();
+            return trimmed.Length <= 4
+                ? trimmed
+                : $"{new string('*', Math.Max(0, trimmed.Length - 4))}{trimmed[^4..]}";
         }
 
         private async Task CompletePayment(decimal totalAmount, decimal tip, decimal totalPaid)
@@ -2682,8 +3179,14 @@ namespace POS_in_NET.Pages
             successDialog.SetAlert("Payment Complete", $"Total: £{totalAmount:F2}{tipText}{orderTypeText}\n\nPrinting receipt...", "✅", "#10B981", "White");
             await successDialog.ShowAsync();
             
-            // Print receipt (always)
-            await PrintReceipt(totalAmount, tip);
+            // Print receipt (always attempt, but do not block payment completion).
+            var receiptPrinted = await PrintReceipt(totalAmount, tip);
+            if (!receiptPrinted)
+            {
+                var receiptFailedDialog = new ModernAlertDialog();
+                receiptFailedDialog.SetAlert("Receipt Failed", "Payment is saved, but the receipt could not print. Please check the receipt printer setup.", "!", "#EF4444", "White");
+                await receiptFailedDialog.ShowAsync();
+            }
             
             // Close table and navigate back
             await CloseTable();
@@ -2839,6 +3342,11 @@ namespace POS_in_NET.Pages
             return _isDeliveryOrder || _isCollectionOrder ? "takeaway" : "table";
         }
 
+        private bool IsTakeawayStyleOrder()
+        {
+            return _isDeliveryOrder || _isCollectionOrder;
+        }
+
         private void SyncCurrentOrderMode()
         {
             if (_currentOrder == null)
@@ -2864,15 +3372,226 @@ namespace POS_in_NET.Pages
             return "Table";
         }
 
-        private async Task PrintReceipt(decimal total, decimal tip)
+        private async Task<bool> PrintReceipt(decimal total, decimal tip)
         {
-            // TODO: Implement actual receipt printing
-            // Keep this non-blocking for payment UX speed.
-            // In real implementation:
-            // - Connect to printer service
-            // - Format receipt with order items, totals, tip, etc.
-            // - Send to printer
-            await Task.CompletedTask;
+            using var idleGuard = _inactivityService.BeginCriticalActivity();
+
+            try
+            {
+                _currentOrder.RecalculateAll();
+
+                var receiptPrinter = await ResolveLocalReceiptPrinterAsync();
+                if (receiptPrinter == null)
+                {
+                    await LogOperationalEventAsync("receipt_print_failed", new
+                    {
+                        reason = "receipt_printer_not_configured",
+                        orderType = GetCanonicalOrderType()
+                    });
+                    return false;
+                }
+
+                var printerService = ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService();
+                var receiptData = BuildLocalReceiptData(receiptPrinter, total, tip);
+                var sent = await printerService.SendToPrinterAsync(receiptPrinter, receiptData);
+
+                await LogOperationalEventAsync(sent ? "receipt_printed" : "receipt_print_failed", new
+                {
+                    printerId = receiptPrinter.Id,
+                    printerName = receiptPrinter.Name,
+                    orderType = GetCanonicalOrderType(),
+                    amount = total
+                });
+
+                return sent;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Receipt print failed: {ex.Message}");
+                await LogOperationalEventAsync("receipt_print_failed", new
+                {
+                    reason = ex.Message,
+                    orderType = GetCanonicalOrderType()
+                });
+                return false;
+            }
+        }
+
+        private async Task<NetworkPrinter?> ResolveLocalReceiptPrinterAsync()
+        {
+            var printerDb = ServiceHelper.GetService<NetworkPrinterDatabaseService>();
+            if (printerDb == null)
+            {
+                return null;
+            }
+
+            var receiptPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
+            var receiptPrinter = receiptPrinters.FirstOrDefault(printer => printer.IsEnabled);
+            if (receiptPrinter != null)
+            {
+                return receiptPrinter;
+            }
+
+            if (IsTakeawayStyleOrder())
+            {
+                var onlineReceiptPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Online);
+                return onlineReceiptPrinters.FirstOrDefault(printer => printer.IsEnabled);
+            }
+
+            return null;
+        }
+
+        private byte[] BuildLocalReceiptData(NetworkPrinter printer, decimal total, decimal tip)
+        {
+            var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
+            var lineWidth = printer.PaperWidth == PaperWidth.Mm80 ? 48 : 32;
+            var orderReference = GetReceiptOrderReference();
+            var orderType = GetSavedOrderTypeLabel().ToUpperInvariant();
+
+            builder.Initialize()
+                   .SetAlign(TextAlign.Center)
+                   .SetBold(true)
+                   .SetFontSize(2, 2)
+                   .PrintLine("RECEIPT")
+                   .SetNormalSize()
+                   .SetBold(false)
+                   .PrintLine(orderType)
+                   .PrintLine($"Order #{orderReference}")
+                   .PrintLine(DateTime.Now.ToString("dd/MM/yyyy HH:mm"))
+                   .PrintLine(new string('=', lineWidth))
+                   .SetAlign(TextAlign.Left);
+
+            AppendReceiptCustomerBlock(builder);
+
+            builder.PrintLine(new string('-', lineWidth));
+
+            foreach (var item in _currentOrder.Items.Where(item => !item.IsVoided))
+            {
+                var itemTotal = item.TotalPriceWithVat > 0 ? item.TotalPriceWithVat : item.TotalPrice;
+                builder.PrintColumns($"{item.Quantity}x {item.Name}", FormatCurrency(itemTotal));
+
+                foreach (var addon in item.SelectedAddons)
+                {
+                    var addonTotal = addon.Price * item.Quantity;
+                    builder.PrintColumns($"  + {addon.Name}", addonTotal > 0 ? FormatCurrency(addonTotal) : string.Empty);
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.Notes))
+                {
+                    builder.PrintLine($"  Note: {item.Notes}");
+                }
+            }
+
+            builder.PrintLine(new string('-', lineWidth))
+                   .PrintColumns("Subtotal:", FormatCurrency(_currentOrder.Subtotal));
+
+            if (_currentOrder.ServiceCharge > 0)
+            {
+                builder.PrintColumns(IsTakeawayStyleOrder() ? "Delivery/Fee:" : "Service:", FormatCurrency(_currentOrder.ServiceCharge));
+            }
+
+            if (_currentOrder.Discount > 0)
+            {
+                builder.PrintColumns("Discount:", $"-{FormatCurrency(_currentOrder.Discount)}");
+            }
+
+            if (tip > 0)
+            {
+                builder.PrintColumns("Tip:", FormatCurrency(tip));
+            }
+
+            builder.PrintLine(new string('=', lineWidth))
+                   .SetBold(true)
+                   .SetFontSize(2, 1)
+                   .PrintColumns("TOTAL:", FormatCurrency(total))
+                   .SetNormalSize()
+                   .SetBold(false)
+                   .PrintLine("(VAT included in item prices)");
+
+            if (_currentOrder.VAT > 0)
+            {
+                builder.PrintColumns("VAT included:", FormatCurrency(_currentOrder.VAT));
+            }
+
+            if (_currentOrder.Payments.Count > 0)
+            {
+                builder.PrintLine(new string('-', lineWidth));
+                foreach (var payment in _currentOrder.Payments)
+                {
+                    builder.PrintColumns(payment.Method.ToString(), FormatCurrency(payment.Amount));
+                }
+            }
+
+            builder.FeedLines(1)
+                   .SetAlign(TextAlign.Center)
+                   .PrintLine("Thank you")
+                   .FeedLines(3);
+
+            if (printer.HasCutter)
+            {
+                builder.Cut(true);
+            }
+
+            return builder.Build();
+        }
+
+        private void AppendReceiptCustomerBlock(EscPosBuilder builder)
+        {
+            if (_isDeliveryOrder)
+            {
+                if (!string.IsNullOrWhiteSpace(_deliveryCustomerName))
+                {
+                    builder.PrintLine($"Customer: {_deliveryCustomerName}");
+                }
+                if (!string.IsNullOrWhiteSpace(_deliveryCustomerPhone))
+                {
+                    builder.PrintLine($"Phone: {_deliveryCustomerPhone}");
+                }
+                if (!string.IsNullOrWhiteSpace(_deliveryCustomerAddress))
+                {
+                    builder.PrintLine($"Address: {_deliveryCustomerAddress}");
+                }
+                return;
+            }
+
+            if (_isCollectionOrder)
+            {
+                if (!string.IsNullOrWhiteSpace(_collectionCustomerName))
+                {
+                    builder.PrintLine($"Customer: {_collectionCustomerName}");
+                }
+                if (!string.IsNullOrWhiteSpace(_collectionCustomerPhone))
+                {
+                    builder.PrintLine($"Phone: {_collectionCustomerPhone}");
+                }
+                return;
+            }
+
+            builder.PrintLine($"Table: {_currentOrder.TableNumber}");
+            if (_currentOrder.CoverCount > 0)
+            {
+                builder.PrintLine($"Covers: {_currentOrder.CoverCount}");
+            }
+        }
+
+        private string GetReceiptOrderReference()
+        {
+            if (!string.IsNullOrWhiteSpace(_currentOrder.OrderNumber))
+            {
+                return _currentOrder.OrderNumber;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_persistentOrderNumber))
+            {
+                return _persistentOrderNumber;
+            }
+
+            return string.IsNullOrWhiteSpace(_currentOrder.Id) ? DateTime.Now.ToString("HHmmss") : _currentOrder.Id;
+        }
+
+        private static string FormatCurrency(decimal amount)
+        {
+            return $"£{amount:F2}";
         }
 
         private async Task CloseTable()
@@ -2901,12 +3620,15 @@ namespace POS_in_NET.Pages
         {
             var dialog = new DiscountDialog();
             dialog.SetOrderSubtotal(_currentOrder.Subtotal);
+            var previousDiscount = _currentOrder.Discount;
             
             var result = await dialog.ShowAsync();
             
-            if (result.HasValue)
+            if (result != null)
             {
-                var (discountAmount, discountPercent, reason) = result.Value;
+                var discountAmount = result.DiscountAmount;
+                var discountPercent = result.DiscountPercent;
+                var reason = result.Reason;
                 
                 _currentOrder.Discount = discountAmount;
                 _currentOrder.DiscountPercent = discountPercent;
@@ -2914,6 +3636,7 @@ namespace POS_in_NET.Pages
                 
                 UpdateDisplay();
                 await MarkCurrentOrderChangedAsync();
+                await LogDiscountAuditAsync(result, previousDiscount);
                 
                 if (discountAmount > 0)
                 {
@@ -2928,6 +3651,54 @@ namespace POS_in_NET.Pages
                     alert.SetAlert("Discount Removed", "Discount has been removed from the order.", "", "#3B82F6", "White");
                     await alert.ShowAsync();
                 }
+            }
+        }
+
+        private async Task LogDiscountAuditAsync(DiscountDialogResult result, decimal previousDiscount)
+        {
+            if (previousDiscount <= 0 && result.DiscountAmount <= 0)
+            {
+                return;
+            }
+
+            EnsureCurrentOrderIdentity();
+
+            var action = result.DiscountAmount <= 0
+                ? "removed"
+                : previousDiscount > 0
+                    ? "updated"
+                    : "applied";
+
+            try
+            {
+                await _discountAuditService.LogAsync(new DiscountAuditRequest
+                {
+                    OrderId = _currentOrder.Id,
+                    OrderNumber = string.IsNullOrWhiteSpace(_persistentOrderNumber)
+                        ? _currentOrder.OrderNumber
+                        : _persistentOrderNumber,
+                    TableSessionId = _tableSessionId,
+                    TableNumber = _currentOrder.TableNumber > 0
+                        ? _currentOrder.TableNumber.ToString()
+                        : null,
+                    Action = action,
+                    DiscountType = result.DiscountType,
+                    SubtotalAmount = _currentOrder.Subtotal,
+                    PreviousDiscountAmount = previousDiscount,
+                    DiscountAmount = result.DiscountAmount,
+                    DiscountPercent = result.DiscountPercent,
+                    TotalAfterDiscount = _currentOrder.Total,
+                    Reason = action == "removed"
+                        ? "Discount removed"
+                        : result.Reason,
+                    SourceArea = "order_more_options",
+                    ApprovalRequired = result.ApprovalRequired,
+                    ApprovedBy = result.ApprovedBy
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Discount audit log failed: {ex.Message}");
             }
         }
 
@@ -2957,12 +3728,14 @@ namespace POS_in_NET.Pages
                 }
 
                 _currentOrder.TableNumber = int.Parse(selectedTable.TableNumber);
-                
+
                 // Update TopBar title
                 if (TopBar != null)
                 {
                     TopBar.SetPageTitle($"Table {selectedTable.TableNumber}");
                 }
+
+                await MarkCurrentOrderChangedAsync();
                 
                 // Show success message
                 var alert = new ModernAlertDialog();
@@ -2974,11 +3747,8 @@ namespace POS_in_NET.Pages
                     "White"
                 );
                 await alert.ShowAsync();
-                
-                // TODO: Update table status in database
-                // - Mark old table as Available
-                // - Mark new table as Occupied
-                await MarkCurrentOrderChangedAsync();
+
+                await Shell.Current.GoToAsync("//visuallayout", false);
             }
         }
 
@@ -3083,21 +3853,188 @@ namespace POS_in_NET.Pages
 
         private async Task ShowLoyaltyPointsDialog()
         {
-            var dialog = new StyledPromptDialog();
-            dialog.SetDialog(
-                "Loyalty Points",
-                "Enter customer phone or loyalty card number:",
-                "e.g., 555-1234",
-                Keyboard.Telephone
-            );
-            
-            var result = await dialog.ShowAsync();
-            
-            if (!string.IsNullOrEmpty(result))
+            if (_currentOrder.Items.Count == 0)
             {
-                var infoDialog = new ModernAlertDialog();
-                infoDialog.SetAlert("Loyalty", "Loyalty points feature coming soon!", "⭐", "#3B82F6", "White");
-                await infoDialog.ShowAsync();
+                var noItemsDialog = new ModernAlertDialog();
+                noItemsDialog.SetAlert("No Items", "Add items before redeeming loyalty points.", "ℹ️");
+                await noItemsDialog.ShowAsync();
+                return;
+            }
+
+            if (_currentOrder.Total <= 0)
+            {
+                var noTotalDialog = new ModernAlertDialog();
+                noTotalDialog.SetAlert("No Bill", "There is no bill amount to offset with loyalty points.", "ℹ️");
+                await noTotalDialog.ShowAsync();
+                return;
+            }
+
+            try
+            {
+                await _loyaltyService.ReinitializeAsync();
+
+                var customerNumber = await DisplayPromptAsync(
+                    "Loyalty Points",
+                    "Enter customer phone number or loyalty card number:",
+                    "Continue",
+                    "Cancel",
+                    "e.g. 07123 456 789",
+                    maxLength: 32,
+                    keyboard: Keyboard.Telephone);
+
+                if (string.IsNullOrWhiteSpace(customerNumber))
+                {
+                    return;
+                }
+
+                var lookup = await _loyaltyService.SearchCustomerAsync(customerNumber);
+                if (!lookup.Success || lookup.Customer == null)
+                {
+                    var errorDialog = new ModernAlertDialog();
+                    errorDialog.SetAlert("Loyalty Lookup Failed", lookup.Error ?? "Customer not found.", "⚠️", "#EF4444", "White");
+                    await errorDialog.ShowAsync();
+                    return;
+                }
+
+                var customer = lookup.Customer;
+                var availablePoints = customer.PointsBalance;
+                var maxBillPoints = (int)Math.Floor(_currentOrder.Total * 100m);
+                var maxRedeemablePoints = Math.Min(availablePoints, maxBillPoints);
+
+                var balanceDialog = new ModernAlertDialog();
+                balanceDialog.SetAlert(
+                    "Loyalty Balance",
+                    $"Customer: {customer.CustomerName}\n" +
+                    $"Phone: {customer.DisplayPhone}\n" +
+                    $"Card: {customer.LoyaltyCardNumber}\n" +
+                    $"Available points: {availablePoints:N0}\n" +
+                    $"Current bill: £{_currentOrder.Total:F2}\n" +
+                    $"Max redeemable: {maxRedeemablePoints:N0} points",
+                    "⭐",
+                    "#3B82F6",
+                    "White");
+                await balanceDialog.ShowAsync();
+
+                if (maxRedeemablePoints <= 0)
+                {
+                    var noRedeemDialog = new ModernAlertDialog();
+                    noRedeemDialog.SetAlert("Nothing to Redeem", "There are no points available to apply to this bill.", "ℹ️");
+                    await noRedeemDialog.ShowAsync();
+                    return;
+                }
+
+                var pointsText = await DisplayPromptAsync(
+                    "Redeem Loyalty Points",
+                    $"Available balance: {availablePoints:N0} pts\n" +
+                    $"Bill limit: {maxBillPoints:N0} pts\n" +
+                    $"1 point = £0.01\n\n" +
+                    $"Enter points to redeem (max {maxRedeemablePoints:N0}):",
+                    "Apply",
+                    "Cancel",
+                    $"{maxRedeemablePoints}",
+                    maxLength: 8,
+                    keyboard: Keyboard.Numeric);
+
+                if (string.IsNullOrWhiteSpace(pointsText))
+                {
+                    return;
+                }
+
+                if (!int.TryParse(pointsText, out var pointsToRedeem) || pointsToRedeem <= 0)
+                {
+                    var invalidDialog = new ModernAlertDialog();
+                    invalidDialog.SetAlert("Invalid Points", "Enter a valid number of points.", "⚠️", "#EF4444", "White");
+                    await invalidDialog.ShowAsync();
+                    return;
+                }
+
+                if (pointsToRedeem > maxRedeemablePoints)
+                {
+                    var limitDialog = new ModernAlertDialog();
+                    limitDialog.SetAlert("Points Too High", $"You can only redeem up to {maxRedeemablePoints:N0} points on this bill.", "⚠️", "#EF4444", "White");
+                    await limitDialog.ShowAsync();
+                    return;
+                }
+
+                var discountAmount = Math.Round(pointsToRedeem / 100m, 2, MidpointRounding.AwayFromZero);
+                var remainingTotal = Math.Max(0m, _currentOrder.Total - discountAmount);
+                var confirm = await DisplayAlert(
+                    "Confirm Loyalty Redemption",
+                    $"Redeem {pointsToRedeem:N0} points for £{discountAmount:F2}?\n\n" +
+                    $"New bill total: £{remainingTotal:F2}",
+                    "Redeem",
+                    "Cancel");
+
+                if (!confirm)
+                {
+                    return;
+                }
+
+                var reason = $"Loyalty redemption - {customer.CustomerName}";
+                var result = await _loyaltyService.RedeemPointsAsync(customer.Phone, pointsToRedeem, reason);
+
+                if (!result.Success || result.Customer == null)
+                {
+                    var redeemErrorDialog = new ModernAlertDialog();
+                    redeemErrorDialog.SetAlert("Redemption Failed", result.Error ?? "Unable to redeem loyalty points.", "⚠️", "#EF4444", "White");
+                    await redeemErrorDialog.ShowAsync();
+                    return;
+                }
+
+                var previousDiscount = _currentOrder.Discount;
+                _currentOrder.CustomerName = customer.CustomerName;
+                _currentOrder.CustomerPhone = customer.Phone;
+                _currentOrder.LoyaltyCardNumber = customer.LoyaltyCardNumber;
+                _currentOrder.LoyaltyPointsRedeemed += pointsToRedeem;
+                _currentOrder.Discount = previousDiscount + discountAmount;
+                _currentOrder.DiscountReason = string.IsNullOrWhiteSpace(_currentOrder.DiscountReason)
+                    ? reason
+                    : $"{_currentOrder.DiscountReason}; {reason}";
+
+                UpdateDisplay();
+                await MarkCurrentOrderChangedAsync();
+
+                try
+                {
+                    await _discountAuditService.LogAsync(new DiscountAuditRequest
+                    {
+                        OrderId = _currentOrder.Id,
+                        OrderNumber = string.IsNullOrWhiteSpace(_persistentOrderNumber) ? _currentOrder.OrderNumber : _persistentOrderNumber,
+                        TableSessionId = _tableSessionId,
+                        TableNumber = _currentOrder.TableNumber > 0 ? _currentOrder.TableNumber.ToString() : null,
+                        Action = previousDiscount > 0 ? "updated" : "applied",
+                        DiscountType = "loyalty",
+                        SubtotalAmount = _currentOrder.Subtotal,
+                        PreviousDiscountAmount = previousDiscount,
+                        DiscountAmount = _currentOrder.Discount,
+                        DiscountPercent = 0,
+                        TotalAfterDiscount = _currentOrder.Total,
+                        Reason = reason,
+                        SourceArea = "order_loyalty",
+                        ApprovalRequired = false
+                    });
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Loyalty discount audit failed: {ex.Message}");
+                }
+
+                var successDialog = new ModernAlertDialog();
+                successDialog.SetAlert(
+                    "Loyalty Applied",
+                    $"Redeemed {pointsToRedeem:N0} points for £{discountAmount:F2}.\n" +
+                    $"Remaining balance: {result.Customer.PointsBalance:N0} pts\n" +
+                    $"New bill total: £{_currentOrder.Total:F2}",
+                    "✅",
+                    "#10B981",
+                    "White");
+                await successDialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                var errorDialog = new ModernAlertDialog();
+                errorDialog.SetAlert("Loyalty Error", $"Unable to process loyalty redemption: {ex.Message}", "⚠️", "#EF4444", "White");
+                await errorDialog.ShowAsync();
             }
         }
 
@@ -3118,23 +4055,87 @@ namespace POS_in_NET.Pages
 
         private async Task OpenCashDrawer()
         {
+            var reasonDialog = new ModernActionSheetDialog();
+            reasonDialog.SetActionSheetGrid(
+                "Cash Drawer Reason",
+                new List<string> { "No Sale", "Change", "Refund", "Cash Count", "Other" },
+                "£",
+                "#0F766E"
+            );
+
+            var reason = await reasonDialog.ShowAsync();
+            if (reason == null)
+            {
+                return;
+            }
+
+            if (reason == "Other")
+            {
+                var customReasonDialog = new StyledPromptDialog();
+                customReasonDialog.SetDialog(
+                    "Cash Drawer Reason",
+                    "Enter the reason for opening the cash drawer:",
+                    "Reason",
+                    null,
+                    string.Empty,
+                    true
+                );
+
+                reason = await customReasonDialog.ShowAsync();
+                if (string.IsNullOrWhiteSpace(reason))
+                {
+                    return;
+                }
+            }
+
             var confirmDialog = new ModernConfirmDialog();
             confirmDialog.SetConfirm(
                 "Open Cash Drawer",
-                "Are you sure you want to open the cash drawer?",
-                "Yes",
+                $"Open the cash drawer for: {reason}?",
+                "Open",
                 "No",
-                "💳"
+                "£"
             );
             
             var confirm = await confirmDialog.ShowAsync();
             
             if (confirm)
             {
-                // TODO: Send command to cash drawer hardware
-                var successDialog = new ModernAlertDialog();
-                successDialog.SetAlert("Cash Drawer", "Cash drawer opened successfully!", "✅", "#10B981", "White");
-                await successDialog.ShowAsync();
+                var result = await _cashDrawerService.OpenAsync(new CashDrawerOpenRequest
+                {
+                    Reason = reason,
+                    SourceArea = "order_more_options",
+                    OrderId = _currentOrder.Id,
+                    OrderNumber = string.IsNullOrWhiteSpace(_persistentOrderNumber)
+                        ? _currentOrder.OrderNumber
+                        : _persistentOrderNumber,
+                    TableSessionId = _tableSessionId,
+                    TableNumber = _currentOrder.TableNumber > 0
+                        ? _currentOrder.TableNumber.ToString()
+                        : null
+                });
+
+                var resultDialog = new ModernAlertDialog();
+                if (result.Success)
+                {
+                    resultDialog.SetAlert(
+                        "Cash Drawer",
+                        $"Cash drawer opened on {result.PrinterName}.",
+                        "OK",
+                        "#10B981",
+                        "White");
+                }
+                else
+                {
+                    resultDialog.SetAlert(
+                        "Cash Drawer Failed",
+                        result.Message,
+                        "!",
+                        "#EF4444",
+                        "White");
+                }
+
+                await resultDialog.ShowAsync();
             }
         }
     }

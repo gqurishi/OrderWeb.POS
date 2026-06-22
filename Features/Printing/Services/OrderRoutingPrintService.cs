@@ -228,6 +228,71 @@ public sealed class OrderRoutingPrintService
         return await HandleNormalRoutingAsync(order, itemsToPrint, routeTarget);
     }
 
+    public async Task<OrderRoutingPrintResult> PrintTakeawayOrderAsync(TableOrder order, string orderType)
+    {
+        var result = new OrderRoutingPrintResult();
+
+        var itemsToPrint = order.Items
+            .Where(item => item.SendStatus == ItemSendStatus.NotSent)
+            .ToList();
+
+        if (itemsToPrint.Count == 0)
+        {
+            return result;
+        }
+
+        var printerDb = ServiceHelper.GetService<NetworkPrinterDatabaseService>();
+        if (printerDb == null)
+        {
+            result.FailedRoutes.Add("Takeaway Kitchen printer service is not available");
+            result.FailedRouteDetails.Add(new PrintRouteFailure
+            {
+                RouteTarget = string.Empty,
+                RouteName = "Takeaway Kitchen",
+                Reason = "printer service is not available"
+            });
+            return result;
+        }
+
+        var takeawayPrinter = (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Takeaway))
+            .FirstOrDefault(printer => printer.IsEnabled);
+
+        if (takeawayPrinter == null)
+        {
+            result.FailedRoutes.Add("Takeaway Kitchen printer is not configured");
+            result.FailedRouteDetails.Add(new PrintRouteFailure
+            {
+                RouteTarget = string.Empty,
+                RouteName = "Takeaway Kitchen",
+                Reason = "printer is not configured"
+            });
+            return result;
+        }
+
+        var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType);
+        var sent = await _printerService.SendRawDataAsync(takeawayPrinter.IpAddress, takeawayPrinter.Port, ticketData);
+
+        if (sent)
+        {
+            foreach (var item in itemsToPrint)
+            {
+                result.PrintedItemIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            result.FailedRoutes.Add($"{takeawayPrinter.Name}: print failed");
+            result.FailedRouteDetails.Add(new PrintRouteFailure
+            {
+                RouteTarget = string.Empty,
+                RouteName = takeawayPrinter.Name,
+                Reason = "print failed"
+            });
+        }
+
+        return result;
+    }
+
     private async Task<OrderRoutingPrintResult> HandlePdfFallbackAsync(TableOrder order, List<TableOrderItem> itemsToPrint)
     {
         var result = new OrderRoutingPrintResult();
@@ -480,5 +545,90 @@ public sealed class OrderRoutingPrintService
         }
 
         return builder.Build();
+    }
+
+    private byte[] BuildTakeawayTicket(TableOrder order, NetworkPrinter printer, List<TableOrderItem> items, string orderType)
+    {
+        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
+        var lineWidth = printer.PaperWidth == PaperWidth.Mm80 ? 48 : 32;
+        var orderReference = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber;
+        var typeLabel = NormalizeTakeawayOrderType(orderType);
+
+        builder.Initialize();
+
+        if (printer.HasBuzzer)
+        {
+            builder.Buzzer();
+        }
+
+        builder.SetAlign(TextAlign.Center)
+               .SetFontSize(2, 2)
+               .SetBold(true)
+               .PrintLine("TAKEAWAY")
+               .SetNormalSize()
+               .SetBold(false)
+               .SetFontSize(2, 1)
+               .SetBold(true)
+               .PrintLine($"[ {typeLabel} ]")
+               .SetNormalSize()
+               .SetBold(false)
+               .PrintLine($"Order #{orderReference}")
+               .PrintLine(DateTime.Now.ToString("dd/MM/yyyy HH:mm"))
+               .PrintLine(new string('=', lineWidth))
+               .SetAlign(TextAlign.Left);
+
+        foreach (var item in items)
+        {
+            builder.SetFontSize(2, 1)
+                   .SetBold(true)
+                   .PrintLine($"{item.Quantity}x {item.Name}")
+                   .SetNormalSize()
+                   .SetBold(false);
+
+            foreach (var addon in item.SelectedAddons)
+            {
+                builder.PrintLine($"   + {addon.Name}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Notes))
+            {
+                builder.SetBold(true)
+                       .PrintLine($"   >> {item.Notes}")
+                       .SetBold(false);
+            }
+
+            builder.FeedLines(1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.Notes))
+        {
+            builder.PrintLine(new string('-', lineWidth))
+                   .SetBold(true)
+                   .PrintLine("ORDER NOTES:")
+                   .SetBold(false)
+                   .PrintLine(order.Notes);
+        }
+
+        builder.PrintLine(new string('=', lineWidth))
+               .SetAlign(TextAlign.Center)
+               .PrintLine($"{typeLabel} • TAKEAWAY KITCHEN")
+               .FeedLines(2);
+
+        if (printer.HasCutter)
+        {
+            builder.Cut(true);
+        }
+
+        return builder.Build();
+    }
+
+    private static string NormalizeTakeawayOrderType(string orderType)
+    {
+        return orderType.Trim().ToLowerInvariant() switch
+        {
+            "delivery" => "DELIVERY",
+            "pickup" or "collection" => "COLLECTION",
+            _ => "TAKEAWAY"
+        };
     }
 }

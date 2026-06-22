@@ -2,6 +2,7 @@ using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
 using Microsoft.Maui.Controls.Shapes;
+using MySqlConnector;
 using Syncfusion.Maui.Calendar;
 using System;
 using System.Collections.Generic;
@@ -37,8 +38,8 @@ namespace POS_in_NET.Pages
         private DateTime _selectedDate = DateTime.Today;
         private bool _showAllOrders = false; // Toggle to show all orders without date filter
         
-        private ObservableCollection<Order> _orders = new ObservableCollection<Order>();
-        public ObservableCollection<Order> Orders
+        private ObservableCollection<WebOrderRow> _orders = new ObservableCollection<WebOrderRow>();
+        public ObservableCollection<WebOrderRow> Orders
         {
             get => _orders;
             set
@@ -96,9 +97,10 @@ namespace POS_in_NET.Pages
             // Now link WebSocket to CloudService
             if (cloudService != null && wsService != null)
             {
-                // Link WebSocket service to cloud service for status monitoring only
+                // Keep WebSocket and polling on the same order-processing path.
                 cloudService.SetWebSocketService(wsService);
-                System.Diagnostics.Debug.WriteLine("✅ CloudService linked to WebSocket for status monitoring (no UI auto-refresh)");
+                wsService.SetCloudOrderService(cloudService);
+                System.Diagnostics.Debug.WriteLine("✅ CloudService and WebSocket linked for shared order processing");
             }
             
             // Start status update timer (every 10 seconds)
@@ -384,6 +386,7 @@ namespace POS_in_NET.Pages
                     .Skip(_currentPage * _pageSize)
                     .Take(_pageSize)
                     .ToList();
+                var printStatuses = await LoadPrintStatusesAsync(ordersToDisplay).ConfigureAwait(false);
                 
                 _totalPages = (int)Math.Ceiling(filteredWebOrders.Count / (double)_pageSize);
                 
@@ -417,7 +420,8 @@ namespace POS_in_NET.Pages
                         Orders.Clear();
                         foreach (var order in ordersToDisplay)
                         {
-                            Orders.Add(order);
+                            printStatuses.TryGetValue(order.Id, out var printStatus);
+                            Orders.Add(new WebOrderRow(order, printStatus ?? WebOrderPrintStatus.NotQueued()));
                         }
                         
                         System.Diagnostics.Debug.WriteLine($"✅ Orders collection updated with {Orders.Count} items");
@@ -468,6 +472,98 @@ namespace POS_in_NET.Pages
         private static bool IsWebOrder(Order order)
         {
             return string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task<Dictionary<int, WebOrderPrintStatus>> LoadPrintStatusesAsync(List<Order> orders)
+        {
+            var result = orders.ToDictionary(o => o.Id, _ => WebOrderPrintStatus.NotQueued());
+
+            if (_databaseService == null || orders.Count == 0)
+            {
+                return result;
+            }
+
+            var aliases = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var order in orders)
+            {
+                AddOrderAlias(aliases, order.CloudOrderId, order.Id);
+                AddOrderAlias(aliases, order.OrderId, order.Id);
+                AddOrderAlias(aliases, order.OrderNumber, order.Id);
+            }
+
+            if (aliases.Count == 0)
+            {
+                return result;
+            }
+
+            try
+            {
+                await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+                await connection.OpenAsync();
+
+                var parameterNames = aliases.Keys.Select((_, index) => $"@orderId{index}").ToList();
+                var command = connection.CreateCommand();
+                command.CommandText = $@"
+                    SELECT q.order_id, q.job_type, q.status, q.retry_count, COALESCE(q.max_retries, 3) AS max_retries, q.error_message
+                    FROM network_print_queue q
+                    INNER JOIN (
+                        SELECT order_id, job_type, MAX(id) AS latest_id
+                        FROM network_print_queue
+                        WHERE order_id IN ({string.Join(",", parameterNames)})
+                          AND job_type IN ('online_receipt', 'takeaway_ticket')
+                        GROUP BY order_id, job_type
+                    ) latest ON latest.latest_id = q.id
+                    ORDER BY q.order_id, q.job_type";
+
+                var aliasList = aliases.Keys.ToList();
+                for (var index = 0; index < aliasList.Count; index++)
+                {
+                    command.Parameters.AddWithValue(parameterNames[index], aliasList[index]);
+                }
+
+                var rowsByOrderId = new Dictionary<int, List<PrintJobStatusRow>>();
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var queueOrderId = reader["order_id"]?.ToString() ?? string.Empty;
+                    if (!aliases.TryGetValue(queueOrderId, out var localOrderId))
+                    {
+                        continue;
+                    }
+
+                    if (!rowsByOrderId.TryGetValue(localOrderId, out var rows))
+                    {
+                        rows = new List<PrintJobStatusRow>();
+                        rowsByOrderId[localOrderId] = rows;
+                    }
+
+                    rows.Add(new PrintJobStatusRow(
+                        reader["job_type"]?.ToString() ?? "",
+                        reader["status"]?.ToString() ?? "pending",
+                        Convert.ToInt32(reader["retry_count"]),
+                        Convert.ToInt32(reader["max_retries"]),
+                        reader["error_message"] == DBNull.Value ? null : reader["error_message"]?.ToString()));
+                }
+
+                foreach (var (orderId, rows) in rowsByOrderId)
+                {
+                    result[orderId] = WebOrderPrintStatus.FromQueueRows(rows);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"⚠️ Failed to load web order print statuses: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        private static void AddOrderAlias(Dictionary<string, int> aliases, string? value, int orderId)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && !aliases.ContainsKey(value))
+            {
+                aliases[value] = orderId;
+            }
         }
 
         private async Task ShowPlaceholderContent()
@@ -900,15 +996,23 @@ namespace POS_in_NET.Pages
                     LoadingIndicator.IsVisible = true;
                     LoadingIndicator.IsRunning = true;
 
-                    var receiptService = ServiceHelper.GetService<ReceiptService>();
-                    if (receiptService == null)
+                    var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                    if (cloudService == null)
                     {
-                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Receipt service not available");
+                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Cloud order service not available");
                         return;
                     }
-                    await receiptService.PrintReceiptAsync(order);
 
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Receipt printed for order {order.OrderNumber}");
+                    var result = await cloudService.QueueWebOrderPrintAsync(order);
+                    if (result.Success)
+                    {
+                        await LoadWebOrdersAsync();
+                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Queued", result.Message);
+                    }
+                    else
+                    {
+                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Print Queue Error", result.Message);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1324,6 +1428,89 @@ namespace POS_in_NET.Pages
             }
             
             await LoadWebOrdersAsync();
+        }
+
+        public sealed record PrintJobStatusRow(string JobType, string Status, int RetryCount, int MaxRetries, string? ErrorMessage);
+
+        public sealed class WebOrderPrintStatus
+        {
+            public string Code { get; init; } = "not_queued";
+            public string? ErrorMessage { get; init; }
+
+            public static WebOrderPrintStatus NotQueued() => new() { Code = "not_queued" };
+
+            public static WebOrderPrintStatus FromQueueRows(IReadOnlyCollection<PrintJobStatusRow> rows)
+            {
+                if (rows.Count == 0)
+                {
+                    return NotQueued();
+                }
+
+                var receipt = rows.FirstOrDefault(r => string.Equals(r.JobType, "online_receipt", StringComparison.OrdinalIgnoreCase));
+                var kitchen = rows.FirstOrDefault(r => string.Equals(r.JobType, "takeaway_ticket", StringComparison.OrdinalIgnoreCase));
+                var requiredRows = new[] { receipt, kitchen }.Where(r => r != null).Cast<PrintJobStatusRow>().ToList();
+
+                if (requiredRows.Any(r => string.Equals(r.Status, "printing", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return new WebOrderPrintStatus { Code = "printing" };
+                }
+
+                var failed = requiredRows.FirstOrDefault(r =>
+                    string.Equals(r.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
+                    r.RetryCount >= r.MaxRetries);
+                if (failed != null)
+                {
+                    return new WebOrderPrintStatus { Code = "failed", ErrorMessage = failed.ErrorMessage };
+                }
+
+                if (receipt != null &&
+                    kitchen != null &&
+                    requiredRows.All(r => string.Equals(r.Status, "completed", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return new WebOrderPrintStatus { Code = "printed" };
+                }
+
+                return new WebOrderPrintStatus { Code = "queued" };
+            }
+        }
+
+        public sealed class WebOrderRow
+        {
+            public WebOrderRow(Order order, WebOrderPrintStatus printStatus)
+            {
+                Order = order;
+                PrintStatus = printStatus;
+            }
+
+            public Order Order { get; }
+            public WebOrderPrintStatus PrintStatus { get; }
+
+            public string? OrderNumber => Order.OrderNumber;
+            public DateTime CreatedAt => Order.CreatedAt;
+            public string? CustomerName => Order.CustomerName;
+            public string? CustomerPhone => Order.CustomerPhone;
+            public string? PaymentMethod => Order.PaymentMethod;
+            public decimal TotalAmount => Order.TotalAmount;
+            public string OrderTypeDisplay => string.IsNullOrWhiteSpace(Order.OrderType)
+                ? "Online"
+                : char.ToUpper(Order.OrderType[0]) + Order.OrderType[1..].Replace("_", " ");
+            public string OrderStatusDisplay => Order.Status.ToString();
+            public string PrintStatusText => PrintStatus.Code switch
+            {
+                "queued" => "Queued",
+                "printing" => "Printing",
+                "printed" => "Printed",
+                "failed" => "Failed",
+                _ => "Not queued"
+            };
+            public Color PrintStatusColor => PrintStatus.Code switch
+            {
+                "queued" => Color.FromArgb("#64748B"),
+                "printing" => Color.FromArgb("#2563EB"),
+                "printed" => Color.FromArgb("#059669"),
+                "failed" => Color.FromArgb("#DC2626"),
+                _ => Color.FromArgb("#94A3B8")
+            };
         }
     }
 }

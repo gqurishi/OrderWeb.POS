@@ -27,6 +27,21 @@ public class AuthenticationService
     private readonly DatabaseService _databaseService;
     private readonly string _connectionString;
     private User? _currentUser;
+    private readonly SemaphoreSlim _authCacheLock = new(1, 1);
+    private readonly Dictionary<string, CachedAuthUser> _authCache = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime _authCacheLoadedAtUtc = DateTime.MinValue;
+    private static readonly TimeSpan AuthCacheTtl = TimeSpan.FromMinutes(2);
+
+    private sealed class CachedAuthUser
+    {
+        public int Id { get; init; }
+        public string Name { get; init; } = string.Empty;
+        public string Username { get; init; } = string.Empty;
+        public string PasswordHash { get; init; } = string.Empty;
+        public UserRole Role { get; init; }
+        public DateTime CreatedAt { get; init; }
+        public DateTime UpdatedAt { get; init; }
+    }
 
     // Default constructor for singleton pattern (backward compatibility)
     private AuthenticationService()
@@ -50,6 +65,18 @@ public class AuthenticationService
         return _currentUser;
     }
 
+    public async Task WarmAuthenticationCacheAsync()
+    {
+        try
+        {
+            await EnsureAuthCacheAsync(forceReload: false);
+        }
+        catch
+        {
+            // Best effort only; login can still read directly when needed.
+        }
+    }
+
     public async Task<(bool Success, string Message, User? User)> LoginAsync(string username, string password)
     {
         try
@@ -59,77 +86,61 @@ public class AuthenticationService
                 return (false, "Username and password are required.", null);
             }
 
-            // Add 10-second timeout for the entire login operation
-            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10));
-            
-            var loginTask = Task.Run(async () =>
+            // Keep login timeout short for faster feedback
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            await EnsureAuthCacheAsync(forceReload: false, cts.Token);
+            if (!_authCache.TryGetValue(username, out var authUser))
             {
-                using var connection = new MySqlConnection(_connectionString);
-                await connection.OpenAsync(cts.Token);
+                // Cache may be stale after user changes; refresh once before failing.
+                await EnsureAuthCacheAsync(forceReload: true, cts.Token);
+                _authCache.TryGetValue(username, out authUser);
+            }
 
-                var query = "SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE username = @username";
-                using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@username", username);
+            if (authUser is null)
+            {
+                _ = LogUserActivityAsync(null, "login_failed", $"Login attempt with non-existent username: {username}");
+                return (false, "Invalid username or password.", null);
+            }
 
-                using var reader = await command.ExecuteReaderAsync(cts.Token);
-                if (await reader.ReadAsync(cts.Token))
-                {
-                    var storedHash = reader["password_hash"].ToString() ?? "";
-                    
-                    System.Diagnostics.Debug.WriteLine($"🔐 Login attempt for: {username}");
-                    System.Diagnostics.Debug.WriteLine($"   Stored hash: {storedHash.Substring(0, Math.Min(30, storedHash.Length))}...");
-                    System.Diagnostics.Debug.WriteLine($"   Password to verify: {password}");
-                    
-                    // Verify password using BCrypt
-                    bool isValid = false;
-                    try
-                    {
-                        isValid = BCrypt.Net.BCrypt.Verify(password, storedHash);
-                        System.Diagnostics.Debug.WriteLine($"   BCrypt verification result: {isValid}");
-                    }
-                    catch (Exception bcryptEx)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"   ❌ BCrypt error: {bcryptEx.Message}");
-                    }
-                    
-                    if (isValid)
-                    {
-                        var user = new User
-                        {
-                            Id = Convert.ToInt32(reader["id"]),
-                            Username = reader["username"].ToString() ?? "",
-                            PasswordHash = storedHash,
-                            Role = Enum.Parse<UserRole>(reader["role"].ToString() ?? "User", true),
-                            CreatedAt = Convert.ToDateTime(reader["created_at"]),
-                            UpdatedAt = Convert.ToDateTime(reader["updated_at"])
-                        };
+            bool isValid;
+            try
+            {
+                isValid = await Task.Run(() => BCrypt.Net.BCrypt.Verify(password, authUser.PasswordHash), cts.Token);
+            }
+            catch (Exception bcryptEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"BCrypt verify error: {bcryptEx.Message}");
+                return (false, "Invalid username or password.", null);
+            }
 
-                        _currentUser = user;
-                        
-                        // Log successful login (fire and forget - don't block login)
-                        _ = LogUserActivityAsync(user.Id, "login", "User logged in successfully");
-                        
-                        return (true, "Login successful.", user);
-                    }
-                    else
-                    {
-                        // Log failed login attempt (fire and forget)
-                        _ = LogUserActivityAsync(null, "login_failed", $"Failed login attempt for username: {username}");
-                        return (false, "Invalid username or password.", (User?)null);
-                    }
-                }
-                else
-                {
-                    _ = LogUserActivityAsync(null, "login_failed", $"Login attempt with non-existent username: {username}");
-                    return (false, "Invalid username or password.", (User?)null);
-                }
-            }, cts.Token);
+            if (!isValid)
+            {
+                _ = LogUserActivityAsync(null, "login_failed", $"Failed login attempt for username: {username}");
+                return (false, "Invalid username or password.", null);
+            }
 
-            return await loginTask;
+            var user = new User
+            {
+                Id = authUser.Id,
+                Name = authUser.Name,
+                Username = authUser.Username,
+                PasswordHash = authUser.PasswordHash,
+                Role = authUser.Role,
+                CreatedAt = authUser.CreatedAt,
+                UpdatedAt = authUser.UpdatedAt
+            };
+
+            _currentUser = user;
+
+            // Log successful login (fire and forget - don't block login)
+            _ = LogUserActivityAsync(user.Id, "login", "User logged in successfully");
+
+            return (true, "Login successful.", user);
         }
         catch (System.Threading.Tasks.TaskCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine("Login timeout after 10 seconds");
+            System.Diagnostics.Debug.WriteLine("Login timeout after 5 seconds");
             return (false, "Login timeout. Please check your connection and try again.", null);
         }
         catch (MySqlException ex)
@@ -206,6 +217,7 @@ public class AuthenticationService
             insertCommand.Parameters.AddWithValue("@role", role.ToString().ToLower());
 
             await insertCommand.ExecuteNonQueryAsync();
+            await EnsureAuthCacheAsync(forceReload: true);
 
             if (_currentUser != null)
             {
@@ -386,6 +398,7 @@ public class AuthenticationService
             if (rowsAffected > 0)
             {
                 await LogUserActivityAsync(_currentUser.Id, "user_deleted", $"Deleted user: {username} (ID: {userId})");
+                await EnsureAuthCacheAsync(forceReload: true);
                 return (true, "User deleted successfully.");
             }
             else
@@ -447,6 +460,7 @@ public class AuthenticationService
                 if (rowsAffected > 0)
                 {
                     await LogUserActivityAsync(_currentUser.Id, "user_updated", $"Updated user: {updatedUser.Name} (ID: {updatedUser.Id}) with new PIN");
+                    await EnsureAuthCacheAsync(forceReload: true);
                     
                     // Update current user if updating self
                     if (_currentUser.Id == updatedUser.Id)
@@ -476,6 +490,7 @@ public class AuthenticationService
                 if (rowsAffected > 0)
                 {
                     await LogUserActivityAsync(_currentUser.Id, "user_updated", $"Updated user: {updatedUser.Name} (ID: {updatedUser.Id})");
+                    await EnsureAuthCacheAsync(forceReload: true);
                     
                     // Update current user if updating self
                     if (_currentUser.Id == updatedUser.Id)
@@ -565,6 +580,66 @@ public class AuthenticationService
         catch (Exception ex)
         {
             return (false, $"Database connection failed: {ex.Message}");
+        }
+    }
+
+    private async Task EnsureAuthCacheAsync(bool forceReload, CancellationToken cancellationToken = default)
+    {
+        if (!forceReload &&
+            _authCache.Count > 0 &&
+            DateTime.UtcNow - _authCacheLoadedAtUtc < AuthCacheTtl)
+        {
+            return;
+        }
+
+        await _authCacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!forceReload &&
+                _authCache.Count > 0 &&
+                DateTime.UtcNow - _authCacheLoadedAtUtc < AuthCacheTtl)
+            {
+                return;
+            }
+
+            using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var query = "SELECT id, name, username, password_hash, role, created_at, updated_at FROM users";
+            using var command = new MySqlCommand(query, connection);
+            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            var cache = new Dictionary<string, CachedAuthUser>(StringComparer.OrdinalIgnoreCase);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var username = reader["username"].ToString() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(username))
+                {
+                    continue;
+                }
+
+                cache[username] = new CachedAuthUser
+                {
+                    Id = Convert.ToInt32(reader["id"]),
+                    Name = reader["name"].ToString() ?? string.Empty,
+                    Username = username,
+                    PasswordHash = reader["password_hash"].ToString() ?? string.Empty,
+                    Role = Enum.Parse<UserRole>(reader["role"].ToString() ?? "User", true),
+                    CreatedAt = Convert.ToDateTime(reader["created_at"]),
+                    UpdatedAt = Convert.ToDateTime(reader["updated_at"])
+                };
+            }
+
+            _authCache.Clear();
+            foreach (var entry in cache)
+            {
+                _authCache[entry.Key] = entry.Value;
+            }
+            _authCacheLoadedAtUtc = DateTime.UtcNow;
+        }
+        finally
+        {
+            _authCacheLock.Release();
         }
     }
 }

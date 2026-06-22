@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Devices;
+using POS_in_NET.Services;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -24,8 +25,9 @@ namespace POS_in_NET.Views
             UpdateDisplay();
         }
 
-        public Task<string?> ShowAsync(Page? hostPage = null)
+        public async Task<string?> ShowAsync(Page? hostPage = null)
         {
+            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _tcs = new TaskCompletionSource<string?>();
             
             var page = hostPage;
@@ -46,7 +48,7 @@ namespace POS_in_NET.Views
                 AddToPage(contentPage);
             }
             
-            return _tcs.Task;
+            return await _tcs.Task;
         }
 
         private void AddToPage(ContentPage page)

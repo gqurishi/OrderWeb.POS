@@ -155,6 +155,7 @@ public class DatabaseService
                     customer_address TEXT,
                     total_amount DECIMAL(10,2),
                     subtotal_amount DECIMAL(10,2) NULL,
+                    discount_amount DECIMAL(10,2) DEFAULT 0,
                     delivery_fee DECIMAL(10,2) DEFAULT 0,
                     tax_amount DECIMAL(10,2) DEFAULT 0,
                     order_type ENUM('pickup', 'delivery', 'table') DEFAULT 'pickup',
@@ -410,6 +411,7 @@ public class DatabaseService
                 ADD COLUMN IF NOT EXISTS cloud_order_id VARCHAR(100) NULL,
                 ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255) NULL,
                 ADD COLUMN IF NOT EXISTS subtotal_amount DECIMAL(10,2) NULL,
+                ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(10,2) DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS order_type ENUM('pickup', 'delivery', 'table') DEFAULT 'pickup',
@@ -699,10 +701,25 @@ public class DatabaseService
             {
                 config["tenant_slug"] = reader.GetString(reader.GetOrdinal("tenant_slug"));
                 config["api_key"] = reader.GetString(reader.GetOrdinal("api_key"));
-                config["cloud_url"] = reader.GetString(reader.GetOrdinal("cloud_url"));
+                var cloudUrl = reader.GetString(reader.GetOrdinal("cloud_url"));
+                config["cloud_url"] = cloudUrl;
+                config["api_base_url"] = TryGetOptionalString(reader, "api_base_url") ?? cloudUrl;
                 config["is_enabled"] = reader.GetBoolean(reader.GetOrdinal("is_enabled")).ToString();
                 config["polling_interval_seconds"] = reader.GetInt32(reader.GetOrdinal("polling_interval_seconds")).ToString();
                 config["auto_print_enabled"] = reader.GetBoolean(reader.GetOrdinal("auto_print_enabled")).ToString();
+            }
+
+            static string? TryGetOptionalString(MySqlDataReader reader, string columnName)
+            {
+                try
+                {
+                    var ordinal = reader.GetOrdinal(columnName);
+                    return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return null;
+                }
             }
         }
         catch (Exception ex)

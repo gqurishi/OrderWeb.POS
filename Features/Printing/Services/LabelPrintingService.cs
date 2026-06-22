@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
@@ -35,8 +38,10 @@ namespace POS_in_NET.Services
                 return false;
             }
 
-            // Check if item has label text configured
-            if (string.IsNullOrWhiteSpace(item.LabelText))
+            var componentLabels = GetConfiguredComponentLabels(item);
+
+            // Check if item has any label work configured
+            if (string.IsNullOrWhiteSpace(item.LabelText) && (!item.PrintComponentLabels || componentLabels.Count == 0))
             {
                 System.Diagnostics.Debug.WriteLine($"[INFO] No label text for item: {item.Name}");
                 return false;
@@ -45,15 +50,14 @@ namespace POS_in_NET.Services
             try
             {
                 // Check if this is a meal deal with component printing enabled
-                if (item.VatConfigType == "component" && item.PrintComponentLabels && item.Components?.Count > 0)
+                if (item.PrintComponentLabels && componentLabels.Count > 0)
                 {
-                    // Print component labels only
-                    return await PrintMealDealComponentsAsync(item, tableNumber);
+                    return await PrintConfiguredComponentLabelsAsync(item, componentLabels, tableNumber, quantity);
                 }
                 else
                 {
                     // Print standard item label
-                    string? additionalInfo = tableNumber != null ? $"Table {tableNumber}" : null;
+                    string? additionalInfo = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : null;
                     
                     for (int i = 0; i < quantity; i++)
                     {
@@ -120,6 +124,66 @@ namespace POS_in_NET.Services
                 System.Diagnostics.Debug.WriteLine($"[ERROR] Failed to print meal deal components: {ex.Message}");
                 return false;
             }
+        }
+
+        private async Task<bool> PrintConfiguredComponentLabelsAsync(
+            FoodMenuItem item,
+            List<string> componentLabels,
+            string? tableNumber,
+            int orderQuantity)
+        {
+            try
+            {
+                var totalLabels = 0;
+                var mealDealName = item.LabelText ?? item.Name;
+
+                foreach (var componentName in componentLabels)
+                {
+                    var componentQty = DetermineComponentQuantity(componentName) * Math.Max(orderQuantity, 1);
+
+                    await _printer!.PrintComponentLabelAsync(
+                        mealDealName: mealDealName,
+                        componentName: componentName,
+                        componentType: item.VatCategory,
+                        quantity: componentQty
+                    );
+
+                    totalLabels += componentQty;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[SUCCESS] Printed {totalLabels} configured component label(s) for: {item.Name}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ERROR] Failed to print configured component labels: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static List<string> GetConfiguredComponentLabels(FoodMenuItem item)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ComponentLabelsJson))
+            {
+                try
+                {
+                    return JsonSerializer.Deserialize<List<string>>(item.ComponentLabelsJson)?
+                        .Where(label => !string.IsNullOrWhiteSpace(label))
+                        .Select(label => label.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList() ?? new List<string>();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] Failed to parse component label JSON: {ex.Message}");
+                }
+            }
+
+            return item.Components?
+                .Where(component => !string.IsNullOrWhiteSpace(component.ComponentName))
+                .Select(component => component.ComponentName.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
         }
 
         /// <summary>

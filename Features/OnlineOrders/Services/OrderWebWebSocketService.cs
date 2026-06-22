@@ -18,6 +18,7 @@ public class OrderWebWebSocketService
     private bool _isConnected = false;
     private readonly DatabaseService _databaseService;
     private readonly OrderService _orderService;
+    private CloudOrderService? _cloudOrderService;
 
     // Events for real-time notifications
     public event EventHandler<OrderReceivedEventArgs>? NewOrderReceived;
@@ -59,6 +60,12 @@ public class OrderWebWebSocketService
         _databaseService = databaseService;
         _orderService = orderService;
         System.Diagnostics.Debug.WriteLine("🔧 OrderWebWebSocketService created");
+    }
+
+    public void SetCloudOrderService(CloudOrderService cloudOrderService)
+    {
+        _cloudOrderService = cloudOrderService;
+        System.Diagnostics.Debug.WriteLine("✅ WebSocket linked to CloudOrderService for shared order processing");
     }
 
     /// <summary>
@@ -478,34 +485,28 @@ public class OrderWebWebSocketService
 
             System.Diagnostics.Debug.WriteLine($"🎉 NEW ORDER via WebSocket: {orderNumber} - {customerName} - ${totalAmount}");
 
-            // Create Order object
-            var order = new Models.Order
+            var cloudOrder = new Models.Api.CloudOrderResponse
             {
-                OrderId = cloudOrderId,
+                Id = cloudOrderId,
                 OrderNumber = orderNumber,
-                CloudOrderId = cloudOrderId,
                 CustomerName = customerName,
                 CustomerPhone = customerPhone,
                 CustomerEmail = customerEmail,
-                CustomerAddress = customerAddress,
-                TotalAmount = totalAmount,
-                SubtotalAmount = subtotal,
-                DeliveryFee = deliveryFee,
-                TaxAmount = taxAmount,
+                Address = customerAddress,
+                Total = totalAmount.ToString("0.00"),
+                Subtotal = subtotal.ToString("0.00"),
+                DeliveryFee = deliveryFee.ToString("0.00"),
+                Tax = taxAmount.ToString("0.00"),
                 OrderType = orderType,
                 PaymentMethod = paymentMethod,
+                PaymentStatus = "paid",
                 SpecialInstructions = specialInstructions,
                 ScheduledTime = scheduledTime,
-                Status = Models.OrderStatus.New,
-                SyncStatus = Models.SyncStatus.Synced,
-                CreatedAt = createdAt, // Use actual order creation time from OrderWeb.net
-                UpdatedAt = DateTime.Now,
-                OrderData = orderElement.GetRawText(),
-                PaymentStatus = Models.PaymentStatus.Paid
+                CreatedAt = createdAt
             };
 
             // Parse order items - items are at root level in OrderWeb.net structure
-            if (data.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == JsonValueKind.Array)
+            if (TryGetItemsArray(data, orderElement, out var itemsElement))
             {
                 System.Diagnostics.Debug.WriteLine($"📦 Parsing {itemsElement.GetArrayLength()} items for order {orderNumber}");
                 
@@ -514,14 +515,13 @@ public class OrderWebWebSocketService
                     // Get item name from items[].name field (as per OrderWeb.net structure)
                     var itemName = itemElem.TryGetProperty("name", out var nameElem) ? nameElem.GetString() ?? "Unknown Item" : "Unknown Item";
                     
-                    var item = new Models.OrderItem
+                    var item = new Models.Api.CloudOrderItem
                     {
-                        OrderId = cloudOrderId,
-                        CloudItemId = itemElem.TryGetProperty("id", out var idElem) ? idElem.GetInt32() : null,
+                        Id = itemElem.TryGetProperty("id", out var idElem) && idElem.ValueKind == JsonValueKind.Number ? idElem.GetInt32() : 0,
                         MenuItemId = itemElem.TryGetProperty("menuItemId", out var menuIdElem) ? menuIdElem.GetString() : null,
-                        ItemName = itemName,
+                        Name = itemName,
                         Quantity = itemElem.TryGetProperty("quantity", out var qtyElem) ? qtyElem.GetInt32() : 1,
-                        ItemPrice = 0m, // OrderWeb.net doesn't send individual item price, calculate from total
+                        Price = GetDecimalProperty(itemElem, "price", 0m),
                         SpecialInstructions = itemElem.TryGetProperty("specialInstructions", out var siElem) ? siElem.GetString() : null
                     };
 
@@ -532,26 +532,27 @@ public class OrderWebWebSocketService
                     {
                         foreach (var addonElem in addonsElem.EnumerateArray())
                         {
-                            var addon = new Models.OrderItemAddon
+                            var addon = new Models.Api.CloudOrderAddon
                             {
-                                AddonId = addonElem.TryGetProperty("addon_id", out var aidElem) ? aidElem.GetString() : null,
-                                AddonName = addonElem.GetProperty("name").GetString() ?? "Unknown Addon",
-                                AddonPrice = addonElem.TryGetProperty("price", out var apElem) ? apElem.GetDecimal() : 0m,
-                                Quantity = addonElem.TryGetProperty("quantity", out var aqElem) ? aqElem.GetInt32() : 1
+                                Id = addonElem.TryGetProperty("addon_id", out var aidElem) ? aidElem.GetString() : null,
+                                Name = addonElem.TryGetProperty("name", out var addonNameElem) ? addonNameElem.GetString() ?? "Unknown Addon" : "Unknown Addon",
+                                Price = GetDecimalProperty(addonElem, "price", 0m)
                             };
-                            item.Addons.Add(addon);
+                            item.SelectedAddons.Add(addon);
                         }
                     }
 
-                    order.Items.Add(item);
+                    cloudOrder.Items.Add(item);
                 }
             }
 
-            // Save to database
-            var (success, message) = await _orderService.SaveOrderAsync(order);
+            var success = _cloudOrderService != null
+                ? await _cloudOrderService.ProcessIncomingCloudOrderAsync(cloudOrder)
+                : await SaveOrderWithoutCloudServiceAsync(cloudOrder, orderElement.GetRawText());
+
             if (success)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Order {orderNumber} saved to database successfully!");
+                System.Diagnostics.Debug.WriteLine($"✅ Order {orderNumber} processed from WebSocket successfully!");
                 
                 // Trigger event for UI notification
                 NewOrderReceived?.Invoke(this, new OrderReceivedEventArgs
@@ -565,7 +566,7 @@ public class OrderWebWebSocketService
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to save order {orderNumber}: {message}");
+                System.Diagnostics.Debug.WriteLine($"ℹ️ Order {orderNumber} already existed or was not saved from WebSocket.");
             }
         }
         catch (Exception ex)
@@ -573,6 +574,101 @@ public class OrderWebWebSocketService
             System.Diagnostics.Debug.WriteLine($"❌ Error handling new order: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
         }
+    }
+
+    private static bool TryGetItemsArray(JsonElement messageRoot, JsonElement orderElement, out JsonElement itemsElement)
+    {
+        if (messageRoot.TryGetProperty("items", out itemsElement) && itemsElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        if (orderElement.TryGetProperty("items", out itemsElement) && itemsElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        itemsElement = default;
+        return false;
+    }
+
+    private static decimal GetDecimalProperty(JsonElement element, string propertyName, decimal fallback)
+    {
+        if (!element.TryGetProperty(propertyName, out var value))
+        {
+            return fallback;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetDecimal(out var number) => number,
+            JsonValueKind.String when decimal.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => fallback
+        };
+    }
+
+    private async Task<bool> SaveOrderWithoutCloudServiceAsync(Models.Api.CloudOrderResponse cloudOrder, string rawOrderData)
+    {
+        var order = new Models.Order
+        {
+            OrderId = cloudOrder.Id,
+            OrderNumber = cloudOrder.OrderNumber,
+            CloudOrderId = cloudOrder.Id,
+            CustomerName = cloudOrder.CustomerName ?? "Guest",
+            CustomerPhone = cloudOrder.CustomerPhone ?? "",
+            CustomerEmail = cloudOrder.CustomerEmail ?? "",
+            CustomerAddress = cloudOrder.Address ?? "",
+            TotalAmount = cloudOrder.TotalAmount,
+            SubtotalAmount = decimal.TryParse(cloudOrder.Subtotal, out var subtotal) ? subtotal : cloudOrder.TotalAmount,
+            DeliveryFee = decimal.TryParse(cloudOrder.DeliveryFee, out var deliveryFee) ? deliveryFee : 0m,
+            TaxAmount = decimal.TryParse(cloudOrder.Tax, out var tax) ? tax : 0m,
+            OrderType = cloudOrder.OrderType ?? "pickup",
+            PaymentMethod = cloudOrder.PaymentMethod ?? "online",
+            SpecialInstructions = cloudOrder.SpecialInstructions ?? "",
+            ScheduledTime = cloudOrder.ScheduledTime,
+            Status = Models.OrderStatus.New,
+            SyncStatus = Models.SyncStatus.Synced,
+            SourceChannel = "web",
+            CreatedAt = cloudOrder.CreatedAt,
+            UpdatedAt = DateTime.Now,
+            OrderData = rawOrderData,
+            PaymentStatus = Models.PaymentStatus.Paid
+        };
+
+        foreach (var cloudItem in cloudOrder.Items)
+        {
+            var item = new Models.OrderItem
+            {
+                OrderId = cloudOrder.Id,
+                CloudItemId = cloudItem.Id,
+                MenuItemId = cloudItem.MenuItemId,
+                ItemName = cloudItem.Name ?? "Unknown Item",
+                Quantity = cloudItem.Quantity,
+                ItemPrice = cloudItem.Price ?? 0m,
+                SpecialInstructions = cloudItem.SpecialInstructions
+            };
+
+            foreach (var cloudAddon in cloudItem.SelectedAddons)
+            {
+                item.Addons.Add(new Models.OrderItemAddon
+                {
+                    AddonId = cloudAddon.Id,
+                    AddonName = cloudAddon.Name ?? "Unknown Addon",
+                    AddonPrice = cloudAddon.Price ?? 0m,
+                    Quantity = 1
+                });
+            }
+
+            order.Items.Add(item);
+        }
+
+        var (success, message) = await _orderService.SaveOrderAsync(order);
+        if (!success)
+        {
+            System.Diagnostics.Debug.WriteLine($"❌ WebSocket fallback save failed for {cloudOrder.OrderNumber}: {message}");
+        }
+
+        return success;
     }
 
     /// <summary>

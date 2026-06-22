@@ -1,0 +1,502 @@
+using System.Runtime.CompilerServices;
+using POS_in_NET.Models;
+
+namespace POS_in_NET.Services;
+
+public sealed class InactivityService
+{
+    private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan StaffLogoutTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(1);
+    private readonly AuthenticationService _authService;
+    private readonly RoleAccessService _roleAccessService;
+    private readonly ConditionalWeakTable<VisualElement, object> _trackedElements = new();
+    private readonly List<Func<Task>> _beforeIdleReturnHandlers = new();
+    private readonly object _sync = new();
+    private System.Timers.Timer? _timer;
+    private DateTime _lastActivityAt = DateTime.Now;
+    private DateTime _suppressActivityResetUntil = DateTime.MinValue;
+    private int _criticalActivityDepth;
+    private bool _isHandlingIdle;
+    private bool _hasReturnedToDashboardForIdlePeriod;
+
+    public InactivityService(AuthenticationService authService, RoleAccessService roleAccessService)
+    {
+        _authService = authService;
+        _roleAccessService = roleAccessService;
+    }
+
+    public void Start()
+    {
+        if (_timer != null)
+        {
+            return;
+        }
+
+        _timer = new System.Timers.Timer(1000)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+        _timer.Elapsed += (_, _) =>
+        {
+            MainThread.BeginInvokeOnMainThread(async () => await CheckIdleAsync());
+        };
+        _timer.Start();
+    }
+
+    public void ResetActivity()
+    {
+        lock (_sync)
+        {
+            if (DateTime.Now < _suppressActivityResetUntil)
+            {
+                return;
+            }
+
+            _lastActivityAt = DateTime.Now;
+            _hasReturnedToDashboardForIdlePeriod = false;
+        }
+    }
+
+    public IDisposable BeginCriticalActivity()
+    {
+        lock (_sync)
+        {
+            _criticalActivityDepth++;
+            _lastActivityAt = DateTime.Now;
+            _hasReturnedToDashboardForIdlePeriod = false;
+        }
+
+        return new CriticalActivityScope(this);
+    }
+
+    public IDisposable RegisterBeforeIdleReturnHandler(Func<Task> handler)
+    {
+        lock (_sync)
+        {
+            _beforeIdleReturnHandlers.Add(handler);
+        }
+
+        return new RegisteredHandler(this, handler);
+    }
+
+    public void TrackPage(Page? page)
+    {
+        if (page == null)
+        {
+            return;
+        }
+
+        if (page is ContentPage contentPage)
+        {
+            TrackElement(contentPage.Content);
+        }
+    }
+
+    private void TrackElement(Element? element)
+    {
+        if (element == null)
+        {
+            return;
+        }
+
+        if (element is VisualElement visualElement && !_trackedElements.TryGetValue(visualElement, out _))
+        {
+            _trackedElements.Add(visualElement, new object());
+            AttachActivityHandlers(visualElement);
+        }
+
+        foreach (var child in GetChildElements(element))
+        {
+            TrackElement(child);
+        }
+    }
+
+    private void AttachActivityHandlers(VisualElement element)
+    {
+        if (element is View view)
+        {
+            foreach (var gesture in view.GestureRecognizers)
+            {
+                if (gesture is TapGestureRecognizer tapGesture)
+                {
+                    tapGesture.Tapped += (_, _) => ResetActivity();
+                }
+            }
+        }
+
+        switch (element)
+        {
+            case Button button:
+                button.Clicked += (_, _) => ResetActivity();
+                break;
+            case ImageButton imageButton:
+                imageButton.Clicked += (_, _) => ResetActivity();
+                break;
+            case Entry entry:
+                entry.TextChanged += (_, _) => ResetActivity();
+                entry.Focused += (_, _) => ResetActivity();
+                break;
+            case Editor editor:
+                editor.TextChanged += (_, _) => ResetActivity();
+                editor.Focused += (_, _) => ResetActivity();
+                break;
+            case SearchBar searchBar:
+                searchBar.TextChanged += (_, _) => ResetActivity();
+                searchBar.SearchButtonPressed += (_, _) => ResetActivity();
+                break;
+            case Picker picker:
+                picker.SelectedIndexChanged += (_, _) => ResetActivity();
+                break;
+            case CollectionView collectionView:
+                collectionView.SelectionChanged += (_, _) => ResetActivity();
+                break;
+            case DatePicker datePicker:
+                datePicker.DateSelected += (_, _) => ResetActivity();
+                break;
+            case Slider slider:
+                slider.ValueChanged += (_, _) => ResetActivity();
+                break;
+            case Stepper stepper:
+                stepper.ValueChanged += (_, _) => ResetActivity();
+                break;
+            case Switch switchControl:
+                switchControl.Toggled += (_, _) => ResetActivity();
+                break;
+            case CheckBox checkBox:
+                checkBox.CheckedChanged += (_, _) => ResetActivity();
+                break;
+            case RadioButton radioButton:
+                radioButton.CheckedChanged += (_, _) => ResetActivity();
+                break;
+        }
+    }
+
+    private static IEnumerable<Element> GetChildElements(Element element)
+    {
+        switch (element)
+        {
+            case ContentPage contentPage when contentPage.Content != null:
+                yield return contentPage.Content;
+                break;
+            case ContentView contentView when contentView.Content != null:
+                yield return contentView.Content;
+                break;
+            case ScrollView scrollView when scrollView.Content != null:
+                yield return scrollView.Content;
+                break;
+            case Border border when border.Content != null:
+                yield return border.Content;
+                break;
+            case Frame frame when frame.Content != null:
+                yield return frame.Content;
+                break;
+            case Layout layout:
+                foreach (var child in layout.Children)
+                {
+                    if (child is Element childElement)
+                    {
+                        yield return childElement;
+                    }
+                }
+                break;
+        }
+    }
+
+    private async Task CheckIdleAsync()
+    {
+        if (_isHandlingIdle || _authService.CurrentUser == null)
+        {
+            return;
+        }
+
+        UserRole role;
+        TimeSpan elapsed;
+        IdleAction idleAction;
+
+        lock (_sync)
+        {
+            if (HasActiveModalOrPopup())
+            {
+                _lastActivityAt = DateTime.Now;
+                return;
+            }
+
+            if (_criticalActivityDepth > 0)
+            {
+                _lastActivityAt = DateTime.Now;
+                return;
+            }
+
+            role = _authService.CurrentUser.Role;
+            elapsed = DateTime.Now - _lastActivityAt;
+
+            idleAction = ResolveIdleAction(role, elapsed);
+            if (idleAction == IdleAction.None)
+            {
+                return;
+            }
+
+            _isHandlingIdle = true;
+        }
+
+        try
+        {
+            await HandleIdleAsync(idleAction);
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                _isHandlingIdle = false;
+            }
+        }
+    }
+
+    private IdleAction ResolveIdleAction(UserRole role, TimeSpan elapsed)
+    {
+        if (role == UserRole.Admin)
+        {
+            return elapsed >= AdminLogoutTimeout ? IdleAction.Logout : IdleAction.None;
+        }
+
+        if (elapsed >= StaffLogoutTimeout)
+        {
+            return IdleAction.Logout;
+        }
+
+        if (!_hasReturnedToDashboardForIdlePeriod && elapsed >= DashboardReturnTimeout)
+        {
+            return IdleAction.ReturnToDashboard;
+        }
+
+        return IdleAction.None;
+    }
+
+    private async Task HandleIdleAsync(IdleAction idleAction)
+    {
+        var user = _authService.CurrentUser;
+        if (user == null)
+        {
+            return;
+        }
+
+        if (idleAction == IdleAction.Logout)
+        {
+            await LogoutForIdleAsync();
+            return;
+        }
+
+        await ReturnToDashboardForIdleAsync();
+    }
+
+    public async Task ReturnToDashboardForIdleAsync()
+    {
+        var user = _authService.CurrentUser;
+        if (user == null)
+        {
+            return;
+        }
+
+        var handlers = GetBeforeIdleReturnHandlersSnapshot();
+        foreach (var handler in handlers)
+        {
+            try
+            {
+                await handler();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Idle pre-return handler failed: {ex.Message}");
+            }
+        }
+
+        var dashboardRoute = _roleAccessService.ResolveDashboardRoute(user.Role);
+        SuppressAutomaticNavigationActivity();
+        await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+
+        lock (_sync)
+        {
+            _hasReturnedToDashboardForIdlePeriod = true;
+        }
+    }
+
+    private async Task LogoutForIdleAsync()
+    {
+        await RunBeforeIdleHandlersAsync();
+        SuppressAutomaticNavigationActivity();
+        await _authService.LogoutAsync();
+        await Shell.Current.GoToAsync("//login", false);
+    }
+
+    private async Task RunBeforeIdleHandlersAsync()
+    {
+        var handlers = GetBeforeIdleReturnHandlersSnapshot();
+        foreach (var handler in handlers)
+        {
+            try
+            {
+                await handler();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Idle pre-return handler failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void SuppressAutomaticNavigationActivity()
+    {
+        lock (_sync)
+        {
+            _suppressActivityResetUntil = DateTime.Now.AddSeconds(2);
+        }
+    }
+
+    private static bool HasActiveModalOrPopup()
+    {
+        try
+        {
+            if (Shell.Current?.Navigation?.ModalStack?.Count > 0)
+            {
+                return true;
+            }
+
+            return Shell.Current?.CurrentPage is ContentPage contentPage && HasVisiblePopupElement(contentPage.Content);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasVisiblePopupElement(Element? element)
+    {
+        if (element == null)
+        {
+            return false;
+        }
+
+        var visualElement = element as VisualElement;
+        if (visualElement is { IsVisible: false })
+        {
+            return false;
+        }
+
+        if (visualElement != null && IsActivePopupOrOverlayElement(element, visualElement))
+        {
+            return true;
+        }
+
+        foreach (var child in GetChildElements(element))
+        {
+            if (HasVisiblePopupElement(child))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsActivePopupOrOverlayElement(Element element, VisualElement visualElement)
+    {
+        if (visualElement.InputTransparent)
+        {
+            return false;
+        }
+
+        var typeName = element.GetType().Name;
+        var namedLikePopup = typeName.Contains("Dialog", StringComparison.OrdinalIgnoreCase)
+            || typeName.Contains("Popup", StringComparison.OrdinalIgnoreCase)
+            || typeName.Contains("Overlay", StringComparison.OrdinalIgnoreCase)
+            || typeName.Contains("Modal", StringComparison.OrdinalIgnoreCase);
+
+        if (element is not Page && namedLikePopup)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private List<Func<Task>> GetBeforeIdleReturnHandlersSnapshot()
+    {
+        lock (_sync)
+        {
+            return _beforeIdleReturnHandlers.ToList();
+        }
+    }
+
+    private void EndCriticalActivity()
+    {
+        lock (_sync)
+        {
+            _criticalActivityDepth = Math.Max(0, _criticalActivityDepth - 1);
+            _lastActivityAt = DateTime.Now;
+            _hasReturnedToDashboardForIdlePeriod = false;
+        }
+    }
+
+    private void UnregisterBeforeIdleReturnHandler(Func<Task> handler)
+    {
+        lock (_sync)
+        {
+            _beforeIdleReturnHandlers.Remove(handler);
+        }
+    }
+
+    private enum IdleAction
+    {
+        None,
+        ReturnToDashboard,
+        Logout
+    }
+
+    private sealed class CriticalActivityScope : IDisposable
+    {
+        private readonly InactivityService _service;
+        private bool _disposed;
+
+        public CriticalActivityScope(InactivityService service)
+        {
+            _service = service;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _service.EndCriticalActivity();
+        }
+    }
+
+    private sealed class RegisteredHandler : IDisposable
+    {
+        private readonly InactivityService _service;
+        private readonly Func<Task> _handler;
+        private bool _disposed;
+
+        public RegisteredHandler(InactivityService service, Func<Task> handler)
+        {
+            _service = service;
+            _handler = handler;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _service.UnregisterBeforeIdleReturnHandler(_handler);
+        }
+    }
+}

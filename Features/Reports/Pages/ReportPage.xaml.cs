@@ -18,6 +18,8 @@ public partial class ReportPage : ContentPage
     private readonly ReportGenerationService _reportGenerationService;
     private readonly ReportHistoryService _reportHistoryService;
     private readonly BusinessSettingsService _businessSettingsService;
+    private readonly CashDrawerService _cashDrawerService;
+    private readonly DiscountAuditService _discountAuditService;
 
     private bool _hasLoaded;
     private bool _isLoading;
@@ -45,6 +47,12 @@ public partial class ReportPage : ContentPage
     private string _operationalPaymentCompletionText = "No samples";
     private string _operationalVoidAuditText = "No voids";
     private string _operationalDraftAbandonmentText = "0 drafts";
+    private string _cashDrawerOpensText = "0 opens";
+    private string _cashDrawerFailuresText = "0 failed";
+    private string _cashDrawerLastOpenText = "No drawer opens in this range";
+    private string _discountEventsText = "0 events";
+    private string _discountTotalText = "£0.00";
+    private string _discountLastEventText = "No discounts in this range";
     private string _calendarPopupTitle = "Select Date";
     private string _calendarMonthLabel = DateTime.Today.ToString("MMMM yyyy");
     private DateTime _calendarDisplayedMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -64,11 +72,17 @@ public partial class ReportPage : ContentPage
     private Color _operationalPaymentCompletionColor = Color.FromArgb("#0F172A");
     private Color _operationalDraftAbandonmentColor = Color.FromArgb("#0F172A");
     private Color _operationalVoidAuditColor = Color.FromArgb("#0F172A");
+    private Color _cashDrawerOpensColor = Color.FromArgb("#0F172A");
+    private Color _cashDrawerFailuresColor = Color.FromArgb("#0F172A");
+    private Color _discountEventsColor = Color.FromArgb("#0F172A");
+    private Color _discountTotalColor = Color.FromArgb("#0F172A");
 
     private enum ReportViewMode
     {
         Orders,
-        TopSellItems
+        TopSellItems,
+        CashDrawer,
+        DiscountAudit
     }
 
     private enum CalendarTarget
@@ -80,6 +94,8 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<ReportOrderRow> Orders { get; } = new();
     public ObservableCollection<ReportTopItemRow> TopItems { get; } = new();
     public ObservableCollection<OperationalVoidAuditRow> VoidAudits { get; } = new();
+    public ObservableCollection<CashDrawerReportRow> CashDrawerAudits { get; } = new();
+    public ObservableCollection<DiscountAuditReportRow> DiscountAudits { get; } = new();
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
     public ObservableCollection<string> SourceFilters { get; } = new() { "All", "Local", "Web" };
@@ -87,6 +103,8 @@ public partial class ReportPage : ContentPage
 
     public bool IsTopItemsEmpty => TopItems.Count == 0;
     public bool HasVoidAudits => VoidAudits.Count > 0;
+    public bool HasCashDrawerAudits => CashDrawerAudits.Count > 0;
+    public bool HasDiscountAudits => DiscountAudits.Count > 0;
     public bool HasHistoricalReports => HistoricalReports.Count > 0;
     public bool HasDailyTrend => DailyTrend.Count > 1;
 
@@ -211,6 +229,10 @@ public partial class ReportPage : ContentPage
 
     public bool IsTopSellReportVisible => _reportViewMode == ReportViewMode.TopSellItems;
 
+    public bool IsCashDrawerReportVisible => _reportViewMode == ReportViewMode.CashDrawer;
+
+    public bool IsDiscountAuditReportVisible => _reportViewMode == ReportViewMode.DiscountAudit;
+
     public int TopSellRangeDays
     {
         get => _topSellRangeDays;
@@ -313,6 +335,84 @@ public partial class ReportPage : ContentPage
             if (_operationalDraftAbandonmentText != value)
             {
                 _operationalDraftAbandonmentText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string CashDrawerOpensText
+    {
+        get => _cashDrawerOpensText;
+        set
+        {
+            if (_cashDrawerOpensText != value)
+            {
+                _cashDrawerOpensText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string CashDrawerFailuresText
+    {
+        get => _cashDrawerFailuresText;
+        set
+        {
+            if (_cashDrawerFailuresText != value)
+            {
+                _cashDrawerFailuresText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string CashDrawerLastOpenText
+    {
+        get => _cashDrawerLastOpenText;
+        set
+        {
+            if (_cashDrawerLastOpenText != value)
+            {
+                _cashDrawerLastOpenText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string DiscountEventsText
+    {
+        get => _discountEventsText;
+        set
+        {
+            if (_discountEventsText != value)
+            {
+                _discountEventsText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string DiscountTotalText
+    {
+        get => _discountTotalText;
+        set
+        {
+            if (_discountTotalText != value)
+            {
+                _discountTotalText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string DiscountLastEventText
+    {
+        get => _discountLastEventText;
+        set
+        {
+            if (_discountLastEventText != value)
+            {
+                _discountLastEventText = value;
                 OnPropertyChanged();
             }
         }
@@ -598,6 +698,58 @@ public partial class ReportPage : ContentPage
         }
     }
 
+    public Color CashDrawerOpensColor
+    {
+        get => _cashDrawerOpensColor;
+        set
+        {
+            if (_cashDrawerOpensColor != value)
+            {
+                _cashDrawerOpensColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public Color CashDrawerFailuresColor
+    {
+        get => _cashDrawerFailuresColor;
+        set
+        {
+            if (_cashDrawerFailuresColor != value)
+            {
+                _cashDrawerFailuresColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public Color DiscountEventsColor
+    {
+        get => _discountEventsColor;
+        set
+        {
+            if (_discountEventsColor != value)
+            {
+                _discountEventsColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public Color DiscountTotalColor
+    {
+        get => _discountTotalColor;
+        set
+        {
+            if (_discountTotalColor != value)
+            {
+                _discountTotalColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public string TrendInsightText
     {
         get => _trendInsightText;
@@ -638,6 +790,13 @@ public partial class ReportPage : ContentPage
         _reportGenerationService = ServiceHelper.GetService<ReportGenerationService>() ?? new ReportGenerationService(new DatabaseService());
         _reportHistoryService = ServiceHelper.GetService<ReportHistoryService>() ?? new ReportHistoryService(new DatabaseService());
         _businessSettingsService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+        _cashDrawerService = ServiceHelper.GetService<CashDrawerService>()
+            ?? new CashDrawerService(
+                new DatabaseService(),
+                ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService(),
+                _authService);
+        _discountAuditService = ServiceHelper.GetService<DiscountAuditService>()
+            ?? new DiscountAuditService(new DatabaseService(), _authService);
 
         TopItems.CollectionChanged += (_, _) =>
         {
@@ -652,6 +811,16 @@ public partial class ReportPage : ContentPage
         VoidAudits.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasVoidAudits));
+        };
+
+        CashDrawerAudits.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasCashDrawerAudits));
+        };
+
+        DiscountAudits.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasDiscountAudits));
         };
 
         HistoricalReports.CollectionChanged += (_, _) =>
@@ -699,6 +868,26 @@ public partial class ReportPage : ContentPage
                 UpdatePresetButtonStyles();
                 UpdateTopSellRangeButtonStyles();
                 UpdateTopSellSectionButtonStyles();
+                await LoadReportAsync();
+                return;
+            }
+
+            if (button.Text == "Cash Drawer")
+            {
+                ApplyReportMode(ReportViewMode.CashDrawer);
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                UpdatePresetButtonStyles();
+                await LoadReportAsync();
+                return;
+            }
+
+            if (button.Text == "Discount Audit")
+            {
+                ApplyReportMode(ReportViewMode.DiscountAudit);
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                UpdatePresetButtonStyles();
                 await LoadReportAsync();
                 return;
             }
@@ -916,6 +1105,8 @@ public partial class ReportPage : ContentPage
         _reportViewMode = mode;
         OnPropertyChanged(nameof(IsOrdersReportVisible));
         OnPropertyChanged(nameof(IsTopSellReportVisible));
+        OnPropertyChanged(nameof(IsCashDrawerReportVisible));
+        OnPropertyChanged(nameof(IsDiscountAuditReportVisible));
         UpdatePresetButtonStyles();
     }
 
@@ -1227,6 +1418,8 @@ public partial class ReportPage : ContentPage
         ApplyPresetStyle(ThirtyDaysPresetButton, isOrdersMode && _selectedPreset == ReportDatePreset.Last30Days);
         ApplyPresetStyle(CustomPresetButton, isOrdersMode && _selectedPreset == ReportDatePreset.Custom);
         ApplyPresetStyle(TopSellItemButton, _reportViewMode == ReportViewMode.TopSellItems);
+        ApplyPresetStyle(CashDrawerButton, _reportViewMode == ReportViewMode.CashDrawer);
+        ApplyPresetStyle(DiscountAuditButton, _reportViewMode == ReportViewMode.DiscountAudit);
     }
 
     private static void ApplyPresetStyle(Button button, bool isActive)
@@ -1258,6 +1451,22 @@ public partial class ReportPage : ContentPage
 
         try
         {
+            if (_reportViewMode == ReportViewMode.CashDrawer)
+            {
+                var cashDrawerRows = await _cashDrawerService.GetAuditEntriesAsync(StartDate, EndDate.AddDays(1));
+                ApplyCashDrawerAudits(cashDrawerRows);
+                LastUpdatedText = $"Last updated {DateTime.Now:HH:mm:ss}";
+                return;
+            }
+
+            if (_reportViewMode == ReportViewMode.DiscountAudit)
+            {
+                var discountAuditRows = await _discountAuditService.GetAuditEntriesAsync(StartDate, EndDate.AddDays(1));
+                ApplyDiscountAudits(discountAuditRows);
+                LastUpdatedText = $"Last updated {DateTime.Now:HH:mm:ss}";
+                return;
+            }
+
             var reportTask = LoadSnapshotAsync();
             var analyticsTask = _reportService.GetOperationalAnalyticsAsync(StartDate, EndDate.AddDays(1));
             var trendTask = LoadTrendAsync();
@@ -1389,6 +1598,142 @@ public partial class ReportPage : ContentPage
             voidAuditCount);
 
         OnPropertyChanged(nameof(HasVoidAudits));
+    }
+
+    private void ApplyCashDrawerAudits(List<CashDrawerAuditEntry> entries)
+    {
+        CashDrawerAudits.Clear();
+
+        var successCount = entries.Count(entry => entry.Success);
+        var failureCount = entries.Count - successCount;
+
+        CashDrawerOpensText = $"{successCount} opens";
+        CashDrawerFailuresText = $"{failureCount} failed";
+        CashDrawerLastOpenText = entries.Count > 0
+            ? $"Last attempt {entries[0].EventAt:dd/MM HH:mm}"
+            : "No drawer opens in this range";
+
+        CashDrawerOpensColor = successCount > 0
+            ? Color.FromArgb("#0F766E")
+            : Color.FromArgb("#64748B");
+        CashDrawerFailuresColor = failureCount > 0
+            ? Color.FromArgb("#DC2626")
+            : Color.FromArgb("#16A34A");
+
+        foreach (var entry in entries.Take(8))
+        {
+            CashDrawerAudits.Add(new CashDrawerReportRow
+            {
+                EventAt = entry.EventAt,
+                RequestedByName = string.IsNullOrWhiteSpace(entry.RequestedByName) ? "Unknown" : entry.RequestedByName,
+                Reason = string.IsNullOrWhiteSpace(entry.Reason) ? "Manual open" : entry.Reason,
+                PrinterName = string.IsNullOrWhiteSpace(entry.PrinterName) ? "No printer" : entry.PrinterName,
+                StatusDisplay = entry.Success ? "Opened" : "Failed",
+                StatusColor = entry.Success ? Color.FromArgb("#16A34A") : Color.FromArgb("#DC2626"),
+                DetailDisplay = BuildCashDrawerDetail(entry)
+            });
+        }
+
+        OnPropertyChanged(nameof(HasCashDrawerAudits));
+    }
+
+    private static string BuildCashDrawerDetail(CashDrawerAuditEntry entry)
+    {
+        var contextParts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(entry.TableNumber))
+        {
+            contextParts.Add($"Table {entry.TableNumber}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.OrderNumber))
+        {
+            contextParts.Add($"Order {entry.OrderNumber}");
+        }
+
+        if (!entry.Success && !string.IsNullOrWhiteSpace(entry.ErrorMessage))
+        {
+            contextParts.Add(entry.ErrorMessage);
+        }
+
+        return contextParts.Count > 0
+            ? string.Join(" | ", contextParts)
+            : entry.SourceArea;
+    }
+
+    private void ApplyDiscountAudits(List<DiscountAuditEntry> entries)
+    {
+        DiscountAudits.Clear();
+
+        var activeDiscounts = entries.Where(entry => !string.Equals(entry.Action, "removed", StringComparison.OrdinalIgnoreCase)).ToList();
+        var totalDiscount = activeDiscounts.Sum(entry => entry.DiscountAmount);
+
+        DiscountEventsText = $"{entries.Count} events";
+        DiscountTotalText = $"£{totalDiscount:F2}";
+        DiscountLastEventText = entries.Count > 0
+            ? $"Last discount {entries[0].EventAt:dd/MM HH:mm}"
+            : "No discounts in this range";
+
+        DiscountEventsColor = entries.Count > 0
+            ? Color.FromArgb("#B45309")
+            : Color.FromArgb("#64748B");
+        DiscountTotalColor = totalDiscount > 0
+            ? Color.FromArgb("#DC2626")
+            : Color.FromArgb("#64748B");
+
+        foreach (var entry in entries.Take(8))
+        {
+            DiscountAudits.Add(new DiscountAuditReportRow
+            {
+                EventAt = entry.EventAt,
+                RequestedByName = string.IsNullOrWhiteSpace(entry.RequestedByName) ? "Unknown" : entry.RequestedByName,
+                Reason = string.IsNullOrWhiteSpace(entry.Reason) ? "No reason" : entry.Reason,
+                AmountDisplay = entry.Action == "removed"
+                    ? "Removed"
+                    : $"-£{entry.DiscountAmount:F2}",
+                AmountColor = entry.Action == "removed"
+                    ? Color.FromArgb("#2563EB")
+                    : Color.FromArgb("#DC2626"),
+                DetailDisplay = BuildDiscountDetail(entry),
+                ApprovalDisplay = BuildDiscountApproval(entry)
+            });
+        }
+
+        OnPropertyChanged(nameof(HasDiscountAudits));
+    }
+
+    private static string BuildDiscountDetail(DiscountAuditEntry entry)
+    {
+        var contextParts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(entry.TableNumber))
+        {
+            contextParts.Add($"Table {entry.TableNumber}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.OrderNumber))
+        {
+            contextParts.Add($"Order {entry.OrderNumber}");
+        }
+
+        contextParts.Add(entry.DiscountType == "percent"
+            ? $"{entry.DiscountPercent:F1}%"
+            : "Fixed");
+        contextParts.Add(entry.Action);
+
+        return string.Join(" | ", contextParts);
+    }
+
+    private static string BuildDiscountApproval(DiscountAuditEntry entry)
+    {
+        if (!entry.ApprovalRequired)
+        {
+            return "No approval required";
+        }
+
+        return string.IsNullOrWhiteSpace(entry.ApprovedByName)
+            ? "Approval required"
+            : $"Approved by {entry.ApprovedByName}";
     }
 
     private void ApplyKpiPalette(
@@ -1595,6 +1940,28 @@ public partial class ReportPage : ContentPage
         public DateTime EventAt { get; set; }
         public string ActorName { get; set; } = string.Empty;
         public string Reason { get; set; } = string.Empty;
+    }
+
+    public sealed class CashDrawerReportRow
+    {
+        public DateTime EventAt { get; set; }
+        public string RequestedByName { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string PrinterName { get; set; } = string.Empty;
+        public string StatusDisplay { get; set; } = string.Empty;
+        public Color StatusColor { get; set; } = Color.FromArgb("#0F172A");
+        public string DetailDisplay { get; set; } = string.Empty;
+    }
+
+    public sealed class DiscountAuditReportRow
+    {
+        public DateTime EventAt { get; set; }
+        public string RequestedByName { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string AmountDisplay { get; set; } = string.Empty;
+        public Color AmountColor { get; set; } = Color.FromArgb("#0F172A");
+        public string DetailDisplay { get; set; } = string.Empty;
+        public string ApprovalDisplay { get; set; } = string.Empty;
     }
 
     protected override void OnPropertyChanged([CallerMemberName] string? propertyName = null)

@@ -7,6 +7,8 @@ namespace POS_in_NET.Pages;
 public partial class UserDashboardPage : ContentPage
 {
     private readonly AuthenticationService _authService;
+    private readonly RoleAccessService _roleAccessService;
+    private readonly InactivityService _inactivityService;
     private readonly BusinessSettingsService _businessSettingsService;
     private System.Timers.Timer? _timeTimer;
     private User? _currentUser;
@@ -15,6 +17,8 @@ public partial class UserDashboardPage : ContentPage
     {
         InitializeComponent();
         _authService = AuthenticationService.Instance;
+        _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+        _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
         _businessSettingsService = new BusinessSettingsService();
         
         // Start time updates
@@ -33,7 +37,7 @@ public partial class UserDashboardPage : ContentPage
         {
             var businessInfo = await _businessSettingsService.GetBusinessInfoAsync();
             var businessName = string.IsNullOrWhiteSpace(businessInfo?.RestaurantName)
-                ? "Dashboard"
+                ? "Restaurant POS"
                 : businessInfo.RestaurantName.Trim();
 
             MainThread.BeginInvokeOnMainThread(() =>
@@ -52,11 +56,19 @@ public partial class UserDashboardPage : ContentPage
             {
                 var headerTitle = this.FindByName<Label>("HeaderTitleLabel");
                 if (headerTitle != null)
-                    headerTitle.Text = "Dashboard";
+                    headerTitle.Text = "Restaurant POS";
 
-                Title = "Dashboard";
+                Title = "Restaurant POS";
             });
         }
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        _inactivityService.Start();
+        _inactivityService.ResetActivity();
+        _inactivityService.TrackPage(this);
     }
 
     private void StartTimeUpdates()
@@ -116,12 +128,12 @@ public partial class UserDashboardPage : ContentPage
 
     private async void OnCollectionClicked(object sender, EventArgs e)
     {
+        _inactivityService.ResetActivity();
+
         try
         {
             System.Diagnostics.Debug.WriteLine("Collection button clicked - User Dashboard");
-            
-            // Navigate to collection page
-            await Shell.Current.GoToAsync("//collection");
+            await NavigateToAllowedRouteAsync("collection", isModal: true);
         }
         catch (Exception ex)
         {
@@ -132,12 +144,12 @@ public partial class UserDashboardPage : ContentPage
 
     private async void OnDeliveryClicked(object sender, EventArgs e)
     {
+        _inactivityService.ResetActivity();
+
         try
         {
             System.Diagnostics.Debug.WriteLine("Delivery button clicked - User Dashboard");
-            
-            // Navigate to delivery page
-            await Shell.Current.GoToAsync("//delivery");
+            await NavigateToAllowedRouteAsync("delivery", isModal: true);
         }
         catch (Exception ex)
         {
@@ -148,36 +160,28 @@ public partial class UserDashboardPage : ContentPage
 
     private async void OnRestaurantClicked(object sender, EventArgs e)
     {
+        _inactivityService.ResetActivity();
+
         try
         {
             System.Diagnostics.Debug.WriteLine("Restaurant button clicked - User Dashboard - Navigating directly to visual tables");
-            
-            // Navigate directly to visual table layout root.
-            await Shell.Current.GoToAsync("//visuallayout");
+            await NavigateToAllowedRouteAsync("restaurant");
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Restaurant navigation error: {ex.Message}");
-            
-            // Fallback: Navigate to regular restaurant page
-            try
-            {
-                await Shell.Current.GoToAsync("//restaurant");
-            }
-            catch (Exception fallbackEx)
-            {
-                System.Diagnostics.Debug.WriteLine($"Restaurant fallback navigation error: {fallbackEx.Message}");
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to open Restaurant module");
-            }
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to open Restaurant module");
         }
     }
 
     private async void OnLiveOrderClicked(object sender, EventArgs e)
     {
+        _inactivityService.ResetActivity();
+
         try
         {
             System.Diagnostics.Debug.WriteLine("Live Order button clicked - User Dashboard");
-            await Shell.Current.GoToAsync("//liveorder");
+            await NavigateToAllowedRouteAsync("liveorder");
         }
         catch (Exception ex)
         {
@@ -186,10 +190,37 @@ public partial class UserDashboardPage : ContentPage
         }
     }
 
+    private void OnMenuClicked(object sender, EventArgs e)
+    {
+        _inactivityService.ResetActivity();
+        Shell.Current.FlyoutIsPresented = true;
+    }
+
+    private async Task NavigateToAllowedRouteAsync(string requestedRoute, bool isModal = false)
+    {
+        _inactivityService.ResetActivity();
+
+        var route = _roleAccessService.ResolveRouteForRole(_authService.CurrentUser?.Role, requestedRoute);
+        if (!_roleAccessService.CanAccessRoute(_authService.CurrentUser?.Role, route))
+        {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this module.");
+            return;
+        }
+
+        if (isModal)
+        {
+            await Shell.Current.GoToAsync(route);
+            return;
+        }
+
+        await Shell.Current.GoToAsync($"//{route}");
+    }
+
     private async void OnLogoutClicked(object sender, EventArgs e)
     {
         try
         {
+            _inactivityService.ResetActivity();
             System.Diagnostics.Debug.WriteLine("User logging out from User Dashboard");
 
             // Stop timer
@@ -276,7 +307,7 @@ public partial class UserDashboardPage : ContentPage
             }
 
             // Calculate responsive icon and spacing sizes
-            double iconSize = 220 * scaleFactor;
+            double iconSize = 190 * scaleFactor;
             double spacing = 60 * scaleFactor;
 
             // Update icons using FindByName
@@ -294,16 +325,16 @@ public partial class UserDashboardPage : ContentPage
 
             // Update icon labels
             var restaurantLabel = this.FindByName<Label>("RestaurantLabel");
-            if (restaurantLabel != null) restaurantLabel.FontSize = 16 * scaleFactor;
+            if (restaurantLabel != null) restaurantLabel.FontSize = 18 * scaleFactor;
 
             var deliveryLabel = this.FindByName<Label>("DeliveryLabel");
-            if (deliveryLabel != null) deliveryLabel.FontSize = 16 * scaleFactor;
+            if (deliveryLabel != null) deliveryLabel.FontSize = 18 * scaleFactor;
 
             var collectionLabel = this.FindByName<Label>("CollectionLabel");
-            if (collectionLabel != null) collectionLabel.FontSize = 16 * scaleFactor;
+            if (collectionLabel != null) collectionLabel.FontSize = 18 * scaleFactor;
 
             var liveOrderLabel = this.FindByName<Label>("LiveOrderLabel");
-            if (liveOrderLabel != null) liveOrderLabel.FontSize = 16 * scaleFactor;
+            if (liveOrderLabel != null) liveOrderLabel.FontSize = 18 * scaleFactor;
 
             // Update button grid spacing
             var grid = this.FindByName<Grid>("ButtonGrid");

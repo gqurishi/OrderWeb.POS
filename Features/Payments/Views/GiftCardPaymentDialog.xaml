@@ -96,7 +96,8 @@
                                FontSize="16"
                                HeightRequest="55"
                                BackgroundColor="#F3F4F6"/>
-                        <Button Grid.Column="1"
+                        <Button x:Name="CheckBalanceButton"
+                                Grid.Column="1"
                                 Text="CHECK"
                                 BackgroundColor="#7C3AED"
                                 TextColor="White"
@@ -107,6 +108,11 @@
                                 HeightRequest="55"
                                 Clicked="OnCheckBalanceClicked"/>
                     </Grid>
+                    <Label x:Name="StatusMessageLabel"
+                           Text=""
+                           FontSize="13"
+                           TextColor="#6B7280"
+                           IsVisible="False"/>
                 </VerticalStackLayout>
                 
                 <!-- Gift Card Balance Display -->

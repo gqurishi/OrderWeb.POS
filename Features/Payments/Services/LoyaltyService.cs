@@ -42,9 +42,8 @@ public class LoyaltyService
             var config = await _databaseService.GetCloudConfigAsync();
             _apiKey = config.GetValueOrDefault("api_key", "");
             _tenantId = config.GetValueOrDefault("tenant_slug", "");
-            
-            // Base URL should be https://orderweb.net/api (without tenant, we add it per endpoint)
-            _baseUrl = "https://orderweb.net/api";
+            _baseUrl = NormalizeApiBaseUrl(
+                config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", "")));
 
             System.Diagnostics.Debug.WriteLine($"🔧 LoyaltyService Configuration:");
             System.Diagnostics.Debug.WriteLine($"   API Base: {_baseUrl}");
@@ -301,6 +300,8 @@ public class LoyaltyService
     {
         try
         {
+            await InitializeAsync();
+
             // Verify configuration
             if (string.IsNullOrWhiteSpace(_apiKey) || string.IsNullOrWhiteSpace(_tenantId))
             {
@@ -382,6 +383,17 @@ public class LoyaltyService
     {
         try
         {
+            await InitializeAsync();
+
+            if (string.IsNullOrWhiteSpace(_apiKey) || string.IsNullOrWhiteSpace(_tenantId))
+            {
+                return new GiftCardRedeemResponse
+                {
+                    Success = false,
+                    Error = "API not configured. Please check Cloud Settings."
+                };
+            }
+
             var request = new GiftCardRedeemRequest
             {
                 CardNumber = cardNumber,
@@ -452,6 +464,24 @@ public class LoyaltyService
         }
 
         return digitsOnly;
+    }
+
+    private static string NormalizeApiBaseUrl(string? configuredUrl)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(configuredUrl)
+            ? "https://orderweb.net/api"
+            : configuredUrl.Trim();
+
+        baseUrl = baseUrl.TrimEnd('/');
+
+        if (baseUrl.EndsWith("/pos", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = baseUrl[..^4];
+        }
+
+        return string.IsNullOrWhiteSpace(baseUrl)
+            ? "https://orderweb.net/api"
+            : baseUrl;
     }
 
     /// <summary>

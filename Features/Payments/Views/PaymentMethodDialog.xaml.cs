@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using POS_in_NET.Services;
 using System;
 using System.Threading.Tasks;
 
@@ -24,9 +25,12 @@ namespace POS_in_NET.Views
             InitializeComponent();
         }
 
-        public void SetAmountDue(decimal amount, decimal remaining = 0)
+        public void SetAmountDue(decimal amount, decimal remaining = 0, string? title = null)
         {
             _amountDue = amount;
+            TitleLabel.Text = string.IsNullOrWhiteSpace(title)
+                ? "SELECT PAYMENT METHOD"
+                : title;
             AmountDueLabel.Text = $"£{amount:F2}";
             
             if (remaining > 0)
@@ -42,6 +46,7 @@ namespace POS_in_NET.Views
 
         public async Task<PaymentMethod> ShowAsync()
         {
+            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<PaymentMethod>();
             
             if (Application.Current?.MainPage != null)

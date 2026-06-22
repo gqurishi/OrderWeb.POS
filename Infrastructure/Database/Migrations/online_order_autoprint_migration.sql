@@ -4,9 +4,12 @@
 -- Date: December 6, 2025
 -- ===================================================================
 
--- Step 1: Update network_printers table to support new printer types
--- The printer_type column is already VARCHAR so no schema change needed
--- Just documenting the new values: 'online', 'takeaway'
+-- Step 1: Update network_printers table to support OrderWeb printer types
+ALTER TABLE network_printers
+    MODIFY COLUMN printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL;
+
+ALTER TABLE network_printers
+    ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL;
 
 -- Step 2: Create online_order_print_tracking table
 -- Tracks print jobs specifically for online orders

@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using POS_in_NET.Services;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -18,10 +19,15 @@ namespace POS_in_NET.Views
 
         public void SetActionSheet(string title, List<string> options, string icon = "i", string iconBgColor = "#2563EB")
         {
+            DialogBorder.WidthRequest = 450;
             TitleLabel.Text = title;
             IconBorder.BackgroundColor = ParseColor(iconBgColor, Color.FromArgb("#2563EB"));
             IconLabel.Text = NormalizeIconText(icon);
             OptionsContainer.Children.Clear();
+            OptionsContainer.IsVisible = true;
+            GridOptionsContainer.Children.Clear();
+            GridOptionsContainer.RowDefinitions.Clear();
+            GridOptionsContainer.IsVisible = false;
 
             foreach (var option in options)
             {
@@ -45,6 +51,50 @@ namespace POS_in_NET.Views
                 };
 
                 OptionsContainer.Children.Add(button);
+            }
+        }
+
+        public void SetActionSheetGrid(string title, List<string> options, string icon = "i", string iconBgColor = "#2563EB")
+        {
+            DialogBorder.WidthRequest = 520;
+            TitleLabel.Text = title;
+            IconBorder.BackgroundColor = ParseColor(iconBgColor, Color.FromArgb("#2563EB"));
+            IconLabel.Text = NormalizeIconText(icon);
+            OptionsContainer.Children.Clear();
+            OptionsContainer.IsVisible = false;
+            GridOptionsContainer.Children.Clear();
+            GridOptionsContainer.RowDefinitions.Clear();
+            GridOptionsContainer.IsVisible = true;
+
+            var rows = (int)Math.Ceiling(options.Count / 2d);
+            for (var row = 0; row < rows; row++)
+            {
+                GridOptionsContainer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            }
+
+            for (var index = 0; index < options.Count; index++)
+            {
+                var option = options[index];
+                var button = new Button
+                {
+                    Text = option,
+                    BackgroundColor = Color.FromArgb("#F8FAFC"),
+                    TextColor = Color.FromArgb("#1E293B"),
+                    FontSize = 16,
+                    FontAttributes = FontAttributes.Bold,
+                    CornerRadius = 16,
+                    HeightRequest = 72,
+                    BorderColor = Color.FromArgb("#D8E1ED"),
+                    BorderWidth = 1
+                };
+
+                button.Clicked += (s, e) =>
+                {
+                    _taskCompletionSource?.TrySetResult(option);
+                    CloseDialog();
+                };
+
+                GridOptionsContainer.Add(button, index % 2, index / 2);
             }
         }
 
@@ -102,6 +152,7 @@ namespace POS_in_NET.Views
 
         public async Task<string?> ShowAsync()
         {
+            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<string?>();
             
             if (Application.Current?.MainPage != null)

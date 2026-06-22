@@ -4,219 +4,201 @@
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
              x:Class="POS_in_NET.Pages.CollectionCustomerModal"
              Title="Collection Order"
-             BackgroundColor="#F3F4F6">
+             BackgroundColor="#F8FAFC">
 
-    <Grid Padding="50" RowDefinitions="Auto,*,Auto">
+    <Grid Padding="44" RowDefinitions="Auto,*,Auto">
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FBFCFE" Offset="0" />
+                <GradientStop Color="#F3F6FA" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
 
-        <!-- Toast Notification Overlay -->
         <controls:ToastNotification x:Name="ToastNotification"
                                     InputTransparent="True"
-                                    ZIndex="1000"/>
-        
+                                    ZIndex="1000" />
+
         <!-- Header -->
-        <VerticalStackLayout Grid.Row="0" Spacing="12" Margin="0,0,0,40">
-            <Label Text="Collection Order" 
-                   FontSize="36" 
-                   FontAttributes="Bold" 
+        <VerticalStackLayout Grid.Row="0"
+                             Spacing="12"
+                             HorizontalOptions="Center"
+                             Margin="0,24,0,34">
+            <Label Text="Collection Order"
+                   FontFamily="AlegreyaBold"
+                   FontSize="40"
                    HorizontalOptions="Center"
-                   TextColor="#1A202C"/>
-            <Label Text="Customer Information" 
-                   FontSize="16" 
-                 FontAttributes="Bold"
+                   TextColor="#111827" />
+            <Label Text="Customer Information"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="17"
                    HorizontalOptions="Center"
-                 TextColor="#64748B"
-                   Margin="0,5,0,0"/>
+                   TextColor="#64748B" />
             <BoxView HeightRequest="3"
-                     WidthRequest="60"
+                     WidthRequest="66"
                      BackgroundColor="#10B981"
                      HorizontalOptions="Center"
-                     CornerRadius="2"
-                     Margin="0,10,0,0"/>
+                     CornerRadius="2" />
         </VerticalStackLayout>
 
-        <!-- Main Content -->
+        <!-- Simple customer form -->
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Spacing="30" HorizontalOptions="Center" WidthRequest="550">
-                
-                <!-- Customer Name -->
-                <VerticalStackLayout Spacing="12">
-                    <Label Text="Customer Name" 
-                           FontSize="15" 
-                           FontAttributes="Bold"
-                           TextColor="#4A5568"/>
+            <VerticalStackLayout Spacing="26"
+                                 WidthRequest="560"
+                                 HorizontalOptions="Center">
+
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Customer Name"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="15"
+                           TextColor="#475569" />
                     <Border BackgroundColor="White"
-                            StrokeThickness="1"
                             Stroke="#CBD5E1"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
                             Padding="0">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="12"/>
-                        </Border.StrokeShape>
                         <Entry x:Name="CustomerNameEntry"
                                Placeholder="e.g., John Smith"
+                               FontFamily="OpenSansRegular"
                                FontSize="16"
-                               TextColor="#1A202C"
+                               TextColor="#111827"
                                PlaceholderColor="#94A3B8"
                                BackgroundColor="Transparent"
                                ClearButtonVisibility="Never"
-                               HeightRequest="56"
-                               Margin="16,0"/>
+                               HeightRequest="58"
+                               Margin="18,0" />
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Phone Number -->
-                <VerticalStackLayout Spacing="12">
-                    <Label Text="Phone Number" 
-                           FontSize="15" 
-                           FontAttributes="Bold"
-                           TextColor="#4A5568"/>
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Phone Number"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="15"
+                           TextColor="#475569" />
                     <Border BackgroundColor="White"
-                            StrokeThickness="1"
                             Stroke="#CBD5E1"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
                             Padding="0">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="12"/>
-                        </Border.StrokeShape>
                         <Entry x:Name="PhoneNumberEntry"
                                Placeholder="e.g., 07123 456789"
                                Keyboard="Telephone"
+                               FontFamily="OpenSansRegular"
                                FontSize="16"
-                               TextColor="#1A202C"
+                               TextColor="#111827"
                                PlaceholderColor="#94A3B8"
                                BackgroundColor="Transparent"
                                ClearButtonVisibility="Never"
-                               HeightRequest="56"
-                               Margin="16,0"/>
+                               HeightRequest="58"
+                               Margin="18,0" />
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Search Button -->
                 <Button Text="Search Existing Customer"
-                    BackgroundColor="#3B82F6"
-                        TextColor="White"
-                        FontSize="16"
-                        FontAttributes="Bold"
-                        HeightRequest="54"
-                        CornerRadius="12"
                         Clicked="OnSearchClicked"
-                        Margin="0,5,0,0">
+                        BackgroundColor="#3B82F6"
+                        TextColor="White"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="16"
+                        HeightRequest="58"
+                        CornerRadius="12">
                     <Button.Shadow>
-                        <Shadow Brush="Black" 
-                                Radius="8" 
-                                Opacity="0.15" 
-                                Offset="0,3"/>
+                        <Shadow Brush="#2563EB" Opacity="0.22" Radius="12" Offset="0,6" />
                     </Button.Shadow>
                 </Button>
 
-                <!-- Search Results -->
+                <Label x:Name="NoResultsLabel"
+                       Text="No existing customer found. You can continue to create a new collection customer."
+                       IsVisible="False"
+                       FontFamily="OpenSansRegular"
+                       FontSize="14"
+                       TextColor="#64748B"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
+
                 <Border x:Name="SearchResultsBorder"
                         IsVisible="False"
                         BackgroundColor="White"
+                        Stroke="#D8E1EC"
                         StrokeThickness="1"
-                        Stroke="#CBD5E1"
-                        Padding="0"
-                        MaximumHeightRequest="320"
-                        Margin="0,5,0,0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Brush="Black" 
-                                Radius="12" 
-                                Opacity="0.08" 
-                                Offset="0,4"/>
-                    </Border.Shadow>
-                    <ScrollView>
+                        StrokeShape="RoundRectangle 14"
+                        Padding="0">
+                    <VerticalStackLayout Spacing="0">
+                        <Label Text="Select Existing Customer"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="14"
+                               TextColor="#334155"
+                               Padding="16,14,16,10" />
+
                         <CollectionView x:Name="SearchResultsCollection"
                                         SelectionMode="Single"
-                                        SelectionChanged="OnCustomerSelected">
+                                        SelectionChanged="OnCustomerSelected"
+                                        MaximumHeightRequest="240">
                             <CollectionView.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="18,16"
-                                            BackgroundColor="Transparent"
-                                            Margin="0,0,0,1">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnCustomerTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                            <VerticalStackLayout Grid.Column="0" Spacing="6">
-                                                <Label Text="{Binding Name}" 
-                                                       FontSize="16" 
-                                                       FontAttributes="Bold"
-                                                       TextColor="#1A202C"/>
-                                                <Label Text="{Binding PhoneNumber}" 
-                                                       FontSize="14"
-                                                       TextColor="#718096"/>
-                                            </VerticalStackLayout>
-                                            <Label Grid.Column="1"
-                                                  Text=">"
-                                                  FontSize="20"
-                                                  TextColor="#64748B"
-                                                   VerticalOptions="Center"/>
-                                        </Grid>
-                                    </Border>
+                                    <Grid Padding="16,12"
+                                          ColumnDefinitions="*,Auto"
+                                          BackgroundColor="White">
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label Text="{Binding Name}"
+                                                   FontFamily="OpenSansSemibold"
+                                                   FontSize="15"
+                                                   TextColor="#111827" />
+                                            <Label Text="{Binding PhoneNumber}"
+                                                   FontFamily="OpenSansRegular"
+                                                   FontSize="13"
+                                                   TextColor="#64748B" />
+                                        </VerticalStackLayout>
+                                        <Button Grid.Column="1"
+                                                Text="Use"
+                                                Clicked="OnCustomerTapped"
+                                                BackgroundColor="#ECFDF5"
+                                                TextColor="#047857"
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="13"
+                                                HeightRequest="38"
+                                                WidthRequest="72"
+                                                CornerRadius="10"
+                                                VerticalOptions="Center" />
+                                    </Grid>
                                 </DataTemplate>
                             </CollectionView.ItemTemplate>
                         </CollectionView>
-                    </ScrollView>
+                    </VerticalStackLayout>
                 </Border>
-
-                <!-- No Results Message -->
-                <Border x:Name="NoResultsLabel"
-                        IsVisible="False"
-                    BackgroundColor="#F8FAFC"
-                    StrokeThickness="1"
-                    Stroke="#CBD5E1"
-                        Padding="20"
-                        Margin="0,5,0,0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Label Text="No customers found matching your search"
-                           FontSize="15"
-                              TextColor="#475569"
-                           HorizontalOptions="Center"
-                           HorizontalTextAlignment="Center"/>
-                </Border>
-
             </VerticalStackLayout>
         </ScrollView>
 
-        <!-- Bottom Buttons -->
-        <Grid Grid.Row="2" 
-              ColumnDefinitions="*,1.2*" 
-              ColumnSpacing="16" 
-              Margin="0,40,0,0"
+        <!-- Bottom actions -->
+        <Grid Grid.Row="2"
+              ColumnDefinitions="*,*"
+              ColumnSpacing="18"
+              WidthRequest="560"
               HorizontalOptions="Center"
-              WidthRequest="550">
-            
-            <Button Grid.Column="0"
-                    Text="Cancel"
+              Margin="0,26,0,16">
+            <Button Text="Cancel"
+                    Clicked="OnCancelClicked"
                     BackgroundColor="White"
-                    TextColor="#475569"
-                    FontSize="16"
-                    HeightRequest="56"
-                    CornerRadius="12"
                     BorderColor="#CBD5E1"
                     BorderWidth="1"
-                    Clicked="OnCancelClicked"/>
+                    TextColor="#334155"
+                    FontFamily="OpenSansRegular"
+                    FontSize="16"
+                    HeightRequest="58"
+                    CornerRadius="12" />
 
             <Button Grid.Column="1"
                     Text="Continue to Order"
+                    Clicked="OnContinueClicked"
                     BackgroundColor="#10B981"
                     TextColor="White"
+                    FontFamily="OpenSansSemibold"
                     FontSize="16"
-                    FontAttributes="Bold"
-                    HeightRequest="56"
-                    CornerRadius="12"
-                    Clicked="OnContinueClicked">
+                    HeightRequest="58"
+                    CornerRadius="12">
                 <Button.Shadow>
-                    <Shadow Brush="Black" 
-                        Radius="10" 
-                        Opacity="0.18" 
-                        Offset="0,4"/>
+                    <Shadow Brush="#059669" Opacity="0.2" Radius="12" Offset="0,6" />
                 </Button.Shadow>
             </Button>
         </Grid>
-
     </Grid>
 </ContentPage>

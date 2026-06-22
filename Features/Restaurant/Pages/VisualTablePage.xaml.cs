@@ -20,6 +20,7 @@ namespace POS_in_NET.Pages
         private readonly OrderService _orderService;
         private readonly AuthenticationService _authService;
         private readonly RoleAccessService _roleAccessService;
+        private readonly InactivityService _inactivityService;
         private List<Floor> _floors = new();
         private Floor? _currentFloor;
         private Dictionary<int, Border> _tableViews = new();
@@ -32,7 +33,11 @@ namespace POS_in_NET.Pages
         private DateTime _lastSuccessfulLayoutLoadAt = DateTime.MinValue;
         private DateTime? _lastSyncAt;
         private IDispatcherTimer? _autoRefreshTimer;
+        private IDispatcherTimer? _basicUserIdleTimer;
+        private DateTime _basicUserLastActivityAt = DateTime.Now;
+        private bool _isBasicUserIdleNavigating;
         private const int GRID_SIZE = 20; // 20px snap grid
+        private static readonly TimeSpan BasicUserIdleTimeout = TimeSpan.FromSeconds(60);
         private const string SelectedFloorPreferenceKey = "visual_layout_selected_floor_id";
 
         public VisualTablePage()
@@ -43,6 +48,7 @@ namespace POS_in_NET.Pages
             
             _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
             _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+            _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
             _floorService = new FloorService();
             _tableService = new RestaurantTableService();
             _sessionService = new TableSessionService();
@@ -57,6 +63,14 @@ namespace POS_in_NET.Pages
         protected override async void OnAppearing()
         {
             base.OnAppearing();
+
+            if (_authService.CurrentUser?.Role == UserRole.User)
+            {
+                _inactivityService.Start();
+                _inactivityService.ResetActivity();
+                _inactivityService.TrackPage(this);
+                StartBasicUserIdleWatchdog();
+            }
 
             _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
 
@@ -93,9 +107,74 @@ namespace POS_in_NET.Pages
 
         protected override void OnDisappearing()
         {
+            StopBasicUserIdleWatchdog();
             StopAutoRefreshPolling();
             UnsubscribeFromRefreshEvents();
             base.OnDisappearing();
+        }
+
+        private void StartBasicUserIdleWatchdog()
+        {
+            ResetBasicUserIdle();
+
+            if (_basicUserIdleTimer != null)
+            {
+                return;
+            }
+
+            _basicUserIdleTimer = Dispatcher.CreateTimer();
+            _basicUserIdleTimer.Interval = TimeSpan.FromSeconds(1);
+            _basicUserIdleTimer.Tick += OnBasicUserIdleTick;
+            _basicUserIdleTimer.Start();
+        }
+
+        private void StopBasicUserIdleWatchdog()
+        {
+            if (_basicUserIdleTimer == null)
+            {
+                return;
+            }
+
+            _basicUserIdleTimer.Stop();
+            _basicUserIdleTimer.Tick -= OnBasicUserIdleTick;
+            _basicUserIdleTimer = null;
+            _isBasicUserIdleNavigating = false;
+        }
+
+        private void ResetBasicUserIdle()
+        {
+            _basicUserLastActivityAt = DateTime.Now;
+            _inactivityService.ResetActivity();
+        }
+
+        private async void OnBasicUserIdleTick(object? sender, EventArgs e)
+        {
+            if (_isBasicUserIdleNavigating || _authService.CurrentUser?.Role != UserRole.User)
+            {
+                return;
+            }
+
+            if (LoadingOverlay.IsVisible || CoverPopupOverlay.IsVisible || !NumericKeyboard.InputTransparent)
+            {
+                ResetBasicUserIdle();
+                return;
+            }
+
+            if (DateTime.Now - _basicUserLastActivityAt < BasicUserIdleTimeout)
+            {
+                return;
+            }
+
+            _isBasicUserIdleNavigating = true;
+            try
+            {
+                await _inactivityService.ReturnToDashboardForIdleAsync();
+            }
+            catch (Exception ex)
+            {
+                _isBasicUserIdleNavigating = false;
+                System.Diagnostics.Debug.WriteLine($"[VisualTable] Basic user idle dashboard return failed: {ex.Message}");
+            }
         }
 
         private void SubscribeToRefreshEvents()
@@ -280,7 +359,11 @@ namespace POS_in_NET.Pages
                 tabBorder.Content = tabLabel;
                 
                 var tapGesture = new TapGestureRecognizer();
-                tapGesture.Tapped += async (s, e) => await SelectFloor(floor);
+                tapGesture.Tapped += async (s, e) =>
+                {
+                    ResetBasicUserIdle();
+                    await SelectFloor(floor);
+                };
                 tabBorder.GestureRecognizers.Add(tapGesture);
                 
                 FloorTabsLayout.Children.Add(tabBorder);
@@ -562,7 +645,11 @@ namespace POS_in_NET.Pages
 
             // Add tap gesture for selection
             var tapGesture = new TapGestureRecognizer();
-            tapGesture.Tapped += async (s, e) => await SelectTableAsync(table, tableBorder);
+            tapGesture.Tapped += async (s, e) =>
+            {
+                ResetBasicUserIdle();
+                await SelectTableAsync(table, tableBorder);
+            };
             tableBorder.GestureRecognizers.Add(tapGesture);
 
             return tableBorder;
@@ -912,6 +999,7 @@ namespace POS_in_NET.Pages
         
         private void OnCloseCoverPopup(object sender, EventArgs e)
         {
+            ResetBasicUserIdle();
             CloseCoverPopup();
         }
         
@@ -933,6 +1021,8 @@ namespace POS_in_NET.Pages
         
         private async void OnCoverSelected(object sender, EventArgs e)
         {
+            ResetBasicUserIdle();
+
             if (sender is Button button && _popupTable != null)
             {
                 if (int.TryParse(button.Text, out int coverCount))
@@ -946,12 +1036,16 @@ namespace POS_in_NET.Pages
         
         private void OnCustomCoverTapped(object sender, EventArgs e)
         {
+            ResetBasicUserIdle();
+
             // Show numeric keyboard
             NumericKeyboard.Show();
         }
         
         private async void OnNumericKeyboardConfirmed(object? sender, int number)
         {
+            ResetBasicUserIdle();
+
             _customCoverValue = number;
             CustomCoverLabel.Text = number.ToString();
             CustomCoverLabel.TextColor = Color.FromArgb("#1F2937");
@@ -965,6 +1059,8 @@ namespace POS_in_NET.Pages
         
         private async void OnCustomCoverSubmit(object sender, EventArgs e)
         {
+            ResetBasicUserIdle();
+
             if (_popupTable == null) return;
             
             if (_customCoverValue <= 0)

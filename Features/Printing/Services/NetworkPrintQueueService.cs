@@ -93,8 +93,11 @@ public class NetworkPrintQueueService : IDisposable
                     order_id VARCHAR(100),
                     status ENUM('pending', 'printing', 'completed', 'failed') DEFAULT 'pending',
                     retry_count INT DEFAULT 0,
+                    max_retries INT DEFAULT 5,
                     error_message TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP NULL,
+                    completed_at TIMESTAMP NULL,
                     printed_at TIMESTAMP NULL,
                     last_attempt TIMESTAMP NULL,
                     INDEX idx_status (status),
@@ -103,6 +106,7 @@ public class NetworkPrintQueueService : IDisposable
                 )";
             
             await command.ExecuteNonQueryAsync();
+            await MigrateQueueTableAsync(connection);
             Debug.WriteLine("✅ network_print_queue table ready");
         }
         catch (Exception ex)
@@ -251,11 +255,11 @@ public class NetworkPrintQueueService : IDisposable
             command.CommandText = @"
                 SELECT pq.id, pq.printer_id, pq.job_type, pq.print_data, pq.order_id, 
                        pq.status, pq.retry_count, pq.error_message, pq.created_at, 
-                       pq.printed_at, pq.last_attempt, p.printer_name
+                       pq.printed_at, pq.last_attempt, p.name AS printer_name
                 FROM network_print_queue pq
-                JOIN printers p ON pq.printer_id = p.id
+                JOIN network_printers p ON pq.printer_id = p.id
                 WHERE pq.status IN ('pending', 'failed')
-                  AND pq.retry_count < @maxRetries
+                  AND pq.retry_count < COALESCE(pq.max_retries, @maxRetries)
                   AND p.is_enabled = 1
                   AND (pq.last_attempt IS NULL 
                        OR pq.last_attempt < DATE_SUB(NOW(), INTERVAL POWER(2, pq.retry_count) * @baseDelay SECOND))
@@ -310,13 +314,13 @@ public class NetworkPrintQueueService : IDisposable
             var printer = await _dbService.GetPrinterByIdAsync(job.PrinterId);
             if (printer == null)
             {
-                await FailJobAsync(job.Id, "Printer not found");
+                await FailJobAsync(job, "Printer not found");
                 return;
             }
 
             if (!printer.IsOnline)
             {
-                await RetryJobAsync(job.Id, "Printer is offline");
+                await RetryJobAsync(job, "Printer is offline");
                 return;
             }
 
@@ -334,18 +338,19 @@ public class NetworkPrintQueueService : IDisposable
                 {
                     JobId = job.Id,
                     PrinterName = job.PrinterName,
-                    OrderId = job.OrderId
+                    OrderId = job.OrderId,
+                    JobType = job.JobType
                 });
             }
             else
             {
-                await RetryJobAsync(job.Id, "Send failed");
+                await RetryJobAsync(job, "Send failed");
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"❌ Job #{job.Id} error: {ex.Message}");
-            await RetryJobAsync(job.Id, ex.Message);
+            await RetryJobAsync(job, ex.Message);
         }
     }
 
@@ -361,7 +366,7 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = @status, last_attempt = NOW()
+                SET status = @status, started_at = NOW(), last_attempt = NOW()
                 WHERE id = @id";
             
             command.Parameters.AddWithValue("@id", jobId);
@@ -387,7 +392,7 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = 'completed', printed_at = NOW(), last_attempt = NOW()
+                SET status = 'completed', completed_at = NOW(), printed_at = NOW(), last_attempt = NOW()
                 WHERE id = @id";
             
             command.Parameters.AddWithValue("@id", jobId);
@@ -402,7 +407,7 @@ public class NetworkPrintQueueService : IDisposable
     /// <summary>
     /// Mark job for retry
     /// </summary>
-    private async Task RetryJobAsync(int jobId, string errorMessage)
+    private async Task RetryJobAsync(NetworkPrintJob job, string errorMessage)
     {
         try
         {
@@ -411,18 +416,38 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = 'failed', 
+                SET status = CASE WHEN retry_count + 1 >= COALESCE(max_retries, @maxRetries) THEN 'failed' ELSE 'pending' END,
                     retry_count = retry_count + 1,
                     error_message = @error,
                     last_attempt = NOW()
                 WHERE id = @id";
             
-            command.Parameters.AddWithValue("@id", jobId);
+            command.Parameters.AddWithValue("@id", job.Id);
             command.Parameters.AddWithValue("@error", errorMessage);
+            command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             
             await command.ExecuteNonQueryAsync();
+
+            var finalFailure = await IsPermanentlyFailedAsync(connection, job.Id);
             
-            Debug.WriteLine($"🔄 Job #{jobId} will retry: {errorMessage}");
+            if (finalFailure)
+            {
+                JobsFailedToday++;
+                Debug.WriteLine($"❌ Job #{job.Id} permanently failed: {errorMessage}");
+
+                JobFailed?.Invoke(this, new PrintJobFailedEventArgs
+                {
+                    JobId = job.Id,
+                    PrinterName = job.PrinterName,
+                    OrderId = job.OrderId,
+                    JobType = job.JobType,
+                    ErrorMessage = errorMessage
+                });
+            }
+            else
+            {
+                Debug.WriteLine($"🔄 Job #{job.Id} will retry: {errorMessage}");
+            }
         }
         catch (Exception ex)
         {
@@ -433,7 +458,7 @@ public class NetworkPrintQueueService : IDisposable
     /// <summary>
     /// Mark job as permanently failed
     /// </summary>
-    private async Task FailJobAsync(int jobId, string errorMessage)
+    private async Task FailJobAsync(NetworkPrintJob job, string errorMessage)
     {
         try
         {
@@ -448,7 +473,7 @@ public class NetworkPrintQueueService : IDisposable
                     last_attempt = NOW()
                 WHERE id = @id";
             
-            command.Parameters.AddWithValue("@id", jobId);
+            command.Parameters.AddWithValue("@id", job.Id);
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             command.Parameters.AddWithValue("@error", errorMessage);
             
@@ -456,11 +481,14 @@ public class NetworkPrintQueueService : IDisposable
             
             JobsFailedToday++;
             
-            Debug.WriteLine($"❌ Job #{jobId} permanently failed: {errorMessage}");
+            Debug.WriteLine($"❌ Job #{job.Id} permanently failed: {errorMessage}");
             
             JobFailed?.Invoke(this, new PrintJobFailedEventArgs
             {
-                JobId = jobId,
+                JobId = job.Id,
+                PrinterName = job.PrinterName,
+                OrderId = job.OrderId,
+                JobType = job.JobType,
                 ErrorMessage = errorMessage
             });
         }
@@ -468,6 +496,20 @@ public class NetworkPrintQueueService : IDisposable
         {
             Debug.WriteLine($"❌ Error failing job: {ex.Message}");
         }
+    }
+
+    private static async Task<bool> IsPermanentlyFailedAsync(MySqlConnection connection, int jobId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries)
+            FROM network_print_queue
+            WHERE id = @id";
+        command.Parameters.AddWithValue("@id", jobId);
+        command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
+
+        var result = await command.ExecuteScalarAsync();
+        return result != null && Convert.ToBoolean(result);
     }
 
     /// <summary>
@@ -490,7 +532,7 @@ public class NetworkPrintQueueService : IDisposable
                     SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                     SUM(CASE WHEN status = 'printing' THEN 1 ELSE 0 END) as printing,
                     SUM(CASE WHEN status = 'completed' AND DATE(printed_at) = CURDATE() THEN 1 ELSE 0 END) as completed_today,
-                    SUM(CASE WHEN status = 'failed' AND retry_count >= @maxRetries AND DATE(last_attempt) = CURDATE() THEN 1 ELSE 0 END) as failed_today
+                    SUM(CASE WHEN status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries) AND DATE(last_attempt) = CURDATE() THEN 1 ELSE 0 END) as failed_today
                 FROM network_print_queue";
             
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
@@ -526,7 +568,7 @@ public class NetworkPrintQueueService : IDisposable
             command.CommandText = @"
                 UPDATE network_print_queue 
                 SET status = 'pending', retry_count = 0, error_message = NULL
-                WHERE status = 'failed' AND retry_count >= @maxRetries";
+                WHERE status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries)";
             
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             
@@ -573,6 +615,67 @@ public class NetworkPrintQueueService : IDisposable
 
     public bool IsRunning => _isRunning;
 
+    private static async Task MigrateQueueTableAsync(MySqlConnection connection)
+    {
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "max_retries"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN max_retries INT DEFAULT 5 AFTER retry_count");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "started_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN started_at TIMESTAMP NULL AFTER created_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "completed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN completed_at TIMESTAMP NULL AFTER started_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "printed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN printed_at TIMESTAMP NULL AFTER completed_at");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "last_attempt"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN last_attempt TIMESTAMP NULL AFTER printed_at");
+        }
+    }
+
+    private static async Task<bool> ColumnExistsAsync(MySqlConnection connection, string tableName, string columnName)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = @tableName
+              AND COLUMN_NAME = @columnName";
+        command.Parameters.AddWithValue("@tableName", tableName);
+        command.Parameters.AddWithValue("@columnName", columnName);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private static async Task ExecuteNonQueryAsync(MySqlConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
     public void Dispose()
     {
         Stop();
@@ -587,6 +690,7 @@ public class PrintJobCompletedEventArgs : EventArgs
     public int JobId { get; set; }
     public string PrinterName { get; set; } = "";
     public string? OrderId { get; set; }
+    public string JobType { get; set; } = "";
 }
 
 /// <summary>
@@ -595,5 +699,8 @@ public class PrintJobCompletedEventArgs : EventArgs
 public class PrintJobFailedEventArgs : EventArgs
 {
     public int JobId { get; set; }
+    public string PrinterName { get; set; } = "";
+    public string? OrderId { get; set; }
+    public string JobType { get; set; } = "";
     public string ErrorMessage { get; set; } = "";
 }

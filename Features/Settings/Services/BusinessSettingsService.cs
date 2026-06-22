@@ -114,8 +114,11 @@ public class BusinessSettingsService
                       phone_number, email, website, vat_number, tax_code, description, logo_path,
                        label_printer_ip, label_printer_port, label_printer_enabled,
                        updated_at, updated_by
-                FROM business_info 
-                ORDER BY id ASC 
+                FROM business_info
+                ORDER BY
+                    CASE WHEN TRIM(COALESCE(restaurant_name, '')) <> '' THEN 0 ELSE 1 END,
+                    updated_at DESC,
+                    id DESC
                 LIMIT 1
             ";
 

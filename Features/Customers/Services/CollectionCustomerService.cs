@@ -46,7 +46,7 @@ namespace POS_in_NET.Services
             }
         }
 
-        public async Task<List<CollectionCustomer>> SearchCustomersByNameAsync(string searchName)
+        public async Task<List<CollectionCustomer>> SearchCustomersByNameAsync(string? searchName, string? phoneNumber = null)
         {
             var customers = new List<CollectionCustomer>();
             
@@ -59,12 +59,18 @@ namespace POS_in_NET.Services
                 var query = @"
                     SELECT id, name, phone_number, created_at, last_order_date 
                     FROM collection_customers 
-                    WHERE name LIKE @searchName 
+                    WHERE (@searchName <> '' AND name LIKE @searchNamePattern)
+                       OR (@phoneNumber <> '' AND phone_number LIKE @phonePattern)
                     ORDER BY last_order_date DESC, name ASC 
                     LIMIT 50";
 
                 using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@searchName", $"%{searchName}%");
+                var normalizedName = searchName?.Trim() ?? string.Empty;
+                var normalizedPhone = phoneNumber?.Trim() ?? string.Empty;
+                command.Parameters.AddWithValue("@searchName", normalizedName);
+                command.Parameters.AddWithValue("@searchNamePattern", $"%{normalizedName}%");
+                command.Parameters.AddWithValue("@phoneNumber", normalizedPhone);
+                command.Parameters.AddWithValue("@phonePattern", $"%{normalizedPhone}%");
 
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())

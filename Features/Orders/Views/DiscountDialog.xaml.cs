@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using MySqlConnector;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 
@@ -6,7 +7,7 @@ namespace POS_in_NET.Views;
 
 public partial class DiscountDialog : ContentView
 {
-    private TaskCompletionSource<(decimal discountAmount, decimal discountPercent, string? reason)?>? _taskCompletionSource;
+    private TaskCompletionSource<DiscountDialogResult?>? _taskCompletionSource;
     private decimal _orderSubtotal;
     private bool _isFixedAmount = true;
     private decimal _discountValue = 0;
@@ -27,9 +28,9 @@ public partial class DiscountDialog : ContentView
         OrderSubtotalLabel.Text = $"£{subtotal:F2}";
     }
     
-    public Task<(decimal discountAmount, decimal discountPercent, string? reason)?> ShowAsync()
+    public Task<DiscountDialogResult?> ShowAsync()
     {
-        _taskCompletionSource = new TaskCompletionSource<(decimal, decimal, string?)?>();
+        _taskCompletionSource = new TaskCompletionSource<DiscountDialogResult?>();
         
         // Store reason buttons for easy selection management
         _reasonButtons["Staff"] = StaffButton;
@@ -186,7 +187,13 @@ public partial class DiscountDialog : ContentView
     private void OnRemoveDiscountClicked(object sender, EventArgs e)
     {
         // Return zero discount
-        _taskCompletionSource?.TrySetResult((0, 0, null));
+        _taskCompletionSource?.TrySetResult(new DiscountDialogResult
+        {
+            DiscountAmount = 0,
+            DiscountPercent = 0,
+            Reason = null,
+            DiscountType = "removed"
+        });
         CloseDialog();
     }
     
@@ -246,7 +253,10 @@ public partial class DiscountDialog : ContentView
         }
         
         // Check if Manager PIN is required (discount over £30)
-        if (actualDiscount > 30)
+        var approvalRequired = actualDiscount > 30;
+        DiscountApprovalInfo? approvedBy = null;
+
+        if (approvalRequired)
         {
             var authService = Application.Current?.MainPage?.Handler?.MauiContext?.Services.GetService<AuthenticationService>();
             var currentUser = authService?.CurrentUser;
@@ -255,7 +265,16 @@ public partial class DiscountDialog : ContentView
             bool isManagerOrAdmin = currentUser != null && 
                                     (currentUser.Role == UserRole.Manager || currentUser.Role == UserRole.Admin);
             
-            if (!isManagerOrAdmin)
+            if (isManagerOrAdmin)
+            {
+                approvedBy = new DiscountApprovalInfo
+                {
+                    UserId = currentUser?.Id,
+                    Name = !string.IsNullOrWhiteSpace(currentUser?.Name) ? currentUser.Name : currentUser?.Username ?? "Manager",
+                    Role = currentUser?.Role.ToString() ?? string.Empty
+                };
+            }
+            else
             {
                 // Request Manager PIN
                 var pinDialog = new StyledPromptDialog();
@@ -273,20 +292,26 @@ public partial class DiscountDialog : ContentView
                     return; // Cancelled
                 }
                 
-                // Validate PIN (accept any 4-digit PIN for now)
-                if (pin.Length != 4)
+                approvedBy = await ValidateManagerPinAsync(pin);
+                if (approvedBy == null)
                 {
                     var alert = new ModernAlertDialog();
-                    alert.SetAlert("Invalid PIN", "Manager PIN must be 4 digits.", "", "#DC2626", "White");
+                    alert.SetAlert("Invalid PIN", "Manager approval could not be verified.", "", "#DC2626", "White");
                     await alert.ShowAsync();
                     return;
                 }
-                
-                // TODO: Actually validate manager PIN against database
             }
         }
         
-        _taskCompletionSource?.TrySetResult((actualDiscount, discountPercent, finalReason));
+        _taskCompletionSource?.TrySetResult(new DiscountDialogResult
+        {
+            DiscountAmount = actualDiscount,
+            DiscountPercent = discountPercent,
+            Reason = finalReason,
+            DiscountType = _isFixedAmount ? "fixed" : "percent",
+            ApprovalRequired = approvalRequired,
+            ApprovedBy = approvedBy
+        });
         CloseDialog();
     }
     
@@ -294,5 +319,59 @@ public partial class DiscountDialog : ContentView
     {
         _taskCompletionSource?.TrySetResult(null);
         CloseDialog();
+    }
+
+    private static async Task<DiscountApprovalInfo?> ValidateManagerPinAsync(string pin)
+    {
+        if (string.IsNullOrWhiteSpace(pin))
+        {
+            return null;
+        }
+
+        try
+        {
+            var databaseService = Application.Current?.MainPage?.Handler?.MauiContext?.Services.GetService<DatabaseService>()
+                ?? new DatabaseService();
+
+            await using var connection = await databaseService.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT id, name, username, password_hash, role
+                FROM users
+                WHERE role IN ('admin', 'manager')";
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var hash = reader.IsDBNull(reader.GetOrdinal("password_hash"))
+                    ? string.Empty
+                    : reader.GetString("password_hash");
+
+                if (!string.IsNullOrWhiteSpace(hash) && BCrypt.Net.BCrypt.Verify(pin, hash))
+                {
+                    var name = reader.IsDBNull(reader.GetOrdinal("name"))
+                        ? string.Empty
+                        : reader.GetString("name");
+                    var username = reader.IsDBNull(reader.GetOrdinal("username"))
+                        ? string.Empty
+                        : reader.GetString("username");
+
+                    return new DiscountApprovalInfo
+                    {
+                        UserId = reader.GetInt32(reader.GetOrdinal("id")),
+                        Name = !string.IsNullOrWhiteSpace(name) ? name : username,
+                        Role = reader.IsDBNull(reader.GetOrdinal("role"))
+                            ? string.Empty
+                            : reader.GetString("role")
+                    };
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Manager PIN validation failed: {ex.Message}");
+        }
+
+        return null;
     }
 }

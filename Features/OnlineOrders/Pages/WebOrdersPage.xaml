@@ -335,7 +335,7 @@
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
                                            Margin="5,0">
-                                        <Label Text="Regular" 
+                                        <Label Text="{Binding OrderTypeDisplay}" 
                                                FontFamily="AlegreyaBold"
                                                FontSize="13" 
                                                TextColor="White"
@@ -417,7 +417,7 @@
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
                                            Margin="5,0">
-                                        <Label Text="Confirmed" 
+                                        <Label Text="{Binding OrderStatusDisplay}" 
                                                FontFamily="AlegreyaBold"
                                                FontSize="13" 
                                                TextColor="White"
@@ -425,15 +425,20 @@
                                     </Frame>
                                     
                                     <!-- Print Status -->
-                                    <HorizontalStackLayout Grid.Column="7" 
-                                                          Spacing="6"
-                                                          HorizontalOptions="Center"
-                                                          VerticalOptions="Center">
-                                         <Label Text="Print" 
-                                             FontFamily="AlegreyaBold"
-                                             FontSize="14" 
-                                             TextColor="{StaticResource Foreground}" />
-                                    </HorizontalStackLayout>
+                                    <Frame Grid.Column="7"
+                                           BackgroundColor="{Binding PrintStatusColor}"
+                                           Padding="10,6"
+                                           CornerRadius="6"
+                                           HasShadow="False"
+                                           VerticalOptions="Center"
+                                           HorizontalOptions="Center"
+                                           Margin="5,0">
+                                        <Label Text="{Binding PrintStatusText}"
+                                               FontFamily="AlegreyaBold"
+                                               FontSize="13"
+                                               TextColor="White"
+                                               HorizontalTextAlignment="Center" />
+                                    </Frame>
                                     
                                     <!-- Action Buttons -->
                                     <StackLayout Grid.Column="8" 
@@ -449,7 +454,7 @@
                                                 Padding="10,6"
                                                 CornerRadius="6"
                                                 Clicked="OnViewDetailsClicked"
-                                                CommandParameter="{Binding .}" />
+                                                CommandParameter="{Binding Order}" />
                                         <Button Text="Print" 
                                                 BackgroundColor="{StaticResource Primary}" 
                                                 TextColor="White"
@@ -458,7 +463,7 @@
                                                 Padding="10,6"
                                                 CornerRadius="6"
                                                 Clicked="OnPrintReceiptClicked"
-                                                CommandParameter="{Binding .}" />
+                                                CommandParameter="{Binding Order}" />
                                     </StackLayout>
                                 </Grid>
                             </DataTemplate>

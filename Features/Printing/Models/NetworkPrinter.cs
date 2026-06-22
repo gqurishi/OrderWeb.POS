@@ -48,8 +48,8 @@ public class NetworkPrinter
         NetworkPrinterType.Kitchen => "Kitchen",
         NetworkPrinterType.Bar => "Bar",
         NetworkPrinterType.Label => "Label",
-        NetworkPrinterType.Online => "Online",
-        NetworkPrinterType.Takeaway => "Takeaway",
+        NetworkPrinterType.Online => "Online Receipt",
+        NetworkPrinterType.Takeaway => "Takeaway Kitchen",
         _ => "Unknown"
     };
     
@@ -81,8 +81,8 @@ public enum NetworkPrinterType
     Kitchen,   // Kitchen order tickets
     Bar,       // Bar/drinks orders
     Label,     // Food labels (different protocol)
-    Online,    // Online order customer receipts
-    Takeaway   // Online order kitchen/takeaway tickets
+    Online,    // OrderWeb customer receipts
+    Takeaway   // OrderWeb kitchen/takeaway tickets
 }
 
 /// <summary>

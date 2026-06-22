@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS network_printers (
     
     -- Printer Configuration
     brand ENUM('epson', 'star', 'other') DEFAULT 'epson' COMMENT 'Printer manufacturer',
-    printer_type ENUM('receipt', 'kitchen', 'bar', 'label') NOT NULL COMMENT 'Purpose of printer',
+    printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL COMMENT 'Purpose of printer',
     paper_width ENUM('80mm', '58mm') DEFAULT '80mm' COMMENT 'Thermal paper width',
     
     -- Features
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS network_printers (
     color_code VARCHAR(7) DEFAULT '#6366F1' COMMENT 'Hex color for UI display',
     display_order INT DEFAULT 0 COMMENT 'Order in printer list',
     notes TEXT NULL COMMENT 'Admin notes',
+    print_group_id VARCHAR(36) NULL COMMENT 'Optional print group routing id',
     
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS network_printers (
     
     -- Indexes
     INDEX idx_printer_type (printer_type),
+    INDEX idx_print_group_id (print_group_id),
     INDEX idx_is_enabled (is_enabled),
     UNIQUE INDEX idx_ip_port (ip_address, port)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

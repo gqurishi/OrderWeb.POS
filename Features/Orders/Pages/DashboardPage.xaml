@@ -116,108 +116,143 @@
 
                 <!-- Quick Actions Section -->
                 <VerticalStackLayout Spacing="16">
-                    <Label Text="Quick Actions" 
-                           Style="{StaticResource TitleLarge}" />
-
-                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="16" RowSpacing="16">
+                    <Grid RowDefinitions="Auto,Auto"
+                          ColumnDefinitions="Auto,Auto,Auto"
+                          ColumnSpacing="150"
+                          RowSpacing="80"
+                          HorizontalOptions="Center">
                         <!-- Restaurant/Dine-in Button -->
                         <Border Grid.Row="0" Grid.Column="0"
-                                BackgroundColor="#E0F2FE"
+                                BackgroundColor="#EFF6FF"
                                 StrokeThickness="1"
-                                Stroke="#0EA5E9"
-                                Padding="24">
+                                Stroke="#BFDBFE"
+                                Padding="24"
+                                HorizontalOptions="Center">
                             <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="12"/>
+                                <RoundRectangle CornerRadius="28"/>
                             </Border.StrokeShape>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnRestaurantClicked" />
                             </Border.GestureRecognizers>
                             <Border.Shadow>
-                                <Shadow Brush="#0EA5E9" Offset="0,2" Radius="8" Opacity="0.1" />
+                                <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12" />
                             </Border.Shadow>
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
-                                <Image Source="restaurant.png" WidthRequest="36" HeightRequest="36" />
-                                <Label Text="Restaurant" 
-                                       FontSize="20" 
+                            <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                                <Image Source="restaurant.png"
+                                       WidthRequest="190"
+                                       HeightRequest="190"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Restaurant"
+                                       FontFamily="InterBold"
+                                       FontSize="18"
                                        FontAttributes="Bold"
-                                       TextColor="#0369A1"
-                                       VerticalOptions="Center"/>
-                            </HorizontalStackLayout>
-                        </Border>
-
-                        <!-- Collection Button -->
-                        <Border Grid.Row="0" Grid.Column="1"
-                                BackgroundColor="#DCFCE7"
-                                StrokeThickness="1"
-                                Stroke="#22C55E"
-                                Padding="24">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="12"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnCollectionClicked" />
-                            </Border.GestureRecognizers>
-                            <Border.Shadow>
-                                <Shadow Brush="#22C55E" Offset="0,2" Radius="8" Opacity="0.1" />
-                            </Border.Shadow>
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
-                                <Image Source="collection.png" WidthRequest="36" HeightRequest="36" />
-                                <Label Text="Collection" 
-                                       FontSize="20" 
-                                       FontAttributes="Bold"
-                                       TextColor="#15803D"
-                                       VerticalOptions="Center"/>
-                            </HorizontalStackLayout>
+                                       TextColor="#1D4ED8"
+                                       HorizontalOptions="Center"/>
+                            </VerticalStackLayout>
                         </Border>
 
                         <!-- Delivery Button -->
-                        <Border Grid.Row="1" Grid.Column="0"
-                                BackgroundColor="#F3E8FF"
+                        <Border Grid.Row="0" Grid.Column="1"
+                                BackgroundColor="#EFF6FF"
                                 StrokeThickness="1"
-                                Stroke="#A855F7"
-                                Padding="24">
+                                Stroke="#BFDBFE"
+                                Padding="24"
+                                HorizontalOptions="Center">
                             <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="12"/>
+                                <RoundRectangle CornerRadius="28"/>
                             </Border.StrokeShape>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnDeliveryClicked" />
                             </Border.GestureRecognizers>
                             <Border.Shadow>
-                                <Shadow Brush="#A855F7" Offset="0,2" Radius="8" Opacity="0.1" />
+                                <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12" />
                             </Border.Shadow>
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
-                                <Image Source="delivery.png" WidthRequest="36" HeightRequest="36" />
-                                <Label Text="Delivery" 
-                                       FontSize="20" 
+                            <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                                <Image Source="delivery.png"
+                                       WidthRequest="190"
+                                       HeightRequest="190"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Delivery"
+                                       FontFamily="InterBold"
+                                       FontSize="18"
                                        FontAttributes="Bold"
-                                       TextColor="#7C3AED"
-                                       VerticalOptions="Center"/>
-                            </HorizontalStackLayout>
+                                       TextColor="#1D4ED8"
+                                       HorizontalOptions="Center"/>
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <!-- Collection Button -->
+                        <Border Grid.Row="0" Grid.Column="2"
+                                BackgroundColor="#EFF6FF"
+                                StrokeThickness="1"
+                                Stroke="#BFDBFE"
+                                Padding="24"
+                                HorizontalOptions="Center">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="28"/>
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCollectionClicked" />
+                            </Border.GestureRecognizers>
+                            <Border.Shadow>
+                                <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12" />
+                            </Border.Shadow>
+                            <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                                <Image Source="collection.png"
+                                       WidthRequest="190"
+                                       HeightRequest="190"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Collection"
+                                       FontFamily="InterBold"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#1D4ED8"
+                                       HorizontalOptions="Center"/>
+                            </VerticalStackLayout>
                         </Border>
 
                         <!-- Today's Sales Button -->
                         <Border Grid.Row="1" Grid.Column="1"
-                                BackgroundColor="#FEF2F2"
+                                BackgroundColor="#EFF6FF"
                                 StrokeThickness="1"
-                                Stroke="#F87171"
-                                Padding="24">
+                                Stroke="#BFDBFE"
+                                Padding="24"
+                                HorizontalOptions="Center">
                             <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="12"/>
+                                <RoundRectangle CornerRadius="28"/>
                             </Border.StrokeShape>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnTodaysSalesClicked" />
                             </Border.GestureRecognizers>
                             <Border.Shadow>
-                                <Shadow Brush="#F87171" Offset="0,2" Radius="8" Opacity="0.1" />
+                                <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12" />
                             </Border.Shadow>
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
-                                <Image Source="dashboard.png" WidthRequest="36" HeightRequest="36" />
-                                <Label Text="Today's Sales" 
-                                       FontSize="20" 
+                            <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                                <Frame BackgroundColor="#DBEAFE"
+                                       BorderColor="Transparent"
+                                       CornerRadius="95"
+                                       WidthRequest="190"
+                                       HeightRequest="190"
+                                       Padding="0"
+                                       HasShadow="False"
+                                       HorizontalOptions="Center">
+                                    <Label Text="£"
+                                           FontFamily="InterBold"
+                                           FontSize="110"
+                                           FontAttributes="Bold"
+                                           TextColor="#000000"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center"
+                                           HorizontalTextAlignment="Center"
+                                           VerticalTextAlignment="Center"/>
+                                </Frame>
+                                <Label Text="Today's Sales"
+                                       FontFamily="InterBold"
+                                       FontSize="18"
                                        FontAttributes="Bold"
-                                       TextColor="#DC2626"
-                                       VerticalOptions="Center"/>
-                            </HorizontalStackLayout>
+                                       TextColor="#1D4ED8"
+                                       HorizontalOptions="Center"/>
+                            </VerticalStackLayout>
                         </Border>
                     </Grid>
                 </VerticalStackLayout>

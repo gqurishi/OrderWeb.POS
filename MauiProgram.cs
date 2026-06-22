@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using POS_in_NET.Services;
 using POS_in_NET.Pages;
+using MyFirstMauiApp.Services;
 using CommunityToolkit.Maui;
 using Syncfusion.Maui.Core.Hosting;
 
@@ -45,6 +46,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton(_ => AuthenticationService.Instance);
 		builder.Services.AddSingleton<RoleAccessService>();
 		builder.Services.AddSingleton<PermissionService>();
+		builder.Services.AddSingleton<InactivityService>();
 		builder.Services.AddSingleton<BusinessSettingsService>();
 		
 		// Note: OrderService registered after PrintService for dependency injection
@@ -79,6 +81,7 @@ public static class MauiProgram
 		// Register PDF Receipt Service (Syncfusion PDF Library)
 		builder.Services.AddSingleton<PdfReceiptService>();
 		builder.Services.AddSingleton<DailyReportService>();
+		builder.Services.AddSingleton<DiscountAuditService>();
 		
 		// Register Report Generation & Scheduling Services
 		builder.Services.AddSingleton<ReportGenerationService>();
@@ -88,10 +91,12 @@ public static class MauiProgram
 		// Register Network Printer Services
 		builder.Services.AddSingleton<NetworkPrinterDatabaseService>();
 		builder.Services.AddSingleton<NetworkPrinterService>();
+		builder.Services.AddSingleton<CashDrawerService>();
 		builder.Services.AddSingleton<EscPosBuilder>();
 		builder.Services.AddSingleton<PrinterHealthService>();
 		builder.Services.AddSingleton<NetworkPrintQueueService>();
 		builder.Services.AddSingleton<OnlineOrderAutoPrintService>();
+		builder.Services.AddSingleton<PrintGroupService>();
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
@@ -193,11 +198,13 @@ public static class MauiProgram
 				await Task.Delay(1500);
 				
 				var printerDbService = app.Services.GetRequiredService<NetworkPrinterDatabaseService>();
+				var cashDrawerService = app.Services.GetRequiredService<CashDrawerService>();
 				var healthService = app.Services.GetRequiredService<PrinterHealthService>();
 				var queueService = app.Services.GetRequiredService<NetworkPrintQueueService>();
 				
 				// Ensure printer tables exist
 				await printerDbService.EnsureTablesExistAsync();
+				await cashDrawerService.EnsureTableExistsAsync();
 				
 				// Start health monitoring (checks every 30 seconds)
 				healthService.Start();
@@ -227,9 +234,10 @@ public static class MauiProgram
 				var heartbeatService = app.Services.GetRequiredService<HeartbeatService>();
 				var autoPrintService = app.Services.GetRequiredService<OnlineOrderAutoPrintService>();
 				
-				// Link auto-print service to cloud service
-				cloudService.SetAutoPrintService(autoPrintService);
-				System.Diagnostics.Debug.WriteLine("OnlineOrderAutoPrintService linked to CloudOrderService");
+					// Link auto-print service to cloud service
+					cloudService.SetAutoPrintService(autoPrintService);
+					wsService.SetCloudOrderService(cloudService);
+					System.Diagnostics.Debug.WriteLine("OnlineOrderAutoPrintService linked to CloudOrderService");
 				
 				// Get configuration from database
 				var config = await dbService.GetCloudConfigAsync();

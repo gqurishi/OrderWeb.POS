@@ -24,6 +24,7 @@ public class Order
     // Financial fields
     public decimal TotalAmount { get; set; }
     public decimal SubtotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
     public decimal DeliveryFee { get; set; }
     public decimal TaxAmount { get; set; }
     

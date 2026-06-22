@@ -33,7 +33,7 @@ public partial class CollectionCustomerModal : ContentPage
 
         try
         {
-            var results = await _customerService.SearchCustomersByNameAsync(searchName);
+            var results = await _customerService.SearchCustomersByNameAsync(searchName, searchPhone);
 
             if (results.Any())
             {
@@ -127,7 +127,9 @@ public partial class CollectionCustomerModal : ContentPage
 
     private async void OnCancelClicked(object sender, EventArgs e)
     {
-        // Navigate back to Dashboard instead of just closing the modal
-        await Shell.Current.GoToAsync("//dashboard");
+        var authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
+        var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+        var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
+        await Shell.Current.GoToAsync($"//{dashboardRoute}");
     }
 }

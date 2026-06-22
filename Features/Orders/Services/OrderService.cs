@@ -11,6 +11,7 @@ public class OrderService
     private bool _orderTypeSchemaChecked;
     private bool _sourceChannelSchemaChecked;
     private bool _lifecycleSchemaChecked;
+    private bool _financialSchemaChecked;
 
     public OrderService()
     {
@@ -37,6 +38,7 @@ public class OrderService
             await EnsureOrderTypeSchemaAsync(connection);
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
+            await EnsureFinancialSchemaAsync(connection);
 
             var normalizedOrderType = NormalizeOrderType(order.OrderType);
             order.OrderType = normalizedOrderType;
@@ -65,7 +67,7 @@ public class OrderService
             var orderQuery = @"
                 INSERT INTO orders (order_id, order_number, cloud_order_id, 
                                   customer_name, customer_phone, customer_email, customer_address, 
-                                  total_amount, subtotal_amount, delivery_fee, tax_amount,
+                                  total_amount, subtotal_amount, discount_amount, delivery_fee, tax_amount,
                           order_type, source_channel, table_session_id, payment_method, special_instructions, scheduled_time,
                           local_lifecycle_state, is_open, void_reason, voided_at, voided_by, paid_at,
                                   status, order_data, sync_status, 
@@ -73,7 +75,7 @@ public class OrderService
                                   created_at, updated_at) 
                 VALUES (@orderId, @orderNumber, @cloudOrderId,
                         @customerName, @customerPhone, @customerEmail, @customerAddress, 
-                        @totalAmount, @subtotalAmount, @deliveryFee, @taxAmount,
+                        @totalAmount, @subtotalAmount, @discountAmount, @deliveryFee, @taxAmount,
                     @orderType, @sourceChannel, @tableSessionId, @paymentMethod, @specialInstructions, @scheduledTime,
                     @localLifecycleState, @isOpen, @voidReason, @voidedAt, @voidedBy, @paidAt,
                         @status, @orderData, @syncStatus,
@@ -91,6 +93,7 @@ public class OrderService
             orderCommand.Parameters.AddWithValue("@customerAddress", order.CustomerAddress ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@totalAmount", order.TotalAmount);
             orderCommand.Parameters.AddWithValue("@subtotalAmount", order.SubtotalAmount);
+            orderCommand.Parameters.AddWithValue("@discountAmount", order.DiscountAmount);
             orderCommand.Parameters.AddWithValue("@deliveryFee", order.DeliveryFee);
             orderCommand.Parameters.AddWithValue("@taxAmount", order.TaxAmount);
             orderCommand.Parameters.AddWithValue("@orderType", normalizedOrderType);
@@ -212,6 +215,7 @@ public class OrderService
                     customer_address = @customerAddress,
                     total_amount = @totalAmount,
                     subtotal_amount = @subtotalAmount,
+                    discount_amount = @discountAmount,
                     delivery_fee = @deliveryFee,
                     tax_amount = @taxAmount,
                     order_type = @orderType,
@@ -249,6 +253,7 @@ public class OrderService
             command.Parameters.AddWithValue("@customerAddress", order.CustomerAddress ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@totalAmount", order.TotalAmount);
             command.Parameters.AddWithValue("@subtotalAmount", order.SubtotalAmount);
+            command.Parameters.AddWithValue("@discountAmount", order.DiscountAmount);
             command.Parameters.AddWithValue("@deliveryFee", order.DeliveryFee);
             command.Parameters.AddWithValue("@taxAmount", order.TaxAmount);
             command.Parameters.AddWithValue("@orderType", normalizedOrderType);
@@ -1137,6 +1142,32 @@ public class OrderService
         finally
         {
             _lifecycleSchemaChecked = true;
+        }
+    }
+
+    private async Task EnsureFinancialSchemaAsync(MySqlConnection connection)
+    {
+        if (_financialSchemaChecked)
+        {
+            return;
+        }
+
+        try
+        {
+            const string ensureColumnsQuery = @"
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00";
+
+            using var ensureColumnsCommand = new MySqlCommand(ensureColumnsQuery, connection);
+            await ensureColumnsCommand.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Order financial schema check warning: {ex.Message}");
+        }
+        finally
+        {
+            _financialSchemaChecked = true;
         }
     }
 
@@ -2223,6 +2254,9 @@ public class OrderService
             // Financial information
             TotalAmount = reader["total_amount"] != DBNull.Value ? Convert.ToDecimal(reader["total_amount"]) : 0,
             SubtotalAmount = reader["subtotal_amount"] != DBNull.Value ? Convert.ToDecimal(reader["subtotal_amount"]) : 0,
+            DiscountAmount = HasColumn(reader, "discount_amount") && reader["discount_amount"] != DBNull.Value
+                ? Convert.ToDecimal(reader["discount_amount"])
+                : 0,
             DeliveryFee = reader["delivery_fee"] != DBNull.Value ? Convert.ToDecimal(reader["delivery_fee"]) : 0,
             TaxAmount = reader["tax_amount"] != DBNull.Value ? Convert.ToDecimal(reader["tax_amount"]) : 0,
             

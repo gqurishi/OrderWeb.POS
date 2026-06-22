@@ -35,8 +35,7 @@ public class RoleAccessService
         {
             [UserRole.User] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "login", "userdashboard", "restaurant", "collection", "delivery", "liveorder",
-                "visuallayout", "floor", "table"
+                "login", "userdashboard", "collection", "delivery", "liveorder", "visuallayout"
             },
             [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -63,6 +62,35 @@ public class RoleAccessService
             _ => "login"
         };
     }
+
+    public string ResolveRouteForRole(UserRole? role, string route)
+    {
+        var normalized = NormalizeRoute(route);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        if (normalized.Equals("dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveDashboardRoute(role);
+        }
+
+        if (role == UserRole.User && normalized.Equals("restaurant", StringComparison.OrdinalIgnoreCase))
+        {
+            return "visuallayout";
+        }
+
+        return normalized;
+    }
+
+    public bool CanAccessFeature(UserRole? role, string route)
+    {
+        var resolvedRoute = ResolveRouteForRole(role, route);
+        return CanAccessRoute(role, resolvedRoute);
+    }
+
+    public bool CanOpenCashDrawer(UserRole? role) => IsManagerOrAdmin(role);
 
     public bool CanAccessRoute(UserRole? role, string route)
     {

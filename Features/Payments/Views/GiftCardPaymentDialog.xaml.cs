@@ -1,6 +1,8 @@
 using Microsoft.Maui.Controls;
 using System;
 using System.Threading.Tasks;
+using POS_in_NET.Models;
+using POS_in_NET.Services;
 
 namespace POS_in_NET.Views
 {
@@ -11,6 +13,8 @@ namespace POS_in_NET.Views
         public decimal AmountApplied { get; set; }
         public decimal Remaining { get; set; }
         public decimal NewCardBalance { get; set; }
+        public decimal PreviousCardBalance { get; set; }
+        public string? OrderWebMessage { get; set; }
     }
 
     public partial class GiftCardPaymentDialog : ContentView
@@ -20,20 +24,26 @@ namespace POS_in_NET.Views
         private decimal _amountDue;
         private decimal _cardBalance;
         private string? _cardNumber;
+        private string? _orderReference;
+        private GiftCard? _giftCard;
+        private readonly LoyaltyService? _loyaltyService;
 
         public GiftCardPaymentDialog()
         {
             InitializeComponent();
+            _loyaltyService = Application.Current?.Handler?.MauiContext?.Services.GetService(typeof(LoyaltyService)) as LoyaltyService;
         }
 
-        public void SetAmountDue(decimal amount)
+        public void SetAmountDue(decimal amount, string? orderReference = null)
         {
             _amountDue = amount;
+            _orderReference = orderReference;
             AmountDueLabel.Text = $"£{amount:F2}";
         }
 
         public async Task<GiftCardPaymentResult> ShowAsync()
         {
+            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<GiftCardPaymentResult>();
             
             if (Application.Current?.MainPage != null)
@@ -74,27 +84,30 @@ namespace POS_in_NET.Views
             
             if (string.IsNullOrEmpty(_cardNumber))
             {
-                // Show error
+                SetStatus("Enter or scan a gift card number.", true);
                 return;
             }
 
-            // TODO: In real implementation, call API to get gift card balance
-            // For now, simulate a gift card with random balance
-            await Task.Delay(300); // Simulate API call
-            
-            // Simulated balance (in real app, fetch from database/API)
-            _cardBalance = new Random().Next(10, 100);
-            
-            BalanceFrame.IsVisible = true;
-            BalanceLabel.Text = $"£{_cardBalance:F2}";
-            
-            ApplyAmountSection.IsVisible = true;
-            ApplyAmountEntry.Text = Math.Min(_cardBalance, _amountDue).ToString("F2");
-            
-            ApplyButton.IsEnabled = true;
-            ApplyButton.BackgroundColor = Color.FromArgb("#8B5CF6");
-            
-            UpdateRemainingDisplay();
+            if (_loyaltyService == null)
+            {
+                SetStatus("Gift card service is not available.", true);
+                return;
+            }
+
+            await RunBusyAsync("CHECKING...", async () =>
+            {
+                SetStatus("Checking OrderWeb gift card...", false);
+                var result = await _loyaltyService.CheckGiftCardBalanceAsync(_cardNumber);
+
+                if (!result.Success || result.GiftCard == null)
+                {
+                    ResetCardState();
+                    SetStatus(result.Error ?? "Gift card not found.", true);
+                    return;
+                }
+
+                ShowGiftCard(result.GiftCard);
+            });
         }
 
         private void OnUseFullClicked(object sender, EventArgs e)
@@ -121,33 +134,70 @@ namespace POS_in_NET.Views
             }
         }
 
-        private void OnApplyClicked(object sender, EventArgs e)
+        private async void OnApplyClicked(object sender, EventArgs e)
         {
+            if (_loyaltyService == null || _giftCard == null || string.IsNullOrWhiteSpace(_cardNumber))
+            {
+                SetStatus("Check the gift card first.", true);
+                return;
+            }
+
             if (!decimal.TryParse(ApplyAmountEntry.Text, out decimal applyAmount))
             {
+                SetStatus("Enter a valid amount to apply.", true);
                 return;
             }
 
-            // Validate amount
             if (applyAmount <= 0 || applyAmount > _cardBalance)
             {
+                SetStatus($"Amount must be between £0.01 and £{_cardBalance:F2}.", true);
                 return;
             }
 
-            decimal remaining = Math.Max(0, _amountDue - applyAmount);
-            decimal newBalance = _cardBalance - applyAmount;
-
-            var result = new GiftCardPaymentResult
+            await RunBusyAsync("REDEEMING...", async () =>
             {
-                Success = true,
-                GiftCardNumber = _cardNumber,
-                AmountApplied = applyAmount,
-                Remaining = remaining,
-                NewCardBalance = newBalance
-            };
+                SetStatus("Confirming latest OrderWeb balance...", false);
+                var latestLookup = await _loyaltyService.CheckGiftCardBalanceAsync(_cardNumber);
+                if (!latestLookup.Success || latestLookup.GiftCard == null)
+                {
+                    SetStatus(latestLookup.Error ?? "Could not confirm gift card balance.", true);
+                    return;
+                }
 
-            _taskCompletionSource?.TrySetResult(result);
-            CloseDialog();
+                if (Math.Abs(latestLookup.GiftCard.Balance - _cardBalance) > 0.009m)
+                {
+                    ShowGiftCard(latestLookup.GiftCard);
+                    SetStatus("Balance changed. Review the amount and apply again.", true);
+                    return;
+                }
+
+                var description = $"POS gift card payment - {_orderReference ?? DateTime.Now.ToString("yyyyMMddHHmmss")}";
+                var redeemResult = await _loyaltyService.RedeemGiftCardAsync(_cardNumber, applyAmount, description);
+
+                if (!redeemResult.Success)
+                {
+                    SetStatus(redeemResult.Error ?? "OrderWeb rejected the gift card redemption.", true);
+                    return;
+                }
+
+                var amountApplied = redeemResult.AmountRedeemed ?? applyAmount;
+                var newBalance = redeemResult.RemainingBalance ?? Math.Max(0, _cardBalance - amountApplied);
+                var remaining = Math.Max(0, _amountDue - amountApplied);
+
+                var result = new GiftCardPaymentResult
+                {
+                    Success = true,
+                    GiftCardNumber = _cardNumber,
+                    AmountApplied = amountApplied,
+                    Remaining = remaining,
+                    NewCardBalance = newBalance,
+                    PreviousCardBalance = _cardBalance,
+                    OrderWebMessage = redeemResult.Message
+                };
+
+                _taskCompletionSource?.TrySetResult(result);
+                CloseDialog();
+            });
         }
 
         private void OnCancelClicked(object sender, EventArgs e)
@@ -161,6 +211,70 @@ namespace POS_in_NET.Views
             if (_parentGrid != null)
             {
                 _parentGrid.Children.Remove(this);
+            }
+        }
+
+        private void ShowGiftCard(GiftCard giftCard)
+        {
+            _giftCard = giftCard;
+            _cardBalance = giftCard.Balance;
+
+            BalanceFrame.IsVisible = true;
+            BalanceLabel.Text = giftCard.BalanceDisplay;
+            ApplyAmountSection.IsVisible = giftCard.IsActive;
+            ApplyAmountEntry.Text = Math.Min(_cardBalance, _amountDue).ToString("F2");
+            ApplyButton.IsEnabled = giftCard.IsActive;
+            ApplyButton.BackgroundColor = giftCard.IsActive ? Color.FromArgb("#7C3AED") : Color.FromArgb("#9CA3AF");
+
+            SetStatus(giftCard.IsActive
+                ? "Gift card verified with OrderWeb."
+                : $"Gift card cannot be used: {giftCard.StatusDisplay}", !giftCard.IsActive);
+            UpdateRemainingDisplay();
+        }
+
+        private void ResetCardState()
+        {
+            _giftCard = null;
+            _cardBalance = 0;
+            BalanceFrame.IsVisible = false;
+            ApplyAmountSection.IsVisible = false;
+            RemainingFrame.IsVisible = false;
+            ApplyButton.IsEnabled = false;
+            ApplyButton.BackgroundColor = Color.FromArgb("#9CA3AF");
+        }
+
+        private void SetStatus(string message, bool isError)
+        {
+            StatusMessageLabel.Text = message;
+            StatusMessageLabel.TextColor = isError ? Color.FromArgb("#DC2626") : Color.FromArgb("#047857");
+            StatusMessageLabel.IsVisible = !string.IsNullOrWhiteSpace(message);
+        }
+
+        private async Task RunBusyAsync(string busyText, Func<Task> action)
+        {
+            var previousCheckText = CheckBalanceButton.Text;
+            var previousApplyText = ApplyButton.Text;
+
+            CheckBalanceButton.IsEnabled = false;
+            ApplyButton.IsEnabled = false;
+            GiftCardNumberEntry.IsEnabled = false;
+            ApplyAmountEntry.IsEnabled = false;
+            CheckBalanceButton.Text = busyText;
+            ApplyButton.Text = busyText;
+
+            try
+            {
+                await action();
+            }
+            finally
+            {
+                CheckBalanceButton.Text = previousCheckText;
+                ApplyButton.Text = previousApplyText;
+                CheckBalanceButton.IsEnabled = true;
+                GiftCardNumberEntry.IsEnabled = true;
+                ApplyAmountEntry.IsEnabled = true;
+                ApplyButton.IsEnabled = _giftCard?.IsActive == true;
+                ApplyButton.BackgroundColor = ApplyButton.IsEnabled ? Color.FromArgb("#7C3AED") : Color.FromArgb("#9CA3AF");
             }
         }
     }
