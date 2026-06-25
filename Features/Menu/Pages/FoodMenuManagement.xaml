@@ -128,7 +128,7 @@
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnClearSearchClicked"/>
                             </Border.GestureRecognizers>
-                            <Label Text="✕"
+                            <Label Text=""
                                    FontSize="12"
                                    TextColor="#64748B"
                                    VerticalOptions="Center"

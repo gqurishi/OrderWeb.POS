@@ -189,7 +189,7 @@
                                                       FontAttributes="{Binding IsSelected, Converter={StaticResource BoolToFontAttributesConverter}}"
                                                       TextColor="#1E293B"
                                                       VerticalOptions="Center" />
-                                                <Label Text="✓"
+                                                <Label Text=""
                                                       FontSize="20"
                                                       TextColor="#10B981"
                                                       FontAttributes="Bold"

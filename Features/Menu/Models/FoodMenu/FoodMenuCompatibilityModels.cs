@@ -14,7 +14,7 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public int DisplayOrder { get; set; }
         public bool Active { get; set; } = true;
         public string Color { get; set; } = "#3B82F6";
-        public string Icon { get; set; } = "🍽️";
+        public string Icon { get; set; } = "";
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
     }
@@ -92,6 +92,13 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
     }
 
+    public class MealDealChoice
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public int SortOrder { get; set; }
+    }
+
     public class MealDealCategoryRule
     {
         public string Id { get; set; } = string.Empty;
@@ -104,20 +111,76 @@ namespace MyFirstMauiApp.Models.FoodMenu
 
     public class MealDeal
     {
+        public const string PosCategoryId = "__meal_deals__";
+        public const string OrderMenuItemPrefix = "mealdeal:";
+
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public decimal Price { get; set; }
-        public string Color { get; set; } = "#3B82F6";
+        public string Color { get; set; } = "#F59E0B";
         public bool Active { get; set; } = true;
         public int DisplayOrder { get; set; }
+        public int PickCount { get; set; } = 1;
+        public string VatCategory { get; set; } = "HotFood";
+        public List<MealDealChoice> Choices { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+        /// <summary>Legacy slot-based rules (read-only compatibility).</summary>
         public List<MealDealCategoryRule> Categories { get; set; } = new();
 
-        public string CategoriesJson => JsonSerializer.Serialize(Categories);
+        public string PickRuleDisplay =>
+            Choices.Count == 0 ? "No choices" : $"Pick {PickCount} of {Choices.Count}";
 
-        public static List<MealDealCategoryRule> ParseCategories(string? json)
+        public string CategoriesJson => JsonSerializer.Serialize(new MealDealConfigPayload
+        {
+            PickCount = PickCount,
+            VatCategory = VatCategory,
+            Choices = Choices.OrderBy(c => c.SortOrder).ToList()
+        });
+
+        public static void ApplyConfigFromJson(MealDeal deal, string? json)
+        {
+            deal.Choices = new List<MealDealChoice>();
+            deal.PickCount = 1;
+            deal.VatCategory = "HotFood";
+            deal.Categories = new List<MealDealCategoryRule>();
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            try
+            {
+                var config = JsonSerializer.Deserialize<MealDealConfigPayload>(json);
+                if (config?.Choices != null && config.Choices.Count > 0)
+                {
+                    deal.PickCount = Math.Max(1, config.PickCount);
+                    deal.VatCategory = string.IsNullOrWhiteSpace(config.VatCategory) ? "HotFood" : config.VatCategory;
+                    deal.Choices = config.Choices
+                        .OrderBy(c => c.SortOrder)
+                        .Select(c => new MealDealChoice
+                        {
+                            Id = string.IsNullOrWhiteSpace(c.Id) ? Guid.NewGuid().ToString() : c.Id,
+                            Name = c.Name?.Trim() ?? string.Empty,
+                            SortOrder = c.SortOrder
+                        })
+                        .Where(c => !string.IsNullOrWhiteSpace(c.Name))
+                        .ToList();
+                    return;
+                }
+            }
+            catch
+            {
+                // fall through to legacy format
+            }
+
+            deal.Categories = ParseLegacyCategories(json);
+        }
+
+        public static List<MealDealCategoryRule> ParseLegacyCategories(string? json)
         {
             if (string.IsNullOrWhiteSpace(json))
             {
@@ -133,6 +196,34 @@ namespace MyFirstMauiApp.Models.FoodMenu
                 return new List<MealDealCategoryRule>();
             }
         }
+
+        private sealed class MealDealConfigPayload
+        {
+            public int PickCount { get; set; } = 1;
+            public string? VatCategory { get; set; }
+            public List<MealDealChoice>? Choices { get; set; }
+        }
+    }
+
+    public static class MealDealNotesHelper
+    {
+        public static string FormatSelections(IEnumerable<string> selections)
+        {
+            var names = selections
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .ToList();
+
+            if (names.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join("\n", names.Select(n => $"• {n}"));
+        }
+
+        public static string BuildOrderMenuItemId(string dealId) =>
+            $"{MealDeal.OrderMenuItemPrefix}{dealId}";
     }
 
     public class FoodMenuItem

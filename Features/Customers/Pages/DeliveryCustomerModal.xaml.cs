@@ -7,48 +7,100 @@ public partial class DeliveryCustomerModal : ContentPage
 {
     private readonly DeliveryCustomerService _customerService;
     private readonly PostcodeLookupService _postcodeLookupService;
+    private readonly DeliveryZoneService _deliveryZoneService;
+    private readonly CustomerDataService _customerDataService = new();
     private DeliveryCustomer? _selectedCustomer;
 
     public DeliveryCustomerModal()
     {
         InitializeComponent();
         _customerService = new DeliveryCustomerService();
-        _postcodeLookupService = new PostcodeLookupService(new DatabaseService());
+        _postcodeLookupService = ServiceHelper.GetService<PostcodeLookupService>()
+            ?? new PostcodeLookupService(new DatabaseService());
+        _deliveryZoneService = new DeliveryZoneService(new DatabaseService());
     }
 
     private async void OnSearchPostcodeClicked(object sender, EventArgs e)
     {
-        var postcode = PostcodeEntry.Text?.Trim();
+        var addressQuery = PostcodeEntry.Text?.Trim();
+        var name = CustomerNameEntry.Text?.Trim();
+        var phone = PhoneNumberEntry.Text?.Trim();
 
-        if (string.IsNullOrWhiteSpace(postcode))
+        if (string.IsNullOrWhiteSpace(addressQuery)
+            && string.IsNullOrWhiteSpace(name)
+            && string.IsNullOrWhiteSpace(phone))
         {
-            await ToastNotification.ShowAsync("Required", "Please enter a postcode to search.", NotificationType.Warning, 3000);
+            await ToastNotification.ShowAsync("Required", "Enter a postcode, address, name, or phone to search.", NotificationType.Warning, 3000);
             return;
         }
 
-        // Show loading
         SearchPostcodeButton.Text = "Searching...";
         SearchPostcodeButton.IsEnabled = false;
 
         try
         {
-            var addresses = await _postcodeLookupService.LookupPostcodeAsync(postcode);
+            // 1. Check central customer data first (no API credit used).
+            var localRecords = await _customerDataService.SearchForDeliveryAsync(addressQuery, name, phone);
+            if (localRecords.Count > 0)
+            {
+                AddressResultsBorder.IsVisible = false;
+                SearchResultsCollection.ItemsSource = localRecords.Select(ToDeliveryCustomer).ToList();
+                SearchResultsBorder.IsVisible = true;
+                NoResultsLabel.IsVisible = false;
+                await ToastNotification.ShowAsync(
+                    "Local Match",
+                    $"Found {localRecords.Count} customer(s) in local cache. Select one to fill the form.",
+                    NotificationType.Success,
+                    3500);
+                return;
+            }
 
-            if (addresses.Any())
+            // 2. No local match — ask OrderWeb for addresses (postcode lookup).
+            if (string.IsNullOrWhiteSpace(addressQuery))
+            {
+                SearchResultsBorder.IsVisible = false;
+                NoResultsLabel.IsVisible = true;
+                await ToastNotification.ShowAsync(
+                    "No Local Match",
+                    "No matching customers found locally. Enter a postcode to look up addresses.",
+                    NotificationType.Info,
+                    4000);
+                return;
+            }
+
+            var addresses = await _postcodeLookupService.LookupPostcodeAsync(addressQuery);
+
+            SearchResultsBorder.IsVisible = false;
+            NoResultsLabel.IsVisible = false;
+
+            if (addresses.Count > 0)
             {
                 AddressResultsCollection.ItemsSource = addresses;
                 AddressResultsBorder.IsVisible = true;
+                await ToastNotification.ShowAsync(
+                    "OrderWeb",
+                    $"Found {addresses.Count} address(es). Select one to fill the form.",
+                    NotificationType.Info,
+                    3000);
             }
             else
             {
                 AddressResultsBorder.IsVisible = false;
-                await ToastNotification.ShowAsync("No Results", $"No addresses found for postcode: {postcode}", NotificationType.Info, 3000);
+                await ToastNotification.ShowAsync("No Results", $"No addresses found for: {addressQuery}", NotificationType.Info, 3000);
             }
+        }
+        catch (AddressLookupException ex)
+        {
+            AddressResultsBorder.IsVisible = false;
+            var message = ex.Suggestions.Count > 0
+                ? $"{ex.Message}\n\nTry: {string.Join(", ", ex.Suggestions)}"
+                : ex.Message;
+            await ToastNotification.ShowAsync("Address Lookup", message, NotificationType.Error, 5000);
         }
         catch (Exception ex)
         {
             AddressResultsBorder.IsVisible = false;
-            await ToastNotification.ShowAsync("Error", $"Failed to lookup postcode: {ex.Message}", NotificationType.Error, 4000);
+            await ToastNotification.ShowAsync("Error", $"Search failed: {ex.Message}\n\nYou can still enter the address manually.", NotificationType.Error, 5000);
         }
         finally
         {
@@ -61,12 +113,18 @@ public partial class DeliveryCustomerModal : ContentPage
     {
         if (e.CurrentSelection.FirstOrDefault() is AddressResult address)
         {
-            // Fill structured address fields
             AddressLine1Entry.Text = address.AddressLine1;
+            if (!string.IsNullOrWhiteSpace(address.AddressLine2))
+            {
+                AddressLine1Entry.Text = string.IsNullOrWhiteSpace(AddressLine1Entry.Text)
+                    ? address.AddressLine2
+                    : $"{AddressLine1Entry.Text}, {address.AddressLine2}";
+            }
+
             CityEntry.Text = address.City;
             CountyEntry.Text = address.County;
             PostcodeResultEntry.Text = address.Postcode;
-            
+
             AddressResultsBorder.IsVisible = false;
         }
     }
@@ -75,14 +133,16 @@ public partial class DeliveryCustomerModal : ContentPage
     {
         var searchName = CustomerNameEntry.Text?.Trim();
         var searchPhone = PhoneNumberEntry.Text?.Trim();
+        var searchAddress = PostcodeEntry.Text?.Trim();
 
-        if (string.IsNullOrWhiteSpace(searchName) && string.IsNullOrWhiteSpace(searchPhone))
+        if (string.IsNullOrWhiteSpace(searchName)
+            && string.IsNullOrWhiteSpace(searchPhone)
+            && string.IsNullOrWhiteSpace(searchAddress))
         {
-            await ToastNotification.ShowAsync("Required", "Please enter customer name or phone number to search.", NotificationType.Warning, 3000);
+            await ToastNotification.ShowAsync("Required", "Enter customer name, phone, or address to search.", NotificationType.Warning, 3000);
             return;
         }
 
-        // Show loading
         var button = (Button)sender;
         var originalText = button.Text;
         button.Text = "Searching...";
@@ -90,11 +150,13 @@ public partial class DeliveryCustomerModal : ContentPage
 
         try
         {
-            var results = await _customerService.SearchCustomersByNameAsync(searchName ?? searchPhone ?? "");
+            var results = await _customerDataService.SearchForDeliveryAsync(searchAddress, searchName, searchPhone);
 
-            if (results.Any())
+            AddressResultsBorder.IsVisible = false;
+
+            if (results.Count > 0)
             {
-                SearchResultsCollection.ItemsSource = results;
+                SearchResultsCollection.ItemsSource = results.Select(ToDeliveryCustomer).ToList();
                 SearchResultsBorder.IsVisible = true;
                 NoResultsLabel.IsVisible = false;
             }
@@ -119,16 +181,7 @@ public partial class DeliveryCustomerModal : ContentPage
     {
         if (e.CurrentSelection.FirstOrDefault() is DeliveryCustomer customer)
         {
-            _selectedCustomer = customer;
-            CustomerNameEntry.Text = customer.Name;
-            PhoneNumberEntry.Text = customer.PhoneNumber;
-            
-            // Parse address - assuming it's stored as single string
-            var addressLines = customer.Address?.Split('\n') ?? Array.Empty<string>();
-            if (addressLines.Length > 0) AddressLine1Entry.Text = addressLines[0];
-            if (addressLines.Length > 1) CityEntry.Text = addressLines[1];
-            if (addressLines.Length > 2) PostcodeResultEntry.Text = addressLines[2];
-            
+            ApplyCustomerToForm(customer);
             SearchResultsBorder.IsVisible = false;
         }
     }
@@ -137,17 +190,55 @@ public partial class DeliveryCustomerModal : ContentPage
     {
         if (sender is VisualElement element && element.BindingContext is DeliveryCustomer customer)
         {
-            _selectedCustomer = customer;
-            CustomerNameEntry.Text = customer.Name;
-            PhoneNumberEntry.Text = customer.PhoneNumber;
-            
-            // Parse address
-            var addressLines = customer.Address?.Split('\n') ?? Array.Empty<string>();
-            if (addressLines.Length > 0) AddressLine1Entry.Text = addressLines[0];
-            if (addressLines.Length > 1) CityEntry.Text = addressLines[1];
-            if (addressLines.Length > 2) PostcodeResultEntry.Text = addressLines[2];
-            
+            ApplyCustomerToForm(customer);
             SearchResultsBorder.IsVisible = false;
+        }
+    }
+
+    private void ApplyCustomerToForm(DeliveryCustomer customer)
+    {
+        _selectedCustomer = customer;
+        CustomerNameEntry.Text = customer.Name;
+        PhoneNumberEntry.Text = customer.PhoneNumber;
+
+        var addressLines = customer.Address?
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? Array.Empty<string>();
+
+        AddressLine1Entry.Text = string.Empty;
+        CityEntry.Text = string.Empty;
+        CountyEntry.Text = string.Empty;
+        PostcodeResultEntry.Text = string.Empty;
+
+        if (addressLines.Length == 0)
+        {
+            return;
+        }
+
+        AddressLine1Entry.Text = addressLines[0];
+
+        if (addressLines.Length == 2)
+        {
+            PostcodeResultEntry.Text = addressLines[1];
+            PostcodeEntry.Text = addressLines[1];
+            return;
+        }
+
+        if (addressLines.Length >= 3)
+        {
+            CityEntry.Text = addressLines[1];
+        }
+
+        if (addressLines.Length >= 4)
+        {
+            CountyEntry.Text = addressLines[2];
+            PostcodeResultEntry.Text = addressLines[3];
+            PostcodeEntry.Text = addressLines[3];
+        }
+        else if (addressLines.Length == 3)
+        {
+            PostcodeResultEntry.Text = addressLines[2];
+            PostcodeEntry.Text = addressLines[2];
         }
     }
 
@@ -162,13 +253,21 @@ public partial class DeliveryCustomerModal : ContentPage
             AddressLine1Entry.Focus();
             return;
         }
+
+        var normalizedPostcode = DeliveryZoneService.NormalizePostcode(PostcodeResultEntry.Text);
+        if (string.IsNullOrWhiteSpace(normalizedPostcode))
+        {
+            await ToastNotification.ShowAsync("Required", "Full postcode is required for delivery zone pricing.", NotificationType.Warning, 3000);
+            PostcodeResultEntry.Focus();
+            return;
+        }
         
         // Build address from structured fields
         var addressParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(AddressLine1Entry.Text)) addressParts.Add(AddressLine1Entry.Text.Trim());
         if (!string.IsNullOrWhiteSpace(CityEntry.Text)) addressParts.Add(CityEntry.Text.Trim());
         if (!string.IsNullOrWhiteSpace(CountyEntry.Text)) addressParts.Add(CountyEntry.Text.Trim());
-        if (!string.IsNullOrWhiteSpace(PostcodeResultEntry.Text)) addressParts.Add(PostcodeResultEntry.Text.Trim());
+        addressParts.Add(normalizedPostcode);
         
         var address = string.Join("\n", addressParts);
 
@@ -200,11 +299,48 @@ public partial class DeliveryCustomerModal : ContentPage
                 return;
             }
 
+            // Always save to central Customer Data (name, phone, full address).
+            try
+            {
+                await _customerDataService.UpsertDeliveryCustomerAsync(
+                    name,
+                    phone,
+                    address,
+                    CityEntry.Text?.Trim(),
+                    CountyEntry.Text?.Trim(),
+                    normalizedPostcode);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DeliveryCustomerModal] Customer Data save: {ex.Message}");
+            }
+
             // Navigate to order placement page with customer info
             var orderPlacementPage = new OrderPlacementPageSimple("DEL", 1, "Staff", 1);
+
+            var zoneMatch = await _deliveryZoneService.FindZoneForPostcodeAsync(normalizedPostcode);
+            var deliveryFee = 0m;
+            if (zoneMatch == null)
+            {
+                await _deliveryZoneService.SaveUnassignedPostcodeAsync(normalizedPostcode);
+                await ToastNotification.ShowAsync(
+                    "No Delivery Zone",
+                    $"No delivery zone found for {normalizedPostcode}. Saved for admin review.",
+                    NotificationType.Warning,
+                    3500);
+            }
+            else
+            {
+                deliveryFee = zoneMatch.DeliveryFee;
+                await ToastNotification.ShowAsync(
+                    "Delivery Zone",
+                    $"{zoneMatch.ZoneName}: £{deliveryFee:F2} delivery fee added.",
+                    NotificationType.Success,
+                    2500);
+            }
             
             // Pass customer info to order placement page
-            orderPlacementPage.SetDeliveryOrderInfo(customer.Id, customer.Name, customer.PhoneNumber, customer.Address);
+            orderPlacementPage.SetDeliveryOrderInfo(customer.Id, customer.Name, customer.PhoneNumber, customer.Address, deliveryFee);
 
             await Navigation.PushAsync(orderPlacementPage);
         }
@@ -220,5 +356,23 @@ public partial class DeliveryCustomerModal : ContentPage
         var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
         await Shell.Current.GoToAsync($"//{dashboardRoute}");
+    }
+
+    private static DeliveryCustomer ToDeliveryCustomer(CustomerDataRecord record)
+    {
+        var address = !string.IsNullOrWhiteSpace(record.FullAddress)
+            ? record.FullAddress
+            : string.Join("\n", new[] { record.City, record.County, record.Postcode }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        return new DeliveryCustomer
+        {
+            Id = record.Id,
+            Name = record.Name,
+            PhoneNumber = record.PhoneNumber,
+            Address = address,
+            CreatedAt = record.CreatedAt,
+            LastOrderDate = record.LastOrderDate
+        };
     }
 }

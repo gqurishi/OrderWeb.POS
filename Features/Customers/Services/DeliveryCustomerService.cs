@@ -6,17 +6,12 @@ namespace POS_in_NET.Services
     public class DeliveryCustomerService
     {
         private readonly string _connectionString;
+        private readonly CustomerDataService _customerDataService = new();
         private bool _tableChecked = false;
 
         public DeliveryCustomerService()
         {
-            var host = "localhost";
-            var user = "root";
-            var password = "root";
-            var database = "Pos-net";
-            var port = "3306";
-            
-            _connectionString = $"Server={host};Database={database};Uid={user};Pwd={password};Port={port};Connection Timeout=5;";
+            _connectionString = TerminalConfigurationService.GetPosConnectionString(pooled: false);
         }
 
         private async Task EnsureTableExistsAsync(MySqlConnection connection)
@@ -47,40 +42,74 @@ namespace POS_in_NET.Services
             }
         }
 
-        public async Task<List<DeliveryCustomer>> SearchCustomersByNameAsync(string searchName)
+        public Task<List<DeliveryCustomer>> SearchCustomersByNameAsync(string searchName)
+        {
+            return SearchCustomersAsync(addressOrPostcode: null, name: searchName, phone: searchName);
+        }
+
+        /// <summary>
+        /// Search local delivery customers by address/postcode, name, and/or phone.
+        /// Any non-empty field is matched with OR logic.
+        /// </summary>
+        public async Task<List<DeliveryCustomer>> SearchCustomersAsync(string? addressOrPostcode, string? name, string? phone)
         {
             var customers = new List<DeliveryCustomer>();
-            
+            var conditions = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                conditions.Add("name LIKE @name");
+            }
+
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                conditions.Add("phone_number LIKE @phone");
+            }
+
+            if (!string.IsNullOrWhiteSpace(addressOrPostcode))
+            {
+                conditions.Add("address LIKE @address");
+            }
+
+            if (conditions.Count == 0)
+            {
+                return customers;
+            }
+
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
-                var query = @"
-                    SELECT id, name, phone_number, address, created_at, last_order_date 
-                    FROM delivery_customers 
-                    WHERE name LIKE @searchName OR phone_number LIKE @searchName
-                    ORDER BY last_order_date DESC, name ASC 
+                var query = $@"
+                    SELECT id, name, phone_number, address, created_at, last_order_date
+                    FROM delivery_customers
+                    WHERE {string.Join(" OR ", conditions)}
+                    ORDER BY last_order_date DESC, name ASC
                     LIMIT 50";
 
                 using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@searchName", $"%{searchName}%");
+
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    command.Parameters.AddWithValue("@name", $"%{name.Trim()}%");
+                }
+
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    command.Parameters.AddWithValue("@phone", $"%{phone.Trim()}%");
+                }
+
+                if (!string.IsNullOrWhiteSpace(addressOrPostcode))
+                {
+                    command.Parameters.AddWithValue("@address", $"%{addressOrPostcode.Trim()}%");
+                }
 
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
                 {
-                    customers.Add(new DeliveryCustomer
-                    {
-                        Id = reader.GetInt32("id"),
-                        Name = reader.GetString("name"),
-                        PhoneNumber = reader.GetString("phone_number"),
-                        Address = reader.GetString("address"),
-                        CreatedAt = reader.GetDateTime("created_at"),
-                        LastOrderDate = reader.IsDBNull(reader.GetOrdinal("last_order_date")) 
-                            ? null 
-                            : reader.GetDateTime("last_order_date")
-                    });
+                    customers.Add(ReadCustomer(reader));
                 }
             }
             catch (Exception ex)
@@ -91,11 +120,26 @@ namespace POS_in_NET.Services
             return customers;
         }
 
+        private static DeliveryCustomer ReadCustomer(MySqlDataReader reader)
+        {
+            return new DeliveryCustomer
+            {
+                Id = reader.GetInt32("id"),
+                Name = reader.GetString("name"),
+                PhoneNumber = reader.GetString("phone_number"),
+                Address = reader.GetString("address"),
+                CreatedAt = reader.GetDateTime("created_at"),
+                LastOrderDate = reader.IsDBNull(reader.GetOrdinal("last_order_date"))
+                    ? null
+                    : reader.GetDateTime("last_order_date")
+            };
+        }
+
         public async Task<DeliveryCustomer> SaveCustomerAsync(string name, string phoneNumber, string address)
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
@@ -120,18 +164,22 @@ namespace POS_in_NET.Services
                             : reader.GetDateTime("last_order_date")
                     };
                     await reader.CloseAsync();
-                    
-                    // Update address if different
-                    if (existingCustomer.Address != address)
+
+                    var nameChanged = !existingCustomer.Name.Equals(name, StringComparison.OrdinalIgnoreCase);
+                    var addressChanged = existingCustomer.Address != address;
+                    if (nameChanged || addressChanged)
                     {
-                        var updateQuery = "UPDATE delivery_customers SET address = @address WHERE id = @id";
+                        var updateQuery = "UPDATE delivery_customers SET name = @name, address = @address WHERE id = @id";
                         using var updateCommand = new MySqlCommand(updateQuery, connection);
+                        updateCommand.Parameters.AddWithValue("@name", name);
                         updateCommand.Parameters.AddWithValue("@address", address);
                         updateCommand.Parameters.AddWithValue("@id", existingCustomer.Id);
                         await updateCommand.ExecuteNonQueryAsync();
+                        existingCustomer.Name = name;
                         existingCustomer.Address = address;
                     }
-                    
+
+                    await SyncToCustomerDataAsync(name, phoneNumber, address);
                     return existingCustomer;
                 }
                 await reader.CloseAsync();
@@ -150,7 +198,7 @@ namespace POS_in_NET.Services
 
                 var newId = Convert.ToInt32(await insertCommand.ExecuteScalarAsync());
 
-                return new DeliveryCustomer
+                var customer = new DeliveryCustomer
                 {
                     Id = newId,
                     Name = name,
@@ -158,6 +206,9 @@ namespace POS_in_NET.Services
                     Address = address,
                     CreatedAt = DateTime.Now
                 };
+
+                await SyncToCustomerDataAsync(name, phoneNumber, address);
+                return customer;
             }
             catch (Exception ex)
             {
@@ -166,11 +217,29 @@ namespace POS_in_NET.Services
             }
         }
 
+        private async Task SyncToCustomerDataAsync(string name, string phoneNumber, string address)
+        {
+            try
+            {
+                await _customerDataService.UpsertDeliveryCustomerAsync(
+                    name,
+                    phoneNumber,
+                    address,
+                    city: ParseAddressLine(address, 1),
+                    county: ParseAddressLine(address, 2),
+                    postcode: ParseAddressLine(address, 3));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DeliveryCustomer] Customer Data sync failed: {ex.Message}");
+            }
+        }
+
         public async Task UpdateLastOrderDateAsync(int customerId)
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
@@ -180,11 +249,25 @@ namespace POS_in_NET.Services
                 command.Parameters.AddWithValue("@id", customerId);
 
                 await command.ExecuteNonQueryAsync();
+
+                using var phoneCommand = new MySqlCommand("SELECT phone_number FROM delivery_customers WHERE id = @id", connection);
+                phoneCommand.Parameters.AddWithValue("@id", customerId);
+                var phone = Convert.ToString(await phoneCommand.ExecuteScalarAsync());
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    await _customerDataService.UpdateLastDeliveryOrderDateAsync(phone);
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error updating last order date: {ex.Message}");
             }
+        }
+
+        private static string? ParseAddressLine(string address, int index)
+        {
+            var lines = address.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return lines.Length > index ? lines[index] : null;
         }
     }
 }

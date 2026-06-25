@@ -39,12 +39,12 @@ namespace POS_in_NET.Models
         // Display properties
         public string NoteTypeDisplay => NoteType switch
         {
-            SessionNoteType.General => "📝 General",
-            SessionNoteType.Allergy => "⚠️ Allergy",
-            SessionNoteType.Request => "🙋 Request",
-            SessionNoteType.Complaint => "😞 Issue",
+            SessionNoteType.General => " General",
+            SessionNoteType.Allergy => " Allergy",
+            SessionNoteType.Request => " Request",
+            SessionNoteType.Complaint => " Issue",
             SessionNoteType.VIP => "⭐ VIP",
-            _ => "📝 Note"
+            _ => " Note"
         };
         
         public string NoteTypeColor => NoteType switch

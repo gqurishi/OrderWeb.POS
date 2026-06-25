@@ -24,25 +24,6 @@ CREATE TABLE IF NOT EXISTS MenuItemQuickNotes (
 );
 
 -- ========================================
--- Sample Data (Optional)
--- ========================================
--- Add quick notes for Grilled Chicken (item-3)
-INSERT IGNORE INTO MenuItemQuickNotes (Id, MenuItemId, NoteText, DisplayOrder, Active)
-VALUES
-    ('qn-1', 'item-3', 'No onions', 1, TRUE),
-    ('qn-2', 'item-3', 'Extra sauce', 2, TRUE),
-    ('qn-3', 'item-3', 'Well done', 3, TRUE),
-    ('qn-4', 'item-3', 'No garlic', 4, TRUE);
-
--- Add quick notes for Fish & Chips (item-4)
-INSERT IGNORE INTO MenuItemQuickNotes (Id, MenuItemId, NoteText, DisplayOrder, Active)
-VALUES
-    ('qn-5', 'item-4', 'No salt', 1, TRUE),
-    ('qn-6', 'item-4', 'Extra chips', 2, TRUE),
-    ('qn-7', 'item-4', 'Tartare sauce on side', 3, TRUE),
-    ('qn-8', 'item-4', 'Mushy peas instead', 4, TRUE);
-
--- ========================================
 -- Verification Query
 -- ========================================
 SELECT 

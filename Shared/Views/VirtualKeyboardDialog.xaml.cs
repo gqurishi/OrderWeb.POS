@@ -27,27 +27,23 @@ namespace POS_in_NET.Views
 
         public async Task<string?> ShowAsync(Page? hostPage = null)
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _tcs = new TaskCompletionSource<string?>();
-            
-            var page = hostPage;
 
-            if (page == null && Application.Current?.MainPage is Page mainPage)
+            var page = hostPage as ContentPage
+                ?? Shell.Current?.CurrentPage as ContentPage
+                ?? Application.Current?.MainPage as ContentPage;
+
+            if (page != null)
             {
-                if (mainPage is Shell shell && shell.CurrentPage is ContentPage contentPage)
-                {
-                    AddToPage(contentPage);
-                }
-                else if (mainPage is ContentPage cp)
-                {
-                    AddToPage(cp);
-                }
+                AddToPage(page);
             }
-            else if (page is ContentPage contentPage)
+            else
             {
-                AddToPage(contentPage);
+                _tcs.TrySetResult(null);
+                return null;
             }
-            
+
             return await _tcs.Task;
         }
 
@@ -55,16 +51,15 @@ namespace POS_in_NET.Views
         {
             _hostPage = page;
 
-            if (page.Content is Grid grid)
+            if (DialogOverlayHelper.TryAttachOverlay(this, out var hostGrid))
             {
-                if (grid.RowDefinitions.Count > 0)
-                    Grid.SetRowSpan(this, grid.RowDefinitions.Count);
-                if (grid.ColumnDefinitions.Count > 0)
-                    Grid.SetColumnSpan(this, grid.ColumnDefinitions.Count);
-                
-                grid.Children.Add(this);
+                IsVisible = true;
+                page.SizeChanged += OnHostPageSizeChanged;
+                ApplyResponsiveLayout(page.Width, page.Height);
+                return;
             }
-            else if (page.Content is Layout layout)
+
+            if (page.Content is Layout layout)
             {
                 var newGrid = new Grid();
                 var existingContent = page.Content;
@@ -87,7 +82,7 @@ namespace POS_in_NET.Views
                 newGrid.Children.Add(this);
                 page.Content = newGrid;
             }
-            
+
             IsVisible = true;
             page.SizeChanged += OnHostPageSizeChanged;
             ApplyResponsiveLayout(page.Width, page.Height);
@@ -103,7 +98,7 @@ namespace POS_in_NET.Views
 
             if (Parent is Grid grid)
             {
-                grid.Children.Remove(this);
+                DialogOverlayHelper.DetachOverlay(this, grid);
             }
         }
 

@@ -26,7 +26,13 @@ public sealed class ReportGenerationService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"📊 [ReportGen] Generating daily report for {date:yyyy-MM-dd}");
+            if (!TerminalRoleService.CanGenerateEndOfDayReports)
+            {
+                System.Diagnostics.Debug.WriteLine(" [ReportGen] Daily report skipped: end-of-day reports run on the mother terminal only.");
+                return null;
+            }
+
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Generating daily report for {date:yyyy-MM-dd}");
             
             var startDate = date.Date;
             var endDate = date.Date.AddDays(1);
@@ -35,7 +41,7 @@ public sealed class ReportGenerationService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportGen] Daily report error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Daily report error: {ex.Message}");
             return null;
         }
     }
@@ -47,6 +53,12 @@ public sealed class ReportGenerationService
     {
         try
         {
+            if (!TerminalRoleService.CanGenerateEndOfDayReports)
+            {
+                System.Diagnostics.Debug.WriteLine(" [ReportGen] Weekly report skipped: end-of-day reports run on the mother terminal only.");
+                return null;
+            }
+
             // Normalize to Monday
             var monday = weekStartDate.Date;
             while (monday.DayOfWeek != DayOfWeek.Monday)
@@ -56,13 +68,13 @@ public sealed class ReportGenerationService
             
             var sunday = monday.AddDays(7);
             
-            System.Diagnostics.Debug.WriteLine($"📊 [ReportGen] Generating weekly report for {monday:yyyy-MM-dd} to {sunday:yyyy-MM-dd}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Generating weekly report for {monday:yyyy-MM-dd} to {sunday:yyyy-MM-dd}");
             
             return await GenerateReportAsync(ReportType.Weekly, monday, sunday);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportGen] Weekly report error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Weekly report error: {ex.Message}");
             return null;
         }
     }
@@ -74,16 +86,22 @@ public sealed class ReportGenerationService
     {
         try
         {
+            if (!TerminalRoleService.CanGenerateEndOfDayReports)
+            {
+                System.Diagnostics.Debug.WriteLine(" [ReportGen] Monthly report skipped: end-of-day reports run on the mother terminal only.");
+                return null;
+            }
+
             var startDate = new DateTime(year, month, 1);
             var endDate = startDate.AddMonths(1);
             
-            System.Diagnostics.Debug.WriteLine($"📊 [ReportGen] Generating monthly report for {startDate:yyyy-MM}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Generating monthly report for {startDate:yyyy-MM}");
             
             return await GenerateReportAsync(ReportType.Monthly, startDate, endDate);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportGen] Monthly report error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Monthly report error: {ex.Message}");
             return null;
         }
     }
@@ -102,7 +120,7 @@ public sealed class ReportGenerationService
             var existing = await GetExistingReportAsync(connection, reportType, startDate, endDate);
             if (existing != null)
             {
-                System.Diagnostics.Debug.WriteLine($"📌 [ReportGen] Report already exists, ID: {existing.Id}");
+                System.Diagnostics.Debug.WriteLine($" [ReportGen] Report already exists, ID: {existing.Id}");
                 return existing;
             }
 
@@ -119,7 +137,7 @@ public sealed class ReportGenerationService
             
             if (orders.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ [ReportGen] No orders found for period {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
+                System.Diagnostics.Debug.WriteLine($" [ReportGen] No orders found for period {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
                 // Still create empty report
                 return await SaveReportAsync(connection, snapshot);
             }
@@ -138,13 +156,13 @@ public sealed class ReportGenerationService
             // Save to database
             var savedSnapshot = await SaveReportAsync(connection, snapshot);
             
-            System.Diagnostics.Debug.WriteLine($"✅ [ReportGen] Report saved, ID: {savedSnapshot?.Id}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Report saved, ID: {savedSnapshot?.Id}");
             
             return savedSnapshot;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportGen] Error generating report: {ex.Message}\n{ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($" [ReportGen] Error generating report: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
     }

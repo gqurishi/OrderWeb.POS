@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using MySqlConnector;
 using MyFirstMauiApp.Models.FoodMenu;
@@ -7,20 +8,46 @@ using MyFirstMauiApp.Models.FoodMenu;
 namespace MyFirstMauiApp.Services
 {
     /// <summary>
-    /// Service for managing meal deals with selection rules
+    /// Service for managing meal deals — fixed price bundles with pick-N choices.
     /// </summary>
     public class MealDealService
     {
         private readonly string _connectionString;
+        private static bool _schemaEnsured;
 
         public MealDealService()
         {
-            _connectionString = "Server=localhost;Database=Pos-net;User=root;Password=root;";
+            _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
         }
 
-        /// <summary>
-        /// Get all meal deals
-        /// </summary>
+        private async Task EnsureSchemaAsync(MySqlConnection connection)
+        {
+            if (_schemaEnsured)
+            {
+                return;
+            }
+
+            const string sql = @"
+                CREATE TABLE IF NOT EXISTS MealDeals (
+                    Id VARCHAR(36) PRIMARY KEY,
+                    Name VARCHAR(150) NOT NULL,
+                    Description TEXT NULL,
+                    Price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    Color VARCHAR(20) NOT NULL DEFAULT '#F59E0B',
+                    Categories JSON NOT NULL,
+                    Active BOOLEAN NOT NULL DEFAULT TRUE,
+                    DisplayOrder INT NOT NULL DEFAULT 0,
+                    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_mealdeal_active (Active),
+                    INDEX idx_mealdeal_order (DisplayOrder)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+
+            using var command = new MySqlCommand(sql, connection);
+            await command.ExecuteNonQueryAsync();
+            _schemaEnsured = true;
+        }
+
         public async Task<List<MealDeal>> GetAllDealsAsync()
         {
             var deals = new List<MealDeal>();
@@ -29,9 +56,10 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                var query = @"
-                    SELECT Id, Name, Description, Price, Color, Categories, 
+                const string query = @"
+                    SELECT Id, Name, Description, Price, Color, Categories,
                            Active, DisplayOrder, CreatedAt, UpdatedAt
                     FROM MealDeals
                     ORDER BY DisplayOrder ASC, CreatedAt DESC";
@@ -53,54 +81,22 @@ namespace MyFirstMauiApp.Services
             return deals;
         }
 
-        /// <summary>
-        /// Get active meal deals only
-        /// </summary>
         public async Task<List<MealDeal>> GetActiveDealsAsync()
         {
-            var deals = new List<MealDeal>();
-
-            try
-            {
-                using var connection = new MySqlConnection(_connectionString);
-                await connection.OpenAsync();
-
-                var query = @"
-                    SELECT Id, Name, Description, Price, Color, Categories, 
-                           Active, DisplayOrder, CreatedAt, UpdatedAt
-                    FROM MealDeals
-                    WHERE Active = TRUE
-                    ORDER BY DisplayOrder ASC, CreatedAt DESC";
-
-                using var command = new MySqlCommand(query, connection);
-                using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
-
-                while (await reader.ReadAsync())
-                {
-                    deals.Add(ParseMealDeal(reader));
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error getting active meal deals: {ex.Message}");
-                throw;
-            }
-
-            return deals;
+            var all = await GetAllDealsAsync();
+            return all.Where(d => d.Active && d.Choices.Count > 0).ToList();
         }
 
-        /// <summary>
-        /// Get a specific meal deal by ID
-        /// </summary>
         public async Task<MealDeal?> GetDealByIdAsync(string id)
         {
             try
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                var query = @"
-                    SELECT Id, Name, Description, Price, Color, Categories, 
+                const string query = @"
+                    SELECT Id, Name, Description, Price, Color, Categories,
                            Active, DisplayOrder, CreatedAt, UpdatedAt
                     FROM MealDeals
                     WHERE Id = @Id";
@@ -123,26 +119,23 @@ namespace MyFirstMauiApp.Services
             return null;
         }
 
-        /// <summary>
-        /// Create a new meal deal
-        /// </summary>
         public async Task<bool> CreateDealAsync(MealDeal deal)
         {
             try
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                // Generate new ID if not provided
                 if (string.IsNullOrEmpty(deal.Id))
                 {
                     deal.Id = $"meal-{Guid.NewGuid()}";
                 }
 
-                var query = @"
-                    INSERT INTO MealDeals 
+                const string query = @"
+                    INSERT INTO MealDeals
                     (Id, Name, Description, Price, Color, Categories, Active, DisplayOrder, CreatedAt, UpdatedAt)
-                    VALUES 
+                    VALUES
                     (@Id, @Name, @Description, @Price, @Color, @Categories, @Active, @DisplayOrder, @CreatedAt, @UpdatedAt)";
 
                 using var command = new MySqlCommand(query, connection);
@@ -157,8 +150,7 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@CreatedAt", DateTime.Now);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
-                var result = await command.ExecuteNonQueryAsync();
-                return result > 0;
+                return await command.ExecuteNonQueryAsync() > 0;
             }
             catch (Exception ex)
             {
@@ -167,18 +159,16 @@ namespace MyFirstMauiApp.Services
             }
         }
 
-        /// <summary>
-        /// Update an existing meal deal
-        /// </summary>
         public async Task<bool> UpdateDealAsync(MealDeal deal)
         {
             try
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                var query = @"
-                    UPDATE MealDeals 
+                const string query = @"
+                    UPDATE MealDeals
                     SET Name = @Name,
                         Description = @Description,
                         Price = @Price,
@@ -200,8 +190,7 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@DisplayOrder", deal.DisplayOrder);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
-                var result = await command.ExecuteNonQueryAsync();
-                return result > 0;
+                return await command.ExecuteNonQueryAsync() > 0;
             }
             catch (Exception ex)
             {
@@ -210,23 +199,17 @@ namespace MyFirstMauiApp.Services
             }
         }
 
-        /// <summary>
-        /// Delete a meal deal
-        /// </summary>
         public async Task<bool> DeleteDealAsync(string id)
         {
             try
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                var query = "DELETE FROM MealDeals WHERE Id = @Id";
-
-                using var command = new MySqlCommand(query, connection);
+                using var command = new MySqlCommand("DELETE FROM MealDeals WHERE Id = @Id", connection);
                 command.Parameters.AddWithValue("@Id", id);
-
-                var result = await command.ExecuteNonQueryAsync();
-                return result > 0;
+                return await command.ExecuteNonQueryAsync() > 0;
             }
             catch (Exception ex)
             {
@@ -235,38 +218,74 @@ namespace MyFirstMauiApp.Services
             }
         }
 
-        /// <summary>
-        /// Toggle active status
-        /// </summary>
         public async Task<bool> ToggleActiveAsync(string id)
         {
             try
             {
                 using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureSchemaAsync(connection);
 
-                var query = @"
-                    UPDATE MealDeals 
+                const string query = @"
+                    UPDATE MealDeals
                     SET Active = NOT Active, UpdatedAt = @UpdatedAt
                     WHERE Id = @Id";
 
                 using var command = new MySqlCommand(query, connection);
                 command.Parameters.AddWithValue("@Id", id);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
-
-                var result = await command.ExecuteNonQueryAsync();
-                return result > 0;
+                return await command.ExecuteNonQueryAsync() > 0;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error toggling active status: {ex.Message}");
+                Console.WriteLine($"Error toggling meal deal status: {ex.Message}");
                 throw;
             }
         }
 
         /// <summary>
-        /// Validate customer selections against meal deal rules
+        /// Validate customer choice names against deal rules.
         /// </summary>
+        public (bool IsValid, List<string> Errors) ValidateChoiceSelections(MealDeal deal, IList<string> selectedChoiceNames)
+        {
+            var errors = new List<string>();
+            var normalizedSelected = selectedChoiceNames
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n.Trim())
+                .ToList();
+
+            if (deal.Choices.Count == 0)
+            {
+                errors.Add("This meal deal has no choices configured.");
+                return (false, errors);
+            }
+
+            if (normalizedSelected.Count != deal.PickCount)
+            {
+                errors.Add($"Please pick exactly {deal.PickCount} item(s). You selected {normalizedSelected.Count}.");
+            }
+
+            var validNames = deal.Choices
+                .Select(c => c.Name.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var name in normalizedSelected)
+            {
+                if (!validNames.Contains(name))
+                {
+                    errors.Add($"'{name}' is not a valid choice for this deal.");
+                }
+            }
+
+            if (normalizedSelected.Count != normalizedSelected.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            {
+                errors.Add("Each choice can only be selected once.");
+            }
+
+            return (errors.Count == 0, errors);
+        }
+
+        /// <summary>Legacy slot-based validation.</summary>
         public (bool IsValid, List<string> Errors) ValidateSelections(MealDeal deal, Dictionary<string, List<string>> selections)
         {
             var errors = new List<string>();
@@ -279,25 +298,23 @@ namespace MyFirstMauiApp.Services
                     {
                         errors.Add($"{category.Name}: Selection is required");
                     }
+
                     continue;
                 }
 
                 var selectedItems = selections[category.Id];
                 var selectionCount = selectedItems.Count;
 
-                // Check minimum selections
                 if (selectionCount < category.MinSelections)
                 {
                     errors.Add($"{category.Name}: Minimum {category.MinSelections} selection(s) required (you selected {selectionCount})");
                 }
 
-                // Check maximum selections
                 if (selectionCount > category.MaxSelections)
                 {
                     errors.Add($"{category.Name}: Maximum {category.MaxSelections} selection(s) allowed (you selected {selectionCount})");
                 }
 
-                // Check that all selected items are valid for this category
                 foreach (var itemId in selectedItems)
                 {
                     if (!category.MenuItemIds.Contains(itemId))
@@ -311,9 +328,7 @@ namespace MyFirstMauiApp.Services
             return (errors.Count == 0, errors);
         }
 
-        // Helper method
-
-        private MealDeal ParseMealDeal(MySqlDataReader reader)
+        private static MealDeal ParseMealDeal(MySqlDataReader reader)
         {
             var deal = new MealDeal
             {
@@ -328,9 +343,8 @@ namespace MyFirstMauiApp.Services
                 UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
             };
 
-            // Parse JSON categories
             var categoriesJson = reader.GetString(reader.GetOrdinal("Categories"));
-            deal.Categories = MealDeal.ParseCategories(categoriesJson);
+            MealDeal.ApplyConfigFromJson(deal, categoriesJson);
 
             return deal;
         }

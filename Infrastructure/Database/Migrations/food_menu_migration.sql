@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS FoodMenuCategories (
     DisplayOrder INT NOT NULL DEFAULT 0,
     Active BOOLEAN NOT NULL DEFAULT TRUE,
     Color VARCHAR(20) NOT NULL DEFAULT '#3B82F6',
-    Icon VARCHAR(50) NOT NULL DEFAULT '🍽️',
+    Icon VARCHAR(50) NOT NULL DEFAULT '',
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
@@ -95,58 +95,6 @@ CREATE TABLE IF NOT EXISTS PredefinedNotes (
     INDEX idx_note_priority (Priority),
     INDEX idx_note_order (DisplayOrder)
 );
-
--- ========================================
--- 5. Sample Data (Optional)
--- ========================================
-
--- Sample Categories
-INSERT IGNORE INTO FoodMenuCategories (Id, Name, Description, ParentId, DisplayOrder, Active, Color, Icon)
-VALUES
-    ('cat-starters', 'Starters', 'Appetizers and starters', NULL, 1, TRUE, '#22C55E', '🥗'),
-    ('cat-mains', 'Main Course', 'Main dishes', NULL, 2, TRUE, '#EF4444', '🍖'),
-    ('cat-desserts', 'Desserts', 'Sweet treats', NULL, 3, TRUE, '#EC4899', '🍰'),
-    ('cat-drinks', 'Drinks', 'Beverages', NULL, 4, TRUE, '#3B82F6', '🍹'),
-    ('cat-sides', 'Sides', 'Side dishes', NULL, 5, TRUE, '#F59E0B', '🍟');
-
--- Sample Sub-Categories
-INSERT IGNORE INTO FoodMenuCategories (Id, Name, Description, ParentId, DisplayOrder, Active, Color, Icon)
-VALUES
-    ('subcat-soups', 'Soups', 'Hot and cold soups', 'cat-starters', 1, TRUE, '#22C55E', '🍜'),
-    ('subcat-salads', 'Salads', 'Fresh salads', 'cat-starters', 2, TRUE, '#22C55E', '🥗'),
-    ('subcat-chicken', 'Chicken', 'Chicken dishes', 'cat-mains', 1, TRUE, '#EF4444', '🍗'),
-    ('subcat-beef', 'Beef', 'Beef dishes', 'cat-mains', 2, TRUE, '#EF4444', '🥩'),
-    ('subcat-fish', 'Fish', 'Seafood dishes', 'cat-mains', 3, TRUE, '#EF4444', '🐟');
-
--- Sample Menu Items
-INSERT IGNORE INTO FoodMenuItems (Id, CategoryId, Name, Description, Price, Color, DisplayOrder, IsFeatured, PreparationTime, VatRate, IsVatExempt, print_in_red)
-VALUES
-    ('item-1', 'cat-starters', 'Garlic Bread', 'Freshly baked with garlic butter', 4.50, '#22C55E', 1, FALSE, 5, 20.00, FALSE, FALSE),
-    ('item-2', 'cat-starters', 'Soup of the Day', 'Ask your server for today\'s selection', 5.95, '#22C55E', 2, FALSE, 10, 20.00, FALSE, FALSE),
-    ('item-3', 'cat-mains', 'Grilled Chicken', 'Served with seasonal vegetables', 14.95, '#EF4444', 1, TRUE, 20, 20.00, FALSE, FALSE),
-    ('item-4', 'cat-mains', 'Fish & Chips', 'Beer-battered cod with hand-cut chips', 13.50, '#EF4444', 2, TRUE, 15, 20.00, FALSE, FALSE),
-    ('item-5', 'cat-desserts', 'Chocolate Brownie', 'Warm brownie with vanilla ice cream', 6.95, '#EC4899', 1, FALSE, 5, 20.00, FALSE, FALSE);
-
--- Sample Predefined Notes (Kitchen)
-INSERT IGNORE INTO PredefinedNotes (Id, NoteText, Category, Priority, DisplayOrder, Active, Color)
-VALUES
-    ('note-1', 'No onions', 'Allergy', 'normal', 1, TRUE, '#F59E0B'),
-    ('note-2', 'No garlic', 'Allergy', 'normal', 2, TRUE, '#F59E0B'),
-    ('note-3', 'Nut allergy - URGENT', 'Allergy', 'urgent', 3, TRUE, '#EF4444'),
-    ('note-4', 'Gluten free', 'Allergy', 'high', 4, TRUE, '#F97316'),
-    ('note-5', 'Well done', 'Cooking', 'normal', 5, TRUE, '#3B82F6'),
-    ('note-6', 'Medium rare', 'Cooking', 'normal', 6, TRUE, '#3B82F6'),
-    ('note-7', 'Extra sauce', 'Special', 'low', 7, TRUE, '#22C55E'),
-    ('note-8', 'No salt', 'Special', 'normal', 8, TRUE, '#22C55E');
-
--- Sample Predefined Comments (Customer-Facing)
-INSERT IGNORE INTO PredefinedComments (Id, CommentText, Category, DisplayOrder, Active, Color)
-VALUES
-    ('comment-1', 'Thank you for dining with us!', 'General', 1, TRUE, '#3B82F6'),
-    ('comment-2', 'Enjoy your meal', 'General', 2, TRUE, '#3B82F6'),
-    ('comment-3', 'Happy Birthday!', 'Special', 3, TRUE, '#EC4899'),
-    ('comment-4', 'Happy Anniversary!', 'Special', 4, TRUE, '#EC4899'),
-    ('comment-5', 'Please return the tray', 'Service', 5, TRUE, '#F59E0B');
 
 -- ========================================
 -- Verification Query

@@ -24,13 +24,16 @@ namespace POS_in_NET.Pages
         private readonly CloudSyncService _cloudService;
         private readonly OnlineOrderApiService _orderWebService;
         private readonly AuthenticationService _authService;
-        private readonly PostcodeLookupService _postcodeLookupService;
         private readonly OrderNumberService _orderNumberService;
+        private readonly DeliveryZoneService _deliveryZoneService;
+        private readonly DatabaseBackupService _databaseBackupService;
+        private readonly PostcodeLookupService _postcodeLookupService;
         
         // Cloud Connect Services
         private OrderWebWebSocketService? _webSocketService;
         private OrderWebRestApiService? _restApiService;
         private CloudOrderService? _cloudOrderService;
+        private OrderWebConnectionKeeperService? _connectionKeeper;
         private CloudConfiguration? _currentCloudConfig;
         private bool _isCloudApiKeyVisible = false;
         private bool _isCloudConnecting = false;
@@ -39,8 +42,9 @@ namespace POS_in_NET.Pages
         // Data models
         private BusinessInfo? _currentBusinessInfo;
         private ObservableCollection<User> _users;
+        private ObservableCollection<DatabaseBackupFileInfo> _backupHistory;
         private UserRole? _selectedRole;
-        private PostcodeLookupSettings _postcodeSettings;
+        private bool _hasLoadedInitialData;
 
         public UnifiedSettingsPage()
         {
@@ -53,15 +57,16 @@ namespace POS_in_NET.Pages
             _cloudService = new CloudSyncService(_databaseService);
             _orderWebService = new OnlineOrderApiService();
             _authService = AuthenticationService.Instance;
-            _postcodeLookupService = new PostcodeLookupService(_databaseService);
             _orderNumberService = new OrderNumberService(_databaseService);
+            _deliveryZoneService = new DeliveryZoneService(_databaseService);
+            _databaseBackupService = ServiceHelper.GetService<DatabaseBackupService>() ?? new DatabaseBackupService(_databaseService);
+            _postcodeLookupService = ServiceHelper.GetService<PostcodeLookupService>() ?? new PostcodeLookupService(_databaseService);
             
             // Initialize users collection
             _users = new ObservableCollection<User>();
             UsersCollectionView.ItemsSource = _users;
-            
-            // Initialize postcode settings
-            _postcodeSettings = new PostcodeLookupSettings();
+            _backupHistory = new ObservableCollection<DatabaseBackupFileInfo>();
+            BackupHistoryCollectionView.ItemsSource = _backupHistory;
             
             // Initialize role selection overlay
             RoleSelectionOverlay.RoleSelected += OnRoleSelected;
@@ -75,8 +80,11 @@ namespace POS_in_NET.Pages
             // Set initial active tab
             currentActiveTab = BusinessTabBorder;
             currentActiveContent = BusinessInfoContent;
-            
-            // Load initial data
+        }
+
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
             _ = LoadInitialDataAsync();
         }
 
@@ -84,23 +92,31 @@ namespace POS_in_NET.Pages
         {
             base.OnDisappearing();
             
-            // Clean up cloud status timer
             StopCloudStatusTimer();
+
+            if (_connectionKeeper != null)
+            {
+                _connectionKeeper.StatusChanged -= OnConnectionKeeperStatusChanged;
+            }
         }
 
         private async Task LoadInitialDataAsync()
         {
+            if (_hasLoadedInitialData)
+            {
+                return;
+            }
+
             try
             {
                 System.Diagnostics.Debug.WriteLine("Loading initial data for Settings page");
                 
-                // Show Business Info by default
-                ShowContent("BusinessInfo");
+                await MainThread.InvokeOnMainThreadAsync(() => ShowContent("BusinessInfo"));
                 
-                // Load business info data
                 await LoadBusinessInfoAsync();
                 await LoadOrderNumberSettingsAsync();
                 
+                _hasLoadedInitialData = true;
                 System.Diagnostics.Debug.WriteLine("Initial data loaded successfully");
             }
             catch (Exception ex)
@@ -152,22 +168,35 @@ namespace POS_in_NET.Pages
             }
         }
 
-        // Accordion toggle handlers for OrderWeb expandable sections
-        private void OnPostcodeSectionToggled(object sender, TappedEventArgs e)
+        private void OnDeliveryZoneTabClicked(object sender, EventArgs e)
         {
             try
             {
-                bool isVisible = PostcodeContent.IsVisible;
-                PostcodeContent.IsVisible = !isVisible;
-                PostcodeToggleIcon.Text = isVisible ? "▶" : "▼";
-                System.Diagnostics.Debug.WriteLine($"Postcode section toggled: {!isVisible}");
+                System.Diagnostics.Debug.WriteLine("Delivery Zone tab clicked");
+                UpdateTabAppearance(DeliveryZoneTabBorder);
+                ShowContent("DeliveryZone");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error toggling postcode section: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error in Delivery Zone tab click: {ex.Message}");
             }
         }
 
+        private void OnBackupTabClicked(object sender, EventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("Backup tab clicked");
+                UpdateTabAppearance(BackupTabBorder);
+                ShowContent("Backup");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in Backup tab click: {ex.Message}");
+            }
+        }
+
+        // Accordion toggle handlers for OrderWeb expandable sections
         private void OnCloudSectionToggled(object sender, TappedEventArgs e)
         {
             try
@@ -180,6 +209,24 @@ namespace POS_in_NET.Pages
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error toggling cloud section: {ex.Message}");
+            }
+        }
+
+        private void OnPostcodeSectionToggled(object sender, TappedEventArgs e)
+        {
+            try
+            {
+                var isVisible = PostcodeContent.IsVisible;
+                PostcodeContent.IsVisible = !isVisible;
+                PostcodeToggleIcon.Text = isVisible ? "▶" : "▼";
+                if (!isVisible)
+                {
+                    _ = LoadOrderWebAddressSettingsAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error toggling postcode section: {ex.Message}");
             }
         }
 
@@ -215,11 +262,15 @@ namespace POS_in_NET.Pages
                 BusinessTabBorder.BackgroundColor = Colors.Transparent;
                 UserTabBorder.BackgroundColor = Colors.Transparent;
                 OrderWebTabBorder.BackgroundColor = Colors.Transparent;
+                DeliveryZoneTabBorder.BackgroundColor = Colors.Transparent;
+                BackupTabBorder.BackgroundColor = Colors.Transparent;
                 
                 // Update button text colors for inactive state
                 UpdateTabButtonColor(BusinessTabBorder, Color.FromArgb("#475569"));
                 UpdateTabButtonColor(UserTabBorder, Color.FromArgb("#475569"));
                 UpdateTabButtonColor(OrderWebTabBorder, Color.FromArgb("#475569"));
+                UpdateTabButtonColor(DeliveryZoneTabBorder, Color.FromArgb("#475569"));
+                UpdateTabButtonColor(BackupTabBorder, Color.FromArgb("#475569"));
                 
                 // Set selected tab to active state
                 selectedTab.BackgroundColor = Color.FromArgb("#3B82F6");
@@ -268,6 +319,8 @@ namespace POS_in_NET.Pages
                 BusinessInfoContent.IsVisible = false;
                 UserInfoContent.IsVisible = false;
                 OrderWebContent.IsVisible = false;
+                DeliveryZoneContent.IsVisible = false;
+                BackupContent.IsVisible = false;
                 
                 // Show selected content
                 switch (contentType)
@@ -291,11 +344,24 @@ namespace POS_in_NET.Pages
                     case "OrderWeb":
                         OrderWebContent.IsVisible = true;
                         currentActiveContent = OrderWebContent;
-                        
-                        // Load postcode settings for OrderWeb
-                        _ = LoadOrderWebPostcodeSettingsAsync();
+
+                        InitializeCloudServices();
+                        _ = LoadCloudSettingsAsync();
+                        _ = LoadOrderWebAddressSettingsAsync();
                         
                         System.Diagnostics.Debug.WriteLine("OrderWeb content set to visible");
+                        break;
+                    case "DeliveryZone":
+                        DeliveryZoneContent.IsVisible = true;
+                        currentActiveContent = DeliveryZoneContent;
+                        _ = LoadDeliveryZonesAsync();
+                        System.Diagnostics.Debug.WriteLine("Delivery Zone content set to visible");
+                        break;
+                    case "Backup":
+                        BackupContent.IsVisible = true;
+                        currentActiveContent = BackupContent;
+                        _ = LoadBackupSectionAsync();
+                        System.Diagnostics.Debug.WriteLine("Backup content set to visible");
                         break;
                     default:
                         System.Diagnostics.Debug.WriteLine($"Unknown content type: {contentType}");
@@ -311,6 +377,551 @@ namespace POS_in_NET.Pages
         }
         #endregion
 
+        #region Database Backup Management
+        private async Task LoadBackupSectionAsync()
+        {
+            try
+            {
+                var config = TerminalConfigurationService.GetConfiguration();
+                var isAdmin = _authService.CurrentUser?.Role == UserRole.Admin;
+                var canUseBackup = isAdmin && TerminalRoleService.CanRunMotherJobs;
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    BackupTerminalLabel.Text = $"{config.TerminalName} ({config.Mode})";
+                    BackupDatabaseLabel.Text = config.DatabaseName;
+                    BackupNowButton.IsEnabled = canUseBackup;
+                    UploadRestoreButton.IsEnabled = canUseBackup;
+                    VerifyDatabaseButton.IsEnabled = canUseBackup;
+                    OpenBackupFolderButton.IsEnabled = isAdmin;
+
+                    BackupStatusLabel.Text = canUseBackup
+                        ? "Ready. Backup and restore actions are available on this Mother terminal."
+                        : (!isAdmin
+                            ? "Admin access is required for database backup and restore."
+                            : "Backup and restore must be run from the Mother terminal.");
+                    BackupStatusLabel.TextColor = canUseBackup ? Color.FromArgb("#047857") : Color.FromArgb("#B45309");
+                });
+
+                await LoadBackupHistoryAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Backup section load error: {ex.Message}");
+                BackupStatusLabel.Text = $"Could not load backup status: {ex.Message}";
+                BackupStatusLabel.TextColor = Color.FromArgb("#DC2626");
+            }
+        }
+
+        private async Task LoadBackupHistoryAsync()
+        {
+            var backups = await _databaseBackupService.GetBackupHistoryAsync();
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _backupHistory.Clear();
+                foreach (var backup in backups)
+                {
+                    _backupHistory.Add(backup);
+                }
+            });
+        }
+
+        private bool CanRunBackupActions()
+        {
+            return _authService.CurrentUser?.Role == UserRole.Admin && TerminalRoleService.CanRunMotherJobs;
+        }
+
+        private async Task<bool> RequireBackupPermissionAsync()
+        {
+            if (_authService.CurrentUser?.Role != UserRole.Admin)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can use database backup and restore.");
+                return false;
+            }
+
+            if (!TerminalRoleService.CanRunMotherJobs)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Mother Terminal Required", "Database backup and restore must be done on the Mother terminal.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private async void OnBackupNowClicked(object sender, EventArgs e)
+        {
+            if (!await RequireBackupPermissionAsync())
+            {
+                return;
+            }
+
+            try
+            {
+                BackupNowButton.IsEnabled = false;
+                BackupNowButton.Text = "Backing up...";
+                BackupStatusLabel.Text = "Creating database backup package...";
+                BackupStatusLabel.TextColor = Color.FromArgb("#0369A1");
+
+                var result = await _databaseBackupService.CreateBackupAsync("manual");
+                BackupStatusLabel.Text = result.Message;
+                BackupStatusLabel.TextColor = result.Success ? Color.FromArgb("#047857") : Color.FromArgb("#DC2626");
+
+                await LoadBackupHistoryAsync();
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(result.Success ? "Backup Complete" : "Backup Failed", result.Message);
+            }
+            finally
+            {
+                BackupNowButton.Text = "Backup Now";
+                BackupNowButton.IsEnabled = CanRunBackupActions();
+            }
+        }
+
+        private async void OnExportBackupClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: DatabaseBackupFileInfo backup })
+            {
+                return;
+            }
+
+            await ShareBackupAsync(backup.FilePath);
+        }
+
+        private async Task ShareBackupAsync(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Export Backup", "Backup file was not found.");
+                return;
+            }
+
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "Export OrderWeb backup",
+                File = new ShareFile(filePath)
+            });
+        }
+
+        private async void OnOpenBackupFolderClicked(object sender, EventArgs e)
+        {
+            try
+            {
+                var folder = DatabaseBackupService.GetBackupFolder();
+                Directory.CreateDirectory(folder);
+                await Launcher.Default.OpenAsync(new OpenFileRequest("Open backup folder", new ReadOnlyFile(folder)));
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Backup Folder", $"Could not open backup folder: {ex.Message}");
+            }
+        }
+
+        private async void OnRefreshBackupsClicked(object sender, EventArgs e)
+        {
+            await LoadBackupSectionAsync();
+        }
+
+        private async void OnVerifyDatabaseClicked(object sender, EventArgs e)
+        {
+            if (!await RequireBackupPermissionAsync())
+            {
+                return;
+            }
+
+            BackupStatusLabel.Text = "Verifying database...";
+            BackupStatusLabel.TextColor = Color.FromArgb("#0369A1");
+            var result = await _databaseBackupService.VerifyCurrentDatabaseAsync();
+            BackupStatusLabel.Text = result.Message;
+            BackupStatusLabel.TextColor = result.Success ? Color.FromArgb("#047857") : Color.FromArgb("#DC2626");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(result.Success ? "Database Verified" : "Verification Failed", result.Message);
+        }
+
+        private async void OnUploadRestoreBackupClicked(object sender, EventArgs e)
+        {
+            if (!await RequireBackupPermissionAsync())
+            {
+                return;
+            }
+
+            try
+            {
+                var file = await FilePicker.PickAsync(new PickOptions
+                {
+                    PickerTitle = "Select OrderWeb backup file",
+                    FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                    {
+                        { DevicePlatform.WinUI, [".orderwebbackup"] },
+                        { DevicePlatform.MacCatalyst, ["public.zip-archive"] },
+                        { DevicePlatform.iOS, ["public.zip-archive"] },
+                        { DevicePlatform.Android, ["application/zip"] }
+                    })
+                });
+
+                if (file == null)
+                {
+                    return;
+                }
+
+                await RestoreBackupFileAsync(file.FullPath);
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Restore Backup", $"Could not select backup: {ex.Message}");
+            }
+        }
+
+        private async void OnRestoreHistoryBackupClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: DatabaseBackupFileInfo backup })
+            {
+                return;
+            }
+
+            if (!await RequireBackupPermissionAsync())
+            {
+                return;
+            }
+
+            await RestoreBackupFileAsync(backup.FilePath);
+        }
+
+        private async Task RestoreBackupFileAsync(string backupPath)
+        {
+            if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Restore Backup", "Backup file was not found.");
+                return;
+            }
+
+            var verify = await _databaseBackupService.VerifyBackupAsync(backupPath);
+            if (!verify.Success)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Restore Blocked", verify.Message);
+                return;
+            }
+
+            var confirmWord = await DisplayPromptAsync(
+                "Restore Database",
+                "This will replace the current Mother database. Type RESTORE to continue.",
+                "Continue",
+                "Cancel",
+                "RESTORE",
+                maxLength: 7);
+
+            if (!string.Equals(confirmWord, "RESTORE", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var adminPin = await DisplayPromptAsync(
+                "Admin Verification",
+                "Enter an Admin PIN to restore the database.",
+                "Restore",
+                "Cancel",
+                "Admin PIN",
+                maxLength: 12,
+                keyboard: Keyboard.Numeric);
+
+            if (string.IsNullOrWhiteSpace(adminPin))
+            {
+                return;
+            }
+
+            var login = await _authService.LoginAsync(adminPin.Trim(), adminPin.Trim());
+            if (!login.Success || login.User?.Role != UserRole.Admin)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Admin PIN could not be verified.");
+                return;
+            }
+
+            var finalConfirm = await DisplayAlert(
+                "Final Confirmation",
+                "A safety backup will be created first. The app may need to restart after restore.",
+                "Restore Database",
+                "Cancel");
+
+            if (!finalConfirm)
+            {
+                return;
+            }
+
+            try
+            {
+                UploadRestoreButton.IsEnabled = false;
+                BackupNowButton.IsEnabled = false;
+                BackupStatusLabel.Text = "Restoring database. Do not close the app...";
+                BackupStatusLabel.TextColor = Color.FromArgb("#B91C1C");
+
+                await StopServicesForRestoreAsync();
+                var result = await _databaseBackupService.RestoreBackupAsync(backupPath);
+                BackupStatusLabel.Text = result.Message;
+                BackupStatusLabel.TextColor = result.Success ? Color.FromArgb("#047857") : Color.FromArgb("#DC2626");
+                await LoadBackupHistoryAsync();
+
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(result.Success ? "Restore Complete" : "Restore Failed", result.Message);
+                if (result.Success)
+                {
+                    _hasLoadedInitialData = false;
+                    await LoadInitialDataAsync();
+                }
+            }
+            finally
+            {
+                UploadRestoreButton.IsEnabled = CanRunBackupActions();
+                BackupNowButton.IsEnabled = CanRunBackupActions();
+            }
+        }
+
+        private async Task StopServicesForRestoreAsync()
+        {
+            try
+            {
+                InitializeCloudServices();
+                _cloudOrderService?.StopPolling();
+                if (_webSocketService?.IsConnected == true)
+                {
+                    await _webSocketService.DisconnectAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Restore service stop warning: {ex.Message}");
+            }
+        }
+        #endregion
+
+        #region Delivery Zone Management
+        private async Task LoadDeliveryZonesAsync()
+        {
+            try
+            {
+                await _deliveryZoneService.EnsureTablesAsync();
+                var zones = await _deliveryZoneService.GetZonesAsync();
+                var unassigned = await _deliveryZoneService.GetUnassignedPostcodesAsync();
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    DeliveryZonesCollectionView.ItemsSource = zones;
+                    UnassignedPostcodesCollectionView.ItemsSource = unassigned;
+                    DeliveryZoneCountLabel.Text = zones.Count == 1 ? "1 zone" : $"{zones.Count} zones";
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading delivery zones: {ex.Message}");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", $"Could not load delivery zones: {ex.Message}");
+            }
+        }
+
+        private async void OnCreateDeliveryZoneClicked(object sender, EventArgs e)
+        {
+            var zoneName = DeliveryZoneNameEntry.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(zoneName))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", "Enter a zone name.");
+                return;
+            }
+
+            if (!decimal.TryParse(DeliveryZoneFeeEntry.Text?.Trim(), out var fee) || fee < 0)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", "Enter a valid delivery fee.");
+                return;
+            }
+
+            try
+            {
+                await _deliveryZoneService.CreateZoneAsync(zoneName, fee);
+                DeliveryZoneNameEntry.Text = string.Empty;
+                DeliveryZoneFeeEntry.Text = string.Empty;
+                await LoadDeliveryZonesAsync();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", $"Could not create zone: {ex.Message}");
+            }
+        }
+
+        private async void OnDeleteDeliveryZoneClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: DeliveryZone zone })
+            {
+                return;
+            }
+
+            var confirm = await DisplayAlert("Delete Zone", $"Delete {zone.Name} and all its postcodes?", "Delete", "Cancel");
+            if (!confirm)
+            {
+                return;
+            }
+
+            try
+            {
+                await _deliveryZoneService.DeleteZoneAsync(zone.Id);
+                await LoadDeliveryZonesAsync();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", $"Could not delete zone: {ex.Message}");
+            }
+        }
+
+        private async void OnAddPostcodeToZoneClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: DeliveryZone zone } button)
+            {
+                return;
+            }
+
+            var entry = FindSiblingEntry(button);
+            var postcode = entry?.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(postcode))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", "Enter a full postcode.");
+                return;
+            }
+
+            try
+            {
+                await _deliveryZoneService.AddPostcodeAsync(zone.Id, postcode);
+                if (entry != null)
+                {
+                    entry.Text = string.Empty;
+                }
+                await LoadDeliveryZonesAsync();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", ex.Message);
+            }
+        }
+
+        private async void OnRemoveDeliveryPostcodeClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: DeliveryZonePostcode postcode })
+            {
+                return;
+            }
+
+            try
+            {
+                await _deliveryZoneService.RemovePostcodeAsync(postcode.Id);
+                await LoadDeliveryZonesAsync();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", $"Could not remove postcode: {ex.Message}");
+            }
+        }
+
+        private async void OnTestDeliveryZonePostcodeClicked(object sender, EventArgs e)
+        {
+            var rawPostcode = DeliveryZoneTestPostcodeEntry.Text?.Trim();
+            var normalized = DeliveryZoneService.NormalizePostcode(rawPostcode);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                DeliveryZoneTestResultLabel.Text = "Enter a postcode to check.";
+                DeliveryZoneTestResultLabel.TextColor = Color.FromArgb("#EF4444");
+                return;
+            }
+
+            try
+            {
+                var match = await _deliveryZoneService.FindZoneForPostcodeAsync(normalized);
+                if (match == null)
+                {
+                    DeliveryZoneTestResultLabel.Text = $"No delivery zone found for {normalized}.";
+                    DeliveryZoneTestResultLabel.TextColor = Color.FromArgb("#B45309");
+                }
+                else
+                {
+                    DeliveryZoneTestResultLabel.Text = $"{normalized} matches {match.ZoneName}. Delivery fee £{match.DeliveryFee:F2}.";
+                    DeliveryZoneTestResultLabel.TextColor = Color.FromArgb("#0F766E");
+                }
+            }
+            catch (Exception ex)
+            {
+                DeliveryZoneTestResultLabel.Text = ex.Message;
+                DeliveryZoneTestResultLabel.TextColor = Color.FromArgb("#EF4444");
+            }
+        }
+
+        private void OnCopyUnassignedPostcodeClicked(object sender, EventArgs e)
+        {
+            if (sender is Button { CommandParameter: UnassignedDeliveryPostcode row })
+            {
+                DeliveryZoneTestPostcodeEntry.Text = row.Postcode;
+                DeliveryZoneTestResultLabel.Text = $"{row.Postcode} copied. Add it to a zone postcode box when ready.";
+                DeliveryZoneTestResultLabel.TextColor = Color.FromArgb("#64748B");
+            }
+        }
+
+        private async void OnDeleteUnassignedPostcodeClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { CommandParameter: UnassignedDeliveryPostcode row })
+            {
+                return;
+            }
+
+            try
+            {
+                await _deliveryZoneService.DeleteUnassignedPostcodeAsync(row.Id);
+                await LoadDeliveryZonesAsync();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery Zone", $"Could not delete postcode: {ex.Message}");
+            }
+        }
+
+        private static Entry? FindSiblingEntry(Element element)
+        {
+            var parent = element.Parent;
+            while (parent != null)
+            {
+                var entry = FindDescendantEntry(parent);
+                if (entry != null)
+                {
+                    return entry;
+                }
+
+                parent = parent.Parent;
+            }
+
+            return null;
+        }
+
+        private static Entry? FindDescendantEntry(Element element)
+        {
+            if (element is Entry entry)
+            {
+                return entry;
+            }
+
+            if (element is Layout layout)
+            {
+                foreach (var child in layout.Children.OfType<Element>())
+                {
+                    var found = FindDescendantEntry(child);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            if (element is Border border && border.Content is Element borderContent)
+            {
+                return FindDescendantEntry(borderContent);
+            }
+
+            if (element is ContentView contentView && contentView.Content is Element content)
+            {
+                return FindDescendantEntry(content);
+            }
+
+            return null;
+        }
+        #endregion
+
         #region Business Info Management
         private async Task LoadBusinessInfoAsync()
         {
@@ -322,7 +933,6 @@ namespace POS_in_NET.Pages
 
                 if (_currentBusinessInfo == null)
                 {
-                    // Create default business info
                     _currentBusinessInfo = new BusinessInfo
                     {
                         RestaurantName = "",
@@ -339,20 +949,22 @@ namespace POS_in_NET.Pages
                     };
                 }
 
-                // Populate form fields
-                RestaurantNameEntry.Text = _currentBusinessInfo.RestaurantName;
-                PhoneEntry.Text = _currentBusinessInfo.PhoneNumber;
-                EmailEntry.Text = _currentBusinessInfo.Email;
-                AddressEntry.Text = _currentBusinessInfo.Address;
-                CityEntry.Text = _currentBusinessInfo.City;
-                CountyEntry.Text = _currentBusinessInfo.County;
-                CountryEntry.Text = _currentBusinessInfo.Country;
-                PostcodeEntry.Text = _currentBusinessInfo.Postcode;
-                WebsiteEntry.Text = _currentBusinessInfo.Website;
-                VATNumberEntry.Text = _currentBusinessInfo.VATNumber;
+                var businessInfo = _currentBusinessInfo;
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    RestaurantNameEntry.Text = businessInfo.RestaurantName;
+                    PhoneEntry.Text = businessInfo.PhoneNumber;
+                    EmailEntry.Text = businessInfo.Email;
+                    AddressEntry.Text = businessInfo.Address;
+                    CityEntry.Text = businessInfo.City;
+                    CountyEntry.Text = businessInfo.County;
+                    CountryEntry.Text = businessInfo.Country;
+                    PostcodeEntry.Text = businessInfo.Postcode;
+                    WebsiteEntry.Text = businessInfo.Website;
+                    VATNumberEntry.Text = businessInfo.VATNumber;
 
-                // Load logo if available
-                await LoadBusinessLogo();
+                    await LoadBusinessLogo();
+                });
                 
                 System.Diagnostics.Debug.WriteLine("Business info loaded and UI populated successfully");
             }
@@ -396,10 +1008,15 @@ namespace POS_in_NET.Pages
             try
             {
                 var settings = await _orderNumberService.GetCurrentSettingsAsync();
-                OrderPrefixEntry.Text = settings.Prefix;
-
                 var preview = await _orderNumberService.GetNextOrderNumbersPreviewAsync();
-                OrderExampleLabel.Text = $"Example: {preview.Table}";
+                var prefix = settings.Prefix;
+                var exampleText = $"Example: {preview.Table}";
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    OrderPrefixEntry.Text = prefix;
+                    OrderExampleLabel.Text = exampleText;
+                });
             }
             catch (Exception ex)
             {
@@ -834,14 +1451,17 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine("Loading users from database...");
                 
                 var users = await _authService.GetAllUsersAsync();
-                
-                _users.Clear();
-                foreach (var user in users)
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    _users.Add(user);
-                }
-                
-                System.Diagnostics.Debug.WriteLine($"Loaded {_users.Count} users from database");
+                    _users.Clear();
+                    foreach (var user in users)
+                    {
+                        _users.Add(user);
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"Loaded {_users.Count} users from database");
+                });
             }
             catch (Exception ex)
             {
@@ -869,6 +1489,103 @@ namespace POS_in_NET.Pages
         #endregion
 
         #region Postcode Lookup Management
+
+        private async Task LoadOrderWebAddressSettingsAsync()
+        {
+            try
+            {
+                var settings = await _postcodeLookupService.GetSettingsAsync();
+                OrderWebAddressApiKeyEntry.Text = settings.OrderWebAddressApiKey ?? string.Empty;
+
+                if (settings.TotalLookups > 0)
+                {
+                    OrderWebAddressStatsFrame.IsVisible = true;
+                    OrderWebAddressUsageLabel.Text = $"Total Lookups: {settings.TotalLookups:N0}";
+                    OrderWebAddressLastUsedLabel.Text = settings.LastUsed.HasValue
+                        ? $"Last Used: {settings.LastUsed.Value:g}"
+                        : "Last Used: Never";
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadOrderWebAddressSettingsAsync error: {ex.Message}");
+            }
+        }
+
+        private void OnToggleOrderWebAddressApiKeyClicked(object sender, EventArgs e)
+        {
+            OrderWebAddressApiKeyEntry.IsPassword = !OrderWebAddressApiKeyEntry.IsPassword;
+            ToggleOrderWebAddressApiKeyButton.Text = OrderWebAddressApiKeyEntry.IsPassword ? "Show" : "Hide";
+        }
+
+        private async void OnTestOrderWebAddressClicked(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(OrderWebAddressApiKeyEntry.Text))
+            {
+                await AppAlertService.ShowAlertAsync("Required", "Enter the OrderWeb address API key (owp_...).");
+                return;
+            }
+
+            try
+            {
+                TestOrderWebAddressButton.IsEnabled = false;
+                TestOrderWebAddressButton.Text = "...";
+                await _postcodeLookupService.TestConnectionAsync(OrderWebAddressApiKeyEntry.Text.Trim());
+                OrderWebAddressStatusFrame.IsVisible = true;
+                OrderWebAddressStatusFrame.BackgroundColor = Color.FromArgb("#D1FAE5");
+                OrderWebAddressStatusFrame.Stroke = Color.FromArgb("#10B981");
+                OrderWebAddressStatusText.Text = "Connected successfully.";
+                OrderWebAddressStatusText.TextColor = Color.FromArgb("#065F46");
+                await AppAlertService.ShowAlertAsync("Success", "OrderWeb address lookup is working.");
+            }
+            catch (Exception ex)
+            {
+                OrderWebAddressStatusFrame.IsVisible = true;
+                OrderWebAddressStatusFrame.BackgroundColor = Color.FromArgb("#FEE2E2");
+                OrderWebAddressStatusFrame.Stroke = Color.FromArgb("#EF4444");
+                OrderWebAddressStatusText.Text = ex.Message;
+                OrderWebAddressStatusText.TextColor = Color.FromArgb("#991B1B");
+                await AppAlertService.ShowAlertAsync("Test Failed", ex.Message);
+            }
+            finally
+            {
+                TestOrderWebAddressButton.IsEnabled = true;
+                TestOrderWebAddressButton.Text = "Test";
+            }
+        }
+
+        private async void OnSaveOrderWebAddressSettingsClicked(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(OrderWebAddressApiKeyEntry.Text))
+            {
+                await AppAlertService.ShowAlertAsync("Required", "Enter the OrderWeb address API key (owp_...).");
+                return;
+            }
+
+            try
+            {
+                var settings = new PostcodeLookupSettings
+                {
+                    OrderWebAddressApiKey = OrderWebAddressApiKeyEntry.Text.Trim(),
+                    OrderWebBaseUrl = OrderWebAddressLookupService.DefaultBaseUrl,
+                    OrderWebAddressEnabled = true
+                };
+
+                if (await _postcodeLookupService.SaveSettingsAsync(settings))
+                {
+                    await AppAlertService.ShowAlertAsync("Saved", "OrderWeb address lookup settings saved.");
+                    await LoadOrderWebAddressSettingsAsync();
+                }
+                else
+                {
+                    await AppAlertService.ShowAlertAsync("Error", "Could not save address lookup settings.");
+                }
+            }
+            catch (Exception ex)
+            {
+                await AppAlertService.ShowAlertAsync("Error", ex.Message);
+            }
+        }
 
         // User Management Event Handlers
         private async void OnCreateUserClicked(object sender, EventArgs e)
@@ -1048,12 +1765,62 @@ namespace POS_in_NET.Pages
                 _webSocketService = ServiceHelper.GetService<OrderWebWebSocketService>();
                 _restApiService = ServiceHelper.GetService<OrderWebRestApiService>();
                 _cloudOrderService = ServiceHelper.GetService<CloudOrderService>();
+                _connectionKeeper = ServiceHelper.GetService<OrderWebConnectionKeeperService>();
+
+                if (_connectionKeeper != null)
+                {
+                    _connectionKeeper.StatusChanged -= OnConnectionKeeperStatusChanged;
+                    _connectionKeeper.StatusChanged += OnConnectionKeeperStatusChanged;
+                    ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
+                }
                 
-                System.Diagnostics.Debug.WriteLine("✅ Cloud services initialized");
+                System.Diagnostics.Debug.WriteLine("Cloud services initialized");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to initialize cloud services: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Failed to initialize cloud services: {ex.Message}");
+            }
+        }
+
+        private void OnConnectionKeeperStatusChanged(OrderWebConnectionStatus status)
+        {
+            MainThread.BeginInvokeOnMainThread(() => ApplyCloudStatusFromKeeper(status));
+        }
+
+        private void ApplyCloudStatusFromKeeper(OrderWebConnectionStatus status)
+        {
+            if (status.IsFullyOperational)
+            {
+                UpdateCloudConnectionStatus("Connected", "#10B981", status.StatusMessage);
+            }
+            else if (status.IsConfigured && status.IsEnabled && status.IsApiHealthy && status.IsPollingActive)
+            {
+                UpdateCloudConnectionStatus("Partially Connected", "#F59E0B", status.StatusMessage);
+            }
+            else if (!string.IsNullOrWhiteSpace(status.LastError))
+            {
+                UpdateCloudConnectionStatus("Connection Failed", "#EF4444", status.LastError);
+            }
+            else if (!status.IsConfigured)
+            {
+                UpdateCloudConnectionStatus("Not Connected", "#6C757D", status.StatusMessage);
+            }
+            else
+            {
+                UpdateCloudConnectionStatus("Connecting...", "#007BFF", status.StatusMessage);
+            }
+
+            CloudStatusConnectionIcon.Text = status.IsWebSocketConnected ? "" : "";
+            CloudStatusConnectionText.Text = status.IsWebSocketConnected ? "Live" : "Offline";
+            CloudStatusConnectionText.TextColor = Color.FromArgb(status.IsWebSocketConnected ? "#10B981" : "#EF4444");
+
+            CloudStatusBackupIcon.Text = status.IsPollingActive ? "" : "⏸";
+            CloudStatusBackupText.Text = status.IsPollingActive ? "Active" : "Stopped";
+            CloudStatusBackupText.TextColor = Color.FromArgb(status.IsPollingActive ? "#10B981" : "#6B7280");
+
+            if (status.LastHealthCheckUtc != default)
+            {
+                CloudStatusLastCheckText.Text = status.LastHealthCheckUtc.ToLocalTime().ToString("HH:mm:ss");
             }
         }
 
@@ -1078,7 +1845,10 @@ namespace POS_in_NET.Pages
                     CloudApiKeyEntry.Text = _currentCloudConfig.ApiKey ?? "";
                     
                     // Clean up REST API URL - remove tenant suffix if present
-                    var restUrl = _currentCloudConfig.RestApiBaseUrl ?? "https://orderweb.net/api";
+                    var restUrl = !string.IsNullOrWhiteSpace(_currentCloudConfig.RestApiBaseUrl)
+                        ? _currentCloudConfig.RestApiBaseUrl
+                        : _currentCloudConfig.ApiBaseUrl;
+                    restUrl = string.IsNullOrWhiteSpace(restUrl) ? "https://orderweb.net/api" : restUrl;
                     if (restUrl.EndsWith($"/{_currentCloudConfig.TenantSlug}"))
                     {
                         restUrl = restUrl.Substring(0, restUrl.Length - _currentCloudConfig.TenantSlug.Length - 1);
@@ -1086,11 +1856,21 @@ namespace POS_in_NET.Pages
                     CloudRestApiUrlEntry.Text = restUrl;
                     
                     CloudWebSocketUrlEntry.Text = _currentCloudConfig.WebSocketUrl ?? "wss://orderweb.net:9011";
+                    ApplyCloudOnlineMasterUi(_currentCloudConfig);
                     
                     // Enable buttons if configuration is valid
                     EnableCloudButtonsIfReady();
                     
                     System.Diagnostics.Debug.WriteLine($"[Cloud] Settings loaded for tenant: {_currentCloudConfig.TenantSlug}");
+                }
+                else
+                {
+                    ApplyCloudOnlineMasterUi(null);
+                }
+                
+                if (_connectionKeeper != null)
+                {
+                    ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
                 }
                 
                 // Start status update timer
@@ -1111,15 +1891,32 @@ namespace POS_in_NET.Pages
             EnableCloudButtonsIfReady();
         }
 
+        private void ApplyCloudOnlineMasterUi(CloudConfiguration? cloudConfig)
+        {
+            var terminalConfig = TerminalConfigurationService.GetConfiguration();
+            var isMother = terminalConfig.IsMother;
+            var masterName = string.IsNullOrWhiteSpace(cloudConfig?.OnlineOrderMasterTerminalName)
+                ? terminalConfig.TerminalName
+                : cloudConfig!.OnlineOrderMasterTerminalName;
+
+            CloudOnlineMasterSwitch.IsEnabled = isMother;
+            CloudOnlineMasterSwitch.IsToggled = isMother && (cloudConfig?.OnlineOrderMasterEnabled ?? true);
+            CloudOnlineMasterLabel.Text = isMother
+                ? $"Master terminal: {masterName}. Turn on here to make this terminal receive online orders."
+                : "Child terminal: local POS only. Online orders run on the mother/master terminal.";
+        }
+
         private void EnableCloudButtonsIfReady()
         {
             bool hasRequiredFields = !string.IsNullOrWhiteSpace(TenantSlugEntry.Text) &&
                                    !string.IsNullOrWhiteSpace(CloudApiKeyEntry.Text) &&
                                    !string.IsNullOrWhiteSpace(CloudRestApiUrlEntry.Text);
+            var canUseCloudControls = TerminalConfigurationService.IsConfigured &&
+                                      TerminalConfigurationService.IsMotherTerminal;
             
-            CloudConnectButton.IsEnabled = hasRequiredFields && !_isCloudConnecting;
-            CloudSyncOrdersButton.IsEnabled = hasRequiredFields;
-            CloudSyncHistoricalButton.IsEnabled = hasRequiredFields;
+            CloudConnectButton.IsEnabled = hasRequiredFields && canUseCloudControls && !_isCloudConnecting;
+            CloudSyncOrdersButton.IsEnabled = hasRequiredFields && canUseCloudControls;
+            CloudSyncHistoricalButton.IsEnabled = hasRequiredFields && canUseCloudControls;
         }
 
         private void OnToggleCloudApiKeyClicked(object sender, EventArgs e)
@@ -1129,19 +1926,100 @@ namespace POS_in_NET.Pages
             ToggleCloudApiKeyButton.Text = _isCloudApiKeyVisible ? "Hide" : "Show";
         }
 
+        private CloudConfiguration BuildCloudConfigFromUi()
+        {
+            var tenantSlug = TenantSlugEntry.Text?.Trim() ?? "";
+            var restApiUrl = CloudRestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api";
+            if (!string.IsNullOrWhiteSpace(tenantSlug) && restApiUrl.EndsWith($"/{tenantSlug}", StringComparison.OrdinalIgnoreCase))
+            {
+                restApiUrl = restApiUrl[..^(tenantSlug.Length + 1)];
+            }
+
+            var wsUrl = CloudWebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net/ws/pos";
+            if (!string.IsNullOrWhiteSpace(tenantSlug) && wsUrl.EndsWith($"/{tenantSlug}", StringComparison.OrdinalIgnoreCase))
+            {
+                wsUrl = wsUrl[..^(tenantSlug.Length + 1)];
+            }
+
+            return new CloudConfiguration
+            {
+                TenantSlug = tenantSlug,
+                ApiKey = CloudApiKeyEntry.Text?.Trim() ?? "",
+                RestApiBaseUrl = restApiUrl,
+                ApiBaseUrl = restApiUrl,
+                WebSocketUrl = wsUrl,
+                IsEnabled = true,
+                AutoPrintEnabled = _currentCloudConfig?.AutoPrintEnabled ?? true,
+                NotificationsEnabled = _currentCloudConfig?.NotificationsEnabled ?? true,
+                OnlineOrderMasterEnabled = CloudOnlineMasterSwitch.IsToggled,
+                OnlineOrderMasterTerminalName = CloudOnlineMasterSwitch.IsToggled
+                    ? TerminalConfigurationService.GetConfiguration().TerminalName
+                    : (_currentCloudConfig?.OnlineOrderMasterTerminalName ?? "")
+            };
+        }
+
+        private async Task<bool> SaveCloudConfigFromUiAsync()
+        {
+            if (_databaseService == null)
+            {
+                return false;
+            }
+
+            var config = BuildCloudConfigFromUi();
+            if (string.IsNullOrWhiteSpace(config.TenantSlug) || string.IsNullOrWhiteSpace(config.ApiKey))
+            {
+                return false;
+            }
+
+            var saved = await _databaseService.SaveCloudConfigurationAsync(config);
+            if (saved)
+            {
+                _currentCloudConfig = config;
+            }
+
+            return saved;
+        }
+
+        private void UpdateCloudConnectionStatus(string status, string colorHex, string detail)
+        {
+            CloudConnectionStatusText.Text = status;
+            CloudConnectionStatusText.TextColor = Color.FromArgb(colorHex);
+            CloudConnectionStatusDescription.Text = detail;
+
+            if (status.Contains("Connected", StringComparison.OrdinalIgnoreCase) &&
+                !status.Contains("Disconnected", StringComparison.OrdinalIgnoreCase) &&
+                !status.Contains("Not Connected", StringComparison.OrdinalIgnoreCase))
+            {
+                CloudConnectionStatusFrame.BackgroundColor = Color.FromArgb("#D1FAE5");
+                CloudConnectionStatusFrame.Stroke = Color.FromArgb("#10B981");
+                CloudSystemStatusSection.IsVisible = true;
+            }
+            else if (status.Contains("Failed", StringComparison.OrdinalIgnoreCase) ||
+                     status.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                     status.Contains("Disconnected", StringComparison.OrdinalIgnoreCase))
+            {
+                CloudConnectionStatusFrame.BackgroundColor = Color.FromArgb("#FEE2E2");
+                CloudConnectionStatusFrame.Stroke = Color.FromArgb("#EF4444");
+            }
+            else
+            {
+                CloudConnectionStatusFrame.BackgroundColor = Color.FromArgb("#FEF3C7");
+                CloudConnectionStatusFrame.Stroke = Color.FromArgb("#F59E0B");
+            }
+        }
+
         private async void OnCloudSaveSettingsClicked(object sender, EventArgs e)
         {
             try
             {
                 System.Diagnostics.Debug.WriteLine("[Cloud] Saving settings...");
-                
-                var config = new CloudConfiguration
+                var config = BuildCloudConfigFromUi();
+
+                if (string.IsNullOrWhiteSpace(config.TenantSlug) || string.IsNullOrWhiteSpace(config.ApiKey))
                 {
-                    TenantSlug = TenantSlugEntry.Text?.Trim() ?? "",
-                    ApiKey = CloudApiKeyEntry.Text?.Trim() ?? "",
-                    RestApiBaseUrl = CloudRestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api",
-                    WebSocketUrl = CloudWebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net:9011"
-                };
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", "Please enter Tenant Slug and API Key.");
+                    return;
+                }
 
                 if (_databaseService != null)
                 {
@@ -1150,6 +2028,12 @@ namespace POS_in_NET.Pages
                     
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Cloud settings saved successfully!");
                     EnableCloudButtonsIfReady();
+                    UpdateCloudConnectionStatus("Saved", "#28A745", "Settings saved. Connection will stay active until you change them.");
+
+                    if (_connectionKeeper != null)
+                    {
+                        await _connectionKeeper.ApplyConfigurationAsync(config);
+                    }
                     
                     System.Diagnostics.Debug.WriteLine("[Cloud] Settings saved successfully");
                 }
@@ -1161,57 +2045,62 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async Task ConnectCloudServicesFromUiAsync()
+        {
+            if (!await SaveCloudConfigFromUiAsync())
+            {
+                throw new InvalidOperationException("Could not save cloud settings before connecting.");
+            }
+
+            _connectionKeeper ??= ServiceHelper.GetService<OrderWebConnectionKeeperService>();
+            if (_connectionKeeper == null)
+            {
+                throw new InvalidOperationException("OrderWeb connection keeper is not available.");
+            }
+
+            await _connectionKeeper.ApplyConfigurationAsync(_currentCloudConfig);
+            ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
+
+            if (!_connectionKeeper.Status.IsApiHealthy)
+            {
+                throw new InvalidOperationException(_connectionKeeper.Status.LastError ?? "OrderWeb API connection failed.");
+            }
+        }
+
         private async void OnCloudConnectClicked(object sender, EventArgs e)
         {
             if (_isCloudConnecting) return;
-            
+
             try
             {
+                var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+                if (!onlineMasterCheck.Allowed)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+                    UpdateCloudConnectionStatus("Local POS Only", "#6C757D", onlineMasterCheck.Reason);
+                    return;
+                }
+
                 _isCloudConnecting = true;
                 CloudConnectButton.Text = "Connecting...";
                 CloudConnectButton.IsEnabled = false;
-                
+                UpdateCloudConnectionStatus("Connecting...", "#007BFF", "Saving settings and testing OrderWeb.net connection");
+
                 System.Diagnostics.Debug.WriteLine("[Cloud] Connecting to OrderWeb...");
-                
-                // Test connection with current settings
-                var cloudService = ServiceHelper.GetService<CloudOrderService>();
-                if (cloudService != null && _currentCloudConfig != null)
-                {
-                    bool connected = await cloudService.TestConnectionAsync();
-                    
-                    if (connected)
-                    {
-                        // Update status to connected
-                        CloudConnectionStatusFrame.BackgroundColor = Color.FromArgb("#D1FAE5");
-                        CloudConnectionStatusFrame.Stroke = Color.FromArgb("#10B981");
-                        CloudConnectionStatusText.Text = "Connected";
-                        CloudConnectionStatusText.TextColor = Color.FromArgb("#10B981");
-                        CloudConnectionStatusDescription.Text = "Receiving orders in real-time";
-                        
-                        CloudSystemStatusSection.IsVisible = true;
-                        
-                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Successfully connected to OrderWeb.net!\n\nYou are now ready to receive orders.");
-                        
-                        System.Diagnostics.Debug.WriteLine("[Cloud] ✅ Connection successful");
-                    }
-                    else
-                    {
-                        throw new Exception("Connection test failed");
-                    }
-                }
+                await ConnectCloudServicesFromUiAsync();
+
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Success",
+                    "Connected to OrderWeb.net.\n\nREST API is active and order sync has started.");
+                System.Diagnostics.Debug.WriteLine("[Cloud] Connection successful");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Cloud] ❌ Connection failed: {ex.Message}");
-                
-                // Update status to error
-                CloudConnectionStatusFrame.BackgroundColor = Color.FromArgb("#FEE2E2");
-                CloudConnectionStatusFrame.Stroke = Color.FromArgb("#EF4444");
-                CloudConnectionStatusText.Text = "Connection Failed";
-                CloudConnectionStatusText.TextColor = Color.FromArgb("#EF4444");
-                CloudConnectionStatusDescription.Text = $"Error: {ex.Message}";
-                
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Connection Failed", $"Could not connect to OrderWeb.net:\n\n{ex.Message}\n\nPlease check your settings and try again.");
+                System.Diagnostics.Debug.WriteLine($"[Cloud] Connection failed: {ex.Message}");
+                UpdateCloudConnectionStatus("Connection Failed", "#EF4444", ex.Message);
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Connection Failed",
+                    $"Could not connect to OrderWeb.net:\n\n{ex.Message}\n\nPlease verify Tenant Slug, API Key, and URLs.");
             }
             finally
             {
@@ -1225,12 +2114,21 @@ namespace POS_in_NET.Pages
         {
             try
             {
+                var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+                if (!onlineMasterCheck.Allowed)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+                    return;
+                }
+
                 CloudSyncOrdersButton.Text = "Syncing...";
                 CloudSyncOrdersButton.IsEnabled = false;
                 
                 System.Diagnostics.Debug.WriteLine("[Cloud] Manual sync initiated...");
+
+                await SaveCloudConfigFromUiAsync();
                 
-                var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                var cloudService = ServiceHelper.GetService<CloudOrderService>() ?? _cloudOrderService;
                 if (cloudService != null)
                 {
                     var result = await cloudService.SyncOrdersByDateAsync(DateTime.Today.AddDays(-1));
@@ -1238,18 +2136,18 @@ namespace POS_in_NET.Pages
                     if (result.Success)
                     {
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Complete", $"Successfully synced {result.OrdersFound} orders from OrderWeb.net!");
-                        System.Diagnostics.Debug.WriteLine($"[Cloud] ✅ Sync completed: {result.OrdersFound} orders");
+                        System.Diagnostics.Debug.WriteLine($"[Cloud]  Sync completed: {result.OrdersFound} orders");
                     }
                     else
                     {
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Failed", $"Sync failed: {result.Message}");
-                        System.Diagnostics.Debug.WriteLine($"[Cloud] ❌ Sync failed: {result.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[Cloud]  Sync failed: {result.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Cloud] ❌ Sync error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Cloud]  Sync error: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Sync failed: {ex.Message}");
             }
             finally
@@ -1263,12 +2161,21 @@ namespace POS_in_NET.Pages
         {
             try
             {
+                var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+                if (!onlineMasterCheck.Allowed)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+                    return;
+                }
+
                 CloudSyncHistoricalButton.Text = "Syncing Historical...";
                 CloudSyncHistoricalButton.IsEnabled = false;
                 
                 System.Diagnostics.Debug.WriteLine("[Cloud] Historical sync initiated...");
+
+                await SaveCloudConfigFromUiAsync();
                 
-                var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                var cloudService = ServiceHelper.GetService<CloudOrderService>() ?? _cloudOrderService;
                 if (cloudService != null)
                 {
                     var result = await cloudService.SyncOrdersByDateAsync(DateTime.Today.AddDays(-60));
@@ -1276,23 +2183,23 @@ namespace POS_in_NET.Pages
                     if (result.Success)
                     {
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Historical Sync Complete", $"Successfully synced {result.OrdersFound} historical orders from the last 2 months!");
-                        System.Diagnostics.Debug.WriteLine($"[Cloud] ✅ Historical sync completed: {result.OrdersFound} orders");
+                        System.Diagnostics.Debug.WriteLine($"[Cloud]  Historical sync completed: {result.OrdersFound} orders");
                     }
                     else
                     {
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Historical Sync Failed", $"Historical sync failed: {result.Message}");
-                        System.Diagnostics.Debug.WriteLine($"[Cloud] ❌ Historical sync failed: {result.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[Cloud]  Historical sync failed: {result.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Cloud] ❌ Historical sync error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Cloud]  Historical sync error: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Historical sync failed: {ex.Message}");
             }
             finally
             {
-                CloudSyncHistoricalButton.Text = "📅 Sync Last 2 Months (Historical Orders)";
+                CloudSyncHistoricalButton.Text = "Sync Last 2 Months (Historical Orders)";
                 CloudSyncHistoricalButton.IsEnabled = true;
             }
         }
@@ -1319,37 +2226,18 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                if (_webSocketService != null)
+                if (_connectionKeeper != null)
                 {
-                    var status = _webSocketService.GetConnectionStatus();
-                    
-                    // Update connection status
-                    if (status == "Connected")
-                    {
-                        CloudStatusConnectionIcon.Text = "🟢";
-                        CloudStatusConnectionText.Text = "Live";
-                        CloudStatusConnectionText.TextColor = Color.FromArgb("#10B981");
-                        
-                        CloudStatusBackupIcon.Text = "✅";
-                        CloudStatusBackupText.Text = "Active";
-                        CloudStatusBackupText.TextColor = Color.FromArgb("#10B981");
-                    }
-                    else
-                    {
-                        CloudStatusConnectionIcon.Text = "🔴";
-                        CloudStatusConnectionText.Text = "Offline";
-                        CloudStatusConnectionText.TextColor = Color.FromArgb("#EF4444");
-                        
-                        CloudStatusBackupIcon.Text = "❌";
-                        CloudStatusBackupText.Text = "Inactive";
-                        CloudStatusBackupText.TextColor = Color.FromArgb("#EF4444");
-                    }
-                    
-                    // Update last check time
-                    CloudStatusLastCheckText.Text = DateTime.Now.ToString("HH:mm:ss");
+                    ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
                 }
-                
-                // Update device info
+                else if (_webSocketService != null)
+                {
+                    var isConnected = _webSocketService.IsConnected;
+                    CloudStatusConnectionIcon.Text = isConnected ? "" : "";
+                    CloudStatusConnectionText.Text = isConnected ? "Live" : "Offline";
+                    CloudStatusConnectionText.TextColor = Color.FromArgb(isConnected ? "#10B981" : "#EF4444");
+                }
+
                 CloudDeviceInfoText.Text = $"{DeviceInfo.Model} - {DeviceInfo.Platform}";
             }
             catch (Exception ex)
@@ -1360,201 +2248,5 @@ namespace POS_in_NET.Pages
 
         #endregion
 
-        #region OrderWeb Postcode Lookup Handlers
-
-        private async Task LoadOrderWebPostcodeSettingsAsync()
-        {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine("[OrderWeb] Loading postcode settings...");
-                
-                var settings = await _postcodeLookupService.GetSettingsAsync();
-                
-                if (settings != null)
-                {
-                    OrderWebMapboxTokenEntry.Text = settings.MapboxApiToken ?? "";
-                    
-                    // Show usage stats if there are any
-                    if (settings.TotalLookups > 0)
-                    {
-                        await LoadOrderWebUsageStatsAsync();
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine($"[OrderWeb] Postcode settings loaded. Total lookups: {settings.TotalLookups}");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("[OrderWeb] No postcode settings found");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[OrderWeb] Failed to load postcode settings: {ex.Message}");
-            }
-        }
-        
-        private void OnToggleOrderWebMapboxToken(object sender, EventArgs e)
-        {
-            OrderWebMapboxTokenEntry.IsPassword = !OrderWebMapboxTokenEntry.IsPassword;
-            ToggleOrderWebMapboxTokenButton.Text = OrderWebMapboxTokenEntry.IsPassword ? "Show" : "Hide";
-        }
-
-        private async void OnTestOrderWebMapboxClicked(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("===============================================");
-            System.Diagnostics.Debug.WriteLine("[ORDERWEB POSTCODE] Test connection clicked!");
-            System.Diagnostics.Debug.WriteLine("===============================================");
-            
-            if (string.IsNullOrWhiteSpace(OrderWebMapboxTokenEntry.Text))
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter your Mapbox API token");
-                return;
-            }
-
-            try
-            {
-                TestOrderWebMapboxButton.IsEnabled = false;
-                TestOrderWebMapboxButton.Text = "Testing...";
-
-                var token = OrderWebMapboxTokenEntry.Text?.Trim();
-                System.Diagnostics.Debug.WriteLine($"[OrderWeb PostcodeLookup] Token entered: {token?.Substring(0, Math.Min(30, token.Length))}...");
-
-                // Create temporary settings for testing
-                var testSettings = new PostcodeLookupSettings
-                {
-                    Provider = "Mapbox",
-                    MapboxApiToken = token,
-                    MapboxEnabled = true
-                };
-
-                System.Diagnostics.Debug.WriteLine("[OrderWeb PostcodeLookup] Saving test settings...");
-                await _postcodeLookupService.SaveSettingsAsync(testSettings);
-                
-                System.Diagnostics.Debug.WriteLine("[OrderWeb PostcodeLookup] Calling TestConnectionAsync()...");
-                await _postcodeLookupService.TestConnectionAsync();
-                System.Diagnostics.Debug.WriteLine("[OrderWeb PostcodeLookup] TestConnectionAsync() SUCCESS");
-
-                // Show success result
-                OrderWebMapboxStatusFrame.IsVisible = true;
-                OrderWebMapboxStatusFrame.BackgroundColor = Color.FromArgb("#D1FAE5");
-                OrderWebMapboxStatusFrame.Stroke = Color.FromArgb("#10B981");
-                OrderWebMapboxStatusText.Text = "Connected successfully!";
-                OrderWebMapboxStatusText.TextColor = Color.FromArgb("#10B981");
-
-                // Load and show usage stats
-                await LoadOrderWebUsageStatsAsync();
-                
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Mapbox connection successful!\n\nYou can now use postcode lookup in your OrderWeb delivery orders.");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[OrderWeb PostcodeLookup] ❌ Connection test FAILED: {ex.Message}");
-                
-                OrderWebMapboxStatusFrame.IsVisible = true;
-                OrderWebMapboxStatusFrame.BackgroundColor = Color.FromArgb("#FEE2E2");
-                OrderWebMapboxStatusFrame.Stroke = Color.FromArgb("#EF4444");
-                OrderWebMapboxStatusText.Text = $"Error: {ex.Message}";
-                OrderWebMapboxStatusText.TextColor = Color.FromArgb("#EF4444");
-                
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Test failed: {ex.Message}");
-            }
-            finally
-            {
-                TestOrderWebMapboxButton.IsEnabled = true;
-                TestOrderWebMapboxButton.Text = "Test Connection";
-            }
-        }
-
-        private async void OnSaveOrderWebPostcodeClicked(object sender, EventArgs e)
-        {
-            // Validate Mapbox token
-            if (string.IsNullOrWhiteSpace(OrderWebMapboxTokenEntry.Text))
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter your Mapbox API token");
-                return;
-            }
-
-            try
-            {
-                SaveOrderWebPostcodeButton.IsEnabled = false;
-                SaveOrderWebPostcodeButton.Text = "Saving...";
-
-                var settings = new PostcodeLookupSettings
-                {
-                    Provider = "Mapbox",
-                    MapboxApiToken = OrderWebMapboxTokenEntry.Text?.Trim() ?? "",
-                    MapboxEnabled = true,
-                    CustomEnabled = false
-                };
-
-                bool success = await _postcodeLookupService.SaveSettingsAsync(settings);
-
-                if (success)
-                {
-                    _postcodeSettings = settings;
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "OrderWeb postcode lookup settings saved successfully!");
-                }
-                else
-                {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Failed to save OrderWeb postcode settings");
-                }
-            }
-            catch (Exception ex)
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to save OrderWeb settings: {ex.Message}");
-            }
-            finally
-            {
-                SaveOrderWebPostcodeButton.IsEnabled = true;
-                SaveOrderWebPostcodeButton.Text = "Save Settings";
-            }
-        }
-
-        private async Task LoadOrderWebUsageStatsAsync()
-        {
-            try
-            {
-                var settings = await _postcodeLookupService.GetSettingsAsync();
-                
-                if (settings != null)
-                {
-                    OrderWebMapboxStatsFrame.IsVisible = true;
-                    OrderWebMapboxUsageLabel.Text = $"Total Lookups: {settings.TotalLookups}";
-                    OrderWebMapboxLastUsedLabel.Text = settings.LastUsed != null 
-                        ? $"Last Used: {settings.LastUsed:dd/MM/yyyy HH:mm}" 
-                        : "Last Used: Never";
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[OrderWeb PostcodeLookup] Failed to load usage stats: {ex.Message}");
-            }
-        }
-
-        private async void OnToggleOrderWebMapboxTokenClicked(object sender, EventArgs e)
-        {
-            try
-            {
-                if (sender is Button button)
-                {
-                    if (button.Text == "Show")
-                    {
-                        OrderWebMapboxTokenEntry.IsPassword = false;
-                        button.Text = "Hide";
-                    }
-                    else
-                    {
-                        OrderWebMapboxTokenEntry.IsPassword = true;
-                        button.Text = "Show";
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to toggle token visibility: {ex.Message}");
-            }
-        }
-
-        #endregion
     }
 }

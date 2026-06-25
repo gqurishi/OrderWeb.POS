@@ -52,6 +52,7 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested += OnRefreshRequested;
+            AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
 
@@ -63,6 +64,7 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
+            AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
         }
 
@@ -72,16 +74,27 @@ namespace POS_in_NET.Pages
             UpdateConnectionStatus();
         }
 
+        private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+        {
+            if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.TableLayout && e.Kind != AppDataChangeKind.All))
+            {
+                return;
+            }
+
+            await LoadRestaurantStatsAsync();
+            UpdateConnectionStatus();
+        }
+
         private async Task LoadRestaurantStatsAsync()
         {
             try
             {
                 // Stats removed from new design - can be added back if needed
-                System.Diagnostics.Debug.WriteLine($"✅ Restaurant Overview page loaded");
+                System.Diagnostics.Debug.WriteLine($" Restaurant Overview page loaded");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading restaurant page: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading restaurant page: {ex.Message}");
             }
         }
 
@@ -174,7 +187,7 @@ namespace POS_in_NET.Pages
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Logout error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Logout error: {ex.Message}");
                 // Still navigate to login even if logout service fails
                 await Shell.Current.GoToAsync("//login");
             }
@@ -187,14 +200,14 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("🔄 Refreshing restaurant data...");
+                System.Diagnostics.Debug.WriteLine(" Refreshing restaurant data...");
                 await LoadRestaurantStatsAsync();
                 UpdateConnectionStatus();
-                System.Diagnostics.Debug.WriteLine("✅ Restaurant data refreshed");
+                System.Diagnostics.Debug.WriteLine(" Restaurant data refreshed");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Refresh failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Refresh failed: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Refresh Failed", ex.Message);
             }
         }
@@ -208,11 +221,11 @@ namespace POS_in_NET.Pages
             {
                 // Disable button during sync
                 SyncNowButton.IsEnabled = false;
-                SyncNowButton.Text = "⚡ Syncing...";
-                ConnectionStatusLabel.Text = "⚡ Syncing...";
+                SyncNowButton.Text = "Syncing...";
+                ConnectionStatusLabel.Text = "Syncing...";
                 ConnectionStatusIndicator.Fill = Colors.Orange;
                 
-                System.Diagnostics.Debug.WriteLine("🔄 Manual sync initiated by user from Restaurant page");
+                System.Diagnostics.Debug.WriteLine("Manual sync initiated by user from Restaurant page");
                 
                 // Get cloud service
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
@@ -229,24 +242,24 @@ namespace POS_in_NET.Pages
                 var paymentFix = ServiceHelper.GetService<PaymentFixService>();
                 if (paymentFix != null)
                 {
-                    System.Diagnostics.Debug.WriteLine("🔧 Running manual payment fix...");
+                    System.Diagnostics.Debug.WriteLine(" Running manual payment fix...");
                     var fixResult = await paymentFix.FixTodaysPaymentsManuallyAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Payment fix result: {fixResult.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Payment fix result: {fixResult.Message}");
                 }
                 
                 // Update status
                 UpdateConnectionStatus();
                 
                 // Show success message briefly
-                await DisplayAlert("✅ Sync Complete", 
+                await DisplayAlert(" Sync Complete", 
                     result.Message + $"\nTotal orders today: {result.TotalOrders}", 
                     "OK");
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Manual sync complete: {result.Message}");
+                System.Diagnostics.Debug.WriteLine($" Manual sync complete: {result.Message}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Manual sync failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Manual sync failed: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Failed", ex.Message);
             }
             finally

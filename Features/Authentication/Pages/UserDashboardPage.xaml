@@ -123,16 +123,16 @@
                     
                     <!-- Restaurant Button -->
                     <Border Grid.Row="0" Grid.Column="0"
-                            BackgroundColor="#EFF6FF"
-                            Stroke="#BFDBFE"
-                            StrokeThickness="1"
+                            BackgroundColor="Transparent"
+                            Stroke="Transparent"
+                            StrokeThickness="0"
                             Padding="24"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
                         </Border.StrokeShape>
                         <Border.Shadow>
-                            <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12"/>
+                            <Shadow Brush="Transparent" Offset="0,0" Radius="0" Opacity="0"/>
                         </Border.Shadow>
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnRestaurantClicked"/>
@@ -154,16 +154,16 @@
                     
                     <!-- Delivery Button -->
                     <Border Grid.Row="0" Grid.Column="1"
-                            BackgroundColor="#EFF6FF"
-                            Stroke="#BFDBFE"
-                            StrokeThickness="1"
+                            BackgroundColor="Transparent"
+                            Stroke="Transparent"
+                            StrokeThickness="0"
                             Padding="24"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
                         </Border.StrokeShape>
                         <Border.Shadow>
-                            <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12"/>
+                            <Shadow Brush="Transparent" Offset="0,0" Radius="0" Opacity="0"/>
                         </Border.Shadow>
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnDeliveryClicked"/>
@@ -185,16 +185,16 @@
                     
                     <!-- Collection Button -->
                     <Border Grid.Row="0" Grid.Column="2"
-                            BackgroundColor="#EFF6FF"
-                            Stroke="#BFDBFE"
-                            StrokeThickness="1"
+                            BackgroundColor="Transparent"
+                            Stroke="Transparent"
+                            StrokeThickness="0"
                             Padding="24"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
                         </Border.StrokeShape>
                         <Border.Shadow>
-                            <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12"/>
+                            <Shadow Brush="Transparent" Offset="0,0" Radius="0" Opacity="0"/>
                         </Border.Shadow>
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnCollectionClicked"/>
@@ -216,16 +216,16 @@
 
                     <!-- Live Order Button -->
                     <Border Grid.Row="1" Grid.Column="1"
-                            BackgroundColor="#EFF6FF"
-                            Stroke="#BFDBFE"
-                            StrokeThickness="1"
+                            BackgroundColor="Transparent"
+                            Stroke="Transparent"
+                            StrokeThickness="0"
                             Padding="24"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
                         </Border.StrokeShape>
                         <Border.Shadow>
-                            <Shadow Brush="#3B82F6" Offset="0,8" Radius="18" Opacity="0.12"/>
+                            <Shadow Brush="Transparent" Offset="0,0" Radius="0" Opacity="0"/>
                         </Border.Shadow>
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnLiveOrderClicked"/>

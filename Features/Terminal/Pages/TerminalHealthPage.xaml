@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.TerminalHealthPage"
+             Title="Terminal Health"
+             BackgroundColor="#F8FAFC">
+    <Grid RowDefinitions="Auto,*">
+        <views:TopBar x:Name="TopBar" Grid.Row="0" />
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20" Spacing="14">
+                <Border Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        StrokeShape="RoundRectangle 18"
+                        Padding="16">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Terminal Safety"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="34"
+                                   TextColor="#0F172A" />
+                            <Label Text="{Binding SummaryText}"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="13"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+
+                        <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                            <Button Text="Add Child Terminal"
+                                    IsVisible="{Binding CanAddChildTerminal}"
+                                    Clicked="OnAddChildTerminalClicked"
+                                    BackgroundColor="#0F766E"
+                                    TextColor="White"
+                                    CornerRadius="10"
+                                    Padding="18,10"
+                                    FontFamily="OpenSansSemibold" />
+                            <Button Text="Reconfigure This Terminal"
+                                    Clicked="OnReconfigureTerminalClicked"
+                                    BackgroundColor="#475569"
+                                    TextColor="White"
+                                    CornerRadius="10"
+                                    Padding="18,10"
+                                    FontFamily="OpenSansSemibold" />
+                            <Button Text="Refresh"
+                                    Clicked="OnRefreshClicked"
+                                    BackgroundColor="#0284C7"
+                                    TextColor="White"
+                                    CornerRadius="10"
+                                    Padding="18,10"
+                                    FontFamily="OpenSansSemibold" />
+                        </HorizontalStackLayout>
+                    </Grid>
+                </Border>
+
+                <Border IsVisible="{Binding CanAddChildTerminal}"
+                        Stroke="#BFDBFE"
+                        StrokeThickness="1"
+                        BackgroundColor="#EFF6FF"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="14">
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Mother Connection Details"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="15"
+                               TextColor="#1E40AF" />
+                        <Label Text="{Binding MotherConnectionText}"
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#334155"
+                               LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                    <Border Stroke="#BBF7D0" StrokeThickness="1" BackgroundColor="#F0FDF4" StrokeShape="RoundRectangle 14" Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Online"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#166534" />
+                            <Label Text="{Binding OnlineCountText}"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="28"
+                                   TextColor="#059669" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="1" Stroke="#FECACA" StrokeThickness="1" BackgroundColor="#FEF2F2" StrokeShape="RoundRectangle 14" Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Offline"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#991B1B" />
+                            <Label Text="{Binding OfflineCountText}"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="28"
+                                   TextColor="#DC2626" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="2" Stroke="#BFDBFE" StrokeThickness="1" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Last Check"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#1E40AF" />
+                            <Label Text="{Binding LastCheckText}"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="22"
+                                   TextColor="#1D4ED8" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <Border Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        StrokeShape="RoundRectangle 18"
+                        Padding="16">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="3">
+                                <Label Text="Terminals"
+                                       FontFamily="OpenSansSemibold"
+                                       FontSize="16"
+                                       TextColor="#0F172A" />
+                                <Label Text="A terminal is online when its shared database heartbeat was seen in the last 45 seconds."
+                                       FontFamily="OpenSansRegular"
+                                       FontSize="12"
+                                       TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <Label Grid.Column="1"
+                                   Text="{Binding CurrentTerminalText}"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#334155"
+                                   VerticalTextAlignment="Center" />
+                        </Grid>
+
+                        <CollectionView ItemsSource="{Binding Terminals}" HeightRequest="360" SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Label Text="No terminal heartbeat records yet."
+                                       FontFamily="OpenSansRegular"
+                                       FontSize="13"
+                                       TextColor="#64748B"
+                                       Margin="0,12" />
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Stroke="#E2E8F0"
+                                            StrokeThickness="1"
+                                            BackgroundColor="#FFFFFF"
+                                            StrokeShape="RoundRectangle 12"
+                                            Padding="12"
+                                            Margin="0,0,0,8">
+                                        <Grid ColumnDefinitions="1.4*,1.0*,1.2*,Auto,Auto" ColumnSpacing="12">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="{Binding TerminalName}"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="14"
+                                                       TextColor="#0F172A" />
+                                                <Label Text="{Binding DetailDisplay}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="11"
+                                                       TextColor="#64748B"
+                                                       LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
+
+                                            <Label Grid.Column="1"
+                                                   Text="{Binding ModeDisplay}"
+                                                   FontFamily="OpenSansSemibold"
+                                                   FontSize="12"
+                                                   TextColor="#334155"
+                                                   VerticalTextAlignment="Center" />
+
+                                            <Label Grid.Column="2"
+                                                   Text="{Binding LastSeenDisplay}"
+                                                   FontFamily="OpenSansRegular"
+                                                   FontSize="12"
+                                                   TextColor="#64748B"
+                                                   VerticalTextAlignment="Center" />
+
+                                            <Border Grid.Column="3"
+                                                    BackgroundColor="#F8FAFC"
+                                                    Stroke="{Binding StatusColor}"
+                                                    StrokeThickness="1"
+                                                    StrokeShape="RoundRectangle 10"
+                                                    Padding="12,7"
+                                                    VerticalOptions="Center">
+                                                <Label Text="{Binding StatusDisplay}"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="12"
+                                                       TextColor="{Binding StatusColor}" />
+                                            </Border>
+
+                                            <Button Grid.Column="4"
+                                                    Text="Delete"
+                                                    IsVisible="{Binding CanDeleteTerminal}"
+                                                    Clicked="OnDeleteTerminalClicked"
+                                                    BackgroundColor="#FEF2F2"
+                                                    TextColor="#DC2626"
+                                                    BorderColor="#FECACA"
+                                                    BorderWidth="1"
+                                                    CornerRadius="10"
+                                                    Padding="12,7"
+                                                    FontSize="12"
+                                                    FontFamily="OpenSansSemibold"
+                                                    VerticalOptions="Center" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Border Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 18"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Mother Sleep Safety"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="16"
+                                   TextColor="#0F172A" />
+                            <Label Text="{Binding SleepSafetyText}"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="13"
+                                   TextColor="#475569"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 18"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <Label Text="Database Backup"
+                                       FontFamily="OpenSansSemibold"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       VerticalTextAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Text="Backup Now"
+                                        IsVisible="{Binding CanRunBackup}"
+                                        Clicked="OnBackupNowClicked"
+                                        BackgroundColor="#0F766E"
+                                        TextColor="White"
+                                        CornerRadius="10"
+                                        Padding="14,8"
+                                        FontFamily="OpenSansSemibold" />
+                            </Grid>
+                            <Label Text="{Binding BackupStatusText}"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="13"
+                                   TextColor="#475569"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

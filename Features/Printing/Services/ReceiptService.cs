@@ -222,7 +222,7 @@ public class ReceiptService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🖨️ Printing order: {order.OrderNumber}");
+            System.Diagnostics.Debug.WriteLine($" Printing order: {order.OrderNumber}");
             
             // Update print status to "printing"
             order.PrintStatus = "printing";
@@ -237,7 +237,7 @@ public class ReceiptService
             order.PrintedAt = DateTime.UtcNow;
             order.PrintError = null;
             
-            System.Diagnostics.Debug.WriteLine($"✅ Print successful: {order.OrderNumber}");
+            System.Diagnostics.Debug.WriteLine($" Print successful: {order.OrderNumber}");
             
             // Send ACK to cloud (NEW!)
             if (_cloudOrderService != null)
@@ -249,7 +249,7 @@ public class ReceiptService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Print failed: {order.OrderNumber} - {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Print failed: {order.OrderNumber} - {ex.Message}");
             
             // Print failed - update status
             order.PrintStatus = "failed";
@@ -272,14 +272,14 @@ public class ReceiptService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🖨️ Printing cloud order: {order.OrderNumber}");
+            System.Diagnostics.Debug.WriteLine($" Printing cloud order: {order.OrderNumber}");
             
             var receiptText = await GenerateReceiptTextAsync(order);
             
             // Print to system
             await PrintToSystemAsync(receiptText);
             
-            System.Diagnostics.Debug.WriteLine($"✅ Print successful: {order.OrderNumber}");
+            System.Diagnostics.Debug.WriteLine($" Print successful: {order.OrderNumber}");
             
             // Send ACK to cloud (NEW!)
             if (_cloudOrderService != null)
@@ -291,7 +291,7 @@ public class ReceiptService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Print failed: {order.OrderNumber} - {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Print failed: {order.OrderNumber} - {ex.Message}");
             
             // Send failure ACK (NEW!)
             if (_cloudOrderService != null)
@@ -310,6 +310,11 @@ public class ReceiptService
     {
         try
         {
+            if (await TryPrintToSharedReceiptPrinterAsync(receiptText))
+            {
+                return;
+            }
+
             // Platform-specific printing implementation
 #if WINDOWS
             await PrintWindows(receiptText);
@@ -330,6 +335,52 @@ public class ReceiptService
         {
             System.Diagnostics.Debug.WriteLine($"System printing failed: {ex.Message}");
             throw;
+        }
+    }
+
+    private async Task<bool> TryPrintToSharedReceiptPrinterAsync(string receiptText)
+    {
+        try
+        {
+            var printerDb = new NetworkPrinterDatabaseService(new DatabaseService());
+            var printerService = new NetworkPrinterService();
+
+            var receiptPrinter = (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Receipt))
+                .FirstOrDefault(printer => printer.IsEnabled);
+
+            receiptPrinter ??= (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Online))
+                .FirstOrDefault(printer => printer.IsEnabled);
+
+            if (receiptPrinter == null)
+            {
+                return false;
+            }
+
+            var builder = new EscPosBuilder(receiptPrinter.Brand, receiptPrinter.PaperWidth)
+                .Initialize()
+                .SetAlign(TextAlign.Left);
+
+            foreach (var line in receiptText.Replace("\r\n", "\n").Split('\n'))
+            {
+                builder.PrintLine(line);
+            }
+
+            builder.FeedLines(2);
+            if (receiptPrinter.HasCutter)
+            {
+                builder.Cut(true);
+            }
+
+            var sent = await printerService.SendToPrinterAsync(receiptPrinter, builder.Build());
+            System.Diagnostics.Debug.WriteLine(sent
+                ? $" Receipt printed to shared printer {receiptPrinter.Name}"
+                : $" Shared receipt printer failed: {receiptPrinter.Name}");
+            return sent;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Shared receipt printer unavailable: {ex.Message}");
+            return false;
         }
     }
 

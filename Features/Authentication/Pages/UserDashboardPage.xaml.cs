@@ -1,5 +1,6 @@
 using POS_in_NET.Services;
 using POS_in_NET.Models;
+using System.Linq;
 using System.Timers;
 
 namespace POS_in_NET.Pages;
@@ -12,6 +13,7 @@ public partial class UserDashboardPage : ContentPage
     private readonly BusinessSettingsService _businessSettingsService;
     private System.Timers.Timer? _timeTimer;
     private User? _currentUser;
+    private bool _isRestaurantNavigationInProgress;
 
     public UserDashboardPage()
     {
@@ -160,17 +162,27 @@ public partial class UserDashboardPage : ContentPage
 
     private async void OnRestaurantClicked(object sender, EventArgs e)
     {
+        if (_isRestaurantNavigationInProgress)
+        {
+            return;
+        }
+
         _inactivityService.ResetActivity();
 
         try
         {
+            _isRestaurantNavigationInProgress = true;
             System.Diagnostics.Debug.WriteLine("Restaurant button clicked - User Dashboard - Navigating directly to visual tables");
-            await NavigateToAllowedRouteAsync("restaurant");
+            await NavigateToAllowedRouteAsync("restaurant", resetShellStacks: true);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Restaurant navigation error: {ex.Message}");
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to open Restaurant module");
+        }
+        finally
+        {
+            _isRestaurantNavigationInProgress = false;
         }
     }
 
@@ -196,7 +208,7 @@ public partial class UserDashboardPage : ContentPage
         Shell.Current.FlyoutIsPresented = true;
     }
 
-    private async Task NavigateToAllowedRouteAsync(string requestedRoute, bool isModal = false)
+    private async Task NavigateToAllowedRouteAsync(string requestedRoute, bool isModal = false, bool resetShellStacks = false)
     {
         _inactivityService.ResetActivity();
 
@@ -213,7 +225,37 @@ public partial class UserDashboardPage : ContentPage
             return;
         }
 
-        await Shell.Current.GoToAsync($"//{route}");
+        if (resetShellStacks)
+        {
+            ClearShellDetailStacks();
+        }
+
+        await Shell.Current.GoToAsync($"//{route}", false);
+    }
+
+    private static void ClearShellDetailStacks()
+    {
+        if (Shell.Current is not Shell shell)
+        {
+            return;
+        }
+
+        foreach (var shellItem in shell.Items)
+        {
+            foreach (var shellSection in shellItem.Items)
+            {
+                var nav = shellSection.Navigation;
+                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
+                {
+                    continue;
+                }
+
+                foreach (var page in nav.NavigationStack.Skip(1).ToList())
+                {
+                    nav.RemovePage(page);
+                }
+            }
+        }
     }
 
     private async void OnLogoutClicked(object sender, EventArgs e)

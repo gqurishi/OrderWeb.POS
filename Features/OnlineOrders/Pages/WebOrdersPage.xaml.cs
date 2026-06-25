@@ -68,30 +68,30 @@ namespace POS_in_NET.Pages
             // Set BindingContext for data binding
             BindingContext = this;
             
-            // ✅ CRITICAL: Subscribe to WebSocket order updates for REAL-TIME delivery
+            //  CRITICAL: Subscribe to WebSocket order updates for REAL-TIME delivery
             var wsService = ServiceHelper.GetService<OrderWebWebSocketService>();
             if (wsService != null)
             {
                 wsService.NewOrderReceived += (sender, args) => {
-                    System.Diagnostics.Debug.WriteLine($"🎉 WEBSOCKET ORDER RECEIVED: {args.OrderNumber} - {args.CustomerName} - ${args.TotalAmount}");
+                    System.Diagnostics.Debug.WriteLine($" WEBSOCKET ORDER RECEIVED: {args.OrderNumber} - {args.CustomerName} - ${args.TotalAmount}");
                     RefreshWebOrders();
                 };
-                System.Diagnostics.Debug.WriteLine("✅ WebSocket event subscription active!");
+                System.Diagnostics.Debug.WriteLine(" WebSocket event subscription active!");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ WebSocket service not found!");
+                System.Diagnostics.Debug.WriteLine(" WebSocket service not found!");
             }
             
-            // ✅ Subscribe to CloudService.OnOrdersUpdated for automatic polling updates
+            //  Subscribe to CloudService.OnOrdersUpdated for automatic polling updates
             var cloudService = ServiceHelper.GetService<CloudOrderService>();
             if (cloudService != null)
             {
                 cloudService.OnOrdersUpdated += () => {
-                    System.Diagnostics.Debug.WriteLine("🔔 CloudService detected new orders - refreshing UI!");
+                    System.Diagnostics.Debug.WriteLine(" CloudService detected new orders - refreshing UI!");
                     RefreshWebOrders();
                 };
-                System.Diagnostics.Debug.WriteLine("✅ CloudService polling event subscription active!");
+                System.Diagnostics.Debug.WriteLine(" CloudService polling event subscription active!");
             }
             
             // Now link WebSocket to CloudService
@@ -100,7 +100,7 @@ namespace POS_in_NET.Pages
                 // Keep WebSocket and polling on the same order-processing path.
                 cloudService.SetWebSocketService(wsService);
                 wsService.SetCloudOrderService(cloudService);
-                System.Diagnostics.Debug.WriteLine("✅ CloudService and WebSocket linked for shared order processing");
+                System.Diagnostics.Debug.WriteLine(" CloudService and WebSocket linked for shared order processing");
             }
             
             // Start status update timer (every 10 seconds)
@@ -114,7 +114,7 @@ namespace POS_in_NET.Pages
             if (directDbService != null)
             {
                 directDbService.OnNewOrdersDetected += () => {
-                    System.Diagnostics.Debug.WriteLine("⚡ INSTANT UPDATE: New orders detected via direct database - refreshing UI immediately!");
+                    System.Diagnostics.Debug.WriteLine(" INSTANT UPDATE: New orders detected via direct database - refreshing UI immediately!");
                     RefreshWebOrders();
                 };
             }
@@ -135,11 +135,11 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            // ❌ NO AUTO-REFRESH TIMER - Page only refreshes from:
+            //  NO AUTO-REFRESH TIMER - Page only refreshes from:
             // 1. WebSocket messages (real-time)
             // 2. Manual "Sync Now" button
             // 3. Initial page load
-            System.Diagnostics.Debug.WriteLine("📄 OnAppearing - Web Orders page opened (NO auto-refresh timer)");
+            System.Diagnostics.Debug.WriteLine(" OnAppearing - Web Orders page opened (NO auto-refresh timer)");
         }
 
         protected override void OnDisappearing()
@@ -152,35 +152,35 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("🔄 LoadPageAsync START");
+                System.Diagnostics.Debug.WriteLine(" LoadPageAsync START");
                 
                 LoadingIndicator.IsVisible = true;
                 LoadingIndicator.IsRunning = true;
 
                 // Get current user (optional - no redirect if not found)
                 _currentUser = _authService?.GetCurrentUser();
-                System.Diagnostics.Debug.WriteLine($"👤 Current user: {_currentUser?.Username ?? "None"}");
+                System.Diagnostics.Debug.WriteLine($" Current user: {_currentUser?.Username ?? "None"}");
 
                 // Update UI for web orders display
                 UpdateUIForUserRole();
-                System.Diagnostics.Debug.WriteLine("✅ UpdateUIForUserRole completed");
+                System.Diagnostics.Debug.WriteLine(" UpdateUIForUserRole completed");
                 
                 // DEBUG: Check WebSocket connection status
                 var wsService = ServiceHelper.GetService<OrderWebWebSocketService>();
                 if (wsService != null)
                 {
                     var status = wsService.GetConnectionStatus();
-                    System.Diagnostics.Debug.WriteLine($"🔍 WebSocket Status: {status}");
+                    System.Diagnostics.Debug.WriteLine($" WebSocket Status: {status}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("❌ WebSocket service is NULL!");
+                    System.Diagnostics.Debug.WriteLine(" WebSocket service is NULL!");
                 }
                 
                 // Initialize date picker to TODAY
                 _selectedDate = DateTime.Today;
                 DateDisplayLabel.Text = _selectedDate.ToString("dd MMM yyyy");
-                System.Diagnostics.Debug.WriteLine($"📅 Date picker initialized to: {_selectedDate:MMM dd, yyyy}");
+                System.Diagnostics.Debug.WriteLine($" Date picker initialized to: {_selectedDate:MMM dd, yyyy}");
                 
                 // Smart Auto-sync: Always sync from start of today to catch ALL orders
                 // This ensures we never miss orders that came when app was closed
@@ -190,7 +190,7 @@ namespace POS_in_NET.Pages
                 {
                     try
                     {
-                        System.Diagnostics.Debug.WriteLine("🔄 Smart Auto-sync: Syncing all orders from today...");
+                        System.Diagnostics.Debug.WriteLine(" Smart Auto-sync: Syncing all orders from today...");
                         
                         // Get the latest order from database to check if we need historical sync
                         var allOrders = await orderService.GetOrdersAsync();
@@ -206,42 +206,42 @@ namespace POS_in_NET.Pages
                             // Latest order is from today or yesterday - sync from start of today
                             // This catches ALL orders including those that came when app was closed
                             syncFromDate = DateTime.Today;
-                            System.Diagnostics.Debug.WriteLine($"📅 Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
-                            System.Diagnostics.Debug.WriteLine($"🔄 Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (START OF TODAY)");
+                            System.Diagnostics.Debug.WriteLine($" Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
+                            System.Diagnostics.Debug.WriteLine($" Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (START OF TODAY)");
                         }
                         else if (latestOrder != null)
                         {
                             // Latest order is older - sync from 7 days ago to catch recent history
                             syncFromDate = DateTime.Today.AddDays(-7);
-                            System.Diagnostics.Debug.WriteLine($"📅 Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
-                            System.Diagnostics.Debug.WriteLine($"🔄 Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (LAST 7 DAYS)");
+                            System.Diagnostics.Debug.WriteLine($" Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
+                            System.Diagnostics.Debug.WriteLine($" Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (LAST 7 DAYS)");
                         }
                         else
                         {
                             // No orders in database - sync last 60 days for initial setup
                             syncFromDate = DateTime.Today.AddDays(-60);
-                            System.Diagnostics.Debug.WriteLine($"📅 No orders in database, syncing last 60 days from {syncFromDate:yyyy-MM-dd}");
+                            System.Diagnostics.Debug.WriteLine($" No orders in database, syncing last 60 days from {syncFromDate:yyyy-MM-dd}");
                         }
                         
                         var syncResult = await cloudService.SyncOrdersByDateAsync(syncFromDate);
-                        System.Diagnostics.Debug.WriteLine($"✅ Smart sync complete: {syncResult.Message}");
-                        System.Diagnostics.Debug.WriteLine($"📊 Found {syncResult.OrdersFound} orders from API");
+                        System.Diagnostics.Debug.WriteLine($" Smart sync complete: {syncResult.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Found {syncResult.OrdersFound} orders from API");
                         
                         if (syncResult.OrdersFound > 0)
                         {
-                            System.Diagnostics.Debug.WriteLine($"🔄 Reloading orders after syncing {syncResult.OrdersFound} new orders...");
+                            System.Diagnostics.Debug.WriteLine($" Reloading orders after syncing {syncResult.OrdersFound} new orders...");
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"❌ Smart sync error: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Smart sync error: {ex.Message}");
                     }
                 }
                 
                 // Load web orders from database (after smart sync completes)
-                System.Diagnostics.Debug.WriteLine("📦 About to call LoadWebOrdersAsync...");
+                System.Diagnostics.Debug.WriteLine(" About to call LoadWebOrdersAsync...");
                 await LoadWebOrdersAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine("✅ LoadWebOrdersAsync completed");
+                System.Diagnostics.Debug.WriteLine(" LoadWebOrdersAsync completed");
                 
                 // Update connection status on main thread
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -249,17 +249,17 @@ namespace POS_in_NET.Pages
                     try
                     {
                         UpdateConnectionStatus();
-                        System.Diagnostics.Debug.WriteLine("✅ UpdateConnectionStatus completed");
+                        System.Diagnostics.Debug.WriteLine(" UpdateConnectionStatus completed");
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"❌ Error in UpdateConnectionStatus: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Error in UpdateConnectionStatus: {ex.Message}");
                     }
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error in LoadPageAsync: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error in LoadPageAsync: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
@@ -272,7 +272,7 @@ namespace POS_in_NET.Pages
                 {
                     LoadingIndicator.IsVisible = false;
                     LoadingIndicator.IsRunning = false;
-                    System.Diagnostics.Debug.WriteLine("✅ LoadPageAsync COMPLETE");
+                    System.Diagnostics.Debug.WriteLine(" LoadPageAsync COMPLETE");
                 });
             }
         }
@@ -297,23 +297,23 @@ namespace POS_in_NET.Pages
             try
             {
                 _isLoadingWebOrders = true;
-                System.Diagnostics.Debug.WriteLine("🔄 LoadWebOrdersAsync called");
+                System.Diagnostics.Debug.WriteLine(" LoadWebOrdersAsync called");
                 
                 // Get orders from local database that came from cloud (web orders)
                 var orderService = ServiceHelper.GetService<OrderService>();
                 if (orderService == null)
                 {
-                    System.Diagnostics.Debug.WriteLine("❌ OrderService is null!");
+                    System.Diagnostics.Debug.WriteLine(" OrderService is null!");
                     return;
                 }
                 
                 var allOrders = await orderService.GetOrdersAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"📦 Total orders in database: {allOrders.Count}");
+                System.Diagnostics.Debug.WriteLine($" Total orders in database: {allOrders.Count}");
                 
                 if (EnableVerboseOrderDump)
                 {
                     System.Diagnostics.Debug.WriteLine("========================================");
-                    System.Diagnostics.Debug.WriteLine("🔍 FULL DATABASE DUMP:");
+                    System.Diagnostics.Debug.WriteLine(" FULL DATABASE DUMP:");
                     foreach (var order in allOrders.OrderByDescending(o => o.CreatedAt).Take(20))
                     {
                         System.Diagnostics.Debug.WriteLine($"   ID: {order.Id} | Date: {order.CreatedAt:yyyy-MM-dd HH:mm:ss} | Customer: {order.CustomerName} | Source: {order.SourceChannel} | Sync: {order.SyncStatus}");
@@ -323,29 +323,29 @@ namespace POS_in_NET.Pages
                 
                 // DEBUG: Show all web order dates
                 var webOrders = allOrders.Where(IsWebOrder).ToList();
-                System.Diagnostics.Debug.WriteLine($"📊 Total web orders: {webOrders.Count}");
-                System.Diagnostics.Debug.WriteLine($"📊 Total pending orders: {allOrders.Count(o => o.SyncStatus == Models.SyncStatus.Pending)}");
-                System.Diagnostics.Debug.WriteLine($"📊 Total failed orders: {allOrders.Count(o => o.SyncStatus == Models.SyncStatus.Failed)}");
+                System.Diagnostics.Debug.WriteLine($" Total web orders: {webOrders.Count}");
+                System.Diagnostics.Debug.WriteLine($" Total pending orders: {allOrders.Count(o => o.SyncStatus == Models.SyncStatus.Pending)}");
+                System.Diagnostics.Debug.WriteLine($" Total failed orders: {allOrders.Count(o => o.SyncStatus == Models.SyncStatus.Failed)}");
                 
                 var orderDates = webOrders.GroupBy(o => o.CreatedAt.Date).OrderByDescending(g => g.Key).ToList();
-                System.Diagnostics.Debug.WriteLine($"📅 Web orders by date:");
+                System.Diagnostics.Debug.WriteLine($" Web orders by date:");
                 foreach (var dateGroup in orderDates.Take(10))
                 {
                     System.Diagnostics.Debug.WriteLine($"   {dateGroup.Key:MMM dd, yyyy}: {dateGroup.Count()} orders");
                 }
                 
-                System.Diagnostics.Debug.WriteLine($"🎯 Selected date filter: {_selectedDate:yyyy-MM-dd}");
-                System.Diagnostics.Debug.WriteLine($"🎯 Looking for orders on: {_selectedDate.Date:yyyy-MM-dd}");
-                System.Diagnostics.Debug.WriteLine($"🎯 Show all mode: {_showAllOrders}");
+                System.Diagnostics.Debug.WriteLine($" Selected date filter: {_selectedDate:yyyy-MM-dd}");
+                System.Diagnostics.Debug.WriteLine($" Looking for orders on: {_selectedDate.Date:yyyy-MM-dd}");
+                System.Diagnostics.Debug.WriteLine($" Show all mode: {_showAllOrders}");
                 
-                // ✅ FILTER BY SELECTED DATE (or show all if toggle enabled)
+                //  FILTER BY SELECTED DATE (or show all if toggle enabled)
                 List<Order> filteredWebOrders;
                 
                 if (_showAllOrders)
                 {
                     // Show ALL web orders regardless of date
                     filteredWebOrders = allOrders.Where(IsWebOrder).ToList();
-                    System.Diagnostics.Debug.WriteLine($"📅 Showing ALL orders: {filteredWebOrders.Count}");
+                    System.Diagnostics.Debug.WriteLine($" Showing ALL orders: {filteredWebOrders.Count}");
                 }
                 else
                 {
@@ -354,13 +354,13 @@ namespace POS_in_NET.Pages
                         o.CreatedAt.Date == _selectedDate.Date && 
                         IsWebOrder(o)
                     ).ToList();
-                    System.Diagnostics.Debug.WriteLine($"📅 Orders for {_selectedDate:MMM dd, yyyy}: {filteredWebOrders.Count}");
+                    System.Diagnostics.Debug.WriteLine($" Orders for {_selectedDate:MMM dd, yyyy}: {filteredWebOrders.Count}");
                 }
                 
                 // DEBUG: Show why orders might not match
                 if (filteredWebOrders.Count == 0 && webOrders.Count > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("⚠️ No orders match selected date! Checking closest dates:");
+                    System.Diagnostics.Debug.WriteLine(" No orders match selected date! Checking closest dates:");
                     var closestOrders = webOrders
                         .OrderBy(o => Math.Abs((o.CreatedAt.Date - _selectedDate.Date).TotalDays))
                         .Take(5);
@@ -380,7 +380,7 @@ namespace POS_in_NET.Pages
                     ).ToList();
                 }
 
-                // ✅ PAGINATION - Show 10 orders per page for speed
+                //  PAGINATION - Show 10 orders per page for speed
                 var ordersToDisplay = filteredWebOrders
                     .OrderByDescending(o => o.CreatedAt)
                     .Skip(_currentPage * _pageSize)
@@ -390,7 +390,7 @@ namespace POS_in_NET.Pages
                 
                 _totalPages = (int)Math.Ceiling(filteredWebOrders.Count / (double)_pageSize);
                 
-                System.Diagnostics.Debug.WriteLine($"📄 Displaying page {_currentPage + 1} of {_totalPages} ({ordersToDisplay.Count} orders)");
+                System.Diagnostics.Debug.WriteLine($" Displaying page {_currentPage + 1} of {_totalPages} ({ordersToDisplay.Count} orders)");
                 
                 // Update UI on main thread
                 await MainThread.InvokeOnMainThreadAsync(() =>
@@ -424,7 +424,7 @@ namespace POS_in_NET.Pages
                             Orders.Add(new WebOrderRow(order, printStatus ?? WebOrderPrintStatus.NotQueued()));
                         }
                         
-                        System.Diagnostics.Debug.WriteLine($"✅ Orders collection updated with {Orders.Count} items");
+                        System.Diagnostics.Debug.WriteLine($" Orders collection updated with {Orders.Count} items");
                         
                         // Update pagination info
                         UpdatePaginationUI();
@@ -438,18 +438,18 @@ namespace POS_in_NET.Pages
                         ConnectionStatusIndicator.Fill = isPolling ? Microsoft.Maui.Graphics.Colors.Green : Microsoft.Maui.Graphics.Colors.Orange;
                         ConnectionStatusLabel.Text = isPolling ? "Connected" : "Disconnected";
                         
-                        System.Diagnostics.Debug.WriteLine("✅ UI updated successfully");
+                        System.Diagnostics.Debug.WriteLine(" UI updated successfully");
                     }
                     catch (Exception uiEx)
                     {
-                        System.Diagnostics.Debug.WriteLine($"❌ Error updating UI: {uiEx.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Error updating UI: {uiEx.Message}");
                         throw;
                     }
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading web orders: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading web orders: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
@@ -552,7 +552,7 @@ namespace POS_in_NET.Pages
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ Failed to load web order print statuses: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to load web order print statuses: {ex.Message}");
             }
 
             return result;
@@ -588,13 +588,13 @@ namespace POS_in_NET.Pages
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
                 if (cloudService != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"🔄 Refresh: Syncing last 30 days with single API call...");
+                    System.Diagnostics.Debug.WriteLine($" Refresh: Syncing last 30 days with single API call...");
                     
                     // Use 'since' parameter - one API call for all orders in last 30 days
                     var thirtyDaysAgo = DateTime.Today.AddDays(-30);
                     var syncResult = await cloudService.SyncOrdersByDateAsync(thirtyDaysAgo);
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ Refresh complete: {syncResult.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Refresh complete: {syncResult.Message}");
                 }
                 
                 // Reload orders from database
@@ -651,7 +651,7 @@ namespace POS_in_NET.Pages
                 
                 // Use the selected date from the date picker
                 var targetDate = _selectedDate;
-                System.Diagnostics.Debug.WriteLine($"🔄 Manual sync requested for date: {targetDate:yyyy-MM-dd}");
+                System.Diagnostics.Debug.WriteLine($" Manual sync requested for date: {targetDate:yyyy-MM-dd}");
                 
                 // Fetch orders for the selected date
                 var syncResult = await cloudService.SyncOrdersByDateAsync(targetDate);
@@ -696,11 +696,11 @@ namespace POS_in_NET.Pages
                     var refreshStart = DateTime.Now;
                     await LoadWebOrdersAsync();
                     var refreshDuration = (DateTime.Now - refreshStart).TotalMilliseconds;
-                    System.Diagnostics.Debug.WriteLine($"🚀 UI SPEED: Orders refreshed in {refreshDuration:F0}ms");
+                    System.Diagnostics.Debug.WriteLine($" UI SPEED: Orders refreshed in {refreshDuration:F0}ms");
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Error refreshing web orders: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Error refreshing web orders: {ex.Message}");
                 }
             });
         }
@@ -720,14 +720,14 @@ namespace POS_in_NET.Pages
                     ? "Showing: Today"
                     : $"Showing: {_selectedDate:MMM dd, yyyy}";
                 
-                System.Diagnostics.Debug.WriteLine($"📅 Date filter changed to: {_selectedDate:MMM dd, yyyy}");
+                System.Diagnostics.Debug.WriteLine($" Date filter changed to: {_selectedDate:MMM dd, yyyy}");
                 
                 // Refresh orders with new date filter
                 await LoadWebOrdersAsync();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error changing date: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error changing date: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to change date: {ex.Message}");
             }
         }
@@ -981,7 +981,7 @@ namespace POS_in_NET.Pages
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Error showing order details: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Error showing order details: {ex.Message}");
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Failed to show order details");
                 }
             }
@@ -1189,7 +1189,7 @@ namespace POS_in_NET.Pages
                 ConnectionStatusLabel.Text = "Syncing...";
                 ConnectionStatusIndicator.Fill = Colors.Orange;
                 
-                System.Diagnostics.Debug.WriteLine("🔄 Manual sync initiated by user");
+                System.Diagnostics.Debug.WriteLine(" Manual sync initiated by user");
                 
                 // Get services
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
@@ -1211,18 +1211,18 @@ namespace POS_in_NET.Pages
                     ? latestOrder.CreatedAt.AddHours(-1) 
                     : DateTime.Today.AddDays(-60);
                 
-                System.Diagnostics.Debug.WriteLine($"🔄 Manual Sync: Syncing from {syncFromDate:yyyy-MM-dd HH:mm}");
+                System.Diagnostics.Debug.WriteLine($" Manual Sync: Syncing from {syncFromDate:yyyy-MM-dd HH:mm}");
                 if (latestOrder != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"📅 Last order in database: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
+                    System.Diagnostics.Debug.WriteLine($" Last order in database: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
                 }
                 
                 var result = await cloudService.SyncOrdersByDateAsync(syncFromDate);
                 
-                System.Diagnostics.Debug.WriteLine($"🔍 Sync result: Success={result.Success}, OrdersFound={result.OrdersFound}, Message={result.Message}");
+                System.Diagnostics.Debug.WriteLine($" Sync result: Success={result.Success}, OrdersFound={result.OrdersFound}, Message={result.Message}");
                 
                 // Refresh UI to show all orders
-                System.Diagnostics.Debug.WriteLine("🔄 Refreshing UI after sync...");
+                System.Diagnostics.Debug.WriteLine(" Refreshing UI after sync...");
                 await LoadWebOrdersAsync();
                 
                 // Update status
@@ -1235,11 +1235,11 @@ namespace POS_in_NET.Pages
                     
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Complete", message);
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Manual sync complete: {result.Message}");
+                System.Diagnostics.Debug.WriteLine($" Manual sync complete: {result.Message}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Manual sync failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Manual sync failed: {ex.Message}");
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Failed", ex.Message);
             }
             finally
@@ -1381,7 +1381,7 @@ namespace POS_in_NET.Pages
                         return;
                     }
 
-                    System.Diagnostics.Debug.WriteLine($"🔄 Older than cache window selected ({_selectedDate:yyyy-MM-dd}). Syncing selected day from web...");
+                    System.Diagnostics.Debug.WriteLine($" Older than cache window selected ({_selectedDate:yyyy-MM-dd}). Syncing selected day from web...");
                     var syncResult = await cloudService.SyncOrdersByDateAsync(_selectedDate);
 
                     // Keep selected-date mode after sync and refresh that day.

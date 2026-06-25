@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using POS_in_NET.Services;
 using POS_in_NET.Pages;
 using MyFirstMauiApp.Services;
@@ -20,7 +20,7 @@ public static class MauiProgram
 			File.AppendAllText(logPath, $"\n\n=== MAUI PROGRAM START {DateTime.Now} ===\n");
 			
 			var builder = MauiApp.CreateBuilder();
-			File.AppendAllText(logPath, "✅ MauiApp.CreateBuilder() completed\n");
+			File.AppendAllText(logPath, " MauiApp.CreateBuilder() completed\n");
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit() // Add Community Toolkit support
@@ -29,11 +29,8 @@ public static class MauiProgram
 			{
 				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
-				
-				// OrderWeb.net Design System - Alegreya Font
-				fonts.AddFont("Alegreya-Regular.ttf", "AlegreyaRegular");
-				fonts.AddFont("Alegreya-Bold.ttf", "AlegreyaBold");
-				fonts.AddFont("Alegreya-Italic.ttf", "AlegreyaItalic");
+				// Legacy alias — some screens historically referenced OpenSansBold
+				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansBold");
 			});
 
 #if DEBUG
@@ -48,6 +45,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PermissionService>();
 		builder.Services.AddSingleton<InactivityService>();
 		builder.Services.AddSingleton<BusinessSettingsService>();
+		builder.Services.AddSingleton<TerminalHealthService>();
+		builder.Services.AddSingleton<DatabaseBackupService>();
 		
 		// Note: OrderService registered after PrintService for dependency injection
 		
@@ -74,6 +73,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<OrderWebWebSocketService>();
 		builder.Services.AddSingleton<OrderWebRestApiService>();
 		builder.Services.AddSingleton<HeartbeatService>();
+		builder.Services.AddSingleton<OrderWebConnectionKeeperService>();
 		
 		// Register Loyalty & Gift Card Services
 		builder.Services.AddSingleton<LoyaltyService>();
@@ -82,6 +82,9 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PdfReceiptService>();
 		builder.Services.AddSingleton<DailyReportService>();
 		builder.Services.AddSingleton<DiscountAuditService>();
+		builder.Services.AddSingleton<ZReportService>();
+		builder.Services.AddSingleton<OrderWebDailyReportSyncService>();
+		builder.Services.AddSingleton<ZReportPrintService>();
 		
 		// Register Report Generation & Scheduling Services
 		builder.Services.AddSingleton<ReportGenerationService>();
@@ -92,17 +95,23 @@ public static class MauiProgram
 		builder.Services.AddSingleton<NetworkPrinterDatabaseService>();
 		builder.Services.AddSingleton<NetworkPrinterService>();
 		builder.Services.AddSingleton<CashDrawerService>();
+		builder.Services.AddSingleton<TillExpenseService>();
+		builder.Services.AddSingleton<CashDrawerFlowService>();
 		builder.Services.AddSingleton<EscPosBuilder>();
 		builder.Services.AddSingleton<PrinterHealthService>();
 		builder.Services.AddSingleton<NetworkPrintQueueService>();
 		builder.Services.AddSingleton<OnlineOrderAutoPrintService>();
 		builder.Services.AddSingleton<PrintGroupService>();
+		builder.Services.AddSingleton<PrintingPolicyService>();
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
 		
-		// Register Postcode Lookup Service (Mapbox/Custom PAF)
+		// Register OrderWeb UK address lookup service
 		builder.Services.AddSingleton<PostcodeLookupService>();
+		builder.Services.AddSingleton<OrderWebCustomerCloudService>();
+		builder.Services.AddSingleton<CustomerDataService>();
+		builder.Services.AddSingleton<DeliveryZoneService>();
 		
 		// Register Database Cleanup Services (3-month rolling data)
 		builder.Services.AddSingleton<DatabaseCleanupService>();
@@ -144,14 +153,66 @@ public static class MauiProgram
 		builder.Services.AddTransient<LoyaltyPointsPage>();
 		builder.Services.AddTransient<ReportPage>();
 		builder.Services.AddTransient<InventoryPage>();
+		builder.Services.AddTransient<TerminalHealthPage>();
+		builder.Services.AddTransient<CustomerDataPage>();
+		builder.Services.AddTransient<TerminalSetupPage>();
 
 		var app = builder.Build();
 
-		// ✅ Initialize Database Cleanup System
 		Task.Run(async () =>
 		{
 			try
 			{
+				await Task.Delay(3000);
+				TerminalPowerSafetyService.Apply();
+
+				var terminalHealthService = app.Services.GetRequiredService<TerminalHealthService>();
+				terminalHealthService.Start();
+				System.Diagnostics.Debug.WriteLine("Terminal health heartbeat started");
+
+				await Task.Delay(2000);
+				DatabaseChangeMonitorService.Start();
+				System.Diagnostics.Debug.WriteLine("Live database change monitor started");
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($" Live database change monitor warning: {ex.Message}");
+			}
+		});
+
+		Task.Run(async () =>
+		{
+			try
+			{
+				if (!TerminalRoleService.CanRunMotherJobs)
+				{
+					System.Diagnostics.Debug.WriteLine("Database backup scheduler skipped on unconfigured/child terminal");
+					return;
+				}
+
+				await Task.Delay(3000);
+				var backupService = app.Services.GetRequiredService<DatabaseBackupService>();
+				backupService.Start();
+				System.Diagnostics.Debug.WriteLine(" Database backup scheduler started");
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($" Database backup scheduler warning: {ex.Message}");
+			}
+		});
+
+		//  Initialize Database Cleanup System
+		Task.Run(async () =>
+		{
+			try
+			{
+				if (!TerminalRoleService.CanRunMotherJobs)
+				{
+					System.Diagnostics.Debug.WriteLine("Cleanup scheduler skipped on unconfigured/child terminal");
+					return;
+				}
+
+				await Task.Delay(8000);
 				var cleanupScheduler = app.Services.GetRequiredService<CleanupSchedulerService>();
 				
 				// Create database indexes for faster queries (first run only)
@@ -160,40 +221,52 @@ public static class MauiProgram
 				// Start automatic cleanup scheduler (checks every hour, cleans every 24h)
 				cleanupScheduler.Start();
 				
-				System.Diagnostics.Debug.WriteLine("✅ Database cleanup system initialized");
+				System.Diagnostics.Debug.WriteLine(" Database cleanup system initialized");
 			}
 			catch (Exception ex)
 			{
-				System.Diagnostics.Debug.WriteLine($"⚠️ Cleanup initialization warning: {ex.Message}");
+				System.Diagnostics.Debug.WriteLine($" Cleanup initialization warning: {ex.Message}");
 			}
 		});
 
-		// ✅ Initialize Report Generation Scheduler
+		//  Initialize Report Generation Scheduler
 		Task.Run(async () =>
 		{
 			try
 			{
+				if (!TerminalRoleService.CanRunMotherJobs)
+				{
+					System.Diagnostics.Debug.WriteLine("Report scheduler skipped on unconfigured/child terminal");
+					return;
+				}
+
 				// Small delay to let database initialize
 				await Task.Delay(2000);
 				
 				var reportScheduler = app.Services.GetRequiredService<ReportSchedulerService>();
 				
-				// Start automatic report generation scheduler (runs nightly at 11:50 PM)
+				// Start automatic report generation scheduler (runs nightly at 2:00 AM)
 				reportScheduler.Start();
 				
-				System.Diagnostics.Debug.WriteLine("✅ Report generation scheduler initialized");
+				System.Diagnostics.Debug.WriteLine(" Report generation scheduler initialized");
 			}
 			catch (Exception ex)
 			{
-				System.Diagnostics.Debug.WriteLine($"⚠️ Report scheduler initialization warning: {ex.Message}");
+				System.Diagnostics.Debug.WriteLine($" Report scheduler initialization warning: {ex.Message}");
 			}
 		});
 
-		// ✅ Initialize Network Printer Services
+		//  Initialize Network Printer Services
 		Task.Run(async () =>
 		{
 			try
 			{
+				if (!TerminalConfigurationService.IsConfigured)
+				{
+					System.Diagnostics.Debug.WriteLine("Printer services skipped until terminal setup is complete");
+					return;
+				}
+
 				// Small delay to let database initialize
 				await Task.Delay(1500);
 				
@@ -201,81 +274,41 @@ public static class MauiProgram
 				var cashDrawerService = app.Services.GetRequiredService<CashDrawerService>();
 				var healthService = app.Services.GetRequiredService<PrinterHealthService>();
 				var queueService = app.Services.GetRequiredService<NetworkPrintQueueService>();
+				var printingPolicyService = app.Services.GetRequiredService<PrintingPolicyService>();
 				
 				// Ensure printer tables exist
 				await printerDbService.EnsureTablesExistAsync();
 				await cashDrawerService.EnsureTableExistsAsync();
+				await printingPolicyService.EnsureDefaultsAsync();
 				
 				// Start health monitoring (checks every 30 seconds)
 				healthService.Start();
-				System.Diagnostics.Debug.WriteLine("✅ Printer health monitoring started");
+				System.Diagnostics.Debug.WriteLine(" Printer health monitoring started");
 				
-				// Start print queue processor (processes every 5 seconds)
-				await queueService.StartAsync();
-				System.Diagnostics.Debug.WriteLine("✅ Print queue processor started");
+				var queueOwnership = await printingPolicyService.CanProcessSharedQueueAsync();
+				if (queueOwnership.Allowed)
+				{
+					await queueService.StartAsync();
+					System.Diagnostics.Debug.WriteLine($" Print queue processor started: {queueOwnership.Reason}");
+				}
+				else
+				{
+					System.Diagnostics.Debug.WriteLine($"Info: Print queue processor skipped: {queueOwnership.Reason}");
+				}
 			}
 			catch (Exception ex)
 			{
-				System.Diagnostics.Debug.WriteLine($"⚠️ Printer services initialization warning: {ex.Message}");
+				System.Diagnostics.Debug.WriteLine($" Printer services initialization warning: {ex.Message}");
 			}
 		});
 
-		// ✅ Auto-connect OrderWeb.net services on app startup
+		//  Auto-connect OrderWeb.net services on app startup
 		Task.Run(async () =>
 		{
 			try
 			{
-				// Small delay to let app fully initialize
-				await Task.Delay(2000);
-				
-				var dbService = app.Services.GetRequiredService<DatabaseService>();
-				var wsService = app.Services.GetRequiredService<OrderWebWebSocketService>();
-				var cloudService = app.Services.GetRequiredService<CloudOrderService>();
-				var heartbeatService = app.Services.GetRequiredService<HeartbeatService>();
-				var autoPrintService = app.Services.GetRequiredService<OnlineOrderAutoPrintService>();
-				
-					// Link auto-print service to cloud service
-					cloudService.SetAutoPrintService(autoPrintService);
-					wsService.SetCloudOrderService(cloudService);
-					System.Diagnostics.Debug.WriteLine("OnlineOrderAutoPrintService linked to CloudOrderService");
-				
-				// Get configuration from database
-				var config = await dbService.GetCloudConfigAsync();
-				var isEnabled = config.GetValueOrDefault("is_enabled") == "True";
-				var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-				var apiKey = config.GetValueOrDefault("api_key", "");
-				var wsUrl = config.GetValueOrDefault("websocket_url", "wss://orderweb.net/ws/pos");
-				var restApiUrl = config.GetValueOrDefault("rest_api_url", "https://orderweb.net/api");
-				
-				if (isEnabled && !string.IsNullOrEmpty(tenantSlug) && !string.IsNullOrEmpty(apiKey))
-				{
-					System.Diagnostics.Debug.WriteLine("Auto-connecting OrderWeb.net services...");
-					
-					// Configure and connect WebSocket
-					wsService.Configure(wsUrl, tenantSlug, apiKey);
-					bool connected = await wsService.ConnectAsync();
-					
-					if (connected)
-					{
-						System.Diagnostics.Debug.WriteLine("WebSocket auto-connected successfully!");
-					}
-					else
-					{
-						System.Diagnostics.Debug.WriteLine("WebSocket auto-connect failed");
-					}
-					
-					// Start background polling
-					await cloudService.StartPollingAsync();
-					System.Diagnostics.Debug.WriteLine("Cloud order polling started");
-					
-					// Start heartbeat service
-					await heartbeatService.StartAsync();
-					System.Diagnostics.Debug.WriteLine("Heartbeat service started");
-				}
-				else
-				{
-					System.Diagnostics.Debug.WriteLine("OrderWeb.net not configured or disabled");
-				}
+				await Task.Delay(500);
+				System.Diagnostics.Debug.WriteLine("OrderWeb.net startup is handled by App.InitializeCloudServicesAsync to prevent duplicate background jobs.");
 			}
 			catch (Exception ex)
 			{
@@ -283,7 +316,7 @@ public static class MauiProgram
 			}
 		});
 		
-		File.AppendAllText(logPath, "✅ MauiProgram.CreateMauiApp completed successfully\n");
+		File.AppendAllText(logPath, " MauiProgram.CreateMauiApp completed successfully\n");
 
 		// Database initialization can be added later when web order services are fully integrated
 		// Task.Run(async () =>
@@ -301,13 +334,13 @@ public static class MauiProgram
 		//     }
 		// });
 
-			File.AppendAllText(logPath, "✅ Returning MauiApp instance\n");
+			File.AppendAllText(logPath, " Returning MauiApp instance\n");
 			return app;
 		}
 		catch (Exception ex)
 		{
 			var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-			File.AppendAllText(logPath, $"❌ FATAL ERROR in CreateMauiApp: {ex.Message}\n");
+			File.AppendAllText(logPath, $" FATAL ERROR in CreateMauiApp: {ex.Message}\n");
 			File.AppendAllText(logPath, $"Stack Trace: {ex.StackTrace}\n");
 			
 			// Show error dialog to user

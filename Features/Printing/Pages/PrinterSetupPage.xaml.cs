@@ -56,7 +56,7 @@ public partial class PrinterSetupPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ OnAppearing error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" OnAppearing error: {ex.Message}");
         }
     }
 
@@ -82,11 +82,11 @@ public partial class PrinterSetupPage : ContentPage
                 await _dbService.EnsureTablesExistAsync();
             }
             
-            System.Diagnostics.Debug.WriteLine("✅ Printer services initialized");
+            System.Diagnostics.Debug.WriteLine(" Printer services initialized");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error initializing services: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error initializing services: {ex.Message}");
         }
     }
 
@@ -94,28 +94,36 @@ public partial class PrinterSetupPage : ContentPage
     {
         try
         {
-            // Update health status
-            if (_healthService != null)
+            var onlineCount = _healthService?.OnlinePrinters.ToString() ?? "0";
+            var offlineCount = _healthService?.OfflinePrinters.ToString() ?? "0";
+            var lastCheck = _healthService?.LastHealthCheck > DateTime.MinValue
+                ? _healthService.LastHealthCheck.ToString("HH:mm:ss")
+                : null;
+            var queueCount = _queueService != null
+                ? (await _queueService.GetStatsAsync()).PendingJobs.ToString()
+                : null;
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                OnlineCountLabel.Text = _healthService.OnlinePrinters.ToString();
-                OfflineCountLabel.Text = _healthService.OfflinePrinters.ToString();
-                
-                if (_healthService.LastHealthCheck > DateTime.MinValue)
+                if (_healthService != null)
                 {
-                    LastCheckLabel.Text = _healthService.LastHealthCheck.ToString("HH:mm:ss");
+                    OnlineCountLabel.Text = onlineCount;
+                    OfflineCountLabel.Text = offlineCount;
+                    if (lastCheck != null)
+                    {
+                        LastCheckLabel.Text = lastCheck;
+                    }
                 }
-            }
-            
-            // Update queue status
-            if (_queueService != null)
-            {
-                var stats = await _queueService.GetStatsAsync();
-                QueueCountLabel.Text = stats.PendingJobs.ToString();
-            }
+
+                if (queueCount != null)
+                {
+                    QueueCountLabel.Text = queueCount;
+                }
+            });
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error updating status: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error updating status: {ex.Message}");
         }
     }
 
@@ -126,14 +134,8 @@ public partial class PrinterSetupPage : ContentPage
         try
         {
             var printers = await _dbService.GetAllPrintersAsync();
-            
-            // Update count
-            PrinterCountLabel.Text = $"{printers.Count} printer{(printers.Count != 1 ? "s" : "")} configured";
+            var countText = $"{printers.Count} printer{(printers.Count != 1 ? "s" : "")} configured";
 
-            // Clear containers
-            ClearPrinterContainers();
-
-            // Group printers by type
             var receiptPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Receipt).ToList();
             var kitchenPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Kitchen).ToList();
             var barPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Bar).ToList();
@@ -141,51 +143,51 @@ public partial class PrinterSetupPage : ContentPage
             var onlinePrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Online).ToList();
             var takeawayPrinters = printers.Where(p => p.PrinterType == NetworkPrinterType.Takeaway).ToList();
 
-            // Populate receipt printers
-            NoReceiptPrintersLabel.IsVisible = receiptPrinters.Count == 0;
-            foreach (var printer in receiptPrinters)
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                ReceiptPrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                PrinterCountLabel.Text = countText;
+                ClearPrinterContainers();
 
-            // Populate kitchen printers
-            NoKitchenPrintersLabel.IsVisible = kitchenPrinters.Count == 0;
-            foreach (var printer in kitchenPrinters)
-            {
-                KitchenPrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                NoReceiptPrintersLabel.IsVisible = receiptPrinters.Count == 0;
+                foreach (var printer in receiptPrinters)
+                {
+                    ReceiptPrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
 
-            // Populate bar printers
-            NoBarPrintersLabel.IsVisible = barPrinters.Count == 0;
-            foreach (var printer in barPrinters)
-            {
-                BarPrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                NoKitchenPrintersLabel.IsVisible = kitchenPrinters.Count == 0;
+                foreach (var printer in kitchenPrinters)
+                {
+                    KitchenPrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
 
-            // Populate label printers
-            NoLabelPrintersLabel.IsVisible = labelPrinters.Count == 0;
-            foreach (var printer in labelPrinters)
-            {
-                LabelPrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                NoBarPrintersLabel.IsVisible = barPrinters.Count == 0;
+                foreach (var printer in barPrinters)
+                {
+                    BarPrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
 
-            // Populate online order printers
-            NoOnlinePrintersLabel.IsVisible = onlinePrinters.Count == 0;
-            foreach (var printer in onlinePrinters)
-            {
-                OnlinePrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                NoLabelPrintersLabel.IsVisible = labelPrinters.Count == 0;
+                foreach (var printer in labelPrinters)
+                {
+                    LabelPrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
 
-            // Populate takeaway printers
-            NoTakeawayPrintersLabel.IsVisible = takeawayPrinters.Count == 0;
-            foreach (var printer in takeawayPrinters)
-            {
-                TakeawayPrintersContainer.Children.Add(CreatePrinterCard(printer));
-            }
+                NoOnlinePrintersLabel.IsVisible = onlinePrinters.Count == 0;
+                foreach (var printer in onlinePrinters)
+                {
+                    OnlinePrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
+
+                NoTakeawayPrintersLabel.IsVisible = takeawayPrinters.Count == 0;
+                foreach (var printer in takeawayPrinters)
+                {
+                    TakeawayPrintersContainer.Children.Add(CreatePrinterCard(printer));
+                }
+            });
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error loading printers: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error loading printers: {ex.Message}");
         }
     }
 
@@ -600,13 +602,13 @@ public partial class PrinterSetupPage : ContentPage
             };
             
             await _printGroupService.CreatePrintGroupAsync(newGroup);
-            System.Diagnostics.Debug.WriteLine($"✅ Created new print group: {groupName}");
+            System.Diagnostics.Debug.WriteLine($" Created new print group: {groupName}");
             
             return newGroup.Id;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error creating print group: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error creating print group: {ex.Message}");
             return string.Empty;
         }
     }
@@ -643,7 +645,7 @@ public partial class PrinterSetupPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error clearing print group printer: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error clearing print group printer: {ex.Message}");
         }
     }
 
@@ -663,7 +665,7 @@ public partial class PrinterSetupPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error loading print group: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error loading print group: {ex.Message}");
         }
     }
 

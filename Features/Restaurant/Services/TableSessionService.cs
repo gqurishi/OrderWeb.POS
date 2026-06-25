@@ -131,8 +131,9 @@ namespace POS_in_NET.Services
                     partySize
                 }));
 
-                await transaction.CommitAsync();
-                return (true, $"Table opened successfully for {partySize} guests (Session: {sessionNumber})", createdSessionId);
+	                await transaction.CommitAsync();
+	                await PublishTableSessionEventAsync(connection, createdSessionId, tableId, "opened", new { partySize });
+	                return (true, $"Table opened successfully for {partySize} guests (Session: {sessionNumber})", createdSessionId);
             }
             catch (Exception ex)
             {
@@ -322,9 +323,16 @@ namespace POS_in_NET.Services
                 
                 var rowsAffected = await command.ExecuteNonQueryAsync();
                 
-                if (rowsAffected > 0)
-                {
-                    return (true, $"Status updated to {GetStatusDisplayName(newStatus)}");
+	                if (rowsAffected > 0)
+	                {
+	                    await PublishTableSessionEventAsync(
+	                        connection,
+	                        sessionId,
+	                        null,
+	                        "status_updated",
+	                        new { status = newStatus.ToString() });
+
+	                    return (true, $"Status updated to {GetStatusDisplayName(newStatus)}");
                 }
                 else
                 {
@@ -361,9 +369,16 @@ namespace POS_in_NET.Services
                 
                 var rowsAffected = await command.ExecuteNonQueryAsync();
                 
-                if (rowsAffected > 0)
-                {
-                    return (true, "Table session closed successfully");
+	                if (rowsAffected > 0)
+	                {
+	                    await PublishTableSessionEventAsync(
+	                        connection,
+	                        sessionId,
+	                        null,
+	                        "closed",
+	                        new { status = TableSessionStatus.Closed.ToString() });
+
+	                    return (true, "Table session closed successfully");
                 }
                 else
                 {
@@ -719,8 +734,21 @@ namespace POS_in_NET.Services
                     toStatus = statusToStore.ToString()
                 }));
 
-                await transaction.CommitAsync();
-                return (true, $"Session updated to {GetStatusDisplayName(statusToStore)}");
+	                await transaction.CommitAsync();
+	                await PublishTableSessionEventAsync(connection, sessionId, session.TableId, "order_linked", new
+	                {
+	                    orderId,
+	                    fromStatus = session.Status.ToString(),
+	                    toStatus = statusToStore.ToString()
+	                });
+	                await TerminalEventSyncService.PublishAsync(
+	                    connection,
+	                    AppDataChangeKind.Orders,
+	                    "order",
+	                    orderId,
+	                    orderId,
+	                    new { action = "table_session_linked", sessionId });
+	                return (true, $"Session updated to {GetStatusDisplayName(statusToStore)}");
             }
             catch (Exception ex)
             {
@@ -832,8 +860,13 @@ namespace POS_in_NET.Services
                     currentOrderId = session.CurrentOrderId
                 }));
 
-                await transaction.CommitAsync();
-                return (true, "Session closed successfully");
+	                await transaction.CommitAsync();
+	                await PublishTableSessionEventAsync(connection, sessionId, session.TableId, outcome, new
+	                {
+	                    outcome,
+	                    currentOrderId = session.CurrentOrderId
+	                });
+	                return (true, "Session closed successfully");
             }
             catch (Exception ex)
             {
@@ -905,8 +938,15 @@ namespace POS_in_NET.Services
                     }));
                 }
 
-                await transaction.CommitAsync();
-                return (true, $"Table released ({activeSessionIds.Count} active session(s) closed)");
+	                await transaction.CommitAsync();
+	                await TerminalEventSyncService.PublishAsync(
+	                    connection,
+	                    AppDataChangeKind.TableLayout,
+	                    "table",
+	                    tableId.ToString(),
+	                    null,
+	                    new { action = outcome, activeSessionCount = activeSessionIds.Count });
+	                return (true, $"Table released ({activeSessionIds.Count} active session(s) closed)");
             }
             catch (Exception ex)
             {
@@ -1031,8 +1071,15 @@ namespace POS_in_NET.Services
                     currentOrderId = session.CurrentOrderId
                 }));
 
-                await transaction.CommitAsync();
-                return (true, "Session transferred successfully");
+	                await transaction.CommitAsync();
+	                await PublishTableSessionEventAsync(connection, sessionId, targetTableId, "table_transferred", new
+	                {
+	                    reason,
+	                    fromTableId = session.TableId,
+	                    toTableId = targetTableId,
+	                    currentOrderId = session.CurrentOrderId
+	                });
+	                return (true, "Session transferred successfully");
             }
             catch (Exception ex)
             {
@@ -1259,8 +1306,14 @@ namespace POS_in_NET.Services
                     currentOrderId = session.CurrentOrderId
                 }));
 
-                await transaction.CommitAsync();
-                return (true, $"Status updated to {GetStatusDisplayName(newStatus)}");
+	                await transaction.CommitAsync();
+	                await PublishTableSessionEventAsync(connection, sessionId, session.TableId, "state_changed", new
+	                {
+	                    fromStatus = session.Status.ToString(),
+	                    toStatus = newStatus.ToString(),
+	                    currentOrderId = session.CurrentOrderId
+	                });
+	                return (true, $"Status updated to {GetStatusDisplayName(newStatus)}");
             }
             catch (Exception ex)
             {
@@ -1629,18 +1682,40 @@ namespace POS_in_NET.Services
             };
         }
 
-        private async Task InsertSessionEventAsync(MySqlConnection connection, MySqlTransaction transaction, int sessionId, string eventType, string? actorName, string? payloadJson)
-        {
-            const string insertSql = @"
-                INSERT INTO TableSessionEvents (SessionId, EventType, ActorName, PayloadJson)
+	        private async Task InsertSessionEventAsync(MySqlConnection connection, MySqlTransaction transaction, int sessionId, string eventType, string? actorName, string? payloadJson)
+	        {
+	            const string insertSql = @"
+	                INSERT INTO TableSessionEvents (SessionId, EventType, ActorName, PayloadJson)
                 VALUES (@sessionId, @eventType, @actorName, @payloadJson)";
 
             using var command = new MySqlCommand(insertSql, connection, transaction);
             command.Parameters.AddWithValue("@sessionId", sessionId);
             command.Parameters.AddWithValue("@eventType", eventType);
             command.Parameters.AddWithValue("@actorName", actorName ?? (object)DBNull.Value);
-            command.Parameters.AddWithValue("@payloadJson", payloadJson ?? (object)DBNull.Value);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
-}
+	            command.Parameters.AddWithValue("@payloadJson", payloadJson ?? (object)DBNull.Value);
+	            await command.ExecuteNonQueryAsync();
+	        }
+
+	        private static async Task PublishTableSessionEventAsync(
+	            MySqlConnection connection,
+	            int sessionId,
+	            int? tableId,
+	            string action,
+	            object? payload = null)
+	        {
+	            await TerminalEventSyncService.PublishAsync(
+	                connection,
+	                AppDataChangeKind.TableLayout,
+	                "table_session",
+	                sessionId.ToString(),
+	                null,
+	                new
+	                {
+	                    action,
+	                    sessionId,
+	                    tableId,
+	                    payload
+	                });
+	        }
+	    }
+	}

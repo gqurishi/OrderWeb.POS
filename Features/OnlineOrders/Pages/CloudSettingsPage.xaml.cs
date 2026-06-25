@@ -48,7 +48,6 @@ public partial class CloudSettingsPage : ContentPage
     {
         base.OnDisappearing();
         
-        // Stop status update timer
         _statusUpdateTimer?.Dispose();
         _statusUpdateTimer = null;
 
@@ -58,6 +57,31 @@ public partial class CloudSettingsPage : ContentPage
             _webSocketService.ConnectionStatusChanged -= OnWebSocketStatusChanged;
             _servicesInitialized = false;
         }
+
+        var keeper = ServiceHelper.GetService<OrderWebConnectionKeeperService>();
+        if (keeper != null)
+        {
+            keeper.StatusChanged -= OnConnectionKeeperStatusChanged;
+        }
+    }
+
+    private void OnConnectionKeeperStatusChanged(OrderWebConnectionStatus status)
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (status.IsFullyOperational)
+            {
+                UpdateStatus("Connected", "#28A745", status.StatusMessage);
+            }
+            else if (status.IsConfigured && status.IsEnabled && status.IsApiHealthy)
+            {
+                UpdateStatus("Partially Connected", "#F59E0B", status.StatusMessage);
+            }
+            else if (!string.IsNullOrWhiteSpace(status.LastError))
+            {
+                UpdateStatus("Connection Failed", "#DC3545", status.LastError);
+            }
+        });
     }
 
     // Tab Navigation Handlers - Easy navigation between settings tabs
@@ -203,7 +227,7 @@ public partial class CloudSettingsPage : ContentPage
             if (_webSocketService != null)
             {
                 var isConnected = _webSocketService.IsConnected;
-                StatusConnectionIcon.Text = isConnected ? "🟢" : "🔴";
+                StatusConnectionIcon.Text = isConnected ? "" : "";
                 StatusConnectionText.Text = isConnected ? "Live" : "Offline";
                 StatusConnectionText.TextColor = isConnected ? Color.FromArgb("#10B981") : Color.FromArgb("#DC2626");
             }
@@ -212,7 +236,7 @@ public partial class CloudSettingsPage : ContentPage
             if (_cloudOrderService != null)
             {
                 var isPolling = _cloudOrderService.IsPolling;
-                StatusBackupIcon.Text = isPolling ? "✅" : "⏸️";
+                StatusBackupIcon.Text = isPolling ? "" : "⏸";
                 StatusBackupText.Text = isPolling ? "Active" : "Stopped";
                 StatusBackupText.TextColor = isPolling ? Color.FromArgb("#10B981") : Color.FromArgb("#6B7280");
                 
@@ -269,7 +293,7 @@ public partial class CloudSettingsPage : ContentPage
         {
             if (_databaseService == null)
             {
-                UpdateStatus("⚠️ Database not available", "#DC3545", "Please restart the application");
+                UpdateStatus(" Database not available", "#DC3545", "Please restart the application");
                 return;
             }
 
@@ -294,22 +318,31 @@ public partial class CloudSettingsPage : ContentPage
                 // Load WebSocket URL from database - accept ANY format (multi-tenant support)
                 var wsUrl = _currentConfig.WebSocketUrl ?? "wss://orderweb.net:9011";
                 
-                System.Diagnostics.Debug.WriteLine($"📥 Loaded WebSocket URL from database: {wsUrl}");
+                System.Diagnostics.Debug.WriteLine($" Loaded WebSocket URL from database: {wsUrl}");
                 System.Diagnostics.Debug.WriteLine($"   Note: Multi-tenant URLs with paths like /ws/pos/tenant are fully supported");
                 
                 WebSocketUrlEntry.Text = wsUrl;
+                ApplyOnlineMasterUi(_currentConfig);
                 
-                ConnectButton.IsEnabled = true;
-                SyncOrdersButton.IsEnabled = true;
-                SyncHistoricalButton.IsEnabled = true;
+                var canUseCloudControls = TerminalConfigurationService.IsConfigured &&
+                                          TerminalConfigurationService.IsMotherTerminal;
+                ConnectButton.IsEnabled = canUseCloudControls;
+                SyncOrdersButton.IsEnabled = canUseCloudControls;
+                SyncHistoricalButton.IsEnabled = canUseCloudControls;
+                UploadDailyReportButton.IsEnabled = canUseCloudControls;
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Settings loaded: Restaurant={_currentConfig.TenantSlug}");
-                System.Diagnostics.Debug.WriteLine($"✅ Credentials are configured and ready!");
+                System.Diagnostics.Debug.WriteLine($" Settings loaded: Restaurant={_currentConfig.TenantSlug}");
+                System.Diagnostics.Debug.WriteLine($" Credentials are configured and ready!");
                 
                 // Only auto-connect if NOT already connected
-                if (_webSocketService != null && !_webSocketService.IsConnected)
+                var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+                if (!onlineMasterCheck.Allowed)
                 {
-                    System.Diagnostics.Debug.WriteLine("🔄 Not connected - starting auto-connect...");
+                    UpdateStatus("Local POS Only", "#6C757D", onlineMasterCheck.Reason);
+                }
+                else if (_webSocketService != null && !_webSocketService.IsConnected)
+                {
+                    System.Diagnostics.Debug.WriteLine(" Not connected - starting auto-connect...");
                     UpdateStatus("Auto-connecting...", "#007BFF", "Connecting to OrderWeb.net");
                     _ = Task.Run(async () => 
                     {
@@ -319,12 +352,12 @@ public partial class CloudSettingsPage : ContentPage
                 }
                 else if (_webSocketService != null && _webSocketService.IsConnected)
                 {
-                    System.Diagnostics.Debug.WriteLine("✅ Already connected - skipping auto-connect");
+                    System.Diagnostics.Debug.WriteLine(" Already connected - skipping auto-connect");
                     UpdateStatus("Connected", "#28A745", "Receiving orders in real-time");
                 }
                 else
                 {
-                    UpdateStatus("⚪ Ready", "#6C757D", "Click Connect to start");
+                    UpdateStatus(" Ready", "#6C757D", "Click Connect to start");
                 }
             }
             else
@@ -332,13 +365,14 @@ public partial class CloudSettingsPage : ContentPage
                 // Set defaults
                 RestApiUrlEntry.Text = "https://orderweb.net/api";
                 WebSocketUrlEntry.Text = "wss://orderweb.net:9011";
-                UpdateStatus("⚪ Not Configured", "#6C757D", "Enter your OrderWeb.net credentials");
+                ApplyOnlineMasterUi(null);
+                UpdateStatus(" Not Configured", "#6C757D", "Enter your OrderWeb.net credentials");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error loading settings: {ex.Message}");
-            UpdateStatus("❌ Error", "#DC3545", ex.Message);
+            UpdateStatus(" Error", "#DC3545", ex.Message);
         }
     }
 
@@ -347,16 +381,33 @@ public partial class CloudSettingsPage : ContentPage
         // Enable buttons if basic fields are filled
         bool hasBasicInfo = !string.IsNullOrWhiteSpace(TenantSlugEntry.Text) && 
                            !string.IsNullOrWhiteSpace(ApiKeyEntry.Text);
+        var canUseCloudControls = TerminalConfigurationService.IsConfigured &&
+                                  TerminalConfigurationService.IsMotherTerminal;
         
-        ConnectButton.IsEnabled = hasBasicInfo;
-        SyncOrdersButton.IsEnabled = hasBasicInfo;
+        ConnectButton.IsEnabled = hasBasicInfo && canUseCloudControls;
+        SyncOrdersButton.IsEnabled = hasBasicInfo && canUseCloudControls;
+    }
+
+    private void ApplyOnlineMasterUi(CloudConfiguration? cloudConfig)
+    {
+        var terminalConfig = TerminalConfigurationService.GetConfiguration();
+        var isMother = terminalConfig.IsMother;
+        var masterName = string.IsNullOrWhiteSpace(cloudConfig?.OnlineOrderMasterTerminalName)
+            ? terminalConfig.TerminalName
+            : cloudConfig!.OnlineOrderMasterTerminalName;
+
+        OnlineOrderMasterSwitch.IsEnabled = isMother;
+        OnlineOrderMasterSwitch.IsToggled = isMother && (cloudConfig?.OnlineOrderMasterEnabled ?? true);
+        OnlineOrderMasterTerminalLabel.Text = isMother
+            ? $"Master terminal: {masterName}. Turn on here to make this terminal receive online orders."
+            : "Child terminal: local POS only. Online orders run on the mother/master terminal.";
     }
 
     private void OnToggleApiKeyClicked(object sender, EventArgs e)
     {
         _isApiKeyVisible = !_isApiKeyVisible;
         ApiKeyEntry.IsPassword = !_isApiKeyVisible;
-        ToggleApiKeyButton.Text = _isApiKeyVisible ? "👁️ Hide" : "👁️ Show";
+        ToggleApiKeyButton.Text = _isApiKeyVisible ? " Hide" : " Show";
     }
 
 
@@ -384,19 +435,19 @@ public partial class CloudSettingsPage : ContentPage
                 return;
             }
 
-            UpdateStatus("💾 Saving...", "#007BFF", "Please wait");
+            UpdateStatus(" Saving...", "#007BFF", "Please wait");
 
             var tenantSlug = TenantSlugEntry.Text.Trim();
             var wsUrl = WebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net:9011";
             
             System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine("💾 SAVE SETTINGS CLICKED");
-            System.Diagnostics.Debug.WriteLine($"📝 Saving WebSocket URL: {wsUrl}");
+            System.Diagnostics.Debug.WriteLine(" SAVE SETTINGS CLICKED");
+            System.Diagnostics.Debug.WriteLine($" Saving WebSocket URL: {wsUrl}");
             System.Diagnostics.Debug.WriteLine($"   Multi-tenant format supported: wss://orderweb.net/ws/pos/{{tenant}}?apiKey={{key}}");
             System.Diagnostics.Debug.WriteLine($"   Port-based format supported: wss://orderweb.net:9011");
             System.Diagnostics.Debug.WriteLine($"   Query parameters will be preserved");
 
-            System.Diagnostics.Debug.WriteLine($"💾 Saving to database:");
+            System.Diagnostics.Debug.WriteLine($" Saving to database:");
             System.Diagnostics.Debug.WriteLine($"   Restaurant ID: {tenantSlug}");
             System.Diagnostics.Debug.WriteLine($"   WebSocket URL: {wsUrl}");
             System.Diagnostics.Debug.WriteLine($"   REST API URL: {RestApiUrlEntry.Text?.Trim()}");
@@ -412,7 +463,11 @@ public partial class CloudSettingsPage : ContentPage
                 MaxRetryAttempts = 3,
                 AutoPrintEnabled = true,
                 NotificationsEnabled = true,
-                PollingIntervalSeconds = 60
+                PollingIntervalSeconds = 60,
+                OnlineOrderMasterEnabled = OnlineOrderMasterSwitch.IsToggled,
+                OnlineOrderMasterTerminalName = OnlineOrderMasterSwitch.IsToggled
+                    ? TerminalConfigurationService.GetConfiguration().TerminalName
+                    : (_currentConfig?.OnlineOrderMasterTerminalName ?? "")
             };
 
             bool saved = await _databaseService.SaveCloudConfigurationAsync(config);
@@ -426,11 +481,24 @@ public partial class CloudSettingsPage : ContentPage
                     Services.NotificationType.Success,
                     2500
                 );
-                UpdateStatus("Saved", "#28A745", "Settings saved");
+                UpdateStatus("Saved", "#28A745", "Settings saved and will stay connected until changed.");
 
-                // Auto-connect after saving
-                await Task.Delay(1000);
-                await ConnectToServicesAsync();
+                var keeper = ServiceHelper.GetService<OrderWebConnectionKeeperService>();
+                var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+                if (keeper != null && onlineMasterCheck.Allowed)
+                {
+                    await keeper.ApplyConfigurationAsync(config);
+                }
+                else if (!onlineMasterCheck.Allowed)
+                {
+                    UpdateStatus("Local POS Only", "#6C757D", onlineMasterCheck.Reason);
+                }
+
+                var dailyReportSync = ServiceHelper.GetService<OrderWebDailyReportSyncService>();
+                if (dailyReportSync != null)
+                {
+                    await dailyReportSync.ReinitializeAsync();
+                }
             }
             else
             {
@@ -440,19 +508,26 @@ public partial class CloudSettingsPage : ContentPage
                     Services.NotificationType.Error,
                     3000
                 );
-                UpdateStatus("❌ Save Failed", "#DC3545", "Database error");
+                UpdateStatus(" Save Failed", "#DC3545", "Database error");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error saving settings: {ex.Message}");
             await ShowAlertAsync("Error", $"Failed to save: {ex.Message}");
-            UpdateStatus("❌ Error", "#DC3545", ex.Message);
+            UpdateStatus(" Error", "#DC3545", ex.Message);
         }
     }
 
     private async void OnConnectClicked(object sender, EventArgs e)
     {
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+        if (!onlineMasterCheck.Allowed)
+        {
+            await ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+            return;
+        }
+
         await ConnectToServicesAsync();
     }
     
@@ -460,6 +535,13 @@ public partial class CloudSettingsPage : ContentPage
     {
         try
         {
+            var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+            if (!onlineMasterCheck.Allowed)
+            {
+                await ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+                return;
+            }
+
             if (_cloudOrderService == null)
             {
                 await ToastNotification.ShowAsync(
@@ -474,13 +556,13 @@ public partial class CloudSettingsPage : ContentPage
             SyncOrdersButton.IsEnabled = false;
             SyncOrdersButton.Text = "⏳ Syncing last 7 days...";
             
-            System.Diagnostics.Debug.WriteLine("🔄 Quick sync: Fetching last 7 days of orders...");
+            System.Diagnostics.Debug.WriteLine(" Quick sync: Fetching last 7 days of orders...");
             
             var sevenDaysAgo = DateTime.Today.AddDays(-7);
             var syncResult = await _cloudOrderService.SyncOrdersByDateAsync(sevenDaysAgo);
             var totalOrders = syncResult.OrdersFound;
             
-            System.Diagnostics.Debug.WriteLine($"✅ Quick sync complete: {syncResult.Message}");
+            System.Diagnostics.Debug.WriteLine($" Quick sync complete: {syncResult.Message}");
             
             if (totalOrders > 0)
             {
@@ -503,8 +585,8 @@ public partial class CloudSettingsPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Sync error: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($"Sync error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             await ToastNotification.ShowAsync(
                 "Sync Error",
                 $"Failed: {ex.Message}",
@@ -514,19 +596,22 @@ public partial class CloudSettingsPage : ContentPage
         }
         finally
         {
-            SyncOrdersButton.Text = "🔄 Sync Orders Now";
-            SyncOrdersButton.IsEnabled = true;
+            SyncOrdersButton.Text = "Sync Orders Now";
+            SyncOrdersButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
         }
     }
     private async Task ConnectToServicesAsync(bool silentMode = false)
     {
         if (_isConnecting) return;
-        
-        // Skip if already connected (prevents reconnection when navigating between pages)
-        if (_webSocketService != null && _webSocketService.IsConnected)
+
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+        if (!onlineMasterCheck.Allowed)
         {
-            System.Diagnostics.Debug.WriteLine("✅ Already connected - skipping connection attempt");
-            UpdateStatus("Connected", "#28A745", "Receiving orders in real-time");
+            UpdateStatus("Local POS Only", "#6C757D", onlineMasterCheck.Reason);
+            if (!silentMode)
+            {
+                await ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+            }
             return;
         }
 
@@ -534,104 +619,69 @@ public partial class CloudSettingsPage : ContentPage
         {
             _isConnecting = true;
             ConnectButton.IsEnabled = false;
-            UpdateStatus("🔌 Connecting...", "#007BFF", "Starting services");
+            UpdateStatus("Connecting...", "#007BFF", "Applying saved OrderWeb settings");
 
-            var tenantId = TenantSlugEntry.Text?.Trim() ?? "";
-            var apiKey = ApiKeyEntry.Text?.Trim() ?? "";
-            var restApiUrl = RestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api";
-            var wsUrl = WebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net:9011";
-            
-            // Validate configuration
-            if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(apiKey))
+            var config = new CloudConfiguration
+            {
+                TenantSlug = TenantSlugEntry.Text?.Trim() ?? "",
+                ApiKey = ApiKeyEntry.Text?.Trim() ?? "",
+                RestApiBaseUrl = RestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api",
+                WebSocketUrl = WebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net/ws/pos",
+                IsEnabled = true,
+                AutoPrintEnabled = _currentConfig?.AutoPrintEnabled ?? true,
+                NotificationsEnabled = _currentConfig?.NotificationsEnabled ?? true,
+                OnlineOrderMasterEnabled = OnlineOrderMasterSwitch.IsToggled,
+                OnlineOrderMasterTerminalName = OnlineOrderMasterSwitch.IsToggled
+                    ? TerminalConfigurationService.GetConfiguration().TerminalName
+                    : (_currentConfig?.OnlineOrderMasterTerminalName ?? "")
+            };
+
+            if (string.IsNullOrWhiteSpace(config.TenantSlug) || string.IsNullOrWhiteSpace(config.ApiKey))
             {
                 UpdateStatus("Configuration Error", "#DC3545", "Restaurant ID and API Key are required");
-                await ToastNotification.ShowAsync(
-                    "Error",
-                    "Please enter your Restaurant ID and API Key",
-                    Services.NotificationType.Error,
-                    3000
-                );
+                if (!silentMode)
+                {
+                    await ToastNotification.ShowAsync("Error", "Please enter your Restaurant ID and API Key", Services.NotificationType.Error, 3000);
+                }
                 return;
             }
-            
-            System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine("🔌 CONNECTING TO ORDERWEB.NET");
-            System.Diagnostics.Debug.WriteLine($"🏪 Restaurant: {tenantId}");
-            System.Diagnostics.Debug.WriteLine($"🔑 API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...");
-            System.Diagnostics.Debug.WriteLine($"🌐 REST API: {restApiUrl}");
-            System.Diagnostics.Debug.WriteLine($"📡 WebSocket: {wsUrl}");
-            System.Diagnostics.Debug.WriteLine("========================================");
-            
-            // CRITICAL FIX: Strip tenant from WebSocket URL if present
-            if (!string.IsNullOrEmpty(tenantId) && wsUrl.EndsWith($"/{tenantId}"))
+
+            if (_databaseService != null)
             {
-                wsUrl = wsUrl.Substring(0, wsUrl.Length - tenantId.Length - 1);
-                System.Diagnostics.Debug.WriteLine($"🔧 Cleaned WebSocket URL: {wsUrl}");
+                await _databaseService.SaveCloudConfigurationAsync(config);
+                _currentConfig = config;
             }
 
-            // Configure REST API - construct full URL with tenant
-            if (_restApiService != null)
+            var keeper = ServiceHelper.GetService<OrderWebConnectionKeeperService>();
+            if (keeper == null)
             {
-                _restApiService.Configure($"{restApiUrl}/{tenantId}", tenantId, apiKey);
-                System.Diagnostics.Debug.WriteLine($"✅ REST API configured: {restApiUrl}/{tenantId}");
+                throw new InvalidOperationException("OrderWeb connection keeper is not available.");
             }
 
-            // Configure and connect WebSocket - pass URL as-is (service handles tenant automatically)
-            if (_webSocketService != null)
-            {
-                _webSocketService.Configure(wsUrl, tenantId, apiKey);
-                bool connected = await _webSocketService.ConnectAsync();
+            await keeper.ApplyConfigurationAsync(config);
 
-                if (connected)
-                {
-                    UpdateStatus("Connected", "#28A745", "Receiving orders in real-time");
-                    if (!silentMode)
-                    {
-                        await ToastNotification.ShowAsync(
-                            "Success",
-                            "Connected to OrderWeb.net! You will now receive orders in real-time.",
-                            Services.NotificationType.Success,
-                            3000
-                        );
-                    }
-                }
-                else
-                {
-                    UpdateStatus("Connection Failed", "#DC3545", "Check your credentials");
-                    if (!silentMode)
-                    {
-                        await ToastNotification.ShowAsync(
-                            "Connection Failed",
-                            "Could not connect to OrderWeb.net. Please check your settings.",
-                            Services.NotificationType.Error,
-                            4000
-                        );
-                    }
-                }
-            }
-            
-            // CRITICAL: Start polling service (backup delivery method)
-            if (_cloudOrderService != null)
+            if (keeper.Status.IsFullyOperational || keeper.Status.IsApiHealthy)
             {
-                System.Diagnostics.Debug.WriteLine("🔄 Starting REST polling service...");
-                await _cloudOrderService.StartPollingAsync();
-                System.Diagnostics.Debug.WriteLine("✅ REST polling started!");
-                
-                // Sync last 2 months with SINGLE API call using 'since' parameter
-                System.Diagnostics.Debug.WriteLine("📦 Syncing last 2 months of orders (one request)...");
-                var twoMonthsAgo = DateTime.Today.AddDays(-60);
-                var syncResult = await _cloudOrderService.SyncOrdersByDateAsync(twoMonthsAgo);
-                
-                System.Diagnostics.Debug.WriteLine($"✅ Initial sync complete: {syncResult.Message}");
-                
-                if (!silentMode && syncResult.OrdersFound > 0)
+                UpdateStatus("Connected", "#28A745", keeper.Status.StatusMessage);
+                if (!silentMode)
                 {
                     await ToastNotification.ShowAsync(
-                        "Orders Synced",
-                        $"Found {syncResult.OrdersFound} orders from the last 2 months",
-                        Services.NotificationType.Info,
-                        3000
-                    );
+                        "Success",
+                        "Connected to OrderWeb.net. Connection will stay active until settings change.",
+                        Services.NotificationType.Success,
+                        3000);
+                }
+            }
+            else
+            {
+                UpdateStatus("Connection Failed", "#DC3545", keeper.Status.LastError ?? "Could not connect to OrderWeb.net");
+                if (!silentMode)
+                {
+                    await ToastNotification.ShowAsync(
+                        "Connection Failed",
+                        keeper.Status.LastError ?? "Could not connect to OrderWeb.net.",
+                        Services.NotificationType.Error,
+                        4000);
                 }
             }
         }
@@ -639,17 +689,15 @@ public partial class CloudSettingsPage : ContentPage
         {
             System.Diagnostics.Debug.WriteLine($"Error connecting: {ex.Message}");
             UpdateStatus("Connection Error", "#DC3545", ex.Message);
-            await ToastNotification.ShowAsync(
-                "Connection Error",
-                ex.Message,
-                Services.NotificationType.Error,
-                4000
-            );
+            if (!silentMode)
+            {
+                await ToastNotification.ShowAsync("Connection Error", ex.Message, Services.NotificationType.Error, 4000);
+            }
         }
         finally
         {
             _isConnecting = false;
-            ConnectButton.IsEnabled = true;
+            ConnectButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
         }
     }
 
@@ -663,17 +711,17 @@ public partial class CloudSettingsPage : ContentPage
         if (status.Contains("Connected") && !status.Contains("Disconnected"))
         {
             ConnectionStatusFrame.BackgroundColor = Color.FromArgb("#D1FAE5"); // Green
-            ConnectionStatusIcon.Text = "✅";
+            ConnectionStatusIcon.Text = "";
         }
         else if (status.Contains("Disconnected") || status.Contains("Failed") || status.Contains("Error"))
         {
             ConnectionStatusFrame.BackgroundColor = Color.FromArgb("#FEE2E2"); // Red
-            ConnectionStatusIcon.Text = "❌";
+            ConnectionStatusIcon.Text = "";
         }
         else
         {
             ConnectionStatusFrame.BackgroundColor = Color.FromArgb("#FEF3C7"); // Yellow
-            ConnectionStatusIcon.Text = "⚠️";
+            ConnectionStatusIcon.Text = "";
         }
     }
     
@@ -681,13 +729,13 @@ public partial class CloudSettingsPage : ContentPage
     {
         if (isConnected)
         {
-            StatusConnectionIcon.Text = "🟢";
+            StatusConnectionIcon.Text = "";
             StatusConnectionText.Text = "Live";
             StatusConnectionText.TextColor = Color.FromArgb("#10B981");
         }
         else
         {
-            StatusConnectionIcon.Text = "🔴";
+            StatusConnectionIcon.Text = "";
             StatusConnectionText.Text = "Offline";
             StatusConnectionText.TextColor = Color.FromArgb("#DC2626");
         }
@@ -752,6 +800,13 @@ public partial class CloudSettingsPage : ContentPage
 
     private async void OnSyncHistoricalClicked(object? sender, EventArgs e)
     {
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+        if (!onlineMasterCheck.Allowed)
+        {
+            await ShowAlertAsync("Online Order Master", onlineMasterCheck.Reason);
+            return;
+        }
+
         if (_cloudOrderService == null)
         {
             await ToastNotification.ShowAsync(
@@ -769,8 +824,8 @@ public partial class CloudSettingsPage : ContentPage
             SyncHistoricalButton.Text = "⏳ Syncing last 2 months...";
             
             System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine("📅 MANUAL HISTORICAL SYNC STARTED");
-            System.Diagnostics.Debug.WriteLine("📦 Fetching orders from last 60 days...");
+            System.Diagnostics.Debug.WriteLine(" MANUAL HISTORICAL SYNC STARTED");
+            System.Diagnostics.Debug.WriteLine(" Fetching orders from last 60 days...");
             System.Diagnostics.Debug.WriteLine("========================================");
             
             var sixtyDaysAgo = DateTime.Today.AddDays(-60);
@@ -778,10 +833,10 @@ public partial class CloudSettingsPage : ContentPage
             var totalOrders = syncResult.OrdersFound;
             
             System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine($"✅ HISTORICAL SYNC COMPLETE");
-            System.Diagnostics.Debug.WriteLine($"📊 Total: {totalOrders} orders");
-            System.Diagnostics.Debug.WriteLine($"🧾 Result: {syncResult.Message}");
-            System.Diagnostics.Debug.WriteLine($"📅 Date range: {DateTime.Today.AddDays(-59):MMM dd} - {DateTime.Today:MMM dd, yyyy}");
+            System.Diagnostics.Debug.WriteLine($" HISTORICAL SYNC COMPLETE");
+            System.Diagnostics.Debug.WriteLine($" Total: {totalOrders} orders");
+            System.Diagnostics.Debug.WriteLine($" Result: {syncResult.Message}");
+            System.Diagnostics.Debug.WriteLine($" Date range: {DateTime.Today.AddDays(-59):MMM dd} - {DateTime.Today:MMM dd, yyyy}");
             System.Diagnostics.Debug.WriteLine("========================================");
             
             await ToastNotification.ShowAsync(
@@ -793,7 +848,7 @@ public partial class CloudSettingsPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Historical sync error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Historical sync error: {ex.Message}");
             await ToastNotification.ShowAsync(
                 "Sync Error",
                 ex.Message,
@@ -803,8 +858,57 @@ public partial class CloudSettingsPage : ContentPage
         }
         finally
         {
-            SyncHistoricalButton.IsEnabled = true;
-            SyncHistoricalButton.Text = "📅 Sync Last 2 Months (Historical Orders)";
+            SyncHistoricalButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
+            SyncHistoricalButton.Text = "Sync Last 2 Months (Historical Orders)";
+            UploadDailyReportButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
+            UploadDailyReportButton.Text = "Upload In-Restaurant Daily Report";
+        }
+    }
+
+    private async void OnUploadDailyReportClicked(object? sender, EventArgs e)
+    {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            await ShowAlertAsync("Mother Terminal Required", "Daily report upload runs on the mother terminal only.");
+            return;
+        }
+
+        var syncService = ServiceHelper.GetService<OrderWebDailyReportSyncService>();
+        if (syncService == null)
+        {
+            await ShowAlertAsync("Error", "Daily report sync service is not available.");
+            return;
+        }
+
+        var uploadToday = await DisplayAlert(
+            "Upload Daily Report",
+            "Upload today's in-restaurant totals to OrderWeb.net?",
+            "Upload Today",
+            "Cancel");
+
+        if (!uploadToday)
+        {
+            return;
+        }
+
+        try
+        {
+            UploadDailyReportButton.IsEnabled = false;
+            UploadDailyReportButton.Text = "Uploading daily report...";
+
+            var result = await syncService.UploadManualAsync(DateTime.Today, forceReupload: true);
+            await ShowAlertAsync(
+                result.Success ? "Upload Complete" : "Upload Failed",
+                result.Message);
+        }
+        catch (Exception ex)
+        {
+            await ShowAlertAsync("Upload Failed", ex.Message);
+        }
+        finally
+        {
+            UploadDailyReportButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
+            UploadDailyReportButton.Text = "Upload In-Restaurant Daily Report";
         }
     }
 
@@ -824,7 +928,7 @@ public partial class CloudSettingsPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Logout error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Logout error: {ex.Message}");
             // Still navigate to login even if logout service fails
             await Shell.Current.GoToAsync("//login");
         }
@@ -838,24 +942,5 @@ public partial class CloudSettingsPage : ContentPage
     private async void OnUserManagementClicked(object sender, EventArgs e)
     {
         await Shell.Current.GoToAsync("//usermanagement");
-    }
-}
-
-public static class ServiceHelper
-{
-    public static T? GetService<T>() where T : class
-    {
-        try
-        {
-            var current = Application.Current?.Handler?.MauiContext?.Services;
-            if (current == null)
-                return null;
-                
-            return current.GetService(typeof(T)) as T;
-        }
-        catch
-        {
-            return null;
-        }
     }
 }

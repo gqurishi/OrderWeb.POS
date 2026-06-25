@@ -16,7 +16,7 @@
         <Grid RowDefinitions="Auto,*,Auto" BackgroundColor="White" RowSpacing="0">
             
             <!-- HEADER - Clean & Elegant -->
-            <VerticalStackLayout Grid.Row="0" Spacing="20" Padding="20,32,20,32" BackgroundColor="White">
+            <VerticalStackLayout Grid.Row="0" Spacing="16" Padding="20,32,20,28" BackgroundColor="White">
                 <!-- Logo -->
                 <Image Source="companylogo.png"
                        WidthRequest="100"
@@ -24,20 +24,13 @@
                        Aspect="AspectFit"
                        HorizontalOptions="Center"/>
                 
-                <!-- Title -->
-                <Label Text="OrderWeb POS" 
-                       FontFamily="OpenSansBold"
-                       FontSize="28"
-                       TextColor="#2D3748"
-                       HorizontalOptions="Center"/>
-                       
                 <!-- Subtitle -->
                 <Label Text="Restaurant Management" 
                        FontFamily="OpenSansRegular"
                        FontSize="16"
                        TextColor="#718096"
                        HorizontalOptions="Center"
-                       Margin="0,-8,0,0"/>
+                       Margin="0,-4,0,0"/>
             </VerticalStackLayout>
 
             <!-- MENU ITEMS - ScrollView for All Items -->
@@ -266,6 +259,32 @@
                         </Grid>
                     </StackLayout>
 
+                    <!-- Terminal Health -->
+                    <StackLayout x:Name="TerminalHealthMenuItem" BackgroundColor="Transparent" Padding="16,14">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="terminalhealth" />
+                        </StackLayout.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+                            <Image Grid.Column="0" Source="tarminal.png" WidthRequest="32" HeightRequest="32"
+                                   HorizontalOptions="Start" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="Terminal Health" FontFamily="OpenSansBold"
+                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
+                        </Grid>
+                    </StackLayout>
+
+                    <!-- Recent Customers -->
+                    <StackLayout x:Name="CustomerDataMenuItem" BackgroundColor="Transparent" Padding="16,14">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="customerdata" />
+                        </StackLayout.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+                            <Image Grid.Column="0" Source="customers.png" WidthRequest="32" HeightRequest="32"
+                                   HorizontalOptions="Start" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="Recent Customers" FontFamily="OpenSansBold"
+                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
+                        </Grid>
+                    </StackLayout>
+
                 </VerticalStackLayout>
             </ScrollView>
 
@@ -293,7 +312,7 @@
         Shell.TitleView="{x:Null}" />
 
     <!-- Main App with Flyout Menu -->
-    <FlyoutItem Title="Dashboard" FlyoutIcon="📊">
+    <FlyoutItem Title="Dashboard">
         <ShellContent
             Title="Dashboard" 
             ContentTemplate="{DataTemplate pages:DashboardPage}"
@@ -302,7 +321,7 @@
     </FlyoutItem>
 
     <!-- User Dashboard (Simplified) -->
-    <FlyoutItem Title="User Dashboard" FlyoutIcon="👤">
+    <FlyoutItem Title="User Dashboard">
         <ShellContent
             Title="User Dashboard" 
             ContentTemplate="{DataTemplate pages:UserDashboardPage}"
@@ -317,7 +336,7 @@
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 
-    <FlyoutItem Title="Restaurant" FlyoutIcon="🏪">
+    <FlyoutItem Title="Restaurant">
         <ShellContent
             Title="Restaurant Overview"
             ContentTemplate="{DataTemplate pages:RestaurantPage}"
@@ -347,7 +366,7 @@
         Shell.NavBarIsVisible="False"
         FlyoutItemIsVisible="False" />
 
-    <FlyoutItem Title="Food Menu" FlyoutIcon="🍽️">
+    <FlyoutItem Title="Food Menu">
         <ShellContent
             Title="Food Menu Management"
             ContentTemplate="{DataTemplate pages:FoodMenuManagement}"
@@ -355,7 +374,7 @@
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
 
-    <FlyoutItem Title="Web Orders" FlyoutIcon="🌐">
+    <FlyoutItem Title="Web Orders">
         <ShellContent
             Title="Web Orders from OrderWeb.net"
             ContentTemplate="{DataTemplate pages:WebOrdersPage}"
@@ -363,7 +382,7 @@
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
 
-    <FlyoutItem Title="Settings" FlyoutIcon="⚙️">
+    <FlyoutItem Title="Settings">
         <ShellContent
             Title="Settings"
             ContentTemplate="{DataTemplate pages:UnifiedSettingsPage}"
@@ -402,7 +421,7 @@
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 
-    <FlyoutItem Title="Gift Cards" FlyoutIcon="💳">
+    <FlyoutItem Title="Gift Cards">
         <ShellContent
             Title="Gift Card Management"
             ContentTemplate="{DataTemplate pages:GiftCardPage}"
@@ -410,7 +429,7 @@
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
 
-    <FlyoutItem Title="Loyalty Points" FlyoutIcon="💎">
+    <FlyoutItem Title="Loyalty Points">
         <ShellContent
             Title="Customer Loyalty &amp; Gift Cards"
             ContentTemplate="{DataTemplate pages:LoyaltyPointsPage}"
@@ -418,12 +437,39 @@
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
 
-    <FlyoutItem Title="Printer Setup" FlyoutIcon="🖨️">
+    <FlyoutItem Title="Printer Setup">
         <ShellContent
             Title="Printer Setup"
             ContentTemplate="{DataTemplate pages:PrinterSetupPage}"
             Route="printersetup"
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
+
+    <ShellContent
+        Title="Terminal Health"
+        ContentTemplate="{DataTemplate pages:TerminalHealthPage}"
+        Route="terminalhealth"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Recent Customers"
+        ContentTemplate="{DataTemplate pages:CustomerDataPage}"
+        Route="customerdata"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Terminal Setup"
+        ContentTemplate="{DataTemplate pages:TerminalSetupPage}"
+        Route="terminalsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:PostcodeLookupPage}"
+        Route="postcodelookup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
 
 </Shell>

@@ -74,6 +74,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
         }
 
         AppDataRefreshService.RefreshRequested += OnRefreshRequested;
+        AppDataRefreshService.DataChanged += OnAppDataChanged;
         _isSubscribedToRefreshEvents = true;
     }
 
@@ -85,7 +86,24 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
         }
 
         AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
+        AppDataRefreshService.DataChanged -= OnAppDataChanged;
         _isSubscribedToRefreshEvents = false;
+    }
+
+    private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+    {
+        if (e.Kind != AppDataChangeKind.Orders || e.IsFromCurrentTerminal)
+        {
+            return;
+        }
+
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
+        });
+
+        await LoadOrders();
+        UpdateLastSyncTime();
     }
 
     private async void OnRefreshRequested(object? sender, EventArgs e)

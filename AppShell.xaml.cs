@@ -1,8 +1,9 @@
-﻿using POS_in_NET.Services;
+using POS_in_NET.Services;
 using POS_in_NET.Pages;
 using POS_in_NET.Models;
 using POS_in_NET.Views;
 using System.ComponentModel;
+using System.Linq;
 
 namespace POS_in_NET;
 
@@ -149,18 +150,54 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
             var databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
             await databaseService.InitializeDatabaseAsync();
-            AppDataRefreshService.RequestRefresh();
+            var cloudSyncMessage = await TrySyncCloudOrdersAsync(databaseService);
+
+            OrderPlacementPageSimple.InvalidateMenuCache();
+            AppDataRefreshService.RequestRefresh(AppDataChangeKind.All);
 
             // Show success message
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("✅ Sync Complete", "Database synced successfully!\nFloors and tables refreshed.");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                "Update Complete",
+                $"All active screens were asked to reload fresh data.\n{cloudSyncMessage}");
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Sync Error", $"Failed to sync: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Sync Error", $"Failed to sync: {ex.Message}");
         }
         finally
         {
             SetSyncingState(false);
+        }
+    }
+
+    private static async Task<string> TrySyncCloudOrdersAsync(DatabaseService databaseService)
+    {
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(databaseService);
+        if (!onlineMasterCheck.Allowed)
+        {
+            return $"Cloud sync skipped: {onlineMasterCheck.Reason}";
+        }
+
+        try
+        {
+            var cloudOrderService = ServiceHelper.GetService<CloudOrderService>();
+            if (cloudOrderService == null)
+            {
+                return "Cloud sync skipped: cloud order service is not available.";
+            }
+
+            var syncFromDate = DateTime.Today.AddDays(-7);
+            var syncResult = await cloudOrderService.SyncOrdersByDateAsync(syncFromDate);
+            if (!syncResult.Success)
+            {
+                return $"Cloud sync failed: {syncResult.Message}";
+            }
+
+            return $"Cloud sync complete: {syncResult.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"Cloud sync failed: {ex.Message}";
         }
     }
 
@@ -232,8 +269,13 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                     }
                     else
                     {
+                        if (route.Equals("visuallayout", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ClearShellDetailStacks();
+                        }
+
                         // Navigate to shell content route with //
-                        await Shell.Current.GoToAsync($"//{route}");
+                        await Shell.Current.GoToAsync($"//{route}", false);
                     }
                 }
             }
@@ -241,12 +283,39 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+            await AppAlertService.ShowAlertAsync("Navigation Error", ex.Message);
         }
     }
 
     private bool IsRouteAllowed(string route)
     {
         return _roleAccessService.CanAccessRoute(_authService.CurrentUser?.Role, route);
+    }
+
+    private static void ClearShellDetailStacks()
+    {
+        if (Shell.Current is not Shell shell)
+        {
+            return;
+        }
+
+        foreach (var shellItem in shell.Items)
+        {
+            foreach (var shellSection in shellItem.Items)
+            {
+                var nav = shellSection.Navigation;
+                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
+                {
+                    continue;
+                }
+
+                foreach (var page in nav.NavigationStack.Skip(1).ToList())
+                {
+                    nav.RemovePage(page);
+                }
+            }
+        }
     }
 
     private bool TryResolveRoute(string location, out string route)
@@ -282,6 +351,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         InventoryMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "inventory");
         FoodMenuMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "foodmenu");
         PrintersMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "printersetup");
+        TerminalHealthMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "terminalhealth");
+        CustomerDataMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "customerdata");
         SettingsMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "settings");
     }
 
@@ -293,7 +364,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                 DashboardMenuItem, RestaurantMenuItem, FoodMenuMenuItem, WebOrdersMenuItem,
                 SettingsMenuItem, CollectionMenuItem, DeliveryMenuItem, OrderHistoryMenuItem,
                 LiveOrderMenuItem, GiftCardsMenuItem, LoyaltyMenuItem, ReservationMenuItem,
-                CashDrawerMenuItem, ReportMenuItem, InventoryMenuItem, PrintersMenuItem
+                CashDrawerMenuItem, ReportMenuItem, InventoryMenuItem, PrintersMenuItem,
+                TerminalHealthMenuItem, CustomerDataMenuItem
             };
 
         foreach (var item in menuItems)
@@ -307,85 +379,19 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
     private async Task OpenCashDrawerFromSidebarAsync()
     {
-        _inactivityService.ResetActivity();
+        var flowService = ServiceHelper.GetService<CashDrawerFlowService>()
+            ?? new CashDrawerFlowService(
+                ServiceHelper.GetService<CashDrawerService>() ?? new CashDrawerService(
+                    ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(),
+                    ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService(),
+                    _authService),
+                ServiceHelper.GetService<TillExpenseService>() ?? new TillExpenseService(
+                    ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(),
+                    _authService),
+                _authService,
+                _inactivityService);
 
-        var reasonDialog = new ModernActionSheetDialog();
-        reasonDialog.SetActionSheetGrid(
-            "Cash Drawer Reason",
-            new List<string> { "No Sale", "Change", "Refund", "Cash Count", "Other" },
-            "£",
-            "#0F766E");
-
-        var reason = await reasonDialog.ShowAsync();
-        if (reason == null)
-        {
-            return;
-        }
-
-        if (reason == "Other")
-        {
-            var customReasonDialog = new StyledPromptDialog();
-            customReasonDialog.SetDialog(
-                "Cash Drawer Reason",
-                "Enter the reason for opening the cash drawer:",
-                "Reason",
-                null,
-                string.Empty,
-                true);
-
-            reason = await customReasonDialog.ShowAsync();
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                return;
-            }
-        }
-
-        var confirmDialog = new ModernConfirmDialog();
-        confirmDialog.SetConfirm(
-            "Open Cash Drawer",
-            $"Open the cash drawer for: {reason}?",
-            "Open",
-            "No",
-            "£");
-
-        if (!await confirmDialog.ShowAsync())
-        {
-            return;
-        }
-
-        var cashDrawerService = ServiceHelper.GetService<CashDrawerService>()
-            ?? new CashDrawerService(
-                ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(),
-                ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService(),
-                _authService);
-
-        var result = await cashDrawerService.OpenAsync(new CashDrawerOpenRequest
-        {
-            Reason = reason,
-            SourceArea = "sidebar"
-        });
-
-        var resultDialog = new ModernAlertDialog();
-        if (result.Success)
-        {
-            resultDialog.SetAlert(
-                "Cash Drawer",
-                $"Cash drawer opened on {result.PrinterName}.",
-                "OK",
-                "#10B981",
-                "White");
-        }
-        else
-        {
-            resultDialog.SetAlert(
-                "Cash Drawer Failed",
-                result.Message,
-                "!",
-                "#EF4444",
-                "White");
-        }
-
-        await resultDialog.ShowAsync();
+        await flowService.RunAsync(new CashDrawerFlowContext { SourceArea = "sidebar" });
     }
 
     protected override void OnDisappearing()

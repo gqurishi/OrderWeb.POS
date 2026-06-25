@@ -39,7 +39,7 @@ namespace POS_in_NET.Services
         {
             StopAutoProcessing();
             _processingTimer = new Timer(async _ => await ProcessQueueAsync(), null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
-            System.Diagnostics.Debug.WriteLine("🔄 Offline queue auto-processing started");
+            System.Diagnostics.Debug.WriteLine(" Offline queue auto-processing started");
         }
         
         /// <summary>
@@ -49,7 +49,7 @@ namespace POS_in_NET.Services
         {
             _processingTimer?.Dispose();
             _processingTimer = null;
-            System.Diagnostics.Debug.WriteLine("⏸️ Offline queue auto-processing stopped");
+            System.Diagnostics.Debug.WriteLine("⏸ Offline queue auto-processing stopped");
         }
         
         /// <summary>
@@ -87,12 +87,12 @@ namespace POS_in_NET.Services
                 
                 await cmd.ExecuteNonQueryAsync();
                 
-                System.Diagnostics.Debug.WriteLine($"📥 Queued operation: {operationType} -> {endpoint}");
+                System.Diagnostics.Debug.WriteLine($" Queued operation: {operationType} -> {endpoint}");
                 return true;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to enqueue operation: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to enqueue operation: {ex.Message}");
                 return false;
             }
         }
@@ -105,7 +105,7 @@ namespace POS_in_NET.Services
             // Prevent concurrent processing
             if (!await _processingLock.WaitAsync(0))
             {
-                System.Diagnostics.Debug.WriteLine("⏭️ Queue processing already in progress, skipping");
+                System.Diagnostics.Debug.WriteLine("⏭ Queue processing already in progress, skipping");
                 return (0, 0);
             }
             
@@ -121,7 +121,7 @@ namespace POS_in_NET.Services
                 if (items.Count == 0)
                     return (0, 0);
                 
-                System.Diagnostics.Debug.WriteLine($"🔄 Processing {items.Count} queued operations...");
+                System.Diagnostics.Debug.WriteLine($" Processing {items.Count} queued operations...");
                 
                 foreach (var item in items)
                 {
@@ -145,7 +145,7 @@ namespace POS_in_NET.Services
                             // Mark as sent
                             await MarkAsSentAsync(item.Id, result.StatusCode, result.ResponseBody);
                             sent++;
-                            System.Diagnostics.Debug.WriteLine($"✅ Sent: {item.OperationType} -> {item.Endpoint}");
+                            System.Diagnostics.Debug.WriteLine($" Sent: {item.OperationType} -> {item.Endpoint}");
                         }
                         else
                         {
@@ -157,26 +157,26 @@ namespace POS_in_NET.Services
                                 // Max retries reached - mark as failed
                                 await MarkAsFailedAsync(item.Id, result.Error);
                                 failed++;
-                                System.Diagnostics.Debug.WriteLine($"❌ Failed (max retries): {item.OperationType} - {result.Error}");
+                                System.Diagnostics.Debug.WriteLine($" Failed (max retries): {item.OperationType} - {result.Error}");
                             }
                             else
                             {
                                 // Update retry count and error
                                 await UpdateRetryAsync(item.Id, newRetryCount, result.Error);
-                                System.Diagnostics.Debug.WriteLine($"⚠️ Retry {newRetryCount}/{item.MaxRetries}: {item.OperationType} - {result.Error}");
+                                System.Diagnostics.Debug.WriteLine($" Retry {newRetryCount}/{item.MaxRetries}: {item.OperationType} - {result.Error}");
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"❌ Exception processing {item.OperationType}: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Exception processing {item.OperationType}: {ex.Message}");
                         await UpdateRetryAsync(item.Id, item.RetryCount + 1, ex.Message);
                     }
                 }
                 
                 if (sent > 0 || failed > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"✅ Queue processed: {sent} sent, {failed} failed");
+                    System.Diagnostics.Debug.WriteLine($" Queue processed: {sent} sent, {failed} failed");
                     QueueProcessed?.Invoke(this, new QueueProcessedEventArgs { SentCount = sent, FailedCount = failed });
                 }
                 
@@ -289,7 +289,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to get pending items: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to get pending items: {ex.Message}");
             }
             
             return items;
@@ -316,7 +316,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to update status: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to update status: {ex.Message}");
             }
         }
         
@@ -345,7 +345,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to mark as sent: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to mark as sent: {ex.Message}");
             }
         }
         
@@ -372,7 +372,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to mark as failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to mark as failed: {ex.Message}");
             }
         }
         
@@ -401,7 +401,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to update retry: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to update retry: {ex.Message}");
             }
         }
         
@@ -439,7 +439,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to get stats: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to get stats: {ex.Message}");
             }
             
             return stats;
@@ -462,12 +462,12 @@ namespace POS_in_NET.Services
                 cmd.Parameters.AddWithValue("@days", daysToKeep);
                 
                 var deleted = await cmd.ExecuteNonQueryAsync();
-                System.Diagnostics.Debug.WriteLine($"🗑️ Cleaned up {deleted} old queue items");
+                System.Diagnostics.Debug.WriteLine($" Cleaned up {deleted} old queue items");
                 return deleted;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to cleanup: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to cleanup: {ex.Message}");
                 return 0;
             }
         }

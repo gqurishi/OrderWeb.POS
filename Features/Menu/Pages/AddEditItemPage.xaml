@@ -711,7 +711,7 @@
                                                                TextColor="#1E293B"
                                                                VerticalOptions="Center" />
                                                         <Button Grid.Column="1"
-                                                                Text="✎"
+                                                                Text=""
                                                                 FontSize="16"
                                                                 BackgroundColor="#F1F5F9"
                                                                 TextColor="#64748B"
@@ -722,7 +722,7 @@
                                                                 Clicked="OnEditQuickNoteClicked"
                                                                 CommandParameter="{Binding .}" />
                                                         <Button Grid.Column="2"
-                                                                Text="×"
+                                                                Text="X"
                                                                 FontSize="20"
                                                                 FontAttributes="Bold"
                                                                 BackgroundColor="#FEE2E2"
@@ -858,7 +858,7 @@
                                                        TextColor="#0F172A"
                                                        VerticalOptions="Center"
                                                        Grid.Column="0" />
-                                                <Button Text="✕"
+                                                <Button Text=""
                                                         BackgroundColor="#EF4444"
                                                         TextColor="White"
                                                         FontSize="12"

@@ -6,6 +6,7 @@ using System.Text;
 using CommunityToolkit.Maui.Storage;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
 
 namespace POS_in_NET.Pages;
 
@@ -20,9 +21,12 @@ public partial class ReportPage : ContentPage
     private readonly BusinessSettingsService _businessSettingsService;
     private readonly CashDrawerService _cashDrawerService;
     private readonly DiscountAuditService _discountAuditService;
+    private readonly TillExpenseService _tillExpenseService;
+    private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
 
     private bool _hasLoaded;
     private bool _isLoading;
+    private bool _isSubscribedToRefreshEvents;
     private ReportDatePreset _selectedPreset = ReportDatePreset.Today;
     private DateTime _startDate = DateTime.Today;
     private DateTime _endDate = DateTime.Today;
@@ -35,6 +39,7 @@ public partial class ReportPage : ContentPage
     private string _summaryGrossText = "£0.00";
     private string _summaryNetText = "£0.00";
     private string _summaryVatText = "£0.00";
+    private string _summaryDeliveryText = "£0.00";
     private string _summaryAverageText = "£0.00";
     private bool _isCustomRangeDirty;
     private ReportViewMode _reportViewMode = ReportViewMode.Orders;
@@ -50,6 +55,13 @@ public partial class ReportPage : ContentPage
     private string _cashDrawerOpensText = "0 opens";
     private string _cashDrawerFailuresText = "0 failed";
     private string _cashDrawerLastOpenText = "No drawer opens in this range";
+    private string _tillExpensePendingText = "0 pending";
+    private string _tillExpenseNetOutText = "£0.00 out";
+    private string _tillExpenseShoppingText = "£0.00";
+    private string _tillExpenseDeliveryText = "£0.00";
+    private string _tillExpenseOtherText = "£0.00";
+    private string _tillExpenseCashReturnText = "£0.00";
+    private string _tillExpenseCashCountText = "0 counts";
     private string _discountEventsText = "0 events";
     private string _discountTotalText = "£0.00";
     private string _discountLastEventText = "No discounts in this range";
@@ -62,11 +74,14 @@ public partial class ReportPage : ContentPage
     private string _comparisonPriorText = "Select a historical snapshot to compare the prior period.";
     private string _comparisonYearAgoText = "Year-over-year comparison will appear here.";
     private string _trendInsightText = "Trend insight appears when enough data is available.";
+    private string _orderWebUploadBannerText = string.Empty;
+    private bool _isOrderWebUploadBannerVisible;
     private Color _trendInsightColor = Color.FromArgb("#334155");
     private Color _summaryOrdersColor = Color.FromArgb("#0F172A");
     private Color _summaryGrossColor = Color.FromArgb("#0F172A");
     private Color _summaryNetColor = Color.FromArgb("#0F172A");
     private Color _summaryVatColor = Color.FromArgb("#0F172A");
+    private Color _summaryDeliveryColor = Color.FromArgb("#0F172A");
     private Color _summaryAverageColor = Color.FromArgb("#0F172A");
     private Color _operationalSendLatencyColor = Color.FromArgb("#0F172A");
     private Color _operationalPaymentCompletionColor = Color.FromArgb("#0F172A");
@@ -95,6 +110,7 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<ReportTopItemRow> TopItems { get; } = new();
     public ObservableCollection<OperationalVoidAuditRow> VoidAudits { get; } = new();
     public ObservableCollection<CashDrawerReportRow> CashDrawerAudits { get; } = new();
+    public ObservableCollection<TillExpenseReportRow> TillExpenses { get; } = new();
     public ObservableCollection<DiscountAuditReportRow> DiscountAudits { get; } = new();
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
@@ -104,6 +120,7 @@ public partial class ReportPage : ContentPage
     public bool IsTopItemsEmpty => TopItems.Count == 0;
     public bool HasVoidAudits => VoidAudits.Count > 0;
     public bool HasCashDrawerAudits => CashDrawerAudits.Count > 0;
+    public bool HasTillExpenses => TillExpenses.Count > 0;
     public bool HasDiscountAudits => DiscountAudits.Count > 0;
     public bool HasHistoricalReports => HistoricalReports.Count > 0;
     public bool HasDailyTrend => DailyTrend.Count > 1;
@@ -224,14 +241,51 @@ public partial class ReportPage : ContentPage
 
     public bool IsNotLoading => !IsLoading;
     public bool CanSubmitCustomRange => IsCustomRangeVisible && IsCustomRangeDirty && !IsLoading;
+    public bool CanUseFullReportTools => TerminalRoleService.CanViewFullReports;
+    public bool CanUseAuditReports => CanUseFullReportTools;
+    public bool CanExportReports => CanUseFullReportTools;
+    public bool CanUploadOrderWebReport =>
+        _roleAccessService?.IsAdmin(_authService?.CurrentUser?.Role) == true && CanUseFullReportTools;
+
+    public bool IsOrderWebUploadBannerVisible
+    {
+        get => _isOrderWebUploadBannerVisible;
+        private set
+        {
+            if (_isOrderWebUploadBannerVisible != value)
+            {
+                _isOrderWebUploadBannerVisible = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string OrderWebUploadBannerText
+    {
+        get => _orderWebUploadBannerText;
+        private set
+        {
+            if (_orderWebUploadBannerText != value)
+            {
+                _orderWebUploadBannerText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool IsLimitedReportTerminal => TerminalConfigurationService.IsChildTerminal;
+    public string ReportTerminalModeText => IsLimitedReportTerminal
+        ? "Child terminal limited report mode: live summaries are read from the shared mother database. End-of-day, historical comparison, exports, order drill-down, cash drawer, and discount audit reports run on the mother terminal."
+        : "Mother terminal full report mode: live reports, end-of-day snapshots, history, exports, cash drawer, and audit reports are available.";
 
     public bool IsOrdersReportVisible => _reportViewMode == ReportViewMode.Orders;
+    public bool IsHistoricalReportsVisible => IsOrdersReportVisible && CanUseFullReportTools;
 
     public bool IsTopSellReportVisible => _reportViewMode == ReportViewMode.TopSellItems;
 
-    public bool IsCashDrawerReportVisible => _reportViewMode == ReportViewMode.CashDrawer;
+    public bool IsCashDrawerReportVisible => _reportViewMode == ReportViewMode.CashDrawer && CanUseAuditReports;
 
-    public bool IsDiscountAuditReportVisible => _reportViewMode == ReportViewMode.DiscountAudit;
+    public bool IsDiscountAuditReportVisible => _reportViewMode == ReportViewMode.DiscountAudit && CanUseAuditReports;
 
     public int TopSellRangeDays
     {
@@ -374,6 +428,97 @@ public partial class ReportPage : ContentPage
             if (_cashDrawerLastOpenText != value)
             {
                 _cashDrawerLastOpenText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpensePendingText
+    {
+        get => _tillExpensePendingText;
+        set
+        {
+            if (_tillExpensePendingText != value)
+            {
+                _tillExpensePendingText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseNetOutText
+    {
+        get => _tillExpenseNetOutText;
+        set
+        {
+            if (_tillExpenseNetOutText != value)
+            {
+                _tillExpenseNetOutText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseShoppingText
+    {
+        get => _tillExpenseShoppingText;
+        set
+        {
+            if (_tillExpenseShoppingText != value)
+            {
+                _tillExpenseShoppingText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseDeliveryText
+    {
+        get => _tillExpenseDeliveryText;
+        set
+        {
+            if (_tillExpenseDeliveryText != value)
+            {
+                _tillExpenseDeliveryText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseOtherText
+    {
+        get => _tillExpenseOtherText;
+        set
+        {
+            if (_tillExpenseOtherText != value)
+            {
+                _tillExpenseOtherText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseCashReturnText
+    {
+        get => _tillExpenseCashReturnText;
+        set
+        {
+            if (_tillExpenseCashReturnText != value)
+            {
+                _tillExpenseCashReturnText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseCashCountText
+    {
+        get => _tillExpenseCashCountText;
+        set
+        {
+            if (_tillExpenseCashCountText != value)
+            {
+                _tillExpenseCashCountText = value;
                 OnPropertyChanged();
             }
         }
@@ -568,6 +713,19 @@ public partial class ReportPage : ContentPage
         }
     }
 
+    public string SummaryDeliveryText
+    {
+        get => _summaryDeliveryText;
+        set
+        {
+            if (_summaryDeliveryText != value)
+            {
+                _summaryDeliveryText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public string SummaryAverageText
     {
         get => _summaryAverageText;
@@ -628,6 +786,19 @@ public partial class ReportPage : ContentPage
             if (_summaryVatColor != value)
             {
                 _summaryVatColor = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public Color SummaryDeliveryColor
+    {
+        get => _summaryDeliveryColor;
+        set
+        {
+            if (_summaryDeliveryColor != value)
+            {
+                _summaryDeliveryColor = value;
                 OnPropertyChanged();
             }
         }
@@ -779,8 +950,6 @@ public partial class ReportPage : ContentPage
     public ReportPage()
     {
         InitializeComponent();
-        BindingContext = this;
-        TopBar.SetPageTitle("Report");
 
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
@@ -797,6 +966,21 @@ public partial class ReportPage : ContentPage
                 _authService);
         _discountAuditService = ServiceHelper.GetService<DiscountAuditService>()
             ?? new DiscountAuditService(new DatabaseService(), _authService);
+        _tillExpenseService = ServiceHelper.GetService<TillExpenseService>()
+            ?? new TillExpenseService(new DatabaseService(), _authService);
+        _orderWebDailyReportSyncService = ServiceHelper.GetService<OrderWebDailyReportSyncService>()
+            ?? new OrderWebDailyReportSyncService(
+                new DatabaseService(),
+                ServiceHelper.GetService<ZReportService>()
+                    ?? new ZReportService(
+                        new DatabaseService(),
+                        _reportService,
+                        _tillExpenseService,
+                        _discountAuditService,
+                        _businessSettingsService));
+
+        BindingContext = this;
+        TopBar.SetPageTitle("Report");
 
         TopItems.CollectionChanged += (_, _) =>
         {
@@ -818,6 +1002,11 @@ public partial class ReportPage : ContentPage
             OnPropertyChanged(nameof(HasCashDrawerAudits));
         };
 
+        TillExpenses.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasTillExpenses));
+        };
+
         DiscountAudits.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasDiscountAudits));
@@ -837,6 +1026,7 @@ public partial class ReportPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        SubscribeToRefreshEvents();
 
         if (!await _permissionService.HasPermissionAsync(PermissionKeys.ReportView))
         {
@@ -849,8 +1039,69 @@ public partial class ReportPage : ContentPage
         {
             _hasLoaded = true;
             await LoadReportAsync();
-            await LoadHistoricalReportsAsync();
+            if (CanUseFullReportTools)
+            {
+                await LoadHistoricalReportsAsync(updateStatusText: false);
+            }
         }
+
+        await RefreshOrderWebUploadStateAsync();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        UnsubscribeFromRefreshEvents();
+    }
+
+    private void SubscribeToRefreshEvents()
+    {
+        if (_isSubscribedToRefreshEvents)
+        {
+            return;
+        }
+
+        AppDataRefreshService.RefreshRequested += OnRefreshRequested;
+        AppDataRefreshService.DataChanged += OnAppDataChanged;
+        _isSubscribedToRefreshEvents = true;
+    }
+
+    private void UnsubscribeFromRefreshEvents()
+    {
+        if (!_isSubscribedToRefreshEvents)
+        {
+            return;
+        }
+
+        AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
+        AppDataRefreshService.DataChanged -= OnAppDataChanged;
+        _isSubscribedToRefreshEvents = false;
+    }
+
+    private async void OnRefreshRequested(object? sender, EventArgs e)
+    {
+        await RefreshCurrentReportAsync();
+    }
+
+    private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+    {
+        if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.Orders && e.Kind != AppDataChangeKind.All))
+        {
+            return;
+        }
+
+        await RefreshCurrentReportAsync();
+    }
+
+    private async Task RefreshCurrentReportAsync()
+    {
+        await LoadReportAsync();
+        if (CanUseFullReportTools)
+        {
+            await LoadHistoricalReportsAsync(updateStatusText: false);
+        }
+
+        await RefreshOrderWebUploadStateAsync();
     }
 
     private async void OnPresetClicked(object sender, EventArgs e)
@@ -874,6 +1125,12 @@ public partial class ReportPage : ContentPage
 
             if (button.Text == "Cash Drawer")
             {
+                if (!CanUseAuditReports)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
                 ApplyReportMode(ReportViewMode.CashDrawer);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
@@ -884,6 +1141,12 @@ public partial class ReportPage : ContentPage
 
             if (button.Text == "Discount Audit")
             {
+                if (!CanUseAuditReports)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
                 ApplyReportMode(ReportViewMode.DiscountAudit);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
@@ -1104,6 +1367,7 @@ public partial class ReportPage : ContentPage
 
         _reportViewMode = mode;
         OnPropertyChanged(nameof(IsOrdersReportVisible));
+        OnPropertyChanged(nameof(IsHistoricalReportsVisible));
         OnPropertyChanged(nameof(IsTopSellReportVisible));
         OnPropertyChanged(nameof(IsCashDrawerReportVisible));
         OnPropertyChanged(nameof(IsDiscountAuditReportVisible));
@@ -1253,6 +1517,12 @@ public partial class ReportPage : ContentPage
 
     private async void OnExportCsvClicked(object sender, EventArgs e)
     {
+        if (!CanExportReports)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         if (IsLoading)
         {
             return;
@@ -1277,6 +1547,12 @@ public partial class ReportPage : ContentPage
 
     private async void OnExportPdfClicked(object sender, EventArgs e)
     {
+        if (!CanExportReports)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         if (IsLoading)
         {
             return;
@@ -1365,6 +1641,12 @@ public partial class ReportPage : ContentPage
             collectionView.SelectedItem = null;
         }
 
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         try
         {
             await Shell.Current.GoToAsync($"reportdetails?orderDbId={selectedOrder.OrderDbId}");
@@ -1422,8 +1704,13 @@ public partial class ReportPage : ContentPage
         ApplyPresetStyle(DiscountAuditButton, _reportViewMode == ReportViewMode.DiscountAudit);
     }
 
-    private static void ApplyPresetStyle(Button button, bool isActive)
+    private static void ApplyPresetStyle(Button? button, bool isActive)
     {
+        if (button == null)
+        {
+            return;
+        }
+
         if (isActive)
         {
             button.BackgroundColor = Color.FromArgb("#0369A1");
@@ -1453,17 +1740,39 @@ public partial class ReportPage : ContentPage
         {
             if (_reportViewMode == ReportViewMode.CashDrawer)
             {
-                var cashDrawerRows = await _cashDrawerService.GetAuditEntriesAsync(StartDate, EndDate.AddDays(1));
-                ApplyCashDrawerAudits(cashDrawerRows);
-                LastUpdatedText = $"Last updated {DateTime.Now:HH:mm:ss}";
+                var queryEndDate = EndDate.AddDays(1);
+                var cashDrawerRowsTask = _cashDrawerService.GetAuditEntriesAsync(StartDate, queryEndDate);
+                var expenseSummaryTask = _tillExpenseService.GetSummaryAsync(StartDate, queryEndDate);
+                var expenseRowsTask = _tillExpenseService.GetExpensesAsync(StartDate, queryEndDate);
+                var pendingRowsTask = _tillExpenseService.GetPendingShoppingAsync();
+
+                await Task.WhenAll(cashDrawerRowsTask, expenseSummaryTask, expenseRowsTask, pendingRowsTask);
+
+                var cashDrawerRows = await cashDrawerRowsTask;
+                var expenseSummary = await expenseSummaryTask;
+                var expenseRows = await expenseRowsTask;
+                var pendingRows = await pendingRowsTask;
+                var lastUpdated = $"Cash drawer & till expenses · {StartDate:dd MMM} – {EndDate:dd MMM} · updated {DateTime.Now:HH:mm:ss}";
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ApplyCashDrawerAudits(cashDrawerRows);
+                    ApplyTillExpenses(expenseSummary, expenseRows, pendingRows);
+                    LastUpdatedText = lastUpdated;
+                });
                 return;
             }
 
             if (_reportViewMode == ReportViewMode.DiscountAudit)
             {
                 var discountAuditRows = await _discountAuditService.GetAuditEntriesAsync(StartDate, EndDate.AddDays(1));
-                ApplyDiscountAudits(discountAuditRows);
-                LastUpdatedText = $"Last updated {DateTime.Now:HH:mm:ss}";
+                var lastUpdated = $"Last updated {DateTime.Now:HH:mm:ss}";
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ApplyDiscountAudits(discountAuditRows);
+                    LastUpdatedText = lastUpdated;
+                });
                 return;
             }
 
@@ -1479,18 +1788,28 @@ public partial class ReportPage : ContentPage
 
             object? analytics = await analyticsTask;
             var trendRows = await trendTask;
+            var snapshotNote = CanUseFullReportTools && HistoricalReports.Count > 0
+                ? $" · {HistoricalReports.Count} saved snapshots"
+                : string.Empty;
+            var lastUpdatedText = $"Live report · {StartDate:dd MMM} – {EndDate:dd MMM} · updated {DateTime.Now:HH:mm:ss}{snapshotNote}";
 
-            ApplySnapshot(report, analytics);
-            ApplyTrend(trendRows);
-            LastUpdatedText = $"Last updated {DateTime.Now:HH:mm:ss}";
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                ApplySnapshot(report, analytics);
+                ApplyTrend(trendRows);
+                LastUpdatedText = lastUpdatedText;
+            });
         }
         catch (Exception ex)
         {
-            await AppAlertService.ShowAlertAsync("Report Error", ex.Message);
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await AppAlertService.ShowAlertAsync("Report Error", ex.Message);
+            });
         }
         finally
         {
-            IsLoading = false;
+            MainThread.BeginInvokeOnMainThread(() => IsLoading = false);
         }
     }
 
@@ -1537,6 +1856,7 @@ public partial class ReportPage : ContentPage
         SummaryGrossText = $"£{report.Summary.GrossSales:F2}";
         SummaryNetText = $"£{report.Summary.NetSales:F2}";
         SummaryVatText = $"£{report.Summary.VatAmount:F2}";
+        SummaryDeliveryText = $"£{report.Summary.DeliveryChargeTotal:F2}";
         SummaryAverageText = $"£{report.Summary.AverageOrderValue:F2}";
 
         var sendLatencySampleCount = 0;
@@ -1589,6 +1909,7 @@ public partial class ReportPage : ContentPage
             report.Summary.GrossSales,
             report.Summary.NetSales,
             report.Summary.VatAmount,
+            report.Summary.DeliveryChargeTotal,
             report.Summary.AverageOrderValue,
             sendLatencySampleCount,
             sendLatencyAverageMs,
@@ -1635,6 +1956,57 @@ public partial class ReportPage : ContentPage
         }
 
         OnPropertyChanged(nameof(HasCashDrawerAudits));
+    }
+
+    private void ApplyTillExpenses(TillExpenseSummary summary, List<TillExpense> expenses, List<TillExpense> pendingRows)
+    {
+        TillExpenses.Clear();
+
+        TillExpensePendingText = summary.PendingShoppingCount > 0
+            ? $"{summary.PendingShoppingCount} pending · £{summary.PendingShoppingTotal:F2} out"
+            : "0 pending";
+        TillExpenseNetOutText = $"£{summary.TotalNetOut:F2} out";
+        TillExpenseShoppingText = $"£{summary.ShoppingNet:F2}";
+        TillExpenseDeliveryText = $"£{summary.DeliveryTotal:F2}";
+        TillExpenseOtherText = $"£{summary.OtherTotal:F2}";
+        TillExpenseCashReturnText = $"£{summary.CashReturnTotal:F2} back";
+
+        var cashCounts = expenses.Where(e => e.Category == TillExpenseCategory.CashCount).ToList();
+        TillExpenseCashCountText = cashCounts.Count > 0
+            ? $"{cashCounts.Count} counts"
+            : "0 counts";
+
+        var displayRows = new List<TillExpense>();
+        foreach (var pending in pendingRows.OrderBy(e => e.CreatedAt))
+        {
+            if (!expenses.Any(e => e.Id == pending.Id))
+            {
+                displayRows.Add(pending);
+            }
+        }
+
+        displayRows.AddRange(expenses.OrderByDescending(e => e.SettledAt ?? e.CreatedAt));
+
+        foreach (var expense in displayRows.Take(20))
+        {
+            TillExpenses.Add(new TillExpenseReportRow
+            {
+                EventAt = expense.SettledAt ?? expense.CreatedAt,
+                CategoryDisplay = expense.CategoryDisplay,
+                StatusDisplay = expense.StatusDisplay,
+                SummaryDisplay = expense.SummaryDisplay,
+                RecordedByName = string.IsNullOrWhiteSpace(expense.RecordedByName) ? "Unknown" : expense.RecordedByName,
+                AmountDisplay = expense.Category == TillExpenseCategory.CashCount && expense.CountedCash.HasValue
+                    ? $"£{expense.CountedCash.Value:F2} counted"
+                    : expense.Status == TillExpenseStatus.Pending
+                        ? $"£{expense.AmountTaken:F2} out (pending)"
+                        : expense.Category == TillExpenseCategory.Shopping && expense.AmountReturned.HasValue && expense.AmountReturned.Value > 0
+                            ? $"£{expense.NetAmount:F2} net · £{expense.AmountReturned.Value:F2} returned"
+                            : $"£{expense.NetAmount:F2} net"
+            });
+        }
+
+        OnPropertyChanged(nameof(HasTillExpenses));
     }
 
     private static string BuildCashDrawerDetail(CashDrawerAuditEntry entry)
@@ -1741,6 +2113,7 @@ public partial class ReportPage : ContentPage
         decimal gross,
         decimal net,
         decimal vat,
+        decimal deliveryCharge,
         decimal average,
         int sendLatencySampleCount,
         double sendLatencyAverageMs,
@@ -1753,6 +2126,7 @@ public partial class ReportPage : ContentPage
         SummaryGrossColor = gross <= 0 ? Color.FromArgb("#94A3B8") : Color.FromArgb("#059669");
         SummaryNetColor = net <= 0 ? Color.FromArgb("#94A3B8") : Color.FromArgb("#0891B2");
         SummaryVatColor = vat <= 0 ? Color.FromArgb("#94A3B8") : Color.FromArgb("#D97706");
+        SummaryDeliveryColor = deliveryCharge <= 0 ? Color.FromArgb("#94A3B8") : Color.FromArgb("#0F766E");
         SummaryAverageColor = average <= 0 ? Color.FromArgb("#94A3B8") : Color.FromArgb("#7C3AED");
 
         OperationalSendLatencyColor = sendLatencySampleCount <= 0
@@ -1811,10 +2185,23 @@ public partial class ReportPage : ContentPage
             DailyTrend.Add(row);
         }
 
-        if (rows.Count < 2)
+        ConfigureTrendChartAxis();
+
+        if (rows.Count == 0)
         {
-            TrendInsightText = "Not enough data points for trend analysis.";
+            TrendInsightText = "No sales in the selected date range.";
             TrendInsightColor = Color.FromArgb("#64748B");
+            return;
+        }
+
+        if (rows.Count == 1)
+        {
+            var point = rows[0];
+            var isSingleDay = StartDate.Date == EndDate.Date;
+            TrendInsightText = isSingleDay
+                ? $"Today: {point.OrderCount} orders · £{point.GrossSales:F2} gross."
+                : $"Single period: {point.OrderCount} orders · £{point.GrossSales:F2} gross.";
+            TrendInsightColor = Color.FromArgb("#1D4ED8");
             return;
         }
 
@@ -1822,23 +2209,42 @@ public partial class ReportPage : ContentPage
         var last = rows.Last();
         var baseGross = first.GrossSales <= 0 ? 1m : first.GrossSales;
         var changePct = ((last.GrossSales - first.GrossSales) / baseGross) * 100m;
-        var peakDay = rows.OrderByDescending(row => row.GrossSales).First();
+        var peakPoint = rows.OrderByDescending(row => row.GrossSales).First();
+        var isHourly = StartDate.Date == EndDate.Date;
 
         if (changePct >= 15m)
         {
-            TrendInsightText = $"Momentum up {changePct:F1}% in this range. Peak day: {peakDay.BusinessDate:dd MMM} (£{peakDay.GrossSales:F2}).";
+            TrendInsightText = isHourly
+                ? $"Sales rising {changePct:F1}% through the day. Peak hour: {peakPoint.BusinessDate:HH:mm} (£{peakPoint.GrossSales:F2})."
+                : $"Momentum up {changePct:F1}% in this range. Peak day: {peakPoint.BusinessDate:dd MMM} (£{peakPoint.GrossSales:F2}).";
             TrendInsightColor = Color.FromArgb("#15803D");
         }
         else if (changePct <= -15m)
         {
-            TrendInsightText = $"Sales down {Math.Abs(changePct):F1}% in this range. Peak day was {peakDay.BusinessDate:dd MMM}; review recent dips.";
+            TrendInsightText = isHourly
+                ? $"Sales down {Math.Abs(changePct):F1}% through the day. Peak hour was {peakPoint.BusinessDate:HH:mm}."
+                : $"Sales down {Math.Abs(changePct):F1}% in this range. Peak day was {peakPoint.BusinessDate:dd MMM}.";
             TrendInsightColor = Color.FromArgb("#B91C1C");
         }
         else
         {
-            TrendInsightText = $"Stable trend ({changePct:+0.0;-0.0;0.0}%). Peak day: {peakDay.BusinessDate:dd MMM} with {peakDay.OrderCount} orders.";
+            TrendInsightText = isHourly
+                ? $"Hourly trend ({changePct:+0.0;-0.0;0.0}%). Peak hour: {peakPoint.BusinessDate:HH:mm} with {peakPoint.OrderCount} orders."
+                : $"Stable trend ({changePct:+0.0;-0.0;0.0}%). Peak day: {peakPoint.BusinessDate:dd MMM} with {peakPoint.OrderCount} orders.";
             TrendInsightColor = Color.FromArgb("#1D4ED8");
         }
+    }
+
+    private void ConfigureTrendChartAxis()
+    {
+        if (SalesTrendXAxis == null)
+        {
+            return;
+        }
+
+        SalesTrendXAxis.IntervalType = StartDate.Date == EndDate.Date
+            ? Syncfusion.Maui.Charts.DateTimeIntervalType.Hours
+            : Syncfusion.Maui.Charts.DateTimeIntervalType.Days;
     }
 
     private static object? GetNestedMetric(object? source, string propertyName)
@@ -1953,6 +2359,16 @@ public partial class ReportPage : ContentPage
         public string DetailDisplay { get; set; } = string.Empty;
     }
 
+    public sealed class TillExpenseReportRow
+    {
+        public DateTime EventAt { get; set; }
+        public string CategoryDisplay { get; set; } = string.Empty;
+        public string StatusDisplay { get; set; } = string.Empty;
+        public string SummaryDisplay { get; set; } = string.Empty;
+        public string RecordedByName { get; set; } = string.Empty;
+        public string AmountDisplay { get; set; } = string.Empty;
+    }
+
     public sealed class DiscountAuditReportRow
     {
         public DateTime EventAt { get; set; }
@@ -1985,12 +2401,14 @@ public partial class ReportPage : ContentPage
             SummaryGrossText = report.GrossDisplay;
             SummaryNetText = report.NetDisplay;
             SummaryVatText = report.VatDisplay;
+            SummaryDeliveryText = "£0.00";
             SummaryAverageText = $"£{report.AverageOrderValue:F2}";
             ApplyKpiPalette(
                 report.OrderCount,
                 report.GrossSales,
                 report.NetSales,
                 report.VatTotal,
+                deliveryCharge: 0m,
                 report.AverageOrderValue,
                 sendLatencySampleCount: 0,
                 sendLatencyAverageMs: 0d,
@@ -2004,7 +2422,7 @@ public partial class ReportPage : ContentPage
             if (report.OrderCount > 0)
             {
                 // Note: ReportSnapshot contains aggregated data, display summary
-                System.Diagnostics.Debug.WriteLine($"📊 Report Snapshot: {report.PeriodDisplay}");
+                System.Diagnostics.Debug.WriteLine($" Report Snapshot: {report.PeriodDisplay}");
                 System.Diagnostics.Debug.WriteLine($"   Orders: {report.OrderCount}");
                 System.Diagnostics.Debug.WriteLine($"   Gross: {report.GrossDisplay}");
                 System.Diagnostics.Debug.WriteLine($"   VAT: {report.VatDisplay}");
@@ -2027,7 +2445,7 @@ public partial class ReportPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error displaying report: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error displaying report: {ex.Message}");
         }
     }
 
@@ -2132,21 +2550,34 @@ public partial class ReportPage : ContentPage
     /// </summary>
     public async Task LoadReportFromSixMonthsAgoAsync()
     {
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         try
         {
             IsLoading = true;
             var targetDate = DateTime.Today.AddMonths(-6);
-            var report = await _reportHistoryService.GetDailyReportForDateAsync(targetDate);
-            
-            if (report == null)
+            var snapshot = await _reportHistoryService.GetDailyReportForDateAsync(targetDate);
+
+            if (snapshot != null)
             {
-                await AppAlertService.ShowAlertAsync("Not Found", $"No daily report found for {targetDate:dd MMM yyyy}");
+                await LoadHistoricalReportWithComparisonAsync(snapshot.Id);
                 return;
             }
 
-            LastUpdatedText = $"Report from 6 months ago ({report.PeriodDisplay}) | Retrieved {DateTime.Now:HH:mm:ss}";
-            System.Diagnostics.Debug.WriteLine($"📊 Loaded 6-month historical report: {report.PeriodDisplay}");
-            System.Diagnostics.Debug.WriteLine($"   Orders: {report.OrderCount} | Sales: {report.GrossDisplay}");
+            ApplyReportMode(ReportViewMode.Orders);
+            _selectedPreset = ReportDatePreset.Custom;
+            StartDate = targetDate;
+            EndDate = targetDate;
+            IsCustomRangeVisible = false;
+            UpdatePresetButtonStyles();
+            await LoadReportAsync();
+            await AppAlertService.ShowAlertAsync(
+                "Live Data",
+                $"No saved snapshot for {targetDate:dd MMM yyyy}. Showing live orders for that date instead.");
         }
         catch (Exception ex)
         {
@@ -2163,21 +2594,34 @@ public partial class ReportPage : ContentPage
     /// </summary>
     public async Task LoadReportFromOneYearAgoAsync()
     {
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         try
         {
             IsLoading = true;
             var targetDate = DateTime.Today.AddYears(-1);
-            var report = await _reportHistoryService.GetDailyReportForDateAsync(targetDate);
-            
-            if (report == null)
+            var snapshot = await _reportHistoryService.GetDailyReportForDateAsync(targetDate);
+
+            if (snapshot != null)
             {
-                await AppAlertService.ShowAlertAsync("Not Found", $"No daily report found for {targetDate:dd MMM yyyy}");
+                await LoadHistoricalReportWithComparisonAsync(snapshot.Id);
                 return;
             }
 
-            LastUpdatedText = $"Report from 1 year ago ({report.PeriodDisplay}) | Retrieved {DateTime.Now:HH:mm:ss}";
-            System.Diagnostics.Debug.WriteLine($"📊 Loaded 1-year historical report: {report.PeriodDisplay}");
-            System.Diagnostics.Debug.WriteLine($"   Orders: {report.OrderCount} | Sales: {report.GrossDisplay}");
+            ApplyReportMode(ReportViewMode.Orders);
+            _selectedPreset = ReportDatePreset.Custom;
+            StartDate = targetDate;
+            EndDate = targetDate;
+            IsCustomRangeVisible = false;
+            UpdatePresetButtonStyles();
+            await LoadReportAsync();
+            await AppAlertService.ShowAlertAsync(
+                "Live Data",
+                $"No saved snapshot for {targetDate:dd MMM yyyy}. Showing live orders for that date instead.");
         }
         catch (Exception ex)
         {
@@ -2197,12 +2641,12 @@ public partial class ReportPage : ContentPage
         try
         {
             var reports = await _reportHistoryService.GetAvailableReportsAsync(monthsBack ?? 12);
-            System.Diagnostics.Debug.WriteLine($"📋 Found {reports.Count} available reports in last {monthsBack ?? 12} months");
+            System.Diagnostics.Debug.WriteLine($" Found {reports.Count} available reports in last {monthsBack ?? 12} months");
             return reports;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error retrieving available reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error retrieving available reports: {ex.Message}");
             return new List<ReportHistorySummary>();
         }
     }
@@ -2215,12 +2659,12 @@ public partial class ReportPage : ContentPage
         try
         {
             var reports = await _reportHistoryService.GetDailyReportsForMonthAsync(year, month);
-            System.Diagnostics.Debug.WriteLine($"📅 Found {reports.Count} daily reports for {year}-{month:00}");
+            System.Diagnostics.Debug.WriteLine($" Found {reports.Count} daily reports for {year}-{month:00}");
             return reports;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error retrieving daily reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error retrieving daily reports: {ex.Message}");
             return new List<ReportHistorySummary>();
         }
     }
@@ -2235,12 +2679,12 @@ public partial class ReportPage : ContentPage
             var from = yearFrom ?? DateTime.Now.Year - 1;
             var to = yearTo ?? DateTime.Now.Year;
             var reports = await _reportHistoryService.GetMonthlyReportsAsync(from, to);
-            System.Diagnostics.Debug.WriteLine($"📈 Found {reports.Count} monthly reports for trend analysis");
+            System.Diagnostics.Debug.WriteLine($" Found {reports.Count} monthly reports for trend analysis");
             return reports;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error retrieving monthly reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error retrieving monthly reports: {ex.Message}");
             return new List<ReportHistorySummary>();
         }
     }
@@ -2250,6 +2694,12 @@ public partial class ReportPage : ContentPage
     /// </summary>
     public async Task LoadHistoricalReportWithComparisonAsync(int snapshotId)
     {
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         try
         {
             IsLoading = true;
@@ -2294,7 +2744,7 @@ public partial class ReportPage : ContentPage
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("ℹ️ No prior-period comparison data available");
+                System.Diagnostics.Debug.WriteLine("Info: No prior-period comparison data available");
                 ComparisonPriorText = "No prior-period comparison available.";
             }
 
@@ -2304,7 +2754,7 @@ public partial class ReportPage : ContentPage
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("ℹ️ No year-over-year comparison data available");
+                System.Diagnostics.Debug.WriteLine("Info: No year-over-year comparison data available");
                 ComparisonYearAgoText = "No year-over-year comparison available.";
             }
 
@@ -2312,7 +2762,7 @@ public partial class ReportPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error calculating comparison: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error calculating comparison: {ex.Message}");
         }
     }
 
@@ -2327,7 +2777,7 @@ public partial class ReportPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error displaying comparison: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error displaying comparison: {ex.Message}");
         }
     }
 
@@ -2365,7 +2815,7 @@ public partial class ReportPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting available dates: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting available dates: {ex.Message}");
             return new List<DateTime>();
         }
     }
@@ -2373,34 +2823,58 @@ public partial class ReportPage : ContentPage
     /// <summary>
     /// Load the latest report snapshots into the history browser
     /// </summary>
-    public async Task LoadHistoricalReportsAsync(int? monthsBack = null)
+    public async Task LoadHistoricalReportsAsync(int? monthsBack = null, bool updateStatusText = true)
     {
+        if (!CanUseFullReportTools)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() => HistoricalReports.Clear());
+            return;
+        }
+
         try
         {
             IsLoading = true;
             var reports = await _reportHistoryService.GetAvailableReportsAsync(monthsBack ?? 12);
+            var lastUpdated = updateStatusText
+                ? $"Loaded {reports.Count} saved snapshots · updated {DateTime.Now:HH:mm:ss}"
+                : null;
 
-            HistoricalReports.Clear();
-            foreach (var report in reports)
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                HistoricalReports.Add(report);
-            }
+                HistoricalReports.Clear();
+                foreach (var report in reports)
+                {
+                    HistoricalReports.Add(report);
+                }
 
-            System.Diagnostics.Debug.WriteLine($"📚 Loaded {HistoricalReports.Count} historical reports for browsing");
-            LastUpdatedText = $"Loaded {HistoricalReports.Count} historical reports | Updated {DateTime.Now:HH:mm:ss}";
+                System.Diagnostics.Debug.WriteLine($" Loaded {HistoricalReports.Count} historical reports for browsing");
+                if (lastUpdated != null)
+                {
+                    LastUpdatedText = lastUpdated;
+                }
+            });
         }
         catch (Exception ex)
         {
-            await AppAlertService.ShowAlertAsync("Error", $"Failed to load historical reports: {ex.Message}");
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await AppAlertService.ShowAlertAsync("Error", $"Failed to load historical reports: {ex.Message}");
+            });
         }
         finally
         {
-            IsLoading = false;
+            MainThread.BeginInvokeOnMainThread(() => IsLoading = false);
         }
     }
 
     private async void OnLoadHistoricalReportsClicked(object sender, EventArgs e)
     {
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
         await LoadHistoricalReportsAsync();
     }
 
@@ -2425,5 +2899,136 @@ public partial class ReportPage : ContentPage
     private async void OnLoadOneYearAgoClicked(object sender, EventArgs e)
     {
         await LoadReportFromOneYearAgoAsync();
+    }
+
+    private static Task ShowMotherReportOnlyAlertAsync()
+    {
+        return AppAlertService.ShowAlertAsync(
+            "Mother Terminal Only",
+            "This report action is available on the mother terminal. Child terminals can view limited live reports from the shared database.");
+    }
+
+    private async Task RefreshOrderWebUploadStateAsync()
+    {
+        var uploadDate = ResolveOrderWebUploadDate();
+        var alreadyUploaded = uploadDate.HasValue
+            && await _orderWebDailyReportSyncService.IsAlreadyUploadedAsync(uploadDate.Value);
+        var pendingDate = _orderWebDailyReportSyncService.GetPendingUploadDate();
+        var bannerText = uploadDate.HasValue
+            ? $"In-restaurant totals for {uploadDate.Value:ddd dd MMM yyyy} are ready. Upload once to OrderWeb admin when you have closed the day."
+            : string.Empty;
+
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            OnPropertyChanged(nameof(CanUploadOrderWebReport));
+
+            if (!CanUploadOrderWebReport || uploadDate == null)
+            {
+                IsOrderWebUploadBannerVisible = false;
+                return;
+            }
+
+            if (alreadyUploaded)
+            {
+                if (pendingDate == uploadDate.Value)
+                {
+                    _orderWebDailyReportSyncService.ClearPendingUpload();
+                }
+
+                IsOrderWebUploadBannerVisible = false;
+                return;
+            }
+
+            OrderWebUploadBannerText = bannerText;
+            IsOrderWebUploadBannerVisible = true;
+        });
+    }
+
+    private DateTime? ResolveOrderWebUploadDate()
+    {
+        var pending = _orderWebDailyReportSyncService.GetPendingUploadDate();
+        if (pending.HasValue)
+        {
+            return pending.Value;
+        }
+
+        if (_startDate.Date == _endDate.Date)
+        {
+            return _startDate.Date;
+        }
+
+        return DateTime.Today.AddDays(-1);
+    }
+
+    private async void OnUploadOrderWebReportClicked(object sender, EventArgs e)
+    {
+        if (!CanUploadOrderWebReport)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
+        var uploadDate = ResolveOrderWebUploadDate();
+        if (uploadDate == null)
+        {
+            await AppAlertService.ShowAlertAsync(
+                "No Report Date",
+                "Select a single day on the report page, or wait for the nightly scheduler to mark yesterday as ready.");
+            return;
+        }
+
+        if (await _orderWebDailyReportSyncService.IsAlreadyUploadedAsync(uploadDate.Value))
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Already Uploaded",
+                $"Daily report for {uploadDate.Value:dd MMM yyyy} was already sent to OrderWeb.");
+            await RefreshOrderWebUploadStateAsync();
+            return;
+        }
+
+        var uploadConfirmDialog = new ModernConfirmDialog();
+        uploadConfirmDialog.SetConfirm(
+            "Upload to OrderWeb",
+            $"Send in-restaurant totals for {uploadDate.Value:ddd dd MMM yyyy} to OrderWeb.net?",
+            "Upload",
+            "Cancel",
+            "OK",
+            "#0F766E");
+
+        var confirm = await uploadConfirmDialog.ShowAsync();
+
+        if (!confirm)
+        {
+            return;
+        }
+
+        try
+        {
+            if (sender is Button button)
+            {
+                button.IsEnabled = false;
+                button.Text = "Uploading...";
+            }
+
+            var result = await _orderWebDailyReportSyncService.UploadManualAsync(uploadDate.Value);
+            await AppAlertService.ShowAlertAsync(
+                result.Success ? "Upload Complete" : "Upload Failed",
+                result.Message);
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Upload Failed", ex.Message);
+        }
+        finally
+        {
+            if (sender is Button button)
+            {
+                button.IsEnabled = CanUploadOrderWebReport;
+                var originalText = (string?)button.CommandParameter ?? "Upload to OrderWeb";
+                button.Text = originalText;
+            }
+
+            await RefreshOrderWebUploadStateAsync();
+        }
     }
 }

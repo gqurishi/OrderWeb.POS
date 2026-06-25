@@ -2,14 +2,14 @@
 SELECT 
     'Configuration Status' as check_type,
     CASE 
-        WHEN COUNT(*) > 0 AND is_enabled = 1 THEN 'CONFIGURED & ENABLED ✅'
-        WHEN COUNT(*) > 0 AND is_enabled = 0 THEN 'CONFIGURED BUT DISABLED ⚠️'
-        ELSE 'NOT CONFIGURED ❌'
+        WHEN COUNT(*) > 0 AND is_enabled = 1 THEN 'CONFIGURED & ENABLED '
+        WHEN COUNT(*) > 0 AND is_enabled = 0 THEN 'CONFIGURED BUT DISABLED '
+        ELSE 'NOT CONFIGURED '
     END as status,
     tenant_slug as restaurant_id,
     CASE 
-        WHEN LENGTH(api_key) > 0 THEN 'API Key Set ✅'
-        ELSE 'API Key Missing ❌'
+        WHEN LENGTH(api_key) > 0 THEN 'API Key Set '
+        ELSE 'API Key Missing '
     END as api_key_status,
     cloud_url,
     is_enabled,
@@ -19,7 +19,7 @@ LIMIT 1;
 
 -- If no configuration exists, show setup instructions
 SELECT 
-    '⚠️ SETUP REQUIRED' as message,
+    ' SETUP REQUIRED' as message,
     'Go to Settings > OrderWeb Connect' as step_1,
     'Enter Restaurant ID (e.g., kitchen)' as step_2,
     'Enter API Key from OrderWeb.net dashboard' as step_3,

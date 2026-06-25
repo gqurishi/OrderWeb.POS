@@ -47,11 +47,11 @@ public partial class GiftCardPage : ContentPage
         try
         {
             await _loyaltyService.ReinitializeAsync();
-            System.Diagnostics.Debug.WriteLine("✅ Gift Card page: LoyaltyService reinitialized");
+            System.Diagnostics.Debug.WriteLine(" Gift Card page: LoyaltyService reinitialized");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Failed to reinitialize LoyaltyService: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Failed to reinitialize LoyaltyService: {ex.Message}");
         }
     }
     
@@ -273,14 +273,14 @@ public partial class GiftCardPage : ContentPage
         if (giftCard.IsExpired)
         {
             StatusLabel.TextColor = Color.FromArgb("#dc3545"); // Red
-            StatusLabel.Text = "🔴 Expired";
+            StatusLabel.Text = "Expired";
             RedeemButton.IsEnabled = false;
             RedeemButton.BackgroundColor = Color.FromArgb("#6c757d"); // Gray
         }
         else if (!giftCard.IsActive)
         {
             StatusLabel.TextColor = Color.FromArgb("#ffc107"); // Yellow
-            StatusLabel.Text = "🟡 Inactive";
+            StatusLabel.Text = "Inactive";
             RedeemButton.IsEnabled = false;
             RedeemButton.BackgroundColor = Color.FromArgb("#6c757d"); // Gray
         }

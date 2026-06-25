@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.TerminalSetupPage"
+             BackgroundColor="#F8FAFC"
+             Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto,*" Padding="36">
+        <Border Grid.Row="1"
+                WidthRequest="760"
+                MaximumWidthRequest="760"
+                BackgroundColor="White"
+                Stroke="#E2E8F0"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 28"
+                Padding="40"
+                HorizontalOptions="Center">
+            <VerticalStackLayout Spacing="24">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Terminal Setup"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="42"
+                           TextColor="#0F172A" />
+                    <Label Text="Choose how this POS terminal connects to your restaurant network."
+                           FontFamily="OpenSansRegular"
+                           FontSize="18"
+                           TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
+                    <Border x:Name="MotherCard"
+                            Stroke="#10B981"
+                            StrokeThickness="3"
+                            StrokeShape="RoundRectangle 20"
+                            BackgroundColor="#ECFDF5"
+                            Padding="22">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMotherTapped" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Mother Terminal"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#065F46" />
+                            <Label Text="Main POS. Runs database, online orders, reports, and cloud sync."
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="15"
+                                   TextColor="#475569" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border x:Name="ChildCard"
+                            Grid.Column="1"
+                            Stroke="#CBD5E1"
+                            StrokeThickness="2"
+                            StrokeShape="RoundRectangle 20"
+                            BackgroundColor="#F8FAFC"
+                            Padding="22">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnChildTapped" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Child Terminal"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#1E3A8A" />
+                            <Label Text="Floor/bar POS. Connects to the mother terminal database over LAN."
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="15"
+                                   TextColor="#475569" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Terminal Name"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="TerminalNameEntry"
+                           Placeholder="Main, Floor 1, Bar, Counter 2"
+                           Text="Main"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="MotherIpSection" Spacing="8" IsVisible="False">
+                    <Label Text="Mother Terminal IP Address"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="MotherIpEntry"
+                           Placeholder="Example: 192.168.1.50"
+                           Keyboard="Url"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                    <Label Text="Tip: set the mother terminal to a fixed/static IP on your router."
+                           FontFamily="OpenSansRegular"
+                           FontSize="14"
+                           TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="PairingCodeSection" Spacing="8" IsVisible="False">
+                    <Label Text="Pairing Code"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="PairingCodeEntry"
+                           Placeholder="6-digit code from mother Terminal Health"
+                           Keyboard="Numeric"
+                           MaxLength="6"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                    <Label Text="Ask the admin to create this child terminal on the mother terminal first."
+                           FontFamily="OpenSansRegular"
+                           FontSize="14"
+                           TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <Label x:Name="StatusLabel"
+                           Text=""
+                           FontFamily="OpenSansRegular"
+                           FontSize="15"
+                           TextColor="#64748B"
+                           VerticalOptions="Center" />
+                    <Button x:Name="ContinueButton"
+                            Grid.Column="1"
+                            Text="Save &amp; Continue"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="18"
+                            HeightRequest="58"
+                            Padding="28,0"
+                            CornerRadius="16"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            Clicked="OnContinueClicked" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

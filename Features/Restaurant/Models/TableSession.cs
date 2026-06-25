@@ -29,6 +29,7 @@ namespace POS_in_NET.Models
             public int? LinkedOrderDbId { get; set; }
             public string? LinkedOrderId { get; set; }
             public string? LinkedOrderNumber { get; set; }
+            public decimal? LinkedOrderTotalAmount { get; set; }
             public string? LinkedOrderLifecycleState { get; set; }
             public DateTime? LinkedOrderUpdatedAt { get; set; }
             public bool LinkedOrderIsOpen { get; set; }
@@ -68,13 +69,13 @@ namespace POS_in_NET.Models
             
         public string StatusDisplay => Status switch
         {
-            TableSessionStatus.Occupied => "🟡 Just Seated",
-            TableSessionStatus.Ordering => "🔵 Taking Order", 
-            TableSessionStatus.FoodServed => "🟠 Dining",
-            TableSessionStatus.Payment => "🟣 Ready to Pay",
-            TableSessionStatus.Cleaning => "🔴 Cleaning",
-            TableSessionStatus.Closed => "✅ Closed",
-            _ => "❓ Unknown"
+            TableSessionStatus.Occupied => " Just Seated",
+            TableSessionStatus.Ordering => " Taking Order", 
+            TableSessionStatus.FoodServed => " Dining",
+            TableSessionStatus.Payment => " Ready to Pay",
+            TableSessionStatus.Cleaning => " Cleaning",
+            TableSessionStatus.Closed => " Closed",
+            _ => " Unknown"
         };
         
         public string StatusColor => Status switch
@@ -103,7 +104,7 @@ namespace POS_in_NET.Models
         public bool IsOvertime => MinutesOccupied > EstimatedDuration;
         
         public string OvertimeWarning => IsOvertime 
-            ? $"⚠️ {MinutesOccupied - EstimatedDuration} min over" 
+            ? $" {MinutesOccupied - EstimatedDuration} min over" 
             : "";
 
         public bool HasLinkedOpenOrder => LinkedOrderDbId.HasValue && !string.IsNullOrWhiteSpace(LinkedOrderId);

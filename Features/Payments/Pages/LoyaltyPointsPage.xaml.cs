@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
 
 namespace POS_in_NET.Pages;
 
@@ -42,7 +43,7 @@ public partial class LoyaltyPointsPage : ContentPage
         
         if (string.IsNullOrWhiteSpace(phone))
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", "Please enter a phone number");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Please enter a phone number");
             return;
         }
 
@@ -66,7 +67,7 @@ public partial class LoyaltyPointsPage : ContentPage
                 // Show detailed error with option to create customer
                 var errorMessage = result.Error ?? "Customer not found";
                 var createNew = await DisplayAlert(
-                    "❌ Customer Not Found", 
+                    " Customer Not Found", 
                     $"{errorMessage}\n\nPhone: {phone}\n\nWould you like to create a new customer account?",
                     "Create New Customer",
                     "Cancel");
@@ -80,10 +81,10 @@ public partial class LoyaltyPointsPage : ContentPage
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in search: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in search: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"   Stack: {ex.StackTrace}");
             
-            await DisplayAlert("❌ Connection Error", 
+            await DisplayAlert(" Connection Error", 
                 $"Failed to connect to OrderWeb.net:\n\n{ex.Message}\n\n" +
                 $"Please check:\n" +
                 $"• Internet connection\n" +
@@ -104,7 +105,7 @@ public partial class LoyaltyPointsPage : ContentPage
             var databaseService = ServiceHelper.GetService<DatabaseService>();
             if (databaseService == null)
             {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", "Database service not found");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Database service not found");
                 return;
             }
 
@@ -114,27 +115,27 @@ public partial class LoyaltyPointsPage : ContentPage
             var tenantId = config.GetValueOrDefault("tenant_slug", "");
             var baseUrl = "https://orderweb.net/api";
 
-            // Build test info showing POS API endpoints
-            var info = $"🔧 API Configuration Test\n\n" +
-                      $"Base URL: {baseUrl}\n" +
-                      $"Tenant: {tenantId}\n" +
-                      $"Auth: Bearer {(string.IsNullOrEmpty(apiKey) ? "NOT SET" : apiKey.Substring(0, Math.Min(20, apiKey.Length)) + "...")}\n\n" +
-                      $"Test Endpoints:\n" +
-                      $"• GET {baseUrl}/pos/loyalty-lookup?tenant={tenantId}&phone=07306506797\n\n";
-
             if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(tenantId))
             {
-                await DisplayAlert("⚠️ Configuration Missing", 
-                    info + "❌ API Key or Tenant ID is missing!\n\nPlease configure in Settings → Cloud Settings", 
-                    "OK");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Configuration Missing",
+                    "API Key or Tenant ID is missing. Please configure Cloud Settings first.");
                 return;
             }
 
             // Try a test call
             var testPhone = "07306506797";
-            info += $"Testing with phone: {testPhone}\n\nPlease wait...";
-            
-            var testResult = await DisplayAlert("🔧 API Test", info, "Run Test", "Cancel");
+
+            var testDialog = new ModernConfirmDialog();
+            testDialog.SetConfirm(
+                "API Test",
+                "Run a loyalty API connection test now?",
+                "Run Test",
+                "Cancel",
+                "i",
+                "#2563EB");
+
+            var testResult = await testDialog.ShowAsync();
             
             if (testResult)
             {
@@ -142,7 +143,7 @@ public partial class LoyaltyPointsPage : ContentPage
                 
                 if (result.Success && result.Customer != null)
                 {
-                    await DisplayAlert("✅ API Test SUCCESS", 
+                    await DisplayAlert(" API Test SUCCESS", 
                         $"Connection working!\n\n" +
                         $"Found Customer:\n" +
                         $"Name: {result.Customer.CustomerName}\n" +
@@ -153,11 +154,11 @@ public partial class LoyaltyPointsPage : ContentPage
                 }
                 else
                 {
-                    await DisplayAlert("⚠️ API Test - Not Found", 
+                    await DisplayAlert(" API Test - Not Found", 
                         $"API is responding but customer not found.\n\n" +
                         $"Error: {result.Error}\n\n" +
                         $"This means:\n" +
-                        $"• Connection is working ✅\n" +
+                        $"• Connection is working \n" +
                         $"• Customer doesn't exist in database\n" +
                         $"• Try creating a new customer\n\n" +
                         $"Check Debug Console for full API response", 
@@ -167,7 +168,7 @@ public partial class LoyaltyPointsPage : ContentPage
         }
         catch (Exception ex)
         {
-            await DisplayAlert("❌ API Test FAILED", 
+            await DisplayAlert(" API Test FAILED", 
                 $"Connection Error:\n\n{ex.Message}\n\n" +
                 $"Possible causes:\n" +
                 $"• No internet connection\n" +
@@ -227,14 +228,14 @@ public partial class LoyaltyPointsPage : ContentPage
         // Validate required fields
         if (string.IsNullOrWhiteSpace(phone))
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Required Field", "Please enter a phone number");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Required Field", "Please enter a phone number");
             NewCustomerPhoneEntry.Focus();
             return;
         }
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Required Field", "Please enter a customer name");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Required Field", "Please enter a customer name");
             NewCustomerNameEntry.Focus();
             return;
         }
@@ -248,7 +249,7 @@ public partial class LoyaltyPointsPage : ContentPage
 
             if (result.Success && result.Customer != null)
             {
-                await DisplayAlert("✅ Success", 
+                await DisplayAlert(" Success", 
                     $"Customer account created!\n\n" +
                     $"Name: {result.Customer.CustomerName}\n" +
                     $"Phone: {result.Customer.Phone}\n" +
@@ -268,14 +269,14 @@ public partial class LoyaltyPointsPage : ContentPage
             }
             else
             {
-                await DisplayAlert("❌ Error", 
+                await DisplayAlert(" Error", 
                     result.Error ?? "Failed to create customer account", 
                     "OK");
             }
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", $"Failed to create customer: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to create customer: {ex.Message}");
         }
     }
 
@@ -284,17 +285,17 @@ public partial class LoyaltyPointsPage : ContentPage
         if (_currentCustomer == null)
             return;
 
-        var pointsStr = await DisplayPromptAsync("➕ Add Points", 
+        var pointsStr = await DisplayPromptAsync(" Add Points", 
             $"Current balance: {_currentCustomer.PointsBalance} pts\n\nEnter points to add:",
             keyboard: Keyboard.Numeric);
 
         if (string.IsNullOrWhiteSpace(pointsStr) || !int.TryParse(pointsStr, out int points) || points <= 0)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", "Please enter a valid number of points");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Please enter a valid number of points");
             return;
         }
 
-        var reason = await DisplayPromptAsync("➕ Add Points", 
+        var reason = await DisplayPromptAsync(" Add Points", 
             "Enter reason (optional):",
             placeholder: "e.g., POS Manual Addition - Order Value: £50.00");
 
@@ -307,7 +308,7 @@ public partial class LoyaltyPointsPage : ContentPage
 
             if (result.Success && result.Customer != null)
             {
-                await DisplayAlert("✅ Success", 
+                await DisplayAlert(" Success", 
                     $"Added {points} points!\nNew balance: {result.Customer.PointsBalance} pts", 
                     "OK");
                 
@@ -316,14 +317,14 @@ public partial class LoyaltyPointsPage : ContentPage
             }
             else
             {
-                await DisplayAlert("❌ Error", 
+                await DisplayAlert(" Error", 
                     result.Error ?? "Failed to add points", 
                     "OK");
             }
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", $"Failed to add points: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to add points: {ex.Message}");
         }
     }
 
@@ -334,11 +335,11 @@ public partial class LoyaltyPointsPage : ContentPage
 
         if (_currentCustomer.PointsBalance <= 0)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", "Customer has no points to redeem");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Customer has no points to redeem");
             return;
         }
 
-        var pointsStr = await DisplayPromptAsync("💰 Redeem Points", 
+        var pointsStr = await DisplayPromptAsync(" Redeem Points", 
             $"Available balance: {_currentCustomer.PointsBalance} pts\n" +
             $"Conversion: 100 pts = £1\n\n" +
             $"Enter points to redeem:",
@@ -346,20 +347,20 @@ public partial class LoyaltyPointsPage : ContentPage
 
         if (string.IsNullOrWhiteSpace(pointsStr) || !int.TryParse(pointsStr, out int points) || points <= 0)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", "Please enter a valid number of points");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Please enter a valid number of points");
             return;
         }
 
         if (points > _currentCustomer.PointsBalance)
         {
-            await DisplayAlert("❌ Error", 
+            await DisplayAlert(" Error", 
                 $"Insufficient points. Available: {_currentCustomer.PointsBalance} pts", 
                 "OK");
             return;
         }
 
         var discountAmount = points / 100.0m;
-        var confirm = await DisplayAlert("💰 Confirm Redemption", 
+        var confirm = await DisplayAlert(" Confirm Redemption", 
             $"Redeem {points} points for £{discountAmount:F2} discount?", 
             "Redeem", "Cancel");
 
@@ -373,7 +374,7 @@ public partial class LoyaltyPointsPage : ContentPage
 
             if (result.Success && result.Customer != null)
             {
-                await DisplayAlert("✅ Success", 
+                await DisplayAlert(" Success", 
                     $"Redeemed {points} points = £{discountAmount:F2}!\n" +
                     $"New balance: {result.Customer.PointsBalance} pts", 
                     "OK");
@@ -383,14 +384,14 @@ public partial class LoyaltyPointsPage : ContentPage
             }
             else
             {
-                await DisplayAlert("❌ Error", 
+                await DisplayAlert(" Error", 
                     result.Error ?? "Failed to redeem points", 
                     "OK");
             }
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", $"Failed to redeem points: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to redeem points: {ex.Message}");
         }
     }
 
@@ -415,7 +416,7 @@ public partial class LoyaltyPointsPage : ContentPage
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("❌ Error", $"Failed to refresh: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to refresh: {ex.Message}");
         }
     }
 

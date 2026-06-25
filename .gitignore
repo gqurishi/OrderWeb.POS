@@ -66,6 +66,24 @@ packages/
 # Logs
 *.log
 
+# Local databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.old
+*.broken
+*.complex
+*.corrupted
+*.csx
+
+# Local archives and installer staging output
+Archive/
+installer/staging/
+installer/output/
+publish/
+
 # IDE files
 *.swp
 *.swo

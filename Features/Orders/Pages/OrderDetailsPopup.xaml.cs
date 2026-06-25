@@ -36,12 +36,12 @@ public partial class OrderDetailsPopup : ContentPage
         CustomerAddressLabel.Text = string.IsNullOrWhiteSpace(_order.CustomerAddress) ? "Collection" : _order.CustomerAddress;
         
         // Order Items - Debug logging
-        System.Diagnostics.Debug.WriteLine($"🔍 Order {_order.OrderNumber} has {_order.Items?.Count ?? 0} items");
+        System.Diagnostics.Debug.WriteLine($" Order {_order.OrderNumber} has {_order.Items?.Count ?? 0} items");
         if (_order.Items != null)
         {
             foreach (var item in _order.Items)
             {
-                System.Diagnostics.Debug.WriteLine($"  📦 {item.Quantity}x {item.ItemName} - £{item.ItemPrice:F2}");
+                System.Diagnostics.Debug.WriteLine($"   {item.Quantity}x {item.ItemName} - £{item.ItemPrice:F2}");
             }
         }
         OrderItemsCollection.ItemsSource = _order.Items;
@@ -56,7 +56,7 @@ public partial class OrderDetailsPopup : ContentPage
     {
         if (string.IsNullOrWhiteSpace(paymentMethod))
         {
-            PaymentIcon.Text = "❓";
+            PaymentIcon.Text = "";
             PaymentMethodLabel.Text = "N/A";
             PaymentMethodLabel.TextColor = Color.FromArgb("#6b7280");
             return;
@@ -66,25 +66,25 @@ public partial class OrderDetailsPopup : ContentPage
         
         if (method.Contains("cash"))
         {
-            PaymentIcon.Text = "💵";
+            PaymentIcon.Text = "";
             PaymentMethodLabel.Text = "Cash";
             PaymentMethodLabel.TextColor = Color.FromArgb("#10b981");
         }
         else if (method.Contains("card"))
         {
-            PaymentIcon.Text = "💳";
+            PaymentIcon.Text = "";
             PaymentMethodLabel.Text = "Card";
             PaymentMethodLabel.TextColor = Color.FromArgb("#3b82f6");
         }
         else if (method.Contains("gift") || method.Contains("voucher"))
         {
-            PaymentIcon.Text = "🎁";
+            PaymentIcon.Text = "";
             PaymentMethodLabel.Text = "Gift Card";
             PaymentMethodLabel.TextColor = Color.FromArgb("#a855f7");
         }
         else
         {
-            PaymentIcon.Text = "💰";
+            PaymentIcon.Text = "";
             PaymentMethodLabel.Text = paymentMethod;
             PaymentMethodLabel.TextColor = Color.FromArgb("#111827");
         }

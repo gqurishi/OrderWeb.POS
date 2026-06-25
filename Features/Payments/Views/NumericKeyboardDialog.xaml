@@ -6,7 +6,7 @@
 
     <!-- Full Screen Overlay -->
     <Grid x:Name="DialogOverlay" 
-          BackgroundColor="#80000000"
+          BackgroundColor="{StaticResource DialogOverlayColor}"
           IsVisible="False"
           InputTransparent="False">
         
@@ -25,7 +25,7 @@
                 StrokeThickness="0"
                 Padding="0">
             <Border.StrokeShape>
-                <RoundRectangle CornerRadius="16"/>
+                <RoundRectangle CornerRadius="22"/>
             </Border.StrokeShape>
             <Border.Shadow>
                 <Shadow Brush="#40000000" Offset="0,8" Radius="24" Opacity="0.3"/>
@@ -46,7 +46,7 @@
                                TextColor="White"
                                VerticalOptions="Center"/>
                         <Button Grid.Column="1"
-                                Text="✕"
+                                Text=""
                                 FontSize="18"
                                 TextColor="White"
                                 BackgroundColor="Transparent"
@@ -87,46 +87,46 @@
                     <!-- Row 1: 1, 2, 3 -->
                     <Button Grid.Row="0" Grid.Column="0" Text="1" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="0" Grid.Column="1" Text="2" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="0" Grid.Column="2" Text="3" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     
                     <!-- Row 2: 4, 5, 6 -->
                     <Button Grid.Row="1" Grid.Column="0" Text="4" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="1" Grid.Column="1" Text="5" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="1" Grid.Column="2" Text="6" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     
                     <!-- Row 3: 7, 8, 9 -->
                     <Button Grid.Row="2" Grid.Column="0" Text="7" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="2" Grid.Column="1" Text="8" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="2" Grid.Column="2" Text="9" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     
                     <!-- Row 4: Clear, 0, Delete -->
                     <Button Grid.Row="3" Grid.Column="0" Text="C" Clicked="OnClearClicked"
                             BackgroundColor="#FEE2E2" TextColor="#DC2626" FontSize="20" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="3" Grid.Column="1" Text="0" Clicked="OnNumberClicked"
                             BackgroundColor="#F1F5F9" TextColor="#1E293B" FontSize="24" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                     <Button Grid.Row="3" Grid.Column="2" Text="⌫" Clicked="OnDeleteClicked"
                             BackgroundColor="#FEF3C7" TextColor="#D97706" FontSize="20" FontAttributes="Bold"
-                            CornerRadius="10"/>
+                            CornerRadius="14"/>
                 </Grid>
                 
                 <!-- Confirm Button -->
@@ -139,7 +139,7 @@
                         TextColor="White"
                         FontSize="18"
                         FontAttributes="Bold"
-                        CornerRadius="10"
+                        CornerRadius="14"
                         Clicked="OnConfirmClicked"/>
             </Grid>
         </Border>

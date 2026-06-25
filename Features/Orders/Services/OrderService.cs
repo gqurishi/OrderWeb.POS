@@ -15,7 +15,7 @@ public class OrderService
 
     public OrderService()
     {
-        _connectionString = "Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;";
+        _connectionString = TerminalConfigurationService.GetPosConnectionString();
         _apiService = new OnlineOrderApiService();
     }
 
@@ -33,7 +33,7 @@ public class OrderService
                 order.CreatedAt = DateTime.Now;
             }
 
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureOrderTypeSchemaAsync(connection);
             await EnsureSourceChannelSchemaAsync(connection);
@@ -72,6 +72,7 @@ public class OrderService
                           local_lifecycle_state, is_open, void_reason, voided_at, voided_by, paid_at,
                                   status, order_data, sync_status, 
                                   kitchen_time, preparing_time, ready_time, delivering_time, completed_time,
+                                  updated_by_terminal_name, updated_by_terminal_at,
                                   created_at, updated_at) 
                 VALUES (@orderId, @orderNumber, @cloudOrderId,
                         @customerName, @customerPhone, @customerEmail, @customerAddress, 
@@ -80,6 +81,7 @@ public class OrderService
                     @localLifecycleState, @isOpen, @voidReason, @voidedAt, @voidedBy, @paidAt,
                         @status, @orderData, @syncStatus,
                         @kitchenTime, @preparingTime, @readyTime, @deliveringTime, @completedTime,
+                        @updatedByTerminalName, @updatedByTerminalAt,
                         @createdAt, @updatedAt)";
 
             using var orderCommand = new MySqlCommand(orderQuery, connection);
@@ -116,6 +118,8 @@ public class OrderService
             orderCommand.Parameters.AddWithValue("@readyTime", order.ReadyTime ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@deliveringTime", order.DeliveringTime ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@completedTime", order.CompletedTime ?? (object)DBNull.Value);
+            orderCommand.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
+            orderCommand.Parameters.AddWithValue("@updatedByTerminalAt", now);
             orderCommand.Parameters.AddWithValue("@createdAt", order.CreatedAt);
             orderCommand.Parameters.AddWithValue("@updatedAt", now);
 
@@ -151,6 +155,7 @@ public class OrderService
 
             await UpdateOrderOperationalSummaryAsync(connection, insertedId);
             UpdateActiveTableCache(order);
+            await PublishOrderTerminalEventAsync(connection, order, "created");
 
             return (true, "Order saved successfully");
         }
@@ -169,7 +174,7 @@ public class OrderService
                 return (false, "Order ID missing");
             }
 
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureOrderTypeSchemaAsync(connection);
             await EnsureSourceChannelSchemaAsync(connection);
@@ -238,6 +243,8 @@ public class OrderService
                     ready_time = @readyTime,
                     delivering_time = @deliveringTime,
                     completed_time = @completedTime,
+                    updated_by_terminal_name = @updatedByTerminalName,
+                    updated_by_terminal_at = @updatedByTerminalAt,
                     updated_at = @updatedAt
                 WHERE order_id = @orderId";
             if (expectedUpdatedAt.HasValue)
@@ -276,6 +283,8 @@ public class OrderService
             command.Parameters.AddWithValue("@readyTime", order.ReadyTime ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@deliveringTime", order.DeliveringTime ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@completedTime", order.CompletedTime ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
+            command.Parameters.AddWithValue("@updatedByTerminalAt", now);
             command.Parameters.AddWithValue("@updatedAt", now);
             command.Parameters.AddWithValue("@orderId", order.OrderId);
             if (expectedUpdatedAt.HasValue)
@@ -309,6 +318,7 @@ public class OrderService
             order.UpdatedAt = now;
             order.ExpectedUpdatedAt = now;
             UpdateActiveTableCache(order);
+            await PublishOrderTerminalEventAsync(connection, order, "updated");
 
             return (true, "Order updated successfully");
         }
@@ -322,7 +332,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -356,7 +366,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -394,7 +404,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -438,7 +448,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -483,7 +493,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -522,7 +532,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureSourceChannelSchemaAsync(connection);
             await EnsureLifecycleSchemaAsync(connection);
@@ -557,7 +567,7 @@ public class OrderService
 
     public async Task<List<Order>> GetOrdersAsync()
     {
-        using var connection = new MySqlConnection(_connectionString);
+        using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
         await EnsureSourceChannelSchemaAsync(connection);
         await EnsureLifecycleSchemaAsync(connection);
@@ -631,7 +641,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
             
@@ -665,8 +675,8 @@ public class OrderService
             }
 
             var updateSql = timestampColumn != null 
-                ? $"UPDATE orders SET status = @status, local_lifecycle_state = @lifecycleState, is_open = @isOpen, paid_at = @paidAt, voided_at = @voidedAt, {timestampColumn} = @timestamp, updated_at = @updated WHERE id = @id"
-                : "UPDATE orders SET status = @status, local_lifecycle_state = @lifecycleState, is_open = @isOpen, paid_at = @paidAt, voided_at = @voidedAt, updated_at = @updated WHERE id = @id";
+                ? $"UPDATE orders SET status = @status, local_lifecycle_state = @lifecycleState, is_open = @isOpen, paid_at = @paidAt, voided_at = @voidedAt, {timestampColumn} = @timestamp, updated_by_terminal_name = @updatedByTerminalName, updated_by_terminal_at = @updated, updated_at = @updated WHERE id = @id"
+                : "UPDATE orders SET status = @status, local_lifecycle_state = @lifecycleState, is_open = @isOpen, paid_at = @paidAt, voided_at = @voidedAt, updated_by_terminal_name = @updatedByTerminalName, updated_by_terminal_at = @updated, updated_at = @updated WHERE id = @id";
 
             var nextLifecycleState = newStatus switch
             {
@@ -685,6 +695,7 @@ public class OrderService
             updateCommand.Parameters.AddWithValue("@paidAt", nextLifecycleState == LocalLifecycleState.Paid ? DateTime.Now : DBNull.Value);
             updateCommand.Parameters.AddWithValue("@voidedAt", nextLifecycleState == LocalLifecycleState.Voided ? DateTime.Now : DBNull.Value);
             updateCommand.Parameters.AddWithValue("@updated", DateTime.Now);
+            updateCommand.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             
             if (timestampColumn != null)
             {
@@ -692,7 +703,16 @@ public class OrderService
             }
 
             var rowsAffected = await updateCommand.ExecuteNonQueryAsync();
-            
+            if (rowsAffected > 0)
+            {
+                await PublishOrderTerminalEventAsync(
+                    connection,
+                    orderId.ToString(),
+                    null,
+                    "status_changed",
+                    new { status = newStatus.ToString(), lifecycle = ToDbLifecycleState(nextLifecycleState) });
+            }
+
             return rowsAffected > 0;
         }
         catch (Exception)
@@ -706,7 +726,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -743,7 +763,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"SELECT COUNT(*) FROM orders 
@@ -769,7 +789,7 @@ public class OrderService
             var now = DateTime.Now;
             var updatedOrders = 0;
 
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             // Kitchen -> Preparing (after 2 minutes)
@@ -777,6 +797,8 @@ public class OrderService
                 UPDATE orders SET 
                     status = 'preparing',
                     preparing_time = @now,
+                    updated_by_terminal_name = @updatedByTerminalName,
+                    updated_by_terminal_at = @now,
                     updated_at = @now
                 WHERE status = 'kitchen' 
                 AND kitchen_time IS NOT NULL 
@@ -785,6 +807,7 @@ public class OrderService
 
             using var cmd1 = new MySqlCommand(kitchenToPreparingQuery, connection);
             cmd1.Parameters.AddWithValue("@now", now);
+            cmd1.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             var count1 = await cmd1.ExecuteNonQueryAsync();
             updatedOrders += count1;
 
@@ -793,6 +816,8 @@ public class OrderService
                 UPDATE orders SET 
                     status = 'ready',
                     ready_time = @now,
+                    updated_by_terminal_name = @updatedByTerminalName,
+                    updated_by_terminal_at = @now,
                     updated_at = @now
                 WHERE status = 'preparing' 
                 AND kitchen_time IS NOT NULL 
@@ -801,8 +826,20 @@ public class OrderService
 
             using var cmd2 = new MySqlCommand(preparingToReadyQuery, connection);
             cmd2.Parameters.AddWithValue("@now", now);
+            cmd2.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             var count2 = await cmd2.ExecuteNonQueryAsync();
             updatedOrders += count2;
+
+            if (updatedOrders > 0)
+            {
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.Orders,
+                    "orders",
+                    null,
+                    null,
+                    new { action = "automatic_status_transitions", count = updatedOrders });
+            }
 
             return (true, $"Processed {updatedOrders} automatic status transitions");
         }
@@ -816,25 +853,35 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"
                 UPDATE orders SET 
                     status = 'delivering',
                     delivering_time = @deliveringTime,
+                    updated_by_terminal_name = @updatedByTerminalName,
+                    updated_by_terminal_at = @updatedAt,
                     updated_at = @updatedAt
                 WHERE order_id = @orderId AND status = 'ready' AND COALESCE(local_lifecycle_state, 'active') NOT IN ('paid', 'voided')";
 
             using var command = new MySqlCommand(query, connection);
             command.Parameters.AddWithValue("@deliveringTime", DateTime.Now);
             command.Parameters.AddWithValue("@updatedAt", DateTime.Now);
+            command.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             command.Parameters.AddWithValue("@orderId", orderId);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
             
             if (rowsAffected > 0)
             {
+                await PublishOrderTerminalEventAsync(
+                    connection,
+                    orderId,
+                    null,
+                    "delivery_started",
+                    new { deliveryPersonName });
+
                 // Try to sync status with online system
                 await _apiService.UpdateOrderStatusAsync(orderId, OrderStatus.Delivering, $"Taken by: {deliveryPersonName}");
                 
@@ -855,25 +902,35 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"
                 UPDATE orders SET 
                     status = 'completed',
                     completed_time = @completedTime,
+                    updated_by_terminal_name = @updatedByTerminalName,
+                    updated_by_terminal_at = @updatedAt,
                     updated_at = @updatedAt
                 WHERE order_id = @orderId AND status = 'delivering' AND COALESCE(local_lifecycle_state, 'active') NOT IN ('paid', 'voided')";
 
             using var command = new MySqlCommand(query, connection);
             command.Parameters.AddWithValue("@completedTime", DateTime.Now);
             command.Parameters.AddWithValue("@updatedAt", DateTime.Now);
+            command.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             command.Parameters.AddWithValue("@orderId", orderId);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
             
             if (rowsAffected > 0)
             {
+                await PublishOrderTerminalEventAsync(
+                    connection,
+                    orderId,
+                    null,
+                    "completed",
+                    new { status = OrderStatus.Completed.ToString() });
+
                 // Try to sync status with online system
                 await _apiService.UpdateOrderStatusAsync(orderId, OrderStatus.Completed, "Delivered successfully");
                 
@@ -1129,6 +1186,12 @@ public class OrderService
                     ADD COLUMN IF NOT EXISTS client_item_id VARCHAR(100) NULL,
                     ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL", connection);
                 await alterOrderItemsCommand.ExecuteNonQueryAsync();
+
+                using var alterOrdersLiveUpdateCommand = new MySqlCommand(@"
+                    ALTER TABLE orders
+                    ADD COLUMN IF NOT EXISTS updated_by_terminal_name VARCHAR(120) NULL,
+                    ADD COLUMN IF NOT EXISTS updated_by_terminal_at DATETIME NULL", connection);
+                await alterOrdersLiveUpdateCommand.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
             {
@@ -1509,7 +1572,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -1549,7 +1612,7 @@ public class OrderService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -1648,7 +1711,7 @@ public class OrderService
         {
             await RefreshDraftAbandonmentFlagsAsync();
 
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -1724,6 +1787,73 @@ public class OrderService
                 }
             }
 
+            if (snapshot.PaymentCompletionTime.SampleCount == 0)
+            {
+                const string paymentFallbackQuery = @"
+                    SELECT
+                        COUNT(*) AS sample_count,
+                        COALESCE(AVG(TIMESTAMPDIFF(SECOND, created_at, paid_at)), 0) AS avg_value,
+                        COALESCE(MIN(TIMESTAMPDIFF(SECOND, created_at, paid_at)), 0) AS min_value,
+                        COALESCE(MAX(TIMESTAMPDIFF(SECOND, created_at, paid_at)), 0) AS max_value
+                    FROM orders
+                    WHERE paid_at IS NOT NULL
+                      AND paid_at >= @startDate AND paid_at < @endDate
+                      AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'voided')";
+
+                using var command = new MySqlCommand(paymentFallbackQuery, connection);
+                command.Parameters.AddWithValue("@startDate", startDate);
+                command.Parameters.AddWithValue("@endDate", endDate);
+                using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var sampleCount = Convert.ToInt32(reader["sample_count"]);
+                    if (sampleCount > 0)
+                    {
+                        snapshot.PaymentCompletionTime = new OperationalMetricSummary
+                        {
+                            SampleCount = sampleCount,
+                            Average = Convert.ToDouble(reader["avg_value"]),
+                            Min = Convert.ToDouble(reader["min_value"]),
+                            Max = Convert.ToDouble(reader["max_value"])
+                        };
+                    }
+                }
+            }
+
+            if (snapshot.PaymentCompletionTime.SampleCount == 0)
+            {
+                const string paymentSecondsFallbackQuery = @"
+                    SELECT
+                        COUNT(*) AS sample_count,
+                        COALESCE(AVG(payment_completion_seconds), 0) AS avg_value,
+                        COALESCE(MIN(payment_completion_seconds), 0) AS min_value,
+                        COALESCE(MAX(payment_completion_seconds), 0) AS max_value
+                    FROM orders
+                    WHERE payment_completion_seconds IS NOT NULL
+                      AND payment_completion_seconds > 0
+                      AND COALESCE(paid_at, updated_at) >= @startDate
+                      AND COALESCE(paid_at, updated_at) < @endDate";
+
+                using var command = new MySqlCommand(paymentSecondsFallbackQuery, connection);
+                command.Parameters.AddWithValue("@startDate", startDate);
+                command.Parameters.AddWithValue("@endDate", endDate);
+                using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var sampleCount = Convert.ToInt32(reader["sample_count"]);
+                    if (sampleCount > 0)
+                    {
+                        snapshot.PaymentCompletionTime = new OperationalMetricSummary
+                        {
+                            SampleCount = sampleCount,
+                            Average = Convert.ToDouble(reader["avg_value"]),
+                            Min = Convert.ToDouble(reader["min_value"]),
+                            Max = Convert.ToDouble(reader["max_value"])
+                        };
+                    }
+                }
+            }
+
             const string voidAuditQuery = @"
                 SELECT
                     o.id AS order_db_id,
@@ -1787,7 +1917,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -1862,6 +1992,96 @@ public class OrderService
         command.Parameters.AddWithValue("@eventAt", eventAt ?? DateTime.Now);
         command.Parameters.AddWithValue("@payloadJson", payloadJson ?? (object)DBNull.Value);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task PublishOrderTerminalEventAsync(
+        MySqlConnection connection,
+        Order order,
+        string action,
+        object? payload = null)
+    {
+        await TerminalEventSyncService.PublishAsync(
+            connection,
+            AppDataChangeKind.Orders,
+            "order",
+            order.OrderId,
+            string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber,
+            new
+            {
+                action,
+                orderId = order.OrderId,
+                orderDbId = order.Id,
+                orderNumber = order.OrderNumber,
+                orderType = order.OrderType,
+                lifecycle = ToDbLifecycleState(order.LocalLifecycleState),
+                payload
+            });
+    }
+
+    private static async Task PublishOrderTerminalEventAsync(
+        MySqlConnection connection,
+        string orderIdentifier,
+        string? orderNumber,
+        string action,
+        object? payload = null)
+    {
+        var resolved = await ResolveOrderEventIdentityAsync(connection, orderIdentifier, orderNumber);
+        await TerminalEventSyncService.PublishAsync(
+            connection,
+            AppDataChangeKind.Orders,
+            "order",
+            resolved.EntityId,
+            resolved.OrderNumber,
+            new
+            {
+                action,
+                orderId = resolved.EntityId,
+                orderNumber = resolved.OrderNumber,
+                payload
+            });
+    }
+
+    private static async Task<(string EntityId, string? OrderNumber)> ResolveOrderEventIdentityAsync(
+        MySqlConnection connection,
+        string orderIdentifier,
+        string? orderNumber)
+    {
+        if (string.IsNullOrWhiteSpace(orderIdentifier))
+        {
+            return (string.Empty, orderNumber);
+        }
+
+        try
+        {
+            const string sql = @"
+                SELECT order_id, order_number
+                FROM orders
+                WHERE order_id = @identifier OR id = @dbId
+                LIMIT 1";
+
+            await using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@identifier", orderIdentifier);
+            command.Parameters.AddWithValue("@dbId", int.TryParse(orderIdentifier, out var dbId) ? dbId : -1);
+
+            await using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var entityId = reader["order_id"]?.ToString();
+                var resolvedOrderNumber = reader.IsDBNull(reader.GetOrdinal("order_number"))
+                    ? null
+                    : reader.GetString("order_number");
+
+                return (
+                    string.IsNullOrWhiteSpace(entityId) ? orderIdentifier : entityId,
+                    string.IsNullOrWhiteSpace(orderNumber) ? resolvedOrderNumber : orderNumber);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Order terminal event identity warning: {ex.Message}");
+        }
+
+        return (orderIdentifier, orderNumber);
     }
 
     private async Task UpdateOrderOperationalSummaryAsync(MySqlConnection connection, int orderDbId)
@@ -1979,7 +2199,7 @@ public class OrderService
 
     public async Task<string> CreateSendBatchAsync(int orderDbId, IEnumerable<OrderItem> items)
     {
-        using var connection = new MySqlConnection(_connectionString);
+        using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
         await EnsureLifecycleSchemaAsync(connection);
 
@@ -2006,12 +2226,19 @@ public class OrderService
             await command.ExecuteNonQueryAsync();
         }
 
+        await PublishOrderTerminalEventAsync(
+            connection,
+            orderDbId.ToString(),
+            null,
+            "print_queued",
+            new { batchId });
+
         return batchId;
     }
 
     public async Task<List<OrderItemSendTracking>> GetLatestSendTrackingAsync(int orderDbId)
     {
-        using var connection = new MySqlConnection(_connectionString);
+        using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
         await EnsureLifecycleSchemaAsync(connection);
 
@@ -2057,12 +2284,15 @@ public class OrderService
 
     public async Task<bool> MarkSendBatchResultAsync(int orderDbId, string batchId, IEnumerable<int> printedOrderItemIds, IEnumerable<(int OrderItemDbId, string Reason)> failedItems)
     {
-        using var connection = new MySqlConnection(_connectionString);
+        using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
         await EnsureLifecycleSchemaAsync(connection);
 
         var now = DateTime.Now;
-        foreach (var orderItemId in printedOrderItemIds)
+        var printedItemIds = printedOrderItemIds.ToList();
+        var failedItemRows = failedItems.ToList();
+
+        foreach (var orderItemId in printedItemIds)
         {
             using var command = new MySqlCommand(@"
                 UPDATE order_item_send_tracking
@@ -2080,7 +2310,7 @@ public class OrderService
             await command.ExecuteNonQueryAsync();
         }
 
-        foreach (var failed in failedItems)
+        foreach (var failed in failedItemRows)
         {
             using var command = new MySqlCommand(@"
                 UPDATE order_item_send_tracking
@@ -2096,6 +2326,18 @@ public class OrderService
             command.Parameters.AddWithValue("@reason", failed.Reason);
             await command.ExecuteNonQueryAsync();
         }
+
+        await PublishOrderTerminalEventAsync(
+            connection,
+            orderDbId.ToString(),
+            null,
+            "print_result",
+            new
+            {
+                batchId,
+                printedCount = printedItemIds.Count,
+                failedCount = failedItemRows.Count
+            });
 
         return true;
     }
@@ -2137,7 +2379,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -2176,6 +2418,19 @@ public class OrderService
             insertCommand.Parameters.AddWithValue("@createdBy", createdBy ?? (object)DBNull.Value);
             await insertCommand.ExecuteNonQueryAsync();
 
+            await PublishOrderTerminalEventAsync(
+                connection,
+                externalOrderId,
+                null,
+                normalizedStatus == "approved" ? "payment_approved" : "payment_updated",
+                new
+                {
+                    paymentMethod = normalizedMethod,
+                    amount,
+                    status = normalizedStatus,
+                    attemptNo
+                });
+
             return true;
         }
         catch (Exception ex)
@@ -2191,7 +2446,7 @@ public class OrderService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
 
@@ -2309,6 +2564,18 @@ public class OrderService
     private static DateTime NormalizeTimestampForDb(DateTime value)
     {
         return new DateTime(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, value.Kind);
+    }
+
+    private static string GetCurrentTerminalName()
+    {
+        try
+        {
+            return TerminalConfigurationService.GetConfiguration().TerminalName;
+        }
+        catch
+        {
+            return "Terminal";
+        }
     }
 
     private static void UpdateActiveTableCache(Order order)

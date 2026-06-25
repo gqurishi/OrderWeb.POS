@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Views.PayByItemsDialog"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
+             VerticalOptions="Fill"
+             HorizontalOptions="Fill">
+
+    <Grid VerticalOptions="Center"
+          HorizontalOptions="Center"
+          Padding="36">
+        <Border BackgroundColor="White"
+                Stroke="{StaticResource DialogShellStrokeColor}"
+                StrokeThickness="1"
+                Padding="30"
+                WidthRequest="820"
+                MaximumHeightRequest="760"
+                VerticalOptions="Center"
+                HorizontalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="22"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
+            </Border.Shadow>
+
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="18">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Pay By Items"
+                               Style="{StaticResource DialogTitleStyle}"
+                               HorizontalOptions="Start"/>
+                        <Label Text="Select the items or quantities this customer wants to pay for."
+                               Style="{StaticResource DialogMessageStyle}"
+                               HorizontalOptions="Start"
+                               HorizontalTextAlignment="Start"/>
+                    </VerticalStackLayout>
+
+                    <Button Grid.Column="1"
+                            Text="Back"
+                            Style="{StaticResource DialogBackButtonStyle}"
+                            Clicked="OnCancelClicked"/>
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,Auto,Auto,Auto"
+                      ColumnSpacing="16"
+                      Padding="12,0">
+                    <Label Text="ITEM"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           TextColor="#64748B"/>
+                    <Label Grid.Column="1"
+                           Text="QTY"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           TextColor="#64748B"/>
+                    <Label Grid.Column="2"
+                           Text="PAY"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           TextColor="#64748B"/>
+                    <Label Grid.Column="3"
+                           Text="TOTAL"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           TextColor="#64748B"/>
+                </Grid>
+
+                <ScrollView Grid.Row="2">
+                    <VerticalStackLayout x:Name="ItemsContainer"
+                                         Spacing="10"/>
+                </ScrollView>
+
+                <Grid Grid.Row="3"
+                      ColumnDefinitions="*,Auto"
+                      ColumnSpacing="18">
+                    <VerticalStackLayout Spacing="8">
+                        <Label x:Name="SelectedItemsLabel"
+                               Text="No items selected"
+                               FontSize="14"
+                               TextColor="#64748B"/>
+                        <Label x:Name="SelectedSubtotalLabel"
+                               Text="Selected items: £0.00"
+                               FontSize="14"
+                               TextColor="#334155"/>
+                        <Label x:Name="AdjustmentsLabel"
+                               Text="Service/discount share: £0.00"
+                               FontSize="14"
+                               TextColor="#334155"/>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Grid.Column="1"
+                                         WidthRequest="260"
+                                         Spacing="10">
+                        <Border BackgroundColor="#ECFDF5"
+                                Stroke="#10B981"
+                                StrokeThickness="2"
+                                Padding="16">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="14"/>
+                            </Border.StrokeShape>
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="AMOUNT DUE"
+                                       FontSize="13"
+                                       FontAttributes="Bold"
+                                       TextColor="#047857"
+                                       HorizontalTextAlignment="Center"/>
+                                <Label x:Name="AmountDueLabel"
+                                       Text="£0.00"
+                                       FontSize="34"
+                                       FontAttributes="Bold"
+                                       TextColor="#065F46"
+                                       HorizontalTextAlignment="Center"/>
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <Label x:Name="RemainingAfterLabel"
+                               Text="Remaining after: £0.00"
+                               FontSize="13"
+                               TextColor="#64748B"
+                               HorizontalTextAlignment="Center"/>
+
+                        <Button x:Name="TakePaymentButton"
+                                Text="Take Payment"
+                                Style="{StaticResource DialogSuccessButtonStyle}"
+                                HeightRequest="58"
+                                IsEnabled="False"
+                                Clicked="OnTakePaymentClicked"/>
+                    </VerticalStackLayout>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</ContentView>

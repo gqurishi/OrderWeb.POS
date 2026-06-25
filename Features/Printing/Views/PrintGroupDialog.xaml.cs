@@ -137,7 +137,7 @@ public partial class PrintGroupDialog : ContentView
         {
             grid.Add(new Label
             {
-                Text = "✓",
+                Text = "",
                 FontSize = 24,
                 TextColor = Color.FromArgb(colorCode),
                 FontAttributes = FontAttributes.Bold,

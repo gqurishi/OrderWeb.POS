@@ -37,7 +37,7 @@ public class OrderWebWebSocketService
     public string GetConnectionStatus()
     {
         if (_webSocket == null)
-            return "❌ WebSocket not initialized";
+            return " WebSocket not initialized";
             
         return $"WebSocket State: {_webSocket.State}, IsConnected: {_isConnected}, URL: {_websocketUrl}, Tenant: {_tenantId}";
     }
@@ -48,24 +48,24 @@ public class OrderWebWebSocketService
     private string GetConnectionStatusText()
     {
         if (_isConnected && _webSocket?.State == WebSocketState.Open)
-            return "🟢 Live";
+            return " Live";
         else if (_webSocket?.State == WebSocketState.Connecting)
-            return "🟡 Connecting...";
+            return " Connecting...";
         else
-            return "🔴 Offline";
+            return " Offline";
     }
 
     public OrderWebWebSocketService(DatabaseService databaseService, OrderService orderService)
     {
         _databaseService = databaseService;
         _orderService = orderService;
-        System.Diagnostics.Debug.WriteLine("🔧 OrderWebWebSocketService created");
+        System.Diagnostics.Debug.WriteLine(" OrderWebWebSocketService created");
     }
 
     public void SetCloudOrderService(CloudOrderService cloudOrderService)
     {
         _cloudOrderService = cloudOrderService;
-        System.Diagnostics.Debug.WriteLine("✅ WebSocket linked to CloudOrderService for shared order processing");
+        System.Diagnostics.Debug.WriteLine(" WebSocket linked to CloudOrderService for shared order processing");
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public class OrderWebWebSocketService
         _tenantId = tenantId?.Trim() ?? "";
         _apiKey = apiKey?.Trim() ?? "";
         
-        System.Diagnostics.Debug.WriteLine($"🔧 WebSocket configured: {_websocketUrl}");
+        System.Diagnostics.Debug.WriteLine($" WebSocket configured: {_websocketUrl}");
     }
 
     /// <summary>
@@ -87,14 +87,21 @@ public class OrderWebWebSocketService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("🔌 ConnectAsync() called!");
-            System.Diagnostics.Debug.WriteLine($"🔑 API Key Length: {_apiKey?.Length ?? 0} characters");
-            System.Diagnostics.Debug.WriteLine($"🔑 API Key starts with: {(_apiKey?.Length >= 8 ? _apiKey.Substring(0, 8) : "too short")}");
-            System.Diagnostics.Debug.WriteLine($"🔑 API Key ends with: {(_apiKey?.Length >= 4 ? _apiKey.Substring(_apiKey.Length - 4) : "empty")}");
+            var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+            if (!onlineMasterCheck.Allowed)
+            {
+                System.Diagnostics.Debug.WriteLine($"WebSocket connect skipped: {onlineMasterCheck.Reason}");
+                return false;
+            }
+
+            System.Diagnostics.Debug.WriteLine(" ConnectAsync() called!");
+            System.Diagnostics.Debug.WriteLine($" API Key Length: {_apiKey?.Length ?? 0} characters");
+            System.Diagnostics.Debug.WriteLine($" API Key starts with: {(_apiKey?.Length >= 8 ? _apiKey.Substring(0, 8) : "too short")}");
+            System.Diagnostics.Debug.WriteLine($" API Key ends with: {(_apiKey?.Length >= 4 ? _apiKey.Substring(_apiKey.Length - 4) : "empty")}");
             
             if (string.IsNullOrEmpty(_websocketUrl) || string.IsNullOrEmpty(_tenantId) || string.IsNullOrEmpty(_apiKey))
             {
-                System.Diagnostics.Debug.WriteLine($"❌ WebSocket configuration missing:");
+                System.Diagnostics.Debug.WriteLine($" WebSocket configuration missing:");
                 System.Diagnostics.Debug.WriteLine($"   URL: '{_websocketUrl}'");
                 System.Diagnostics.Debug.WriteLine($"   TenantID: '{_tenantId}'");
                 System.Diagnostics.Debug.WriteLine($"   API Key length: {_apiKey?.Length ?? 0}");
@@ -104,7 +111,7 @@ public class OrderWebWebSocketService
             // Disconnect if already connected
             if (_webSocket != null)
             {
-                System.Diagnostics.Debug.WriteLine("🔄 Disconnecting existing WebSocket...");
+                System.Diagnostics.Debug.WriteLine(" Disconnecting existing WebSocket...");
                 await DisconnectAsync();
             }
 
@@ -122,27 +129,27 @@ public class OrderWebWebSocketService
             // As per official documentation: headers: { 'X-API-Key': 'your_api_key' }
             _webSocket.Options.SetRequestHeader("X-API-Key", _apiKey);
             
-            System.Diagnostics.Debug.WriteLine($"🔌 Connecting to WebSocket: {wsUrl}");
-            System.Diagnostics.Debug.WriteLine($"🔑 Using X-API-Key header for authentication");
+            System.Diagnostics.Debug.WriteLine($" Connecting to WebSocket: {wsUrl}");
+            System.Diagnostics.Debug.WriteLine($" Using X-API-Key header for authentication");
 
             await _webSocket.ConnectAsync(new Uri(wsUrl), _cancellationTokenSource.Token);
 
             _isConnected = true;
             LastConnectionTime = DateTime.Now;
             ConnectionStatusChanged?.Invoke(this, new ConnectionStatusEventArgs(true, "Connected"));
-            System.Diagnostics.Debug.WriteLine("✅ WebSocket connected successfully!");
+            System.Diagnostics.Debug.WriteLine(" WebSocket connected successfully!");
             
             // Write connection success to log file for debugging
             try
             {
                 var logPath = Path.Combine(FileSystem.AppDataDirectory, "websocket_log.txt");
-                var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ✅ WebSocket CONNECTED to {wsUrl}\n";
+                var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]  WebSocket CONNECTED to {wsUrl}\n";
                 await File.AppendAllTextAsync(logPath, logEntry);
-                System.Diagnostics.Debug.WriteLine($"📝 Connection logged to: {logPath}");
+                System.Diagnostics.Debug.WriteLine($" Connection logged to: {logPath}");
             }
             catch (Exception logEx)
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️  Could not write to log file: {logEx.Message}");
+                System.Diagnostics.Debug.WriteLine($"  Could not write to log file: {logEx.Message}");
             }
 
             // Start listening for messages
@@ -157,12 +164,12 @@ public class OrderWebWebSocketService
         {
             _isConnected = false;
             ConnectionStatusChanged?.Invoke(this, new ConnectionStatusEventArgs(false, $"Connection failed: {ex.Message}"));
-            System.Diagnostics.Debug.WriteLine($"❌ WebSocket connection error: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"❌ Exception Type: {ex.GetType().Name}");
-            System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($" WebSocket connection error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception Type: {ex.GetType().Name}");
+            System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
             if (ex.InnerException != null)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Inner Exception: {ex.InnerException.Message}");
+                System.Diagnostics.Debug.WriteLine($" Inner Exception: {ex.InnerException.Message}");
             }
             return false;
         }
@@ -187,7 +194,7 @@ public class OrderWebWebSocketService
             _isConnected = false;
 
             ConnectionStatusChanged?.Invoke(this, new ConnectionStatusEventArgs(false, "Disconnected"));
-            System.Diagnostics.Debug.WriteLine("🔌 WebSocket disconnected");
+            System.Diagnostics.Debug.WriteLine(" WebSocket disconnected");
         }
         catch (Exception ex)
         {
@@ -205,7 +212,7 @@ public class OrderWebWebSocketService
         {
             if (string.IsNullOrEmpty(_websocketUrl) || string.IsNullOrEmpty(_tenantId) || string.IsNullOrEmpty(_apiKey))
             {
-                System.Diagnostics.Debug.WriteLine("❌ WebSocket configuration missing for test");
+                System.Diagnostics.Debug.WriteLine(" WebSocket configuration missing for test");
                 return false;
             }
 
@@ -221,7 +228,7 @@ public class OrderWebWebSocketService
             // Add API key as query parameter (OrderWeb.net authentication method)
             wsUrl = $"{wsUrl}?apiKey={_apiKey}";
             
-            System.Diagnostics.Debug.WriteLine($"🔍 Testing WebSocket connection: {wsUrl.Replace(_apiKey, "***" + _apiKey.Substring(_apiKey.Length - 4))}");
+            System.Diagnostics.Debug.WriteLine($" Testing WebSocket connection: {wsUrl.Replace(_apiKey, "***" + _apiKey.Substring(_apiKey.Length - 4))}");
 
             // Also set headers as backup
             testSocket.Options.SetRequestHeader("X-Tenant-ID", _tenantId);
@@ -232,7 +239,7 @@ public class OrderWebWebSocketService
 
             if (testSocket.State == WebSocketState.Open)
             {
-                System.Diagnostics.Debug.WriteLine("✅ WebSocket test successful");
+                System.Diagnostics.Debug.WriteLine(" WebSocket test successful");
                 await testSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Test complete", CancellationToken.None);
                 return true;
             }
@@ -241,12 +248,12 @@ public class OrderWebWebSocketService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ WebSocket test failed: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"❌ Exception Type: {ex.GetType().Name}");
-            System.Diagnostics.Debug.WriteLine($"❌ Stack Trace: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($" WebSocket test failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception Type: {ex.GetType().Name}");
+            System.Diagnostics.Debug.WriteLine($" Stack Trace: {ex.StackTrace}");
             if (ex.InnerException != null)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Inner Exception: {ex.InnerException.Message}");
+                System.Diagnostics.Debug.WriteLine($" Inner Exception: {ex.InnerException.Message}");
             }
             return false;
         }
@@ -261,7 +268,7 @@ public class OrderWebWebSocketService
     /// </summary>
     private async Task ListenForMessagesAsync(CancellationToken cancellationToken)
     {
-        System.Diagnostics.Debug.WriteLine("👂 ListenForMessagesAsync started!");
+        System.Diagnostics.Debug.WriteLine(" ListenForMessagesAsync started!");
         
         var buffer = new byte[1024 * 4];
         
@@ -273,14 +280,14 @@ public class OrderWebWebSocketService
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    System.Diagnostics.Debug.WriteLine("❌ WebSocket closed by server");
+                    System.Diagnostics.Debug.WriteLine(" WebSocket closed by server");
                     await DisconnectAsync();
                     break;
                 }
 
                 var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                System.Diagnostics.Debug.WriteLine($"📨 WebSocket message received (length: {message.Length})");
-                System.Diagnostics.Debug.WriteLine($"📨 Message content: {message}");
+                System.Diagnostics.Debug.WriteLine($" WebSocket message received (length: {message.Length})");
+                System.Diagnostics.Debug.WriteLine($" Message content: {message}");
                 
                 // Log to file
                 try
@@ -291,7 +298,7 @@ public class OrderWebWebSocketService
                 }
                 catch (Exception logEx)
                 {
-                    System.Diagnostics.Debug.WriteLine($"⚠️  Log write error: {logEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"  Log write error: {logEx.Message}");
                 }
 
                 // Process the message
@@ -300,16 +307,16 @@ public class OrderWebWebSocketService
         }
         catch (OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine("🛑 WebSocket listening cancelled");
+            System.Diagnostics.Debug.WriteLine(" WebSocket listening cancelled");
         }
         catch (WebSocketException wsEx)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ WebSocket connection lost: {wsEx.Message}");
+            System.Diagnostics.Debug.WriteLine($" WebSocket connection lost: {wsEx.Message}");
             _isConnected = false;
             ConnectionStatusChanged?.Invoke(this, new ConnectionStatusEventArgs(false, $"Connection lost: {wsEx.Message}"));
             
             // Unlimited auto-reconnect with exponential backoff
-            System.Diagnostics.Debug.WriteLine("🔄 Starting auto-reconnect (unlimited retries)...");
+            System.Diagnostics.Debug.WriteLine(" Starting auto-reconnect (unlimited retries)...");
             int retryCount = 0;
             int retryDelay = 5000; // Start with 5 seconds
             
@@ -317,7 +324,7 @@ public class OrderWebWebSocketService
             while (!_isConnected && !cancellationToken.IsCancellationRequested)
             {
                 retryCount++;
-                System.Diagnostics.Debug.WriteLine($"🔄 Reconnect attempt #{retryCount} in {retryDelay/1000}s...");
+                System.Diagnostics.Debug.WriteLine($" Reconnect attempt #{retryCount} in {retryDelay/1000}s...");
                 await Task.Delay(retryDelay, cancellationToken);
                 
                 try
@@ -325,10 +332,10 @@ public class OrderWebWebSocketService
                     var reconnected = await ConnectAsync();
                     if (reconnected)
                     {
-                        System.Diagnostics.Debug.WriteLine($"✅ Auto-reconnect successful after {retryCount} attempts!");
+                        System.Diagnostics.Debug.WriteLine($" Auto-reconnect successful after {retryCount} attempts!");
                         
                         // Trigger offline queue processing if available
-                        System.Diagnostics.Debug.WriteLine("📤 Triggering offline queue processing...");
+                        System.Diagnostics.Debug.WriteLine(" Triggering offline queue processing...");
                         // Note: Queue service will be triggered by CloudSettingsPage after connection
                         
                         break;
@@ -336,7 +343,7 @@ public class OrderWebWebSocketService
                 }
                 catch (Exception reconEx)
                 {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Reconnect attempt #{retryCount} failed: {reconEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Reconnect attempt #{retryCount} failed: {reconEx.Message}");
                 }
                 
                 // Exponential backoff: 5s → 10s → 30s → 60s (max)
@@ -350,18 +357,18 @@ public class OrderWebWebSocketService
             
             if (!_isConnected)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Reconnection cancelled after {retryCount} attempts");
+                System.Diagnostics.Debug.WriteLine($" Reconnection cancelled after {retryCount} attempts");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error in WebSocket listener: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error in WebSocket listener: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"   Stack trace: {ex.StackTrace}");
             _isConnected = false;
             ConnectionStatusChanged?.Invoke(this, new ConnectionStatusEventArgs(false, $"Connection lost: {ex.Message}"));
         }
         
-        System.Diagnostics.Debug.WriteLine("👋 ListenForMessagesAsync ended");
+        System.Diagnostics.Debug.WriteLine(" ListenForMessagesAsync ended");
     }    /// <summary>
     /// Process incoming WebSocket messages
     /// </summary>
@@ -377,16 +384,16 @@ public class OrderWebWebSocketService
             var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Message received (length: {message.Length})\n{message}\n";
             await File.AppendAllTextAsync(logPath, logEntry);
             
-            System.Diagnostics.Debug.WriteLine($"📨 WebSocket message received (length: {message.Length})");
-            System.Diagnostics.Debug.WriteLine($"📨 FULL MESSAGE: {message}");
-            System.Diagnostics.Debug.WriteLine($"📝 Log written to: {logPath}");
+            System.Diagnostics.Debug.WriteLine($" WebSocket message received (length: {message.Length})");
+            System.Diagnostics.Debug.WriteLine($" FULL MESSAGE: {message}");
+            System.Diagnostics.Debug.WriteLine($" Log written to: {logPath}");
 
             var jsonDoc = JsonDocument.Parse(message);
             var root = jsonDoc.RootElement;
 
             if (!root.TryGetProperty("type", out var typeElement))
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ Message missing 'type' field");
+                System.Diagnostics.Debug.WriteLine(" Message missing 'type' field");
                 return;
             }
 
@@ -411,28 +418,28 @@ public class OrderWebWebSocketService
                     break;
 
                 case "connected":
-                    System.Diagnostics.Debug.WriteLine($"✅ Connection confirmed: {message}");
+                    System.Diagnostics.Debug.WriteLine($" Connection confirmed: {message}");
                     break;
 
                 case "ping":
                     // Respond to keep-alive ping from server
-                    System.Diagnostics.Debug.WriteLine("💓 Received ping from server, sending pong...");
+                    System.Diagnostics.Debug.WriteLine(" Received ping from server, sending pong...");
                     await SendPongAsync();
                     break;
 
                 case "pong":
                     // Server acknowledged our ping
-                    System.Diagnostics.Debug.WriteLine("💓 Received pong from server - connection alive");
+                    System.Diagnostics.Debug.WriteLine(" Received pong from server - connection alive");
                     break;
 
                 default:
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Unknown message type: {messageType}");
+                    System.Diagnostics.Debug.WriteLine($" Unknown message type: {messageType}");
                     break;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error processing message: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error processing message: {ex.Message}");
         }
     }
 
@@ -443,13 +450,13 @@ public class OrderWebWebSocketService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🔔 HandleNewOrder called!");
-            System.Diagnostics.Debug.WriteLine($"📦 Full data: {data.GetRawText()}");
+            System.Diagnostics.Debug.WriteLine($" HandleNewOrder called!");
+            System.Diagnostics.Debug.WriteLine($" Full data: {data.GetRawText()}");
             
             // OrderWeb.net sends order data in "data" field, not "order"
             if (!data.TryGetProperty("data", out var orderElement))
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ New order message missing 'data' field");
+                System.Diagnostics.Debug.WriteLine(" New order message missing 'data' field");
                 System.Diagnostics.Debug.WriteLine($"Available properties: {string.Join(", ", data.EnumerateObject().Select(p => p.Name))}");
                 return;
             }
@@ -483,7 +490,7 @@ public class OrderWebWebSocketService
                 ? DateTime.Parse(caElem.GetString() ?? DateTime.Now.ToString())
                 : DateTime.Now;
 
-            System.Diagnostics.Debug.WriteLine($"🎉 NEW ORDER via WebSocket: {orderNumber} - {customerName} - ${totalAmount}");
+            System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber} - {customerName} - ${totalAmount}");
 
             var cloudOrder = new Models.Api.CloudOrderResponse
             {
@@ -508,7 +515,7 @@ public class OrderWebWebSocketService
             // Parse order items - items are at root level in OrderWeb.net structure
             if (TryGetItemsArray(data, orderElement, out var itemsElement))
             {
-                System.Diagnostics.Debug.WriteLine($"📦 Parsing {itemsElement.GetArrayLength()} items for order {orderNumber}");
+                System.Diagnostics.Debug.WriteLine($" Parsing {itemsElement.GetArrayLength()} items for order {orderNumber}");
                 
                 foreach (var itemElem in itemsElement.EnumerateArray())
                 {
@@ -525,7 +532,7 @@ public class OrderWebWebSocketService
                         SpecialInstructions = itemElem.TryGetProperty("specialInstructions", out var siElem) ? siElem.GetString() : null
                     };
 
-                    System.Diagnostics.Debug.WriteLine($"  📦 Item: {itemName} x{item.Quantity}");
+                    System.Diagnostics.Debug.WriteLine($"   Item: {itemName} x{item.Quantity}");
 
                     // Parse selectedAddons (JSON array in OrderWeb.net structure)
                     if (itemElem.TryGetProperty("selectedAddons", out var addonsElem) && addonsElem.ValueKind == JsonValueKind.Array)
@@ -552,7 +559,7 @@ public class OrderWebWebSocketService
 
             if (success)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Order {orderNumber} processed from WebSocket successfully!");
+                System.Diagnostics.Debug.WriteLine($" Order {orderNumber} processed from WebSocket successfully!");
                 
                 // Trigger event for UI notification
                 NewOrderReceived?.Invoke(this, new OrderReceivedEventArgs
@@ -566,12 +573,12 @@ public class OrderWebWebSocketService
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"ℹ️ Order {orderNumber} already existed or was not saved from WebSocket.");
+                System.Diagnostics.Debug.WriteLine($"Info: Order {orderNumber} already existed or was not saved from WebSocket.");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error handling new order: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error handling new order: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
         }
     }
@@ -665,7 +672,7 @@ public class OrderWebWebSocketService
         var (success, message) = await _orderService.SaveOrderAsync(order);
         if (!success)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ WebSocket fallback save failed for {cloudOrder.OrderNumber}: {message}");
+            System.Diagnostics.Debug.WriteLine($" WebSocket fallback save failed for {cloudOrder.OrderNumber}: {message}");
         }
 
         return success;
@@ -681,14 +688,14 @@ public class OrderWebWebSocketService
             var orderId = data.GetProperty("order_id").GetString() ?? "";
             var newStatus = data.GetProperty("status").GetString() ?? "";
 
-            System.Diagnostics.Debug.WriteLine($"🔄 Order updated: {orderId} → {newStatus}");
+            System.Diagnostics.Debug.WriteLine($" Order updated: {orderId} → {newStatus}");
 
             // TODO: Update in local database when OrderService method is ready
             // await _orderService.UpdateOrderStatusAsync(orderId, newStatus);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error handling order update: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error handling order update: {ex.Message}");
         }
     }
 
@@ -702,7 +709,7 @@ public class OrderWebWebSocketService
             var cardNumber = data.GetProperty("card_number").GetString() ?? "";
             var newBalance = data.GetProperty("balance").GetDecimal();
 
-            System.Diagnostics.Debug.WriteLine($"🎁 Gift card updated: {cardNumber} → ${newBalance}");
+            System.Diagnostics.Debug.WriteLine($" Gift card updated: {cardNumber} → ${newBalance}");
 
             GiftCardUpdated?.Invoke(this, new GiftCardUpdatedEventArgs
             {
@@ -712,7 +719,7 @@ public class OrderWebWebSocketService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error handling gift card update: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error handling gift card update: {ex.Message}");
         }
     }
 
@@ -736,7 +743,7 @@ public class OrderWebWebSocketService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error handling loyalty update: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error handling loyalty update: {ex.Message}");
         }
     }
 
@@ -745,7 +752,7 @@ public class OrderWebWebSocketService
     /// </summary>
     private async Task SendKeepAliveAsync(CancellationToken cancellationToken)
     {
-        System.Diagnostics.Debug.WriteLine("💓 Keep-alive ping task started (30s interval)");
+        System.Diagnostics.Debug.WriteLine(" Keep-alive ping task started (30s interval)");
         
         try
         {
@@ -759,36 +766,36 @@ public class OrderWebWebSocketService
                     {
                         var ping = "{\"type\":\"ping\"}"u8.ToArray();
                         await _webSocket.SendAsync(new ArraySegment<byte>(ping), WebSocketMessageType.Text, true, CancellationToken.None);
-                        System.Diagnostics.Debug.WriteLine("💓 Sent ping to server");
+                        System.Diagnostics.Debug.WriteLine(" Sent ping to server");
                         
                         // Log connection health
                         var timeSinceLastMessage = LastMessageTime.HasValue 
                             ? (DateTime.Now - LastMessageTime.Value).TotalSeconds 
                             : -1;
-                        System.Diagnostics.Debug.WriteLine($"📊 Connection health: Last message {timeSinceLastMessage:F0}s ago");
+                        System.Diagnostics.Debug.WriteLine($" Connection health: Last message {timeSinceLastMessage:F0}s ago");
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"⚠️ Error sending ping: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($" Error sending ping: {ex.Message}");
                         // Connection may be broken, try to reconnect
-                        System.Diagnostics.Debug.WriteLine("🔄 Ping failed - attempting reconnect...");
+                        System.Diagnostics.Debug.WriteLine(" Ping failed - attempting reconnect...");
                         await ConnectAsync();
                     }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ WebSocket not open (state: {_webSocket?.State}), attempting reconnect...");
+                    System.Diagnostics.Debug.WriteLine($" WebSocket not open (state: {_webSocket?.State}), attempting reconnect...");
                     await ConnectAsync();
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine("💓 Keep-alive ping task cancelled");
+            System.Diagnostics.Debug.WriteLine(" Keep-alive ping task cancelled");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Keep-alive ping error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Keep-alive ping error: {ex.Message}");
         }
     }
 

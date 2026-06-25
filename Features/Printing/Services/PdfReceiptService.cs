@@ -150,7 +150,7 @@ public class PdfReceiptService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ PDF Generation Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" PDF Generation Error: {ex.Message}");
             throw;
         }
     }
@@ -185,7 +185,7 @@ public class PdfReceiptService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Save PDF Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Save PDF Error: {ex.Message}");
             throw;
         }
     }
@@ -258,7 +258,7 @@ public class PdfReceiptService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Report Generation Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Report Generation Error: {ex.Message}");
             throw;
         }
     }

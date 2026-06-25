@@ -30,7 +30,7 @@
                       BackgroundColor="#6366F1"
                       Padding="24,20">
                     <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
-                        <Label Text="🎨"
+                        <Label Text=""
                                FontSize="28"
                                VerticalOptions="Center" />
                         <Label Text="Choose Custom Color"
@@ -137,7 +137,7 @@
                                Padding="12"
                                HasShadow="False">
                             <HorizontalStackLayout Spacing="8">
-                                <Label Text="❌"
+                                <Label Text=""
                                        FontSize="16"
                                        VerticalOptions="Center" />
                                 <Label x:Name="ValidationMessage"

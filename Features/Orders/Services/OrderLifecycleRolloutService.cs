@@ -39,8 +39,8 @@ public sealed class OrderLifecycleRolloutConfig
             EnableLifecycleReads = true,
             EnableLifecycleWrites = false,
             EnableDraftSaveTable = false,
-            EnableDraftSaveCollection = false,
-            EnableDraftSaveDelivery = false,
+            EnableDraftSaveCollection = true,
+            EnableDraftSaveDelivery = true,
             EnableResumePath = true,
             EnableSendDurability = false,
             EnablePaymentLines = false,
@@ -60,8 +60,8 @@ public sealed class OrderLifecycleRolloutService
         ["order.lifecycle.rollout.lifecycle_reads_enabled"] = true,
         ["order.lifecycle.rollout.lifecycle_writes_enabled"] = false,
         ["order.lifecycle.rollout.draft_save_table_enabled"] = false,
-        ["order.lifecycle.rollout.draft_save_collection_enabled"] = false,
-        ["order.lifecycle.rollout.draft_save_delivery_enabled"] = false,
+        ["order.lifecycle.rollout.draft_save_collection_enabled"] = true,
+        ["order.lifecycle.rollout.draft_save_delivery_enabled"] = true,
         ["order.lifecycle.rollout.resume_path_enabled"] = true,
         ["order.lifecycle.rollout.send_durability_enabled"] = false,
         ["order.lifecycle.rollout.payment_lines_enabled"] = false,
@@ -211,7 +211,7 @@ public sealed class OrderLifecycleRolloutService
 
     private static OrderLifecycleRolloutConfig MapFlags(IReadOnlyDictionary<string, bool> flags)
     {
-        return new OrderLifecycleRolloutConfig
+        var config = new OrderLifecycleRolloutConfig
         {
             SchemaMigrationReady = Get(flags, "order.lifecycle.rollout.schema_migration_ready"),
             EnableLifecycleReads = Get(flags, "order.lifecycle.rollout.lifecycle_reads_enabled"),
@@ -226,6 +226,14 @@ public sealed class OrderLifecycleRolloutService
             LegacyFallbackPathsRemoved = Get(flags, "order.lifecycle.rollout.legacy_fallback_paths_removed"),
             ValidationWindowClosed = Get(flags, "order.lifecycle.rollout.validation_window_closed")
         };
+
+        if (config.EnableLifecycleWrites && config.EnableDraftSaveTable)
+        {
+            config.EnableDraftSaveCollection = true;
+            config.EnableDraftSaveDelivery = true;
+        }
+
+        return config;
     }
 
     private static bool Get(IReadOnlyDictionary<string, bool> flags, string key)

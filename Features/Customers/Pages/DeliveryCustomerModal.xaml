@@ -119,7 +119,7 @@
                                 FontAttributes="Bold"
                                 HeightRequest="56"
                                 WidthRequest="120"
-                                CornerRadius="12"
+                                CornerRadius="14"
                                 Clicked="OnSearchPostcodeClicked"/>
                     </Grid>
                     
@@ -145,17 +145,11 @@
                                                 BackgroundColor="Transparent"
                                                 Margin="0,0,0,1">
                                             <VerticalStackLayout Spacing="4">
-                                                <Label Text="{Binding AddressLine1}" 
+                                                <Label Text="{Binding DisplayText}" 
                                                        FontSize="15" 
                                                        FontAttributes="Bold"
-                                                       TextColor="#1A202C"/>
-                                                <Label Text="{Binding City}" 
-                                                       FontSize="13"
-                                                       TextColor="#718096"/>
-                                                <Label Text="{Binding Postcode}" 
-                                                       FontSize="13"
-                                                       FontAttributes="Bold"
-                                                       TextColor="#3B82F6"/>
+                                                       TextColor="#1A202C"
+                                                       LineBreakMode="WordWrap"/>
                                             </VerticalStackLayout>
                                         </Border>
                                     </DataTemplate>
@@ -269,7 +263,7 @@
                         TextColor="White"
                         FontSize="16"
                         HeightRequest="54"
-                        CornerRadius="12"
+                        CornerRadius="14"
                         Clicked="OnSearchClicked"
                         Margin="0,5,0,0">
                     <Button.Shadow>
@@ -373,7 +367,7 @@
                     TextColor="#64748B"
                     FontSize="16"
                     HeightRequest="56"
-                    CornerRadius="12"
+                    CornerRadius="14"
                     BorderColor="#E2E8F0"
                     BorderWidth="2"
                     Clicked="OnCancelClicked"/>
@@ -385,7 +379,7 @@
                     FontSize="16"
                     FontAttributes="Bold"
                     HeightRequest="56"
-                    CornerRadius="12"
+                    CornerRadius="14"
                     Clicked="OnContinueClicked">
                 <Button.Shadow>
                     <Shadow Brush="#3B82F6" 

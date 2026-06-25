@@ -32,7 +32,7 @@ namespace POS_in_NET.Models
         
         // Additional properties for UI display (not in database)
         public string FloorName { get; set; } = string.Empty;
-        public string ShapeIcon => Shape == TableShape.Square ? "🟦" : "▭";
+        public string ShapeIcon => Shape == TableShape.Square ? "" : "▭";
         public string ShapeDisplay => Shape.ToString();
         
         // Color for table card based on floor
@@ -67,9 +67,9 @@ namespace POS_in_NET.Models
                 }
                 return Status switch
                 {
-                    TableStatus.Available => "🟢 Available",
-                    TableStatus.Occupied => "🟡 Occupied",
-                    TableStatus.Reserved => "🔴 Cleaning",
+                    TableStatus.Available => " Available",
+                    TableStatus.Occupied => " Occupied",
+                    TableStatus.Reserved => " Cleaning",
                     _ => Status.ToString()
                 };
             }
@@ -93,10 +93,10 @@ namespace POS_in_NET.Models
                 if (CurrentSession?.SpecialOccasion == null) return "";
                 return CurrentSession.SpecialOccasion.ToLower() switch
                 {
-                    "birthday" => "🎂",
-                    "anniversary" => "💕",
-                    "date" => "💝",
-                    "business" => "💼",
+                    "birthday" => "",
+                    "anniversary" => "",
+                    "date" => "",
+                    "business" => "",
                     _ => "⭐"
                 };
             }

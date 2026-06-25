@@ -177,7 +177,7 @@ namespace POS_in_NET.Pages
             _selectedColor = color;
             _selectedColorFrame = selectedFrame;
             
-            System.Diagnostics.Debug.WriteLine($"🎨 Color selected: {color}");
+            System.Diagnostics.Debug.WriteLine($" Color selected: {color}");
 
             // Use MainThread to ensure instant UI update
             MainThread.BeginInvokeOnMainThread(() =>
@@ -261,7 +261,7 @@ namespace POS_in_NET.Pages
                 // Show preview
                 ColorPreviewFrame.IsVisible = true;
                 ColorPreviewCircle.BackgroundColor = color;
-                ColorPreviewLabel.Text = $"✓ {hexColor}";
+                ColorPreviewLabel.Text = $" {hexColor}";
                 ColorPreviewLabel.TextColor = Color.FromArgb("#10B981");
                 ColorErrorLabel.IsVisible = false;
                 
@@ -346,13 +346,13 @@ namespace POS_in_NET.Pages
             {
                 // Update existing category immediately
                 _categoryToEdit.Name = categoryName;
-                _categoryToEdit.Icon = "🍽️"; // Default icon
+                _categoryToEdit.Icon = ""; // Default icon
                 _categoryToEdit.Color = _selectedColor;
                 _categoryToEdit.ParentId = parentCategoryId;
                 _categoryToEdit.UpdatedAt = DateTime.Now;
                 ResultCategory = _categoryToEdit;
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Category updated with color: {_selectedColor}");
+                System.Diagnostics.Debug.WriteLine($" Category updated with color: {_selectedColor}");
             }
             else
             {
@@ -362,7 +362,7 @@ namespace POS_in_NET.Pages
                     Id = $"cat-{Guid.NewGuid()}",
                     Name = categoryName,
                     Description = "",
-                    Icon = "🍽️", // Default icon
+                    Icon = "", // Default icon
                     Color = _selectedColor,
                     ParentId = parentCategoryId,
                     Active = true,
@@ -371,7 +371,7 @@ namespace POS_in_NET.Pages
                     UpdatedAt = DateTime.Now
                 };
                 
-                System.Diagnostics.Debug.WriteLine($"✅ New category created with color: {_selectedColor}");
+                System.Diagnostics.Debug.WriteLine($" New category created with color: {_selectedColor}");
             }
 
             // Close dialog immediately - no delay

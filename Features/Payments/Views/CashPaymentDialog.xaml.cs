@@ -19,6 +19,7 @@ namespace POS_in_NET.Views
         private Grid? _parentGrid;
         private decimal _amountDue;
         private decimal _amountReceived;
+        private bool _isUpdatingEntry;
 
         public CashPaymentDialog()
         {
@@ -30,12 +31,14 @@ namespace POS_in_NET.Views
             _amountDue = amount;
             AmountDueLabel.Text = $"£{amount:F2}";
             _amountReceived = 0;
+            AmountReceivedEntry.Text = string.Empty;
+            SetQuickCashButtons();
             UpdateDisplay();
         }
 
         public async Task<CashPaymentResult> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = POS_in_NET.Services.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<CashPaymentResult>();
             
             if (Application.Current?.MainPage != null)
@@ -73,7 +76,9 @@ namespace POS_in_NET.Views
         private void SetAmount(decimal amount)
         {
             _amountReceived = amount;
+            _isUpdatingEntry = true;
             AmountReceivedEntry.Text = amount.ToString("F2");
+            _isUpdatingEntry = false;
             UpdateDisplay();
         }
 
@@ -81,68 +86,91 @@ namespace POS_in_NET.Views
         {
             if (_amountReceived >= _amountDue)
             {
-                // Full payment - show change
                 decimal change = _amountReceived - _amountDue;
                 ChangeLabel.Text = $"£{change:F2}";
+                ChangeTitleLabel.Text = change == 0 ? "READY:" : "CHANGE:";
                 ChangeFrame.BackgroundColor = Color.FromArgb("#ECFDF5");
                 ChangeFrame.Stroke = new SolidColorBrush(Color.FromArgb("#10B981"));
+                ChangeTitleLabel.TextColor = Color.FromArgb("#047857");
+                ChangeLabel.TextColor = Color.FromArgb("#047857");
                 RemainingFrame.IsVisible = false;
                 ConfirmButton.IsEnabled = true;
                 ConfirmButton.BackgroundColor = Color.FromArgb("#059669");
+                ConfirmButton.Text = "CONFIRM CASH PAYMENT";
             }
             else if (_amountReceived > 0)
             {
-                // Partial payment - show remaining
-                decimal remaining = _amountDue - _amountReceived;
-                ChangeLabel.Text = "£0.00";
-                RemainingFrame.IsVisible = true;
-                RemainingLabel.Text = $"£{remaining:F2}";
-                ConfirmButton.IsEnabled = true;
-                ConfirmButton.BackgroundColor = Color.FromArgb("#F59E0B");
-                ConfirmButton.Text = "PARTIAL PAYMENT";
-            }
-            else
-            {
-                ChangeLabel.Text = "£0.00";
+                decimal shortAmount = _amountDue - _amountReceived;
+                ChangeTitleLabel.Text = "SHORT:";
+                ChangeLabel.Text = $"£{shortAmount:F2}";
+                ChangeFrame.BackgroundColor = Color.FromArgb("#FEF2F2");
+                ChangeFrame.Stroke = new SolidColorBrush(Color.FromArgb("#EF4444"));
+                ChangeTitleLabel.TextColor = Color.FromArgb("#DC2626");
+                ChangeLabel.TextColor = Color.FromArgb("#DC2626");
                 RemainingFrame.IsVisible = false;
                 ConfirmButton.IsEnabled = false;
                 ConfirmButton.BackgroundColor = Color.FromArgb("#9CA3AF");
-                ConfirmButton.Text = "CONFIRM PAYMENT";
+                ConfirmButton.Text = "ENTER ENOUGH CASH";
+            }
+            else
+            {
+                ChangeTitleLabel.Text = "CHANGE:";
+                ChangeLabel.Text = "£0.00";
+                ChangeFrame.BackgroundColor = Color.FromArgb("#F8FAFC");
+                ChangeFrame.Stroke = new SolidColorBrush(Color.FromArgb("#CBD5E1"));
+                ChangeTitleLabel.TextColor = Color.FromArgb("#64748B");
+                ChangeLabel.TextColor = Color.FromArgb("#334155");
+                RemainingFrame.IsVisible = false;
+                ConfirmButton.IsEnabled = false;
+                ConfirmButton.BackgroundColor = Color.FromArgb("#9CA3AF");
+                ConfirmButton.Text = "CONFIRM CASH PAYMENT";
             }
         }
 
-        private void OnQuick20Clicked(object sender, EventArgs e) => SetAmount(20);
-        private void OnQuick50Clicked(object sender, EventArgs e) => SetAmount(50);
-        private void OnQuick100Clicked(object sender, EventArgs e) => SetAmount(100);
-        
         private void OnExactAmountClicked(object sender, EventArgs e) => SetAmount(_amountDue);
 
         private void OnAmountChanged(object sender, TextChangedEventArgs e)
         {
-            // Don't auto-update, wait for Apply button
-        }
+            if (_isUpdatingEntry)
+            {
+                return;
+            }
 
-        private void OnApplyAmountClicked(object sender, EventArgs e)
-        {
-            if (decimal.TryParse(AmountReceivedEntry.Text, out decimal amount) && amount > 0)
+            if (TryParseCashAmount(e.NewTextValue, out var amount))
             {
                 _amountReceived = amount;
-                UpdateDisplay();
+            }
+            else
+            {
+                _amountReceived = 0;
+            }
+
+            UpdateDisplay();
+        }
+
+        private void OnQuickAmountClicked(object sender, EventArgs e)
+        {
+            if (sender is Button button && button.CommandParameter is decimal amount)
+            {
+                SetAmount(amount);
             }
         }
 
         private void OnConfirmClicked(object sender, EventArgs e)
         {
+            if (_amountReceived < _amountDue)
+            {
+                return;
+            }
+
             decimal change = Math.Max(0, _amountReceived - _amountDue);
-            decimal remaining = Math.Max(0, _amountDue - _amountReceived);
-            decimal actualPaid = Math.Min(_amountReceived, _amountDue);
 
             var result = new CashPaymentResult
             {
                 Success = true,
-                AmountPaid = actualPaid,
+                AmountPaid = _amountDue,
                 Change = change,
-                Remaining = remaining
+                Remaining = 0
             };
 
             _taskCompletionSource?.TrySetResult(result);
@@ -161,6 +189,48 @@ namespace POS_in_NET.Views
             {
                 _parentGrid.Children.Remove(this);
             }
+        }
+
+        private void SetQuickCashButtons()
+        {
+            QuickExactButton.Text = $"Exact £{_amountDue:F2}";
+
+            var quickAmounts = BuildQuickCashAmounts(_amountDue);
+            SetQuickButton(QuickAmount1Button, quickAmounts[0]);
+            SetQuickButton(QuickAmount2Button, quickAmounts[1]);
+            SetQuickButton(QuickAmount3Button, quickAmounts[2]);
+        }
+
+        private static void SetQuickButton(Button button, decimal amount)
+        {
+            button.Text = $"£{amount:0.##}";
+            button.CommandParameter = amount;
+        }
+
+        private static decimal[] BuildQuickCashAmounts(decimal amountDue)
+        {
+            var roundedToTen = Math.Ceiling(amountDue / 10m) * 10m;
+            if (roundedToTen <= amountDue)
+            {
+                roundedToTen += 10m;
+            }
+
+            return new[]
+            {
+                roundedToTen,
+                roundedToTen + 10m,
+                roundedToTen + 20m
+            };
+        }
+
+        private static bool TryParseCashAmount(string? input, out decimal amount)
+        {
+            var normalized = (input ?? string.Empty)
+                .Replace("£", string.Empty)
+                .Replace(",", string.Empty)
+                .Trim();
+
+            return decimal.TryParse(normalized, out amount) && amount > 0;
         }
     }
 }

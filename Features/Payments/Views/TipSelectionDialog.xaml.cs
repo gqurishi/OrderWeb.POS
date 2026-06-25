@@ -22,12 +22,13 @@ namespace POS_in_NET.Views
             _orderTotal = total;
             OrderTotalLabel.Text = $"£{total:F2}";
             _selectedTip = 0;
+            CustomTipEntry.Text = string.Empty;
             TipAmountLabel.Text = "£0.00";
         }
 
         public async Task<decimal> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = POS_in_NET.Services.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<decimal>();
             
             if (Application.Current?.MainPage != null)
@@ -69,33 +70,42 @@ namespace POS_in_NET.Views
 
         private void OnNoTipClicked(object sender, EventArgs e)
         {
+            CustomTipEntry.Text = string.Empty;
             _selectedTip = 0;
             UpdateTipDisplay();
         }
 
         private void OnTip5Clicked(object sender, EventArgs e)
         {
+            CustomTipEntry.Text = string.Empty;
             _selectedTip = 5;
             UpdateTipDisplay();
         }
 
         private void OnTip10Clicked(object sender, EventArgs e)
         {
+            CustomTipEntry.Text = string.Empty;
             _selectedTip = 10;
             UpdateTipDisplay();
         }
 
         private void OnTip20Clicked(object sender, EventArgs e)
         {
+            CustomTipEntry.Text = string.Empty;
             _selectedTip = 20;
             UpdateTipDisplay();
         }
 
-        private void OnCustomTipClicked(object sender, EventArgs e)
+        private void OnCustomTipChanged(object sender, TextChangedEventArgs e)
         {
-            if (decimal.TryParse(CustomTipEntry.Text, out decimal customTip) && customTip >= 0)
+            if (TryParseTipAmount(e.NewTextValue, out decimal customTip) && customTip >= 0)
             {
                 _selectedTip = Math.Round(customTip, 2);
+                UpdateTipDisplay();
+            }
+            else if (string.IsNullOrWhiteSpace(e.NewTextValue))
+            {
+                _selectedTip = 0;
                 UpdateTipDisplay();
             }
         }
@@ -118,6 +128,16 @@ namespace POS_in_NET.Views
             {
                 _parentGrid.Children.Remove(this);
             }
+        }
+
+        private static bool TryParseTipAmount(string? input, out decimal amount)
+        {
+            var normalized = (input ?? string.Empty)
+                .Replace("£", string.Empty)
+                .Replace(",", string.Empty)
+                .Trim();
+
+            return decimal.TryParse(normalized, out amount);
         }
     }
 }

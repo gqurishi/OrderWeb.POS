@@ -4,7 +4,7 @@
              x:Class="POS_in_NET.Views.PrintGroupSelectorDialog">
     
     <!-- Semi-transparent overlay -->
-    <Grid BackgroundColor="#80000000">
+    <Grid BackgroundColor="{StaticResource DialogOverlayColor}">
         <Grid.GestureRecognizers>
             <TapGestureRecognizer Tapped="OnBackgroundTapped" />
         </Grid.GestureRecognizers>
@@ -64,7 +64,7 @@
                             FontAttributes="Bold"
                             BorderColor="#E2E8F0"
                             BorderWidth="2"
-                            CornerRadius="12"
+                            CornerRadius="14"
                             HeightRequest="52"
                             Clicked="OnCancelClicked" />
                     
@@ -74,7 +74,7 @@
                             TextColor="White"
                             FontSize="16"
                             FontAttributes="Bold"
-                            CornerRadius="12"
+                            CornerRadius="14"
                             HeightRequest="52"
                             Clicked="OnCreateNewGroupClicked">
                         <Button.Shadow>

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.AddAddonDialog">
     
-    <Frame BackgroundColor="#80000000"
+    <Frame BackgroundColor="{StaticResource DialogOverlayColor}"
            Padding="0"
            HasShadow="False"
            CornerRadius="0">
@@ -86,7 +86,7 @@
                                 TextColor="#475569"
                                 FontSize="15"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
+                                CornerRadius="14"
                                 HeightRequest="50"
                                 Clicked="OnCancelClicked" />
                         
@@ -97,7 +97,7 @@
                                 TextColor="White"
                                 FontSize="15"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
+                                CornerRadius="14"
                                 HeightRequest="50"
                                 Clicked="OnSaveClicked" />
                     </Grid>

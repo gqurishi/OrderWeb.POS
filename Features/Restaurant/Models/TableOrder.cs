@@ -21,6 +21,7 @@ namespace POS_in_NET.Models
         private DateTime _startTime;
         private decimal _subtotal;
         private decimal _serviceCharge;
+        private decimal _fixedServiceCharge;
         private decimal _serviceChargePercent;
         private decimal _discount;
         private decimal _discountPercent;
@@ -102,6 +103,17 @@ namespace POS_in_NET.Models
         {
             get => _serviceCharge;
             set { _serviceCharge = value; OnPropertyChanged(); }
+        }
+
+        public decimal FixedServiceCharge
+        {
+            get => _fixedServiceCharge;
+            set
+            {
+                _fixedServiceCharge = value;
+                OnPropertyChanged();
+                CalculateServiceCharge();
+            }
         }
 
         public decimal ServiceChargePercent
@@ -240,7 +252,11 @@ namespace POS_in_NET.Models
 
         public void CalculateServiceCharge()
         {
-            if (ServiceChargePercent > 0)
+            if (FixedServiceCharge > 0)
+            {
+                ServiceCharge = FixedServiceCharge;
+            }
+            else if (ServiceChargePercent > 0)
             {
                 ServiceCharge = Math.Round(Subtotal * (ServiceChargePercent / 100), 2);
             }

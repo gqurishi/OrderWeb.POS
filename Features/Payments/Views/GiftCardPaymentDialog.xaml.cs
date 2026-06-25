@@ -27,6 +27,7 @@ namespace POS_in_NET.Views
         private string? _orderReference;
         private GiftCard? _giftCard;
         private readonly LoyaltyService? _loyaltyService;
+        private bool _isUpdatingApplyAmount;
 
         public GiftCardPaymentDialog()
         {
@@ -39,11 +40,12 @@ namespace POS_in_NET.Views
             _amountDue = amount;
             _orderReference = orderReference;
             AmountDueLabel.Text = $"£{amount:F2}";
+            UpdateApplyButtonState();
         }
 
         public async Task<GiftCardPaymentResult> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = POS_in_NET.Services.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<GiftCardPaymentResult>();
             
             if (Application.Current?.MainPage != null)
@@ -113,13 +115,16 @@ namespace POS_in_NET.Views
         private void OnUseFullClicked(object sender, EventArgs e)
         {
             decimal maxApply = Math.Min(_cardBalance, _amountDue);
+            _isUpdatingApplyAmount = true;
             ApplyAmountEntry.Text = maxApply.ToString("F2");
+            _isUpdatingApplyAmount = false;
             UpdateRemainingDisplay();
+            UpdateApplyButtonState();
         }
 
         private void UpdateRemainingDisplay()
         {
-            if (decimal.TryParse(ApplyAmountEntry.Text, out decimal applyAmount))
+            if (TryParseGiftCardAmount(ApplyAmountEntry.Text, out decimal applyAmount))
             {
                 decimal remaining = _amountDue - applyAmount;
                 if (remaining > 0)
@@ -132,6 +137,10 @@ namespace POS_in_NET.Views
                     RemainingFrame.IsVisible = false;
                 }
             }
+            else
+            {
+                RemainingFrame.IsVisible = false;
+            }
         }
 
         private async void OnApplyClicked(object sender, EventArgs e)
@@ -142,7 +151,7 @@ namespace POS_in_NET.Views
                 return;
             }
 
-            if (!decimal.TryParse(ApplyAmountEntry.Text, out decimal applyAmount))
+            if (!TryParseGiftCardAmount(ApplyAmountEntry.Text, out decimal applyAmount))
             {
                 SetStatus("Enter a valid amount to apply.", true);
                 return;
@@ -222,14 +231,15 @@ namespace POS_in_NET.Views
             BalanceFrame.IsVisible = true;
             BalanceLabel.Text = giftCard.BalanceDisplay;
             ApplyAmountSection.IsVisible = giftCard.IsActive;
+            _isUpdatingApplyAmount = true;
             ApplyAmountEntry.Text = Math.Min(_cardBalance, _amountDue).ToString("F2");
-            ApplyButton.IsEnabled = giftCard.IsActive;
-            ApplyButton.BackgroundColor = giftCard.IsActive ? Color.FromArgb("#7C3AED") : Color.FromArgb("#9CA3AF");
+            _isUpdatingApplyAmount = false;
 
             SetStatus(giftCard.IsActive
                 ? "Gift card verified with OrderWeb."
                 : $"Gift card cannot be used: {giftCard.StatusDisplay}", !giftCard.IsActive);
             UpdateRemainingDisplay();
+            UpdateApplyButtonState();
         }
 
         private void ResetCardState()
@@ -239,8 +249,7 @@ namespace POS_in_NET.Views
             BalanceFrame.IsVisible = false;
             ApplyAmountSection.IsVisible = false;
             RemainingFrame.IsVisible = false;
-            ApplyButton.IsEnabled = false;
-            ApplyButton.BackgroundColor = Color.FromArgb("#9CA3AF");
+            UpdateApplyButtonState();
         }
 
         private void SetStatus(string message, bool isError)
@@ -273,9 +282,51 @@ namespace POS_in_NET.Views
                 CheckBalanceButton.IsEnabled = true;
                 GiftCardNumberEntry.IsEnabled = true;
                 ApplyAmountEntry.IsEnabled = true;
-                ApplyButton.IsEnabled = _giftCard?.IsActive == true;
-                ApplyButton.BackgroundColor = ApplyButton.IsEnabled ? Color.FromArgb("#7C3AED") : Color.FromArgb("#9CA3AF");
+                UpdateApplyButtonState();
             }
+        }
+
+        private void OnApplyAmountChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isUpdatingApplyAmount)
+            {
+                return;
+            }
+
+            UpdateRemainingDisplay();
+            UpdateApplyButtonState();
+        }
+
+        private void UpdateApplyButtonState()
+        {
+            var hasActiveCard = _giftCard?.IsActive == true;
+            var hasAmount = TryParseGiftCardAmount(ApplyAmountEntry.Text, out var applyAmount);
+            var canApply = hasActiveCard
+                && hasAmount
+                && applyAmount > 0
+                && applyAmount <= _cardBalance + 0.009m;
+
+            ApplyButton.IsEnabled = canApply;
+            ApplyButton.BackgroundColor = canApply
+                ? Color.FromArgb("#059669")
+                : Color.FromArgb("#9CA3AF");
+            ApplyButton.Text = canApply
+                ? "APPLY GIFT CARD"
+                : !hasActiveCard
+                    ? "CHECK GIFT CARD FIRST"
+                    : !hasAmount || applyAmount <= 0
+                        ? "ENTER AMOUNT"
+                        : "AMOUNT TOO HIGH";
+        }
+
+        private static bool TryParseGiftCardAmount(string? input, out decimal amount)
+        {
+            var normalized = (input ?? string.Empty)
+                .Replace("£", string.Empty)
+                .Replace(",", string.Empty)
+                .Trim();
+
+            return decimal.TryParse(normalized, out amount);
         }
     }
 }

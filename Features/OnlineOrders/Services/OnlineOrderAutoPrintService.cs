@@ -185,11 +185,11 @@ public class OnlineOrderAutoPrintService
             await SendPrintAckAsync(e.OrderId, "printed", null, printStartedAt ?? DateTime.UtcNow, durationMs, printerInfo);
             await UpdateLocalOrderPrintStatusAsync(e.OrderId, "printed");
 
-            Debug.WriteLine($"✅ Physical print complete for OrderWeb order {e.OrderId}; printed ACK sent");
+            Debug.WriteLine($" Physical print complete for OrderWeb order {e.OrderId}; printed ACK sent");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error handling completed print job #{e.JobId}: {ex.Message}");
+            Debug.WriteLine($" Error handling completed print job #{e.JobId}: {ex.Message}");
         }
     }
 
@@ -212,11 +212,11 @@ public class OnlineOrderAutoPrintService
             await SendPrintAckAsync(e.OrderId, "failed", reason, printStartedAt ?? DateTime.UtcNow, null, printerInfo);
             await UpdateLocalOrderPrintStatusAsync(e.OrderId, "failed", reason);
 
-            Debug.WriteLine($"❌ Physical print failed for OrderWeb order {e.OrderId}; failed ACK sent");
+            Debug.WriteLine($" Physical print failed for OrderWeb order {e.OrderId}; failed ACK sent");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error handling failed print job #{e.JobId}: {ex.Message}");
+            Debug.WriteLine($" Error handling failed print job #{e.JobId}: {ex.Message}");
         }
     }
 

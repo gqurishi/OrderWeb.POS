@@ -2,22 +2,23 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.GiftCardPaymentDialog"
-             BackgroundColor="#80000000"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Fill" HorizontalOptions="Fill">
         <Border BackgroundColor="White"
-               StrokeThickness="0"
-               Padding="40"
+               Stroke="{StaticResource DialogShellStrokeColor}"
+               StrokeThickness="1"
+               Padding="30"
                WidthRequest="650"
                VerticalOptions="Center"
                HorizontalOptions="Center">
             <Border.StrokeShape>
-                <RoundRectangle CornerRadius="16"/>
+                <RoundRectangle CornerRadius="22"/>
             </Border.StrokeShape>
             <Border.Shadow>
-                <Shadow Brush="Black" Offset="0,4" Radius="20" Opacity="0.3"/>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
             <VerticalStackLayout Spacing="18">
@@ -38,7 +39,7 @@
                             FontAttributes="Bold"
                             WidthRequest="90"
                             HeightRequest="45"
-                            CornerRadius="8"
+                            CornerRadius="14"
                             Clicked="OnCancelClicked"/>
                 </Grid>
                 
@@ -103,7 +104,7 @@
                                 TextColor="White"
                                 FontSize="14"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
+                                CornerRadius="14"
                                 WidthRequest="100"
                                 HeightRequest="55"
                                 Clicked="OnCheckBalanceClicked"/>
@@ -159,7 +160,7 @@
                                 TextColor="#065F46"
                                 FontSize="12"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
+                                CornerRadius="14"
                                 WidthRequest="100"
                                 HeightRequest="55"
                                 Clicked="OnUseFullClicked"/>
@@ -199,7 +200,7 @@
                         TextColor="White"
                         FontSize="20"
                         FontAttributes="Bold"
-                        CornerRadius="12"
+                        CornerRadius="14"
                         HeightRequest="60"
                         IsEnabled="False"
                         Clicked="OnApplyClicked"/>

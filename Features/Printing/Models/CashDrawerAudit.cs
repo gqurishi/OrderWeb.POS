@@ -8,6 +8,7 @@ public sealed class CashDrawerOpenRequest
     public string? OrderNumber { get; set; }
     public int? TableSessionId { get; set; }
     public string? TableNumber { get; set; }
+    public int? TillExpenseId { get; set; }
 }
 
 public sealed class CashDrawerOpenResult

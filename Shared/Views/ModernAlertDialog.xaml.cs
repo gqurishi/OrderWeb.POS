@@ -10,6 +10,8 @@ namespace POS_in_NET.Views
     {
         private TaskCompletionSource<bool>? _taskCompletionSource;
         private Grid? _parentGrid;
+        private string _title = "Info";
+        private string _message = string.Empty;
 
         public ModernAlertDialog()
         {
@@ -18,8 +20,10 @@ namespace POS_in_NET.Views
 
         public void SetAlert(string title, string message, string icon = "i", string iconBgColor = "#3B82F6", string buttonColor = "#2563EB", string buttonTextColor = "White")
         {
-            TitleLabel.Text = title;
-            MessageLabel.Text = message;
+            _title = title?.Trim() ?? "Info";
+            _message = message?.Trim() ?? string.Empty;
+            TitleLabel.Text = _title;
+            MessageLabel.Text = _message;
             IconBorder.BackgroundColor = ParseColor(iconBgColor, Color.FromArgb("#3B82F6"));
             
             IconLabel.Text = NormalizeIconText(icon);
@@ -60,22 +64,22 @@ namespace POS_in_NET.Views
 
             var lowered = input.ToLowerInvariant();
 
-            if (lowered is "✅" or "ok" or "success" or "done" or "check")
+            if (lowered is "ok" or "success" or "done" or "check")
             {
                 return "OK";
             }
 
-            if (lowered is "❌" or "x" or "error" or "fail" or "failed")
+            if (lowered is "x" or "error" or "fail" or "failed")
             {
                 return "X";
             }
 
-            if (lowered is "⚠️" or "⚠" or "!" or "warning")
+            if (lowered is "!" or "warning")
             {
                 return "!";
             }
 
-            if (lowered is "ℹ️" or "ℹ" or "i" or "info")
+            if (lowered is "i" or "info")
             {
                 return "i";
             }
@@ -96,39 +100,22 @@ namespace POS_in_NET.Views
 
         public async Task ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<bool>();
-            
-            if (Application.Current?.MainPage != null)
+
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _parentGrid))
             {
-                var pageContent = GetPageContent(Application.Current.MainPage);
-                if (pageContent is Grid mainGrid)
+                var page = Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
+                if (page != null)
                 {
-                    _parentGrid = mainGrid;
-                    
-                    Grid.SetRowSpan(this, mainGrid.RowDefinitions.Count > 0 ? mainGrid.RowDefinitions.Count : 1);
-                    Grid.SetColumnSpan(this, mainGrid.ColumnDefinitions.Count > 0 ? mainGrid.ColumnDefinitions.Count : 1);
-                    Grid.SetRow(this, 0);
-                    Grid.SetColumn(this, 0);
-                    
-                    mainGrid.Children.Add(this);
+                    await page.DisplayAlert(_title, _message, "OK");
                 }
+
+                _taskCompletionSource.TrySetResult(true);
+                return;
             }
 
             await _taskCompletionSource.Task;
-        }
-
-        private View? GetPageContent(Page page)
-        {
-            if (page is Shell shell && shell.CurrentPage is ContentPage currentPage)
-            {
-                return currentPage.Content;
-            }
-            else if (page is ContentPage contentPage)
-            {
-                return contentPage.Content;
-            }
-            return null;
         }
 
         private void OnOkClicked(object sender, EventArgs e)
@@ -139,10 +126,8 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
-            if (_parentGrid != null)
-            {
-                _parentGrid.Children.Remove(this);
-            }
+            DialogOverlayHelper.DetachOverlay(this, _parentGrid);
+            _parentGrid = null;
         }
     }
 }

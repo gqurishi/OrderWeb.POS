@@ -76,7 +76,7 @@ namespace POS_in_NET.Views
                         Active = ActiveSwitch.IsToggled,
                         ParentId = null, // Top-level category
                         Color = "#6366F1",
-                        Icon = "📁",
+                        Icon = "",
                         CreatedAt = DateTime.Now,
                         UpdatedAt = DateTime.Now
                     };

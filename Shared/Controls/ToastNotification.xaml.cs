@@ -57,7 +57,7 @@ namespace POS_in_NET.Controls
                         ToastBorder.Stroke = Color.FromArgb("#BBF7D0");
                         IconContainer.BackgroundColor = Color.FromArgb("#ECFDF5");
                         IconLabel.TextColor = Color.FromArgb("#047857");
-                        IconLabel.Text = "✓";
+                        IconLabel.Text = "OK";
                         break;
 
                     case NotificationType.Error:
@@ -65,7 +65,7 @@ namespace POS_in_NET.Controls
                         ToastBorder.Stroke = Color.FromArgb("#FECACA");
                         IconContainer.BackgroundColor = Color.FromArgb("#FEF2F2");
                         IconLabel.TextColor = Color.FromArgb("#DC2626");
-                        IconLabel.Text = "✕";
+                        IconLabel.Text = "X";
                         break;
 
                     case NotificationType.Warning:
@@ -73,7 +73,7 @@ namespace POS_in_NET.Controls
                         ToastBorder.Stroke = Color.FromArgb("#DDD6FE");
                         IconContainer.BackgroundColor = Color.FromArgb("#F5F3FF");
                         IconLabel.TextColor = Color.FromArgb("#6D28D9");
-                        IconLabel.Text = "⚠";
+                        IconLabel.Text = "!";
                         break;
 
                     case NotificationType.Info:
@@ -81,7 +81,7 @@ namespace POS_in_NET.Controls
                         ToastBorder.Stroke = Color.FromArgb("#BFDBFE");
                         IconContainer.BackgroundColor = Color.FromArgb("#EFF6FF");
                         IconLabel.TextColor = Color.FromArgb("#1D4ED8");
-                        IconLabel.Text = "ℹ";
+                        IconLabel.Text = "i";
                         break;
                 }
 

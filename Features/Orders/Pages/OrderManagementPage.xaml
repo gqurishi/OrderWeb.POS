@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:POS_in_NET.Views"
+             xmlns:controls="clr-namespace:POS_in_NET.Controls"
              xmlns:dataGrid="clr-namespace:Syncfusion.Maui.DataGrid;assembly=Syncfusion.Maui.DataGrid"
              Title=""
              BackgroundColor="{StaticResource Background}">
@@ -11,6 +12,11 @@
         
         <!-- Top Bar -->
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+
+        <controls:ToastNotification x:Name="ToastNotification"
+                                   Grid.RowSpan="2"
+                                   ZIndex="2000"
+                                   InputTransparent="True"/>
         
         <!-- Main Content -->
         <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Padding="24">
@@ -23,7 +29,7 @@
                 <Label Text="Live Orders" 
                        Style="{StaticResource HeadlineLarge}" />
                 <HorizontalStackLayout Spacing="12">
-                    <Label Text="🔄" FontSize="14" />
+                    <Label Text="" FontSize="14" />
                     <Label x:Name="LastSyncLabel" 
                            Text="Last sync: --:--" 
                            Style="{StaticResource BodyMedium}"
@@ -61,7 +67,7 @@
                 </Frame>
                 
                 <Button x:Name="RefreshButton" 
-                        Text="🔄 Refresh" 
+                        Text="Refresh" 
                         Style="{StaticResource PrimaryButton}"
                         Clicked="OnRefreshClicked"
                         HeightRequest="48" />
@@ -89,7 +95,7 @@
 
                                 <!-- Order Header -->
                                 <HorizontalStackLayout Grid.Row="0" Grid.Column="0" Spacing="12">
-                                    <Label Text="📦" FontSize="20" VerticalOptions="Center" />
+                                    <Label Text="" FontSize="20" VerticalOptions="Center" />
                                     <Label Text="{Binding OrderId}" 
                                            Style="{StaticResource TitleMedium}"
                                            TextColor="{StaticResource Primary}"
@@ -117,7 +123,7 @@
 
                                 <!-- Time Display -->
                                 <HorizontalStackLayout Grid.Row="0" Grid.Column="2" Spacing="6" VerticalOptions="Center">
-                                    <Label Text="🕐" FontSize="14" />
+                                    <Label Text="" FontSize="14" />
                                     <Label Text="{Binding TimeDisplay}" 
                                            Style="{StaticResource BodySmall}"
                                            TextColor="{StaticResource TextSecondary}" />
@@ -126,13 +132,13 @@
                                 <!-- Customer Info -->
                                 <VerticalStackLayout Grid.Row="1" Grid.ColumnSpan="3" Spacing="6">
                                     <HorizontalStackLayout Spacing="8">
-                                        <Label Text="📞" FontSize="14" />
+                                        <Label Text="" FontSize="14" />
                                         <Label Text="{Binding CustomerPhone}" 
                                                Style="{StaticResource BodyMedium}"
                                                TextColor="{StaticResource TextSecondary}" />
                                     </HorizontalStackLayout>
                                     <HorizontalStackLayout Spacing="8">
-                                        <Label Text="📍" FontSize="14" />
+                                        <Label Text="" FontSize="14" />
                                         <Label Text="{Binding CustomerAddress}" 
                                                Style="{StaticResource BodyMedium}"
                                                TextColor="{StaticResource TextSecondary}"
@@ -182,7 +188,7 @@
                                     
                                     <!-- Total Amount -->
                                     <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
-                                        <Label Text="💰" FontSize="18" />
+                                        <Label Text="" FontSize="18" />
                                         <Label Text="{Binding TotalAmount, StringFormat='Total: £{0:F2}'}" 
                                                Style="{StaticResource TitleMedium}"
                                                TextColor="{StaticResource Primary}" />
@@ -192,7 +198,7 @@
                                     <HorizontalStackLayout Grid.Column="1" Spacing="8">
                                         
                                         <!-- Kitchen button (for New orders) -->
-                                        <Button Text="🍳 Kitchen" 
+                                        <Button Text="Kitchen" 
                                                 BackgroundColor="{StaticResource Accent}"
                                                 TextColor="White"
                                                 FontSize="13"
@@ -203,7 +209,7 @@
                                                 CommandParameter="{Binding}" />
                                         
                                         <!-- Ready button (for Preparing orders) -->
-                                        <Button Text="✓ Ready" 
+                                        <Button Text="Ready" 
                                                 BackgroundColor="{StaticResource Secondary}"
                                                 TextColor="White"
                                                 FontSize="13"
@@ -214,7 +220,7 @@
                                                 CommandParameter="{Binding}" />
                                         
                                         <!-- Delivering button (for Ready orders) -->
-                                        <Button Text="🚗 Deliver" 
+                                        <Button Text="Deliver" 
                                                 BackgroundColor="{StaticResource Primary}"
                                                 TextColor="White"
                                                 FontSize="13"
@@ -225,7 +231,7 @@
                                                 CommandParameter="{Binding}" />
                                         
                                         <!-- Complete button (for Delivering orders) -->
-                                        <Button Text="✓ Complete" 
+                                        <Button Text="Complete" 
                                                 BackgroundColor="#795548"
                                                 TextColor="White"
                                                 FontSize="13"
@@ -245,7 +251,7 @@
                 <!-- Modern Empty State -->
                 <CollectionView.EmptyView>
                     <VerticalStackLayout Padding="60" VerticalOptions="Center" Spacing="16">
-                        <Label Text="📋" 
+                        <Label Text="" 
                                FontSize="64" 
                                HorizontalOptions="Center"
                                Opacity="0.5" />
@@ -267,7 +273,7 @@
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16" Margin="0,20,0,0">
             
             <HorizontalStackLayout Grid.Column="0" Spacing="12" VerticalOptions="Center">
-                <Label Text="🌐" FontSize="18" />
+                <Label Text="" FontSize="18" />
                 <Label x:Name="ConnectionStatusLabel" 
                        Text="API Status: Checking..." 
                        Style="{StaticResource BodyMedium}"
@@ -275,13 +281,13 @@
             </HorizontalStackLayout>
             
             <Button Grid.Column="1"
-                    Text="⚙️ API Settings" 
+                    Text="API Settings" 
                     Style="{StaticResource SecondaryButton}"
                     Clicked="OnApiSettingsClicked"
                     HeightRequest="48" />
             
             <Button Grid.Column="2"
-                    Text="🔌 Test Connection" 
+                    Text="Test Connection" 
                     Style="{StaticResource OutlineButton}"
                     Clicked="OnTestConnectionClicked"
                     HeightRequest="48" />

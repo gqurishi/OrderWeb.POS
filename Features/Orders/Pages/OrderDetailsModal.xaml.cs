@@ -60,15 +60,15 @@ namespace POS_in_NET.Pages
                     var normalizedOrderType = orderType.Trim().ToLowerInvariant();
                     OrderTypeLabel.Text = normalizedOrderType switch
                     {
-                        "pickup" => "📦 Collection",
-                        "collection" => "📦 Collection",
-                        "col" => "📦 Collection",
-                        "delivery" => "🚗 Delivery",
-                        "del" => "🚗 Delivery",
-                        "table" => "🍽 Table",
-                        "tbl" => "🍽 Table",
-                        "dine_in" => "🍽 Table",
-                        "dine-in" => "🍽 Table",
+                        "pickup" => " Collection",
+                        "collection" => " Collection",
+                        "col" => " Collection",
+                        "delivery" => " Delivery",
+                        "del" => " Delivery",
+                        "table" => " Table",
+                        "tbl" => " Table",
+                        "dine_in" => " Table",
+                        "dine-in" => " Table",
                         _ => orderType.ToUpperInvariant()
                     };
                     

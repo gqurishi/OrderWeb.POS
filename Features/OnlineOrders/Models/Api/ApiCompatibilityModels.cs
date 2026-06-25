@@ -124,29 +124,71 @@ public class OrderWebApiResponse
 
 public class CloudOrderResponse
 {
+    [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("order_id")]
     public string? OrderId
     {
-        get => Id;
-        set => Id = value ?? string.Empty;
+        get => string.IsNullOrWhiteSpace(Id) ? null : Id;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                Id = value.Trim();
+            }
+        }
     }
 
+    [JsonPropertyName("order_number")]
     public string OrderNumber { get; set; } = string.Empty;
+
+    [JsonPropertyName("customer_name")]
     public string? CustomerName { get; set; }
+
+    [JsonPropertyName("customer_phone")]
     public string? CustomerPhone { get; set; }
+
+    [JsonPropertyName("customer_email")]
     public string? CustomerEmail { get; set; }
+
+    [JsonPropertyName("address")]
     public string? Address { get; set; }
+
+    [JsonPropertyName("total")]
     public string Total { get; set; } = "0";
+
+    [JsonPropertyName("subtotal")]
     public string Subtotal { get; set; } = "0";
+
+    [JsonPropertyName("delivery_fee")]
     public string DeliveryFee { get; set; } = "0";
+
+    [JsonPropertyName("tax")]
     public string Tax { get; set; } = "0";
+
+    [JsonPropertyName("order_type")]
     public string? OrderType { get; set; }
+
+    [JsonPropertyName("payment_method")]
     public string? PaymentMethod { get; set; }
+
+    [JsonPropertyName("payment_status")]
     public string? PaymentStatus { get; set; }
+
+    [JsonPropertyName("voucher_code")]
     public string? VoucherCode { get; set; }
+
+    [JsonPropertyName("special_instructions")]
     public string? SpecialInstructions { get; set; }
+
+    [JsonPropertyName("scheduled_for")]
     public DateTime? ScheduledTime { get; set; }
+
+    [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    [JsonPropertyName("items")]
     public List<CloudOrderItem> Items { get; set; } = new();
 
     public decimal TotalAmount => decimal.TryParse(Total, out var value) ? value : 0m;

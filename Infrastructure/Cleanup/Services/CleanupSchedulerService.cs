@@ -29,7 +29,7 @@ public class CleanupSchedulerService
     {
         if (IsRunning) return;
 
-        Debug.WriteLine("🚀 Starting DatabaseCleanup Scheduler...");
+        Debug.WriteLine(" Starting DatabaseCleanup Scheduler...");
 
         // Wait 5 minutes after app start before first check
         var initialDelay = TimeSpan.FromMinutes(5);
@@ -43,7 +43,7 @@ public class CleanupSchedulerService
         );
 
         IsRunning = true;
-        Debug.WriteLine($"✅ Cleanup Scheduler started (checks every {CHECK_INTERVAL_HOURS}h, cleans daily at {CLEANUP_HOUR}:00)");
+        Debug.WriteLine($" Cleanup Scheduler started (checks every {CHECK_INTERVAL_HOURS}h, cleans daily at {CLEANUP_HOUR}:00)");
     }
 
     /// <summary>
@@ -54,7 +54,7 @@ public class CleanupSchedulerService
         _cleanupTimer?.Dispose();
         _cleanupTimer = null;
         IsRunning = false;
-        Debug.WriteLine("🛑 Cleanup Scheduler stopped");
+        Debug.WriteLine(" Cleanup Scheduler stopped");
     }
 
     /// <summary>
@@ -90,11 +90,11 @@ public class CleanupSchedulerService
                     
                     if (result.Success)
                     {
-                        Debug.WriteLine($"✅ Automatic cleanup completed: {result.OrdersDeleted} web orders deleted");
+                        Debug.WriteLine($" Automatic cleanup completed: {result.OrdersDeleted} web orders deleted");
                     }
                     else
                     {
-                        Debug.WriteLine($"❌ Automatic cleanup failed: {result.ErrorMessage}");
+                        Debug.WriteLine($" Automatic cleanup failed: {result.ErrorMessage}");
                     }
                 });
             }
@@ -104,17 +104,17 @@ public class CleanupSchedulerService
                 {
                     var nextRun = now < scheduledCleanupTime ? scheduledCleanupTime : scheduledCleanupTime.AddDays(1);
                     var hoursUntilNext = (nextRun - now).TotalHours;
-                    Debug.WriteLine($"ℹ️  Cleanup check: Next cleanup in {hoursUntilNext:F1} hours at {nextRun:yyyy-MM-dd HH:mm}");
+                    Debug.WriteLine($"Info: Cleanup check: Next cleanup in {hoursUntilNext:F1} hours at {nextRun:yyyy-MM-dd HH:mm}");
                 }
                 else
                 {
-                    Debug.WriteLine($"ℹ️  Cleanup check: first scheduled cleanup will run at {scheduledCleanupTime:yyyy-MM-dd HH:mm}");
+                    Debug.WriteLine($"Info: Cleanup check: first scheduled cleanup will run at {scheduledCleanupTime:yyyy-MM-dd HH:mm}");
                 }
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error in cleanup scheduler: {ex.Message}");
+            Debug.WriteLine($" Error in cleanup scheduler: {ex.Message}");
         }
     }
 
@@ -123,7 +123,7 @@ public class CleanupSchedulerService
     /// </summary>
     public async Task<CleanupResult> RunManualCleanupAsync()
     {
-        Debug.WriteLine("🔧 Manual cleanup triggered by user");
+        Debug.WriteLine(" Manual cleanup triggered by user");
         return await _cleanupService.RunCleanupAsync();
     }
 
@@ -147,14 +147,14 @@ public class CleanupSchedulerService
 
             if (!indexesCreated)
             {
-                Debug.WriteLine("🔧 First run: Creating database indexes...");
+                Debug.WriteLine(" First run: Creating database indexes...");
                 await _cleanupService.CreateIndexesAsync();
                 Preferences.Set("DatabaseIndexesCreated", true);
-                Debug.WriteLine("✅ Database indexes created for faster queries");
+                Debug.WriteLine(" Database indexes created for faster queries");
             }
             else
             {
-                Debug.WriteLine("ℹ️  Database indexes already exist");
+                Debug.WriteLine("Info: Database indexes already exist");
             }
             
             // Ensure pending_acks table exists (needed for OrderWeb.net features)
@@ -162,7 +162,7 @@ public class CleanupSchedulerService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"⚠️ Error initializing database: {ex.Message}");
+            Debug.WriteLine($" Error initializing database: {ex.Message}");
         }
     }
     
@@ -224,11 +224,11 @@ public class CleanupSchedulerService
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
             await cmd3.ExecuteNonQueryAsync();
             
-            Debug.WriteLine("✅ OrderWeb.net tables verified/created");
+            Debug.WriteLine(" OrderWeb.net tables verified/created");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"⚠️ Error creating OrderWeb tables: {ex.Message}");
+            Debug.WriteLine($" Error creating OrderWeb tables: {ex.Message}");
         }
     }
 }

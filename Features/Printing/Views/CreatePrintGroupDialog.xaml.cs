@@ -83,7 +83,7 @@ public partial class CreatePrintGroupDialog : ContentView
             {
                 colorButton.Content = new Label
                 {
-                    Text = "✓",
+                    Text = "",
                     FontSize = 18,
                     TextColor = Colors.White,
                     FontAttributes = FontAttributes.Bold,
@@ -108,7 +108,7 @@ public partial class CreatePrintGroupDialog : ContentView
         if (string.IsNullOrWhiteSpace(groupName))
         {
             // Show validation feedback
-            GroupNameEntry.Placeholder = "⚠️ Group name is required";
+            GroupNameEntry.Placeholder = " Group name is required";
             return;
         }
 

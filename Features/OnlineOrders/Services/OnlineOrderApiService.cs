@@ -183,7 +183,7 @@ public class OnlineOrderApiService
         {
             var json = JsonSerializer.Serialize(config, _jsonOptions);
             
-            using var connection = new MySqlConnection("Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;");
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"INSERT INTO settings (setting_key, setting_value) 
@@ -210,7 +210,7 @@ public class OnlineOrderApiService
     {
         try
         {
-            using var connection = new MySqlConnection("Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;");
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = "SELECT setting_value FROM settings WHERE setting_key = 'api_configuration'";
@@ -268,7 +268,7 @@ public class OnlineOrderApiService
     {
         try
         {
-            using var connection = new MySqlConnection("Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;");
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = "SELECT setting_value FROM settings WHERE setting_key = 'last_sync_time'";
@@ -293,7 +293,7 @@ public class OnlineOrderApiService
     {
         try
         {
-            using var connection = new MySqlConnection("Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;");
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"INSERT INTO settings (setting_key, setting_value) 

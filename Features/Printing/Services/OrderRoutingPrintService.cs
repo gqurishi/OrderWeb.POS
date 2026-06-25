@@ -124,7 +124,7 @@ public sealed class OrderRoutingPrintService
             issues.Add(new RouteValidationIssue
             {
                 Code = "missing_printer_ip",
-                Message = $"⚠️ {group.Name}: printer IP not configured"
+                Message = $" {group.Name}: printer IP not configured"
             });
         }
 
@@ -200,7 +200,7 @@ public sealed class OrderRoutingPrintService
 
         // Detect printing mode
         var (mode, singlePrinter, modeStatus) = await DetectPrintingModeAsync();
-        System.Diagnostics.Debug.WriteLine($"📍 Printing mode: {modeStatus}");
+        System.Diagnostics.Debug.WriteLine($" Printing mode: {modeStatus}");
 
         var itemsToPrint = order.Items
             .Where(item => item.SendStatus == ItemSendStatus.NotSent)
@@ -297,7 +297,7 @@ public sealed class OrderRoutingPrintService
     {
         var result = new OrderRoutingPrintResult();
         
-        System.Diagnostics.Debug.WriteLine($"📄 {itemsToPrint.Count} items → PDF fallback (no printers)");
+        System.Diagnostics.Debug.WriteLine($" {itemsToPrint.Count} items → PDF fallback (no printers)");
 
         // Get an active print group to use as context (for grouping)
         var activeGroups = await _printGroupService.GetActivePrintGroupsAsync();
@@ -329,7 +329,7 @@ public sealed class OrderRoutingPrintService
                 {
                     result.PrintedItemIds.Add(item.Id);
                 }
-                System.Diagnostics.Debug.WriteLine($"✅ PDF saved: {pdfMsg}");
+                System.Diagnostics.Debug.WriteLine($" PDF saved: {pdfMsg}");
             }
             else
             {
@@ -344,7 +344,7 @@ public sealed class OrderRoutingPrintService
     {
         var result = new OrderRoutingPrintResult();
 
-        System.Diagnostics.Debug.WriteLine($"🖨️ {itemsToPrint.Count} items → Single printer catch-all ({singlePrinter.Name})");
+        System.Diagnostics.Debug.WriteLine($" {itemsToPrint.Count} items → Single printer catch-all ({singlePrinter.Name})");
 
         if (string.IsNullOrWhiteSpace(singlePrinter.PrinterIp))
         {
@@ -361,7 +361,7 @@ public sealed class OrderRoutingPrintService
             {
                 result.PrintedItemIds.Add(item.Id);
             }
-            System.Diagnostics.Debug.WriteLine($"✅ Printed to {singlePrinter.Name}");
+            System.Diagnostics.Debug.WriteLine($" Printed to {singlePrinter.Name}");
         }
         else
         {
@@ -381,7 +381,7 @@ public sealed class OrderRoutingPrintService
     {
         var result = new OrderRoutingPrintResult();
 
-        System.Diagnostics.Debug.WriteLine($"🔀 {itemsToPrint.Count} items → Normal routing (2+ printers)");
+        System.Diagnostics.Debug.WriteLine($" {itemsToPrint.Count} items → Normal routing (2+ printers)");
 
         var activeGroups = await _printGroupService.GetActivePrintGroupsAsync();
         if (activeGroups.Count == 0)
@@ -416,7 +416,7 @@ public sealed class OrderRoutingPrintService
 
             if (string.IsNullOrWhiteSpace(group.PrinterIp))
             {
-                result.FailedRoutes.Add($"⚠️ {group.Name}: printer IP not configured");
+                result.FailedRoutes.Add($" {group.Name}: printer IP not configured");
                 result.FailedRouteDetails.Add(new PrintRouteFailure
                 {
                     RouteTarget = group.Id,

@@ -35,7 +35,7 @@ public class PrinterHealthService : IDisposable
     {
         _dbService = dbService;
         _printerService = printerService;
-        Debug.WriteLine("🏥 PrinterHealthService initialized");
+        Debug.WriteLine(" PrinterHealthService initialized");
     }
 
     /// <summary>
@@ -47,7 +47,7 @@ public class PrinterHealthService : IDisposable
         {
             if (_isRunning)
             {
-                Debug.WriteLine("⚠️ PrinterHealthService already running");
+                Debug.WriteLine(" PrinterHealthService already running");
                 return;
             }
 
@@ -61,7 +61,7 @@ public class PrinterHealthService : IDisposable
                 TimeSpan.FromMilliseconds(HEALTH_CHECK_INTERVAL_MS)
             );
             
-            Debug.WriteLine($"✅ PrinterHealthService STARTED - checking every {HEALTH_CHECK_INTERVAL_MS / 1000}s");
+            Debug.WriteLine($" PrinterHealthService STARTED - checking every {HEALTH_CHECK_INTERVAL_MS / 1000}s");
         }
     }
 
@@ -81,7 +81,7 @@ public class PrinterHealthService : IDisposable
             _healthCheckTimer = null;
             _isRunning = false;
             
-            Debug.WriteLine("🛑 PrinterHealthService STOPPED");
+            Debug.WriteLine(" PrinterHealthService STOPPED");
         }
     }
 
@@ -92,14 +92,14 @@ public class PrinterHealthService : IDisposable
     {
         try
         {
-            Debug.WriteLine("🔍 Health check starting...");
+            Debug.WriteLine(" Health check starting...");
             
             var printers = await _dbService.GetAllPrintersAsync();
             TotalPrinters = printers.Count;
             
             if (printers.Count == 0)
             {
-                Debug.WriteLine("ℹ️ No printers configured");
+                Debug.WriteLine("Info: No printers configured");
                 LastHealthCheck = DateTime.Now;
                 return;
             }
@@ -132,7 +132,7 @@ public class PrinterHealthService : IDisposable
                     await _dbService.UpdatePrinterStatusAsync(printer.Id, isNowOnline);
                     statusChanges.Add((printer, wasOnline, isNowOnline));
                     
-                    Debug.WriteLine($"📊 Printer '{printer.Name}' status: {(wasOnline ? "ONLINE" : "OFFLINE")} → {(isNowOnline ? "ONLINE" : "OFFLINE")}");
+                    Debug.WriteLine($" Printer '{printer.Name}' status: {(wasOnline ? "ONLINE" : "OFFLINE")} → {(isNowOnline ? "ONLINE" : "OFFLINE")}");
                     
                     // Raise event for status change
                     PrinterStatusChanged?.Invoke(this, new PrinterStatusChangedEventArgs
@@ -148,7 +148,7 @@ public class PrinterHealthService : IDisposable
             OfflinePrinters = offline;
             LastHealthCheck = DateTime.Now;
             
-            Debug.WriteLine($"✅ Health check complete: {online} online, {offline} offline");
+            Debug.WriteLine($" Health check complete: {online} online, {offline} offline");
             
             // Raise completion event
             HealthCheckCompleted?.Invoke(this, new HealthCheckCompletedEventArgs
@@ -162,7 +162,7 @@ public class PrinterHealthService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Health check error: {ex.Message}");
+            Debug.WriteLine($" Health check error: {ex.Message}");
         }
     }
 
@@ -189,7 +189,7 @@ public class PrinterHealthService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"⚠️ Health check failed for '{printer.Name}': {ex.Message}");
+            Debug.WriteLine($" Health check failed for '{printer.Name}': {ex.Message}");
             return false;
         }
     }
@@ -199,7 +199,7 @@ public class PrinterHealthService : IDisposable
     /// </summary>
     public async Task ForceHealthCheckAsync()
     {
-        Debug.WriteLine("🔄 Force health check requested");
+        Debug.WriteLine(" Force health check requested");
         await CheckAllPrintersAsync();
     }
 
@@ -227,7 +227,7 @@ public class PrinterHealthService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Single printer check error: {ex.Message}");
+            Debug.WriteLine($" Single printer check error: {ex.Message}");
             return false;
         }
     }

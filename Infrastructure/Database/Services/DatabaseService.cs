@@ -8,29 +8,12 @@ namespace POS_in_NET.Services;
 /// <summary>
 /// Database service using MariaDB/MySQL ONLY
 /// This application uses MariaDB as the primary database
-/// Host: localhost, Port: 3306, Database: Pos-net
+/// Host is selected by terminal setup. Mother uses localhost; child terminals use the mother terminal IP.
 /// </summary>
 public class DatabaseService
 {
-    private readonly string _connectionString;
-
     public DatabaseService()
     {
-        // MariaDB/MySQL database connection configuration
-        var host = "localhost";
-        var user = "root";
-        var password = "root";
-        var database = "Pos-net"; // USE SAME DATABASE AS EVERYTHING ELSE!
-        var port = "3306";
-        
-        // Optimized MariaDB connection settings for low-latency POS interactions.
-        _connectionString =
-            $"Server={host};Database={database};Uid={user};Pwd={password};Port={port};" +
-            "Connection Timeout=5;Default Command Timeout=12;" +
-            "Pooling=true;Minimum Pool Size=10;Maximum Pool Size=200;" +
-            "Connection Idle Timeout=60;Connection Reset=false;" +
-            "Keepalive=15;Allow User Variables=true;";
-        
         // DO NOT initialize database in constructor - it blocks app startup!
         // Initialize will be called separately when needed
         // _ = InitializeDatabaseAsync(); // REMOVED - was blocking!
@@ -40,7 +23,7 @@ public class DatabaseService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(GetConnectionString());
             
             // Add 5-second timeout
             var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -63,7 +46,7 @@ public class DatabaseService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(GetConnectionString());
             await connection.OpenAsync();
             
             using var command = new MySqlCommand("SELECT VERSION()", connection);
@@ -79,7 +62,7 @@ public class DatabaseService
 
     public async Task<MySqlConnection> GetConnectionAsync()
     {
-        var connection = new MySqlConnection(_connectionString);
+        var connection = new MySqlConnection(GetConnectionString());
         await connection.OpenAsync();
         return connection;
     }
@@ -106,12 +89,13 @@ public class DatabaseService
         try
         {
             // Connect without specifying database to create it if needed
-            var connectionStringWithoutDb = "Server=localhost;Uid=root;Pwd=root;Port=3306;Connection Timeout=5;";
+            var connectionStringWithoutDb = TerminalConfigurationService.GetPosConnectionString(includeDatabase: false, pooled: false);
             
             using var connection = new MySqlConnection(connectionStringWithoutDb);
             await connection.OpenAsync();
             
-            using var command = new MySqlCommand("CREATE DATABASE IF NOT EXISTS `Pos-net` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", connection);
+            var databaseName = TerminalConfigurationService.GetConfiguration().DatabaseName;
+            using var command = new MySqlCommand($"CREATE DATABASE IF NOT EXISTS `{databaseName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", connection);
             await command.ExecuteNonQueryAsync();
             
             return true;
@@ -127,7 +111,7 @@ public class DatabaseService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(GetConnectionString());
             await connection.OpenAsync();
 
             // Users table
@@ -178,6 +162,8 @@ public class DatabaseService
                     ready_time TIMESTAMP NULL,
                     delivering_time TIMESTAMP NULL,
                     completed_time TIMESTAMP NULL,
+                    updated_by_terminal_name VARCHAR(120) NULL,
+                    updated_by_terminal_at DATETIME NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX idx_orders_table_session_open (table_session_id, is_open)
@@ -202,6 +188,38 @@ public class DatabaseService
                     INDEX idx_order_payments_order_status (order_id, status),
                     INDEX idx_order_payments_method_created (payment_method, created_at)
                 ) ENGINE=InnoDB";
+
+            var createDeliveryZonesTable = @"
+                CREATE TABLE IF NOT EXISTS delivery_zones (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    delivery_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            var createDeliveryZonePostcodesTable = @"
+                CREATE TABLE IF NOT EXISTS delivery_zone_postcodes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    zone_id INT NOT NULL,
+                    postcode VARCHAR(16) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY ux_delivery_zone_postcode (postcode),
+                    INDEX idx_delivery_zone_postcodes_zone (zone_id),
+                    CONSTRAINT fk_delivery_zone_postcodes_zone
+                        FOREIGN KEY (zone_id) REFERENCES delivery_zones(id)
+                        ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            var createDeliveryUnassignedPostcodesTable = @"
+                CREATE TABLE IF NOT EXISTS delivery_unassigned_postcodes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    postcode VARCHAR(16) NOT NULL,
+                    request_count INT NOT NULL DEFAULT 1,
+                    first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY ux_delivery_unassigned_postcode (postcode)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
             var createOrderEventsTable = @"
                 CREATE TABLE IF NOT EXISTS order_events (
@@ -292,6 +310,8 @@ public class DatabaseService
                     last_websocket_test TIMESTAMP NULL,
                     auto_print_enabled BOOLEAN DEFAULT TRUE,
                     notifications_enabled BOOLEAN DEFAULT TRUE,
+                    online_order_master_enabled BOOLEAN DEFAULT TRUE,
+                    online_order_master_terminal_name VARCHAR(120) DEFAULT '',
                     last_sync TIMESTAMP NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -359,9 +379,18 @@ public class DatabaseService
 
             using var command9 = new MySqlCommand(createOrderPaymentsTable, connection);
             await command9.ExecuteNonQueryAsync();
-
+            
             using var command10 = new MySqlCommand(createOrderEventsTable, connection);
             await command10.ExecuteNonQueryAsync();
+            
+            using var deliveryZonesCommand = new MySqlCommand(createDeliveryZonesTable, connection);
+            await deliveryZonesCommand.ExecuteNonQueryAsync();
+            
+            using var deliveryPostcodesCommand = new MySqlCommand(createDeliveryZonePostcodesTable, connection);
+            await deliveryPostcodesCommand.ExecuteNonQueryAsync();
+            
+            using var unassignedPostcodesCommand = new MySqlCommand(createDeliveryUnassignedPostcodesTable, connection);
+            await unassignedPostcodesCommand.ExecuteNonQueryAsync();
 
             try
             {
@@ -510,6 +539,21 @@ public class DatabaseService
                 // Ignore if unit_price doesn't exist in this schema version.
             }
 
+            var alterOrdersLiveUpdateTable = @"
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS updated_by_terminal_name VARCHAR(120) NULL,
+                ADD COLUMN IF NOT EXISTS updated_by_terminal_at DATETIME NULL";
+
+            try
+            {
+                using var alterOrdersLiveUpdateCommand = new MySqlCommand(alterOrdersLiveUpdateTable, connection);
+                await alterOrdersLiveUpdateCommand.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Orders live update columns warning: {ex.Message}");
+            }
+
             // Add new columns for direct database connection and OrderWeb.net integration if they don't exist
             var alterCloudConfigTable = @"
                 ALTER TABLE cloud_config 
@@ -523,7 +567,9 @@ public class DatabaseService
                 ADD COLUMN IF NOT EXISTS orderweb_enabled BOOLEAN DEFAULT FALSE,
                 ADD COLUMN IF NOT EXISTS orderweb_connection_string TEXT DEFAULT '',
                 ADD COLUMN IF NOT EXISTS restaurant_slug VARCHAR(255) DEFAULT '',
-                ADD COLUMN IF NOT EXISTS direct_db_enabled BOOLEAN DEFAULT FALSE";
+                ADD COLUMN IF NOT EXISTS direct_db_enabled BOOLEAN DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS online_order_master_enabled BOOLEAN DEFAULT TRUE,
+                ADD COLUMN IF NOT EXISTS online_order_master_terminal_name VARCHAR(120) DEFAULT ''";
 
             try 
             {
@@ -663,7 +709,7 @@ public class DatabaseService
 
     public string GetConnectionString()
     {
-        return _connectionString;
+        return TerminalConfigurationService.GetPosConnectionString();
     }
 
     public async Task UpdateOrderStatusAsync(int orderId, string status)
@@ -672,10 +718,16 @@ public class DatabaseService
         {
             using var connection = await GetConnectionAsync();
             using var command = new MySqlCommand(
-                "UPDATE orders SET status = @status, updated_at = NOW() WHERE id = @orderId", 
+                @"UPDATE orders
+                  SET status = @status,
+                      updated_by_terminal_name = @updatedByTerminalName,
+                      updated_by_terminal_at = NOW(),
+                      updated_at = NOW()
+                  WHERE id = @orderId", 
                 connection);
             
             command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
             command.Parameters.AddWithValue("@orderId", orderId);
             
             await command.ExecuteNonQueryAsync();
@@ -684,6 +736,18 @@ public class DatabaseService
         {
             System.Diagnostics.Debug.WriteLine($"Failed to update order status: {ex.Message}");
             throw;
+        }
+    }
+
+    private static string GetCurrentTerminalName()
+    {
+        try
+        {
+            return TerminalConfigurationService.GetConfiguration().TerminalName;
+        }
+        catch
+        {
+            return "Terminal";
         }
     }
 
@@ -707,6 +771,8 @@ public class DatabaseService
                 config["is_enabled"] = reader.GetBoolean(reader.GetOrdinal("is_enabled")).ToString();
                 config["polling_interval_seconds"] = reader.GetInt32(reader.GetOrdinal("polling_interval_seconds")).ToString();
                 config["auto_print_enabled"] = reader.GetBoolean(reader.GetOrdinal("auto_print_enabled")).ToString();
+                config["online_order_master_enabled"] = TryGetOptionalBoolean(reader, "online_order_master_enabled", true).ToString();
+                config["online_order_master_terminal_name"] = TryGetOptionalString(reader, "online_order_master_terminal_name") ?? "";
             }
 
             static string? TryGetOptionalString(MySqlDataReader reader, string columnName)
@@ -719,6 +785,19 @@ public class DatabaseService
                 catch (IndexOutOfRangeException)
                 {
                     return null;
+                }
+            }
+
+            static bool TryGetOptionalBoolean(MySqlDataReader reader, string columnName, bool fallback)
+            {
+                try
+                {
+                    var ordinal = reader.GetOrdinal(columnName);
+                    return reader.IsDBNull(ordinal) ? fallback : reader.GetBoolean(ordinal);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return fallback;
                 }
             }
         }
@@ -799,6 +878,7 @@ public class DatabaseService
                 {
                     Id = reader.GetInt32(reader.GetOrdinal("id")),
                     ApiBaseUrl = reader.GetString(reader.GetOrdinal("api_base_url")),
+                    RestApiBaseUrl = reader.GetString(reader.GetOrdinal("api_base_url")),
                     TenantSlug = reader.GetString(reader.GetOrdinal("tenant_slug")),
                     ApiKey = reader.GetString(reader.GetOrdinal("api_key")),
                     WebSocketUrl = reader.GetString(reader.GetOrdinal("websocket_url")),
@@ -814,6 +894,8 @@ public class DatabaseService
                     LastWebSocketTest = reader.IsDBNull("last_websocket_test") ? null : reader.GetDateTime(reader.GetOrdinal("last_websocket_test")),
                     AutoPrintEnabled = reader.GetBoolean(reader.GetOrdinal("auto_print_enabled")),
                     NotificationsEnabled = reader.GetBoolean(reader.GetOrdinal("notifications_enabled")),
+                    OnlineOrderMasterEnabled = GetOptionalBoolean(reader, "online_order_master_enabled", true),
+                    OnlineOrderMasterTerminalName = GetOptionalString(reader, "online_order_master_terminal_name") ?? "",
                     LastSync = reader.IsDBNull("last_sync") ? null : reader.GetDateTime(reader.GetOrdinal("last_sync")),
                     CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
                     UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"))
@@ -829,23 +911,70 @@ public class DatabaseService
         }
     }
 
+    private static string? GetOptionalString(MySqlDataReader reader, string columnName)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(columnName);
+            return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static bool GetOptionalBoolean(MySqlDataReader reader, string columnName, bool fallback)
+    {
+        try
+        {
+            var ordinal = reader.GetOrdinal(columnName);
+            return reader.IsDBNull(ordinal) ? fallback : reader.GetBoolean(ordinal);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return fallback;
+        }
+    }
+
+    private static async Task<string?> GetExistingCloudConfigValueAsync(MySqlConnection connection, string columnName)
+    {
+        try
+        {
+            using var command = new MySqlCommand($"SELECT {columnName} FROM cloud_config ORDER BY id LIMIT 1", connection);
+            var value = await command.ExecuteScalarAsync();
+            return value == null || value == DBNull.Value ? null : Convert.ToString(value);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> SaveCloudConfigurationAsync(CloudConfiguration config)
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🔧 SaveCloudConfigurationAsync starting...");
+            System.Diagnostics.Debug.WriteLine($" SaveCloudConfigurationAsync starting...");
             using var connection = await GetConnectionAsync();
-            System.Diagnostics.Debug.WriteLine($"✅ Database connection established");
+            System.Diagnostics.Debug.WriteLine($" Database connection established");
             
             // Check if config exists
             using var checkCommand = new MySqlCommand("SELECT COUNT(*) FROM cloud_config", connection);
             var count = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
-            System.Diagnostics.Debug.WriteLine($"📊 Existing config count: {count}");
+            System.Diagnostics.Debug.WriteLine($" Existing config count: {count}");
             
             // Use RestApiBaseUrl if available, fallback to ApiBaseUrl
             var apiBaseUrl = !string.IsNullOrEmpty(config.RestApiBaseUrl) 
                 ? config.RestApiBaseUrl 
                 : config.ApiBaseUrl;
+
+            var existingMasterTerminalName = await GetExistingCloudConfigValueAsync(connection, "online_order_master_terminal_name");
+            var onlineOrderMasterTerminalName = !string.IsNullOrWhiteSpace(config.OnlineOrderMasterTerminalName)
+                ? config.OnlineOrderMasterTerminalName.Trim()
+                : (!string.IsNullOrWhiteSpace(existingMasterTerminalName)
+                    ? existingMasterTerminalName
+                    : TerminalConfigurationService.GetConfiguration().TerminalName);
             
             var sql = count > 0 
                 ? @"UPDATE cloud_config SET 
@@ -865,6 +994,8 @@ public class DatabaseService
                     last_websocket_test = @lastWebSocketTest,
                     auto_print_enabled = @autoPrint,
                     notifications_enabled = @notificationsEnabled,
+                    online_order_master_enabled = @onlineOrderMasterEnabled,
+                    online_order_master_terminal_name = @onlineOrderMasterTerminalName,
                     updated_at = CURRENT_TIMESTAMP
                     WHERE id = (SELECT MIN(id) FROM (SELECT id FROM cloud_config) as temp)"
                 : @"INSERT INTO cloud_config (
@@ -873,17 +1004,19 @@ public class DatabaseService
                     is_enabled, is_api_tested, is_websocket_tested,
                     api_test_result, websocket_test_result,
                     last_api_test, last_websocket_test,
-                    auto_print_enabled, notifications_enabled
+                    auto_print_enabled, notifications_enabled,
+                    online_order_master_enabled, online_order_master_terminal_name
                     ) VALUES (
                     @apiBaseUrl, @tenantSlug, @apiKey, @websocketUrl,
                     @connectionTimeout, @pollingInterval, @maxRetryAttempts,
                     @isEnabled, @isApiTested, @isWebSocketTested,
                     @apiTestResult, @websocketTestResult,
                     @lastApiTest, @lastWebSocketTest,
-                    @autoPrint, @notificationsEnabled
+                    @autoPrint, @notificationsEnabled,
+                    @onlineOrderMasterEnabled, @onlineOrderMasterTerminalName
                     )";
             
-            System.Diagnostics.Debug.WriteLine($"📝 SQL: {(count > 0 ? "UPDATE" : "INSERT")}");
+            System.Diagnostics.Debug.WriteLine($" SQL: {(count > 0 ? "UPDATE" : "INSERT")}");
             
             using var command = new MySqlCommand(sql, connection);
             command.Parameters.AddWithValue("@apiBaseUrl", apiBaseUrl);
@@ -902,17 +1035,19 @@ public class DatabaseService
             command.Parameters.AddWithValue("@lastWebSocketTest", (object?)config.LastWebSocketTest ?? DBNull.Value);
             command.Parameters.AddWithValue("@autoPrint", config.AutoPrintEnabled);
             command.Parameters.AddWithValue("@notificationsEnabled", config.NotificationsEnabled);
+            command.Parameters.AddWithValue("@onlineOrderMasterEnabled", config.OnlineOrderMasterEnabled);
+            command.Parameters.AddWithValue("@onlineOrderMasterTerminalName", onlineOrderMasterTerminalName);
             
-            System.Diagnostics.Debug.WriteLine($"💾 Executing database command...");
+            System.Diagnostics.Debug.WriteLine($" Executing database command...");
             var rowsAffected = await command.ExecuteNonQueryAsync();
-            System.Diagnostics.Debug.WriteLine($"✅ Rows affected: {rowsAffected}");
+            System.Diagnostics.Debug.WriteLine($" Rows affected: {rowsAffected}");
             
             return rowsAffected > 0;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Failed to save cloud configuration: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($" Failed to save cloud configuration: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
             return false;
         }
     }

@@ -11,12 +11,17 @@ public partial class LoginPage : ContentPage
     private Entry? _currentFocusedEntry;
     private bool _businessInfoLoaded;
     private bool _authCacheWarmStarted;
+    private bool _terminalConnectionOk;
+    private Task<TerminalConnectionTestResult>? _connectionCheckTask;
+    private DateTime _lastConnectionCheckUtc = DateTime.MinValue;
+    private static readonly TimeSpan ConnectionCheckCache = TimeSpan.FromSeconds(45);
 
     public LoginPage()
     {
         InitializeComponent();
         _authService = AuthenticationService.Instance;
         _businessService = new BusinessSettingsService();
+        StartAuthCacheWarmup();
         
         // Start time updates
         StartTimeUpdates();
@@ -70,6 +75,7 @@ public partial class LoginPage : ContentPage
         // Reset error message
         ErrorFrame.IsVisible = false;
         ErrorLabel.Text = "";
+        LoginStatusLabel.IsVisible = false;
 
         // Validate PIN (4 digits)
         if (string.IsNullOrWhiteSpace(PasswordEntry.Text) || PasswordEntry.Text.Length != 4)
@@ -78,8 +84,15 @@ public partial class LoginPage : ContentPage
             return;
         }
 
-        // Show loading state
-        SetLoadingState(true);
+        SetLoadingState(true, "Logging in...");
+        await Task.Yield();
+
+        if (!TerminalConfigurationService.IsConfigured)
+        {
+            SetLoadingState(false);
+            await Shell.Current.GoToAsync("//terminalsetup", false);
+            return;
+        }
 
         try
         {
@@ -89,6 +102,8 @@ public partial class LoginPage : ContentPage
 
             if (result.Success && result.User != null)
             {
+                SetLoadingState(true, "Logging in...");
+
                 // Role-based navigation
                 string navigationRoute = GetNavigationRouteForRole(result.User.Role);
 
@@ -121,7 +136,7 @@ public partial class LoginPage : ContentPage
             }
             else
             {
-                ShowError("Invalid PIN. Please try again.");
+                ShowError("Wrong PIN. Try again.");
                 ClearPIN();
             }
         }
@@ -139,29 +154,28 @@ public partial class LoginPage : ContentPage
 
     private void ShowError(string message)
     {
+        LoginStatusLabel.IsVisible = false;
         ErrorLabel.Text = message;
         ErrorLabel.IsVisible = true;
-        
-        // Also show the ErrorFrame container
-        if (ErrorLabel.Parent?.Parent is Frame errorFrame)
-        {
-            errorFrame.IsVisible = true;
-        }
+        ErrorFrame.IsVisible = true;
     }
 
-    private void SetLoadingState(bool isLoading)
+    private void SetLoadingState(bool isLoading, string? message = null)
     {
         LoadingIndicator.IsVisible = isLoading;
         LoginButton.IsEnabled = !isLoading;
         UsernameEntry.IsEnabled = !isLoading;
         PasswordEntry.IsEnabled = !isLoading;
+        LoginStatusLabel.Text = message ?? "Checking PIN...";
+        LoginStatusLabel.IsVisible = isLoading;
 
         if (isLoading)
         {
-            LoginButton.Text = "Signing In...";
+            LoginButton.Text = message ?? "Signing In...";
         }
         else
         {
+            LoginStatusLabel.IsVisible = false;
             LoginButton.Text = "Sign In";
             // Reset button color to default
             LoginButton.BackgroundColor = Color.FromArgb("#1E3A8A"); // Royal Blue
@@ -172,13 +186,14 @@ public partial class LoginPage : ContentPage
     {
         base.OnAppearing();
         
+        _connectionCheckTask ??= RefreshTerminalConnectionStatusAsync();
+
         // Focus on username field IMMEDIATELY - don't wait for anything
         Dispatcher.Dispatch(() => UsernameEntry.Focus());
         
         if (!_authCacheWarmStarted)
         {
-            _authCacheWarmStarted = true;
-            _ = _authService.WarmAuthenticationCacheAsync();
+            StartAuthCacheWarmup();
         }
 
         if (_businessInfoLoaded)
@@ -188,6 +203,63 @@ public partial class LoginPage : ContentPage
 
         // Load business info once in background.
         _ = LoadBusinessInfoOnceAsync();
+    }
+
+    private async Task<TerminalConnectionTestResult> RefreshTerminalConnectionStatusAsync(bool forceRefresh = false)
+    {
+        if (!TerminalConfigurationService.IsConfigured)
+        {
+            _terminalConnectionOk = false;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                TerminalStatusFrame.IsVisible = false;
+                TerminalStatusLabel.Text = string.Empty;
+            });
+            return new TerminalConnectionTestResult(false, "Terminal Not Setup", "Please complete terminal setup first.");
+        }
+
+        if (!TerminalConfigurationService.IsChildTerminal)
+        {
+            _terminalConnectionOk = true;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                TerminalStatusFrame.IsVisible = false;
+                TerminalStatusLabel.Text = string.Empty;
+            });
+            return new TerminalConnectionTestResult(true, "Connected", string.Empty);
+        }
+
+        if (!forceRefresh &&
+            _terminalConnectionOk &&
+            DateTime.UtcNow - _lastConnectionCheckUtc < ConnectionCheckCache)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() => TerminalStatusFrame.IsVisible = false);
+            return new TerminalConnectionTestResult(true, "Connected", string.Empty);
+        }
+
+        var result = await TerminalConnectionTestService.TestAsync();
+        _terminalConnectionOk = result.Success;
+        _lastConnectionCheckUtc = DateTime.UtcNow;
+        _connectionCheckTask = null;
+
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            // Only child terminals show a connection warning, and only when mother is unreachable.
+            if (!TerminalConfigurationService.IsChildTerminal || result.Success)
+            {
+                TerminalStatusFrame.IsVisible = false;
+                TerminalStatusLabel.Text = string.Empty;
+                return;
+            }
+
+            TerminalStatusFrame.IsVisible = true;
+            TerminalStatusFrame.BackgroundColor = Color.FromArgb("#FEF2F2");
+            TerminalStatusFrame.Stroke = Color.FromArgb("#EF4444");
+            TerminalStatusLabel.TextColor = Color.FromArgb("#B91C1C");
+            TerminalStatusLabel.Text = result.Message;
+        });
+
+        return result;
     }
 
     private async Task LoadBusinessInfoOnceAsync()
@@ -201,6 +273,17 @@ public partial class LoginPage : ContentPage
         {
             System.Diagnostics.Debug.WriteLine($"Business info load error: {ex.Message}");
         }
+    }
+
+    private void StartAuthCacheWarmup()
+    {
+        if (_authCacheWarmStarted)
+        {
+            return;
+        }
+
+        _authCacheWarmStarted = true;
+        _ = _authService.WarmAuthenticationCacheAsync();
     }
 
     private async Task LoadBusinessInfoAsync()
@@ -301,6 +384,8 @@ public partial class LoginPage : ContentPage
 
     private void OnKeyClicked(object sender, EventArgs e)
     {
+        if (LoadingIndicator.IsVisible) return;
+
         if (sender is Button button)
         {
             var key = button.Text;
@@ -317,6 +402,8 @@ public partial class LoginPage : ContentPage
 
     private void OnBackspaceClicked(object sender, EventArgs e)
     {
+        if (LoadingIndicator.IsVisible) return;
+
         var currentText = PasswordEntry.Text ?? "";
         if (currentText.Length > 0)
         {
@@ -327,11 +414,15 @@ public partial class LoginPage : ContentPage
 
     private void OnClearClicked(object sender, EventArgs e)
     {
+        if (LoadingIndicator.IsVisible) return;
+
         ClearPIN();
     }
 
     private void OnDoubleZeroClicked(object sender, EventArgs e)
     {
+        if (LoadingIndicator.IsVisible) return;
+
         var currentText = PasswordEntry.Text ?? "";
         
         // Only add if we have room for 2 more digits

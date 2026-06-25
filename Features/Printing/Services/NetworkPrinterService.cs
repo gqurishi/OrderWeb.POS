@@ -81,7 +81,7 @@ public class NetworkPrinterService
                 // Status check failed, but connection is OK
             }
 
-            Debug.WriteLine($"✅ Printer connection test: {ipAddress}:{port} - {result.Message}");
+            Debug.WriteLine($" Printer connection test: {ipAddress}:{port} - {result.Message}");
         }
         catch (SocketException ex)
         {
@@ -94,13 +94,13 @@ public class NetworkPrinterService
                 SocketError.TimedOut => "Connection timed out",
                 _ => $"Socket error: {ex.SocketErrorCode}"
             };
-            Debug.WriteLine($"❌ Printer connection failed: {ipAddress}:{port} - {result.Message}");
+            Debug.WriteLine($" Printer connection failed: {ipAddress}:{port} - {result.Message}");
         }
         catch (Exception ex)
         {
             result.Success = false;
             result.Message = $"Error: {ex.Message}";
-            Debug.WriteLine($"❌ Printer connection error: {ex.Message}");
+            Debug.WriteLine($" Printer connection error: {ex.Message}");
         }
 
         return result;
@@ -122,13 +122,13 @@ public class NetworkPrinterService
                 var connectTask = client.ConnectAsync(ipAddress, port);
                 if (await Task.WhenAny(connectTask, Task.Delay(DefaultTimeout)) != connectTask)
                 {
-                    Debug.WriteLine($"⚠️ Send attempt {attempt}/{MaxSendAttempts} timed out: {ipAddress}:{port}");
+                    Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} timed out: {ipAddress}:{port}");
                     continue;
                 }
 
                 if (!client.Connected)
                 {
-                    Debug.WriteLine($"⚠️ Send attempt {attempt}/{MaxSendAttempts} failed to connect: {ipAddress}:{port}");
+                    Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} failed to connect: {ipAddress}:{port}");
                     continue;
                 }
 
@@ -139,12 +139,12 @@ public class NetworkPrinterService
                 // Brief delay to ensure data is sent
                 await Task.Delay(50);
 
-                Debug.WriteLine($"✅ Sent {data.Length} bytes to printer: {ipAddress}:{port} (attempt {attempt})");
+                Debug.WriteLine($" Sent {data.Length} bytes to printer: {ipAddress}:{port} (attempt {attempt})");
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"⚠️ Error sending to printer {ipAddress}:{port} on attempt {attempt}/{MaxSendAttempts}: {ex.Message}");
+                Debug.WriteLine($" Error sending to printer {ipAddress}:{port} on attempt {attempt}/{MaxSendAttempts}: {ex.Message}");
             }
 
             if (attempt < MaxSendAttempts)
@@ -153,7 +153,7 @@ public class NetworkPrinterService
             }
         }
 
-        Debug.WriteLine($"❌ Failed to send data after {MaxSendAttempts} attempts: {ipAddress}:{port}");
+        Debug.WriteLine($" Failed to send data after {MaxSendAttempts} attempts: {ipAddress}:{port}");
         return false;
     }
 
@@ -184,14 +184,14 @@ public class NetworkPrinterService
             
             if (result)
             {
-                Debug.WriteLine($"✅ Cash drawer opened: {ipAddress}:{port}");
+                Debug.WriteLine($" Cash drawer opened: {ipAddress}:{port}");
             }
             
             return result;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error opening cash drawer: {ex.Message}");
+            Debug.WriteLine($" Error opening cash drawer: {ex.Message}");
             return false;
         }
     }
@@ -203,7 +203,7 @@ public class NetworkPrinterService
     {
         if (!printer.HasCashDrawer)
         {
-            Debug.WriteLine($"⚠️ Printer {printer.Name} does not have cash drawer configured");
+            Debug.WriteLine($" Printer {printer.Name} does not have cash drawer configured");
             return false;
         }
 
@@ -313,7 +313,7 @@ public class NetworkPrinterService
             status.IsOnline = false;
             status.HasError = true;
             status.ErrorDescription = ex.Message;
-            Debug.WriteLine($"❌ Error getting printer status: {ex.Message}");
+            Debug.WriteLine($" Error getting printer status: {ex.Message}");
         }
 
         status.CheckedAt = DateTime.Now;

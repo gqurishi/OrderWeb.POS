@@ -26,11 +26,11 @@ namespace POS_in_NET.Services
                 await CreateWebOrderItemsTable();
                 await SeedDefaultPermissions();
 
-                Console.WriteLine("✅ All web order database tables initialized successfully");
+                Console.WriteLine(" All web order database tables initialized successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Database schema initialization failed: {ex.Message}");
+                Console.WriteLine($" Database schema initialization failed: {ex.Message}");
                 throw;
             }
         }
@@ -381,10 +381,10 @@ namespace POS_in_NET.Services
                 {
                     throw new Exception($"Required table '{table}' does not exist");
                 }
-                Console.WriteLine($"✅ Table '{table}' verified");
+                Console.WriteLine($" Table '{table}' verified");
             }
 
-            Console.WriteLine("🎉 All web order schema tables verified successfully");
+            Console.WriteLine(" All web order schema tables verified successfully");
         }
 
         private async Task<bool> TableExistsAsync(string tableName)

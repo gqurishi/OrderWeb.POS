@@ -46,7 +46,7 @@ namespace POS_in_NET.Views
 
         public async Task<PaymentMethod> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = POS_in_NET.Services.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<PaymentMethod>();
             
             if (Application.Current?.MainPage != null)

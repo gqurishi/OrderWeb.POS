@@ -6,17 +6,12 @@ namespace POS_in_NET.Services
     public class CollectionCustomerService
     {
         private readonly string _connectionString;
+        private readonly CustomerDataService _customerDataService = new();
         private bool _tableChecked = false;
 
         public CollectionCustomerService()
         {
-            var host = "localhost";
-            var user = "root";
-            var password = "root";
-            var database = "Pos-net";
-            var port = "3306";
-            
-            _connectionString = $"Server={host};Database={database};Uid={user};Pwd={password};Port={port};Connection Timeout=5;";
+            _connectionString = TerminalConfigurationService.GetPosConnectionString(pooled: false);
         }
 
         private async Task EnsureTableExistsAsync(MySqlConnection connection)
@@ -52,7 +47,7 @@ namespace POS_in_NET.Services
             
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
@@ -99,7 +94,7 @@ namespace POS_in_NET.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
@@ -123,6 +118,18 @@ namespace POS_in_NET.Services
                             : reader.GetDateTime("last_order_date")
                     };
                     await reader.CloseAsync();
+
+                    if (!existingCustomer.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var updateQuery = "UPDATE collection_customers SET name = @name WHERE id = @id";
+                        using var updateCommand = new MySqlCommand(updateQuery, connection);
+                        updateCommand.Parameters.AddWithValue("@name", name);
+                        updateCommand.Parameters.AddWithValue("@id", existingCustomer.Id);
+                        await updateCommand.ExecuteNonQueryAsync();
+                        existingCustomer.Name = name;
+                    }
+
+                    await SyncToCustomerDataAsync(name, phoneNumber);
                     return existingCustomer;
                 }
                 await reader.CloseAsync();
@@ -140,13 +147,16 @@ namespace POS_in_NET.Services
 
                 var newId = Convert.ToInt32(await insertCommand.ExecuteScalarAsync());
 
-                return new CollectionCustomer
+                var customer = new CollectionCustomer
                 {
                     Id = newId,
                     Name = name,
                     PhoneNumber = phoneNumber,
                     CreatedAt = DateTime.Now
                 };
+
+                await SyncToCustomerDataAsync(name, phoneNumber);
+                return customer;
             }
             catch (Exception ex)
             {
@@ -155,11 +165,23 @@ namespace POS_in_NET.Services
             }
         }
 
+        private async Task SyncToCustomerDataAsync(string name, string phoneNumber)
+        {
+            try
+            {
+                await _customerDataService.UpsertCollectionCustomerAsync(name, phoneNumber);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CollectionCustomer] Customer Data sync failed: {ex.Message}");
+            }
+        }
+
         public async Task UpdateLastOrderDateAsync(int customerId)
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 await EnsureTableExistsAsync(connection);
 
@@ -169,6 +191,14 @@ namespace POS_in_NET.Services
                 command.Parameters.AddWithValue("@id", customerId);
 
                 await command.ExecuteNonQueryAsync();
+
+                using var phoneCommand = new MySqlCommand("SELECT phone_number FROM collection_customers WHERE id = @id", connection);
+                phoneCommand.Parameters.AddWithValue("@id", customerId);
+                var phone = Convert.ToString(await phoneCommand.ExecuteScalarAsync());
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    await _customerDataService.UpdateLastCollectionOrderDateAsync(phone);
+                }
             }
             catch (Exception ex)
             {

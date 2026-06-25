@@ -252,8 +252,8 @@ public partial class DiscountDialog : ContentView
             actualDiscount = _orderSubtotal;
         }
         
-        // Check if Manager PIN is required (discount over £30)
-        var approvalRequired = actualDiscount > 30;
+        // Check if Manager PIN is required (discount over £20)
+        var approvalRequired = actualDiscount > 20;
         DiscountApprovalInfo? approvedBy = null;
 
         if (approvalRequired)

@@ -16,24 +16,24 @@ public class FlexibleDecimalConverter : JsonConverter<decimal>
         if (reader.TokenType == JsonTokenType.String)
         {
             var stringValue = reader.GetString();
-            System.Diagnostics.Debug.WriteLine($"🔍 FlexibleDecimalConverter: Parsing string '{stringValue}'");
+            System.Diagnostics.Debug.WriteLine($" FlexibleDecimalConverter: Parsing string '{stringValue}'");
             if (decimal.TryParse(stringValue, out var result))
             {
-                System.Diagnostics.Debug.WriteLine($"✅ FlexibleDecimalConverter: Successfully parsed to {result}");
+                System.Diagnostics.Debug.WriteLine($" FlexibleDecimalConverter: Successfully parsed to {result}");
                 return result;
             }
-            System.Diagnostics.Debug.WriteLine($"❌ FlexibleDecimalConverter: Failed to parse '{stringValue}', returning 0");
+            System.Diagnostics.Debug.WriteLine($" FlexibleDecimalConverter: Failed to parse '{stringValue}', returning 0");
             return 0;
         }
         // Handle number format: 100.00
         else if (reader.TokenType == JsonTokenType.Number)
         {
             var numValue = reader.GetDecimal();
-            System.Diagnostics.Debug.WriteLine($"🔍 FlexibleDecimalConverter: Got number {numValue}");
+            System.Diagnostics.Debug.WriteLine($" FlexibleDecimalConverter: Got number {numValue}");
             return numValue;
         }
         
-        System.Diagnostics.Debug.WriteLine($"❌ FlexibleDecimalConverter: Unexpected token type {reader.TokenType}, returning 0");
+        System.Diagnostics.Debug.WriteLine($" FlexibleDecimalConverter: Unexpected token type {reader.TokenType}, returning 0");
         return 0;
     }
 
@@ -99,7 +99,7 @@ public class GiftCard
     public string CardNumber { get; set; } = string.Empty;
     
     [JsonPropertyName("balance")]
-    [JsonConverter(typeof(FlexibleDecimalConverter))] // ⚠️ CRITICAL: Handle string "100.00"
+    [JsonConverter(typeof(FlexibleDecimalConverter))] //  CRITICAL: Handle string "100.00"
     public decimal Balance { get; set; }
     
     [JsonPropertyName("status")]
@@ -121,9 +121,9 @@ public class GiftCard
     [JsonIgnore]
     public string StatusDisplay => Status?.ToLower() switch
     {
-        "active" => "🟢 Active",
-        "used" => "❌ Fully Used",
-        "expired" => "🔴 Expired",
+        "active" => " Active",
+        "used" => " Fully Used",
+        "expired" => " Expired",
         _ => Status ?? "Unknown"
     };
     
@@ -141,8 +141,8 @@ public class GiftCard
     [JsonIgnore]
     public string CardTypeDisplay => CardType?.ToLower() switch
     {
-        "digital" => "💳 Digital",
-        "physical" => "🎴 Physical",
+        "digital" => " Digital",
+        "physical" => " Physical",
         _ => CardType ?? "Unknown"
     };
 }

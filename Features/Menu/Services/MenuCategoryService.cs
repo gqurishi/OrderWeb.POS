@@ -15,7 +15,7 @@ namespace MyFirstMauiApp.Services
 
         public MenuCategoryService()
         {
-            _connectionString = "Server=localhost;Database=Pos-net;User=root;Password=root;";
+            _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
         }
 
         /// <summary>
@@ -27,7 +27,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -74,7 +74,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -122,7 +122,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -169,7 +169,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -216,9 +216,9 @@ namespace MyFirstMauiApp.Services
             try
             {
                 System.Diagnostics.Debug.WriteLine($"CreateCategoryAsync called for category: {category.Name}");
-                System.Diagnostics.Debug.WriteLine($"Connection string: {_connectionString}");
+                System.Diagnostics.Debug.WriteLine($"Connection string: {POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString()}");
                 
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
                 
                 System.Diagnostics.Debug.WriteLine("Database connection opened successfully");
@@ -271,7 +271,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -314,7 +314,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = "DELETE FROM FoodMenuCategories WHERE Id = @Id";
@@ -339,7 +339,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 using var transaction = await connection.BeginTransactionAsync();
@@ -379,7 +379,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"

@@ -496,7 +496,7 @@ public partial class AddEditItemPage : ContentPage
 
         var deleteButton = new Button
         {
-            Text = "🗑",
+            Text = "",
             FontSize = 24,
             FontAttributes = FontAttributes.None,
             BackgroundColor = Colors.Transparent,
@@ -1473,7 +1473,7 @@ public partial class AddEditItemPage : ContentPage
                     {
                         if (group != null)
                         {
-                            PrintGroupButton.Text = $"✓ {group.Name}";
+                            PrintGroupButton.Text = $" {group.Name}";
                             PrintGroupButton.TextColor = Color.FromArgb("#22C55E");
                         }
                     });

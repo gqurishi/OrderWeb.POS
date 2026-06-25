@@ -88,6 +88,21 @@
                                TextColor="{StaticResource TextSecondary}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center" />
+
+                        <Border x:Name="TerminalStatusFrame"
+                                IsVisible="False"
+                                BackgroundColor="#FEF2F2"
+                                Stroke="#EF4444"
+                                StrokeThickness="1"
+                                Padding="12,10"
+                                StrokeShape="RoundRectangle 10">
+                            <Label x:Name="TerminalStatusLabel"
+                                   Text=""
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#B91C1C"
+                                   HorizontalTextAlignment="Center"/>
+                        </Border>
                         
                         <!-- PIN Dots Display -->
                         <HorizontalStackLayout Spacing="24" 
@@ -126,6 +141,33 @@
                                    Padding="0"
                                    HasShadow="False" />
                         </HorizontalStackLayout>
+
+                        <!-- Error Message -->
+                        <Border x:Name="ErrorFrame"
+                                IsVisible="False"
+                                BackgroundColor="#FEE2E2"
+                                Stroke="#EF4444"
+                                StrokeThickness="1"
+                                Padding="16,10"
+                                StrokeShape="RoundRectangle 12"
+                                HorizontalOptions="Center">
+                            <Label x:Name="ErrorLabel"
+                                   Text="Wrong PIN. Try again."
+                                   TextColor="#DC2626"
+                                   FontAttributes="Bold"
+                                   FontSize="16"
+                                   HorizontalTextAlignment="Center"
+                                   HorizontalOptions="Center" />
+                        </Border>
+
+                        <Label x:Name="LoginStatusLabel"
+                               IsVisible="False"
+                               Text="Logging in..."
+                               TextColor="#6366F1"
+                               FontAttributes="Bold"
+                               FontSize="16"
+                               HorizontalTextAlignment="Center"
+                               HorizontalOptions="Center" />
                     </VerticalStackLayout>
 
                     <!-- Hidden Entries for PIN storage -->
@@ -139,22 +181,6 @@
                            Keyboard="Numeric"
                            IsPassword="True"
                            Completed="OnPasswordCompleted" />
-
-                    <!-- Error Message -->
-                    <Frame x:Name="ErrorFrame"
-                           IsVisible="False"
-                           BackgroundColor="#FEE2E2"
-                           BorderColor="#EF4444"
-                           CornerRadius="12"
-                           Padding="16,12"
-                           HasShadow="False"
-                           HorizontalOptions="Center">
-                        <Label x:Name="ErrorLabel"
-                               Text="Invalid PIN. Please try again."
-                               TextColor="#DC2626"
-                               FontSize="14"
-                               HorizontalOptions="Center" />
-                    </Frame>
 
                     <!-- Loading Indicator -->
                     <ActivityIndicator x:Name="LoadingIndicator" 

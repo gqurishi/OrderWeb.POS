@@ -16,7 +16,7 @@ namespace MyFirstMauiApp.Services
 
         public PrintGroupService()
         {
-            _connectionString = "Server=localhost;Database=Pos-net;User=root;Password=root;";
+            _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
         }
 
         /// <summary>
@@ -28,7 +28,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -81,7 +81,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -126,7 +126,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 if (string.IsNullOrEmpty(group.Id))
@@ -167,7 +167,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -209,7 +209,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 // Check if any items use this print group
@@ -245,7 +245,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"

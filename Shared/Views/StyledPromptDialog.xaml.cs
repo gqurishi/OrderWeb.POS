@@ -27,63 +27,56 @@ namespace POS_in_NET.Views
             InputEntry.Placeholder = placeholder;
             InputEntry.Keyboard = keyboard ?? Keyboard.Default;
             InputEntry.Text = initialValue;
+            InputEntry.IsPassword = false;
             _useVirtualKeyboard = useVirtualKeyboard;
             _virtualKeyboardOpened = false;
             InputEntry.IsReadOnly = useVirtualKeyboard;
         }
 
+        public void SetIsPassword(bool isPassword)
+        {
+            InputEntry.IsPassword = isPassword;
+        }
+
+        public void SetCancelText(string text)
+        {
+            CancelButton.Text = text;
+        }
+
+        public void SetOkText(string text)
+        {
+            OkButton.Text = text;
+        }
+
         public async Task<string?> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<string?>();
-            
-            // Find the GiftCardPage's content grid
-            if (Application.Current?.MainPage is Shell shell)
+
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _parentGrid))
             {
-                var currentPage = shell.CurrentPage;
-                
-                // Try to find the content grid in the current page
-                if (currentPage != null)
+                var page = Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
+                if (page != null)
                 {
-                    var pageContent = FindPageContent(currentPage);
-                    if (pageContent is Grid mainGrid)
-                    {
-                        _parentGrid = mainGrid;
-                        
-                        // Make sure dialog fills entire grid to center properly
-                        Grid.SetRowSpan(this, mainGrid.RowDefinitions.Count > 0 ? mainGrid.RowDefinitions.Count : 1);
-                        Grid.SetColumnSpan(this, mainGrid.ColumnDefinitions.Count > 0 ? mainGrid.ColumnDefinitions.Count : 1);
-                        
-                        // Add dialog overlay to the grid
-                        mainGrid.Children.Add(this);
-                        
-                        if (_useVirtualKeyboard)
-                        {
-                            await Task.Delay(120);
-                            await OpenVirtualKeyboardAsync();
-                        }
-                        else
-                        {
-                            // Focus on the entry field
-                            await Task.Delay(100);
-                            InputEntry.Focus();
-                        }
-                    }
+                    var result = await page.DisplayPromptAsync(TitleLabel.Text, MessageLabel.Text, initialValue: InputEntry.Text);
+                    return result;
                 }
+
+                return null;
+            }
+
+            if (_useVirtualKeyboard)
+            {
+                await Task.Delay(120);
+                await OpenVirtualKeyboardAsync();
+            }
+            else
+            {
+                await Task.Delay(100);
+                InputEntry.Focus();
             }
 
             return await _taskCompletionSource.Task;
-        }
-
-        private Element? FindPageContent(Element element)
-        {
-            // For ContentPage, find the Content property
-            var contentProperty = element.GetType().GetProperty("Content");
-            if (contentProperty != null)
-            {
-                return contentProperty.GetValue(element) as Element;
-            }
-            return null;
         }
 
         private void OnOkClicked(object sender, EventArgs e)
@@ -120,11 +113,8 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
-            // Remove from parent
-            if (_parentGrid != null)
-            {
-                _parentGrid.Children.Remove(this);
-            }
+            DialogOverlayHelper.DetachOverlay(this, _parentGrid);
+            _parentGrid = null;
         }
     }
 }

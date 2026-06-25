@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.CustomerDataPage"
+             Title="Recent Customers"
+             BackgroundColor="#F8FAFC">
+    <Grid RowDefinitions="Auto,*">
+        <views:TopBar x:Name="TopBar" Grid.Row="0" />
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20" Spacing="14">
+                <Border Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        StrokeShape="RoundRectangle 18"
+                        Padding="16">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Recent Customers"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="34"
+                                   TextColor="#0F172A" />
+                            <Label x:Name="SummaryLabel"
+                                   Text="7-day local cache · OrderWeb is the master record"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="13"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+
+                        <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                            <Button Text="Retry Sync"
+                                    Clicked="OnRetrySyncClicked"
+                                    BackgroundColor="#7C3AED"
+                                    TextColor="White"
+                                    CornerRadius="10"
+                                    Padding="16,10"
+                                    FontFamily="OpenSansSemibold" />
+                            <Button Text="Refresh"
+                                    Clicked="OnRefreshClicked"
+                                    BackgroundColor="#0284C7"
+                                    TextColor="White"
+                                    CornerRadius="10"
+                                    Padding="16,10"
+                                    FontFamily="OpenSansSemibold" />
+                        </HorizontalStackLayout>
+                    </Grid>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                    <Border Grid.Column="0"
+                            Stroke="#BBF7D0"
+                            StrokeThickness="1"
+                            BackgroundColor="#F0FDF4"
+                            StrokeShape="RoundRectangle 12"
+                            Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Synced"
+                                   FontSize="12"
+                                   TextColor="#166534" />
+                            <Label x:Name="SyncedCountLabel"
+                                   Text="0"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#14532D" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="1"
+                            Stroke="#FDE68A"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFBEB"
+                            StrokeShape="RoundRectangle 12"
+                            Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Pending"
+                                   FontSize="12"
+                                   TextColor="#92400E" />
+                            <Label x:Name="PendingCountLabel"
+                                   Text="0"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#78350F" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="2"
+                            Stroke="#FECACA"
+                            StrokeThickness="1"
+                            BackgroundColor="#FEF2F2"
+                            StrokeShape="RoundRectangle 12"
+                            Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Failed"
+                                   FontSize="12"
+                                   TextColor="#B91C1C" />
+                            <Label x:Name="FailedCountLabel"
+                                   Text="0"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#991B1B" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="3"
+                            Stroke="#BFDBFE"
+                            StrokeThickness="1"
+                            BackgroundColor="#EFF6FF"
+                            StrokeShape="RoundRectangle 12"
+                            Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Last cloud sync"
+                                   FontSize="12"
+                                   TextColor="#1D4ED8" />
+                            <Label x:Name="LastSyncLabel"
+                                   Text="Never"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="14"
+                                   TextColor="#1E3A8A"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <Border Stroke="#BFDBFE"
+                        StrokeThickness="1"
+                        BackgroundColor="#EFF6FF"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="14">
+                    <Label FontFamily="OpenSansRegular"
+                           FontSize="13"
+                           TextColor="#334155"
+                           LineBreakMode="WordWrap"
+                           Text="This terminal keeps a rolling 7-day cache for fast lookup at the till. Full customer history lives in OrderWeb. Delete only removes the local cache row — cloud records are unchanged." />
+                </Border>
+
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                    <Border Grid.Column="0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="White"
+                            StrokeShape="RoundRectangle 12"
+                            Padding="4,0">
+                        <Entry x:Name="SearchEntry"
+                               Placeholder="Search name, phone, address, postcode..."
+                               FontSize="14"
+                               Margin="12,8" />
+                    </Border>
+                    <Button Grid.Column="1"
+                            Text="All"
+                            x:Name="FilterAllButton"
+                            Clicked="OnFilterAllClicked"
+                            BackgroundColor="#3B82F6"
+                            TextColor="White"
+                            CornerRadius="10"
+                            Padding="14,10" />
+                    <Button Grid.Column="2"
+                            Text="Collection"
+                            x:Name="FilterCollectionButton"
+                            Clicked="OnFilterCollectionClicked"
+                            BackgroundColor="#E2E8F0"
+                            TextColor="#334155"
+                            CornerRadius="10"
+                            Padding="14,10" />
+                    <Button Grid.Column="3"
+                            Text="Delivery"
+                            x:Name="FilterDeliveryButton"
+                            Clicked="OnFilterDeliveryClicked"
+                            BackgroundColor="#E2E8F0"
+                            TextColor="#334155"
+                            CornerRadius="10"
+                            Padding="14,10" />
+                </Grid>
+
+                <Border Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        StrokeShape="RoundRectangle 18"
+                        Padding="12">
+                    <CollectionView x:Name="CustomersCollection"
+                                    HeightRequest="520"
+                                    SelectionMode="None">
+                        <CollectionView.EmptyView>
+                            <VerticalStackLayout Padding="30" Spacing="8" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Label Text="No recent customers"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Customers appear here when staff use collection or delivery screens. Rows older than 7 days are purged automatically."
+                                       FontSize="13"
+                                       TextColor="#94A3B8"
+                                       HorizontalTextAlignment="Center" />
+                            </VerticalStackLayout>
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        BackgroundColor="#F8FAFC"
+                                        StrokeShape="RoundRectangle 10"
+                                        Padding="12,10"
+                                        Margin="0,0,0,6">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <Grid Grid.Column="0"
+                                              ColumnDefinitions="Auto,Auto,Auto,*"
+                                              ColumnSpacing="8"
+                                              VerticalOptions="Center">
+                                            <Label Grid.Column="0"
+                                                   Text="{Binding Name}"
+                                                   FontFamily="OpenSansSemibold"
+                                                   FontSize="14"
+                                                   TextColor="#0F172A"
+                                                   LineBreakMode="TailTruncation"
+                                                   MaxLines="1"
+                                                   VerticalOptions="Center" />
+
+                                            <HorizontalStackLayout Grid.Column="1"
+                                                                   Spacing="4"
+                                                                   VerticalOptions="Center">
+                                                <Border IsVisible="{Binding ShowCollectionBadge}"
+                                                        BackgroundColor="#DCFCE7"
+                                                        Stroke="#BBF7D0"
+                                                        StrokeThickness="1"
+                                                        Padding="8,4"
+                                                        StrokeShape="RoundRectangle 6">
+                                                    <Label Text="Collection"
+                                                           FontSize="11"
+                                                           FontFamily="OpenSansSemibold"
+                                                           TextColor="#166534" />
+                                                </Border>
+                                                <Border IsVisible="{Binding ShowDeliveryBadge}"
+                                                        BackgroundColor="#DBEAFE"
+                                                        Stroke="#BFDBFE"
+                                                        StrokeThickness="1"
+                                                        Padding="8,4"
+                                                        StrokeShape="RoundRectangle 6">
+                                                    <Label Text="Delivery"
+                                                           FontSize="11"
+                                                           FontFamily="OpenSansSemibold"
+                                                           TextColor="#1D4ED8" />
+                                                </Border>
+                                            </HorizontalStackLayout>
+
+                                            <HorizontalStackLayout Grid.Column="2"
+                                                                   Spacing="4"
+                                                                   VerticalOptions="Center">
+                                                <Border IsVisible="{Binding ShowSyncedBadge}"
+                                                        BackgroundColor="#DCFCE7"
+                                                        StrokeThickness="0"
+                                                        Padding="8,4"
+                                                        StrokeShape="RoundRectangle 6">
+                                                    <Label Text="Synced"
+                                                           FontSize="11"
+                                                           FontFamily="OpenSansSemibold"
+                                                           TextColor="#166534" />
+                                                </Border>
+                                                <Border IsVisible="{Binding ShowPendingSyncBadge}"
+                                                        BackgroundColor="#FEF3C7"
+                                                        StrokeThickness="0"
+                                                        Padding="8,4"
+                                                        StrokeShape="RoundRectangle 6">
+                                                    <Label Text="Pending"
+                                                           FontSize="11"
+                                                           FontFamily="OpenSansSemibold"
+                                                           TextColor="#92400E" />
+                                                </Border>
+                                                <Border IsVisible="{Binding ShowFailedSyncBadge}"
+                                                        BackgroundColor="#FEE2E2"
+                                                        StrokeThickness="0"
+                                                        Padding="8,4"
+                                                        StrokeShape="RoundRectangle 6">
+                                                    <Label Text="Failed"
+                                                           FontSize="11"
+                                                           FontFamily="OpenSansSemibold"
+                                                           TextColor="#B91C1C" />
+                                                </Border>
+                                            </HorizontalStackLayout>
+
+                                            <Label Grid.Column="3"
+                                                   Text="{Binding ContactDetail}"
+                                                   FontFamily="OpenSansRegular"
+                                                   FontSize="14"
+                                                   TextColor="#475569"
+                                                   LineBreakMode="TailTruncation"
+                                                   MaxLines="1"
+                                                   VerticalOptions="Center" />
+                                        </Grid>
+
+                                        <Button Grid.Column="1"
+                                                Text="Remove cache"
+                                                BackgroundColor="#FEE2E2"
+                                                TextColor="#B91C1C"
+                                                FontSize="12"
+                                                CornerRadius="8"
+                                                Padding="10,6"
+                                                VerticalOptions="Center"
+                                                Clicked="OnDeleteCustomerClicked"
+                                                CommandParameter="{Binding .}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

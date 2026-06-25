@@ -54,10 +54,10 @@ namespace POS_in_NET.Models
             get
             {
                 var indicators = "";
-                if (IsSpicy) indicators += "🌶️ ";
-                if (IsVegan) indicators += "🌿 ";
-                else if (IsVegetarian) indicators += "🌱 ";
-                if (IsGlutenFree) indicators += "🚫🌾 ";
+                if (IsSpicy) indicators += " ";
+                if (IsVegan) indicators += " ";
+                else if (IsVegetarian) indicators += " ";
+                if (IsGlutenFree) indicators += " ";
                 
                 return indicators + Name;
             }
@@ -69,7 +69,7 @@ namespace POS_in_NET.Models
         
         public string CategoryName => Category?.Name ?? "Unknown";
         
-        public string CategoryIcon => Category?.Icon ?? "🍽️";
+        public string CategoryIcon => Category?.Icon ?? "";
         
         public Color StatusColor => IsAvailable ? Colors.Green : Colors.Red;
         
@@ -84,10 +84,10 @@ namespace POS_in_NET.Models
             get
             {
                 var tags = new List<string>();
-                if (IsSpicy) tags.Add("Spicy 🌶️");
-                if (IsVegan) tags.Add("Vegan 🌿");
-                else if (IsVegetarian) tags.Add("Vegetarian 🌱");
-                if (IsGlutenFree) tags.Add("Gluten-Free 🚫🌾");
+                if (IsSpicy) tags.Add("Spicy ");
+                if (IsVegan) tags.Add("Vegan ");
+                else if (IsVegetarian) tags.Add("Vegetarian ");
+                if (IsGlutenFree) tags.Add("Gluten-Free ");
                 return tags;
             }
         }

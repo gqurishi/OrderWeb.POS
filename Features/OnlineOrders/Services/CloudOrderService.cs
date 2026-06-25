@@ -75,6 +75,13 @@ public class CloudOrderService
     /// </summary>
     public async Task StartPollingAsync()
     {
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+        if (!onlineMasterCheck.Allowed)
+        {
+            System.Diagnostics.Debug.WriteLine($"Cloud polling skipped: {onlineMasterCheck.Reason}");
+            return;
+        }
+
         var config = await _databaseService.GetCloudConfigAsync();
         
         if (!config.ContainsKey("is_enabled") || config["is_enabled"] != "True")
@@ -96,9 +103,9 @@ public class CloudOrderService
         // Stop any existing polling first
         StopPolling();
         
-        System.Diagnostics.Debug.WriteLine($"🔄 Starting backup polling every {POLLING_INTERVAL} seconds");
-        System.Diagnostics.Debug.WriteLine("💡 Polling runs in background AND triggers UI refresh when new orders found");
-        System.Diagnostics.Debug.WriteLine("💡 Works with WebSocket for redundant order delivery");
+        System.Diagnostics.Debug.WriteLine($" Starting backup polling every {POLLING_INTERVAL} seconds");
+        System.Diagnostics.Debug.WriteLine(" Polling runs in background AND triggers UI refresh when new orders found");
+        System.Diagnostics.Debug.WriteLine(" Works with WebSocket for redundant order delivery");
         
         // Reset change detection
         _lastModifiedHeader = null;
@@ -110,7 +117,7 @@ public class CloudOrderService
         _pollingTimer = new Timer(async _ => await PollForOrdersAsync(), 
             null, TimeSpan.FromMilliseconds(intervalMs), TimeSpan.FromMilliseconds(intervalMs));
             
-        System.Diagnostics.Debug.WriteLine("✅ Backup polling timer started successfully");
+        System.Diagnostics.Debug.WriteLine(" Backup polling timer started successfully");
     }
 
     /// <summary>
@@ -129,7 +136,7 @@ public class CloudOrderService
     /// </summary>
     public async Task<(int NewOrders, int TotalOrders, string Message)> FetchOrdersAsync()
     {
-        System.Diagnostics.Debug.WriteLine("🔄 Manual sync initiated by user - WILL trigger UI refresh");
+        System.Diagnostics.Debug.WriteLine(" Manual sync initiated by user - WILL trigger UI refresh");
         
         try
         {
@@ -147,7 +154,7 @@ public class CloudOrderService
             var todayCount = todayOrders.Count(o => o.CreatedAt.Date == DateTime.Today && o.SyncStatus == Models.SyncStatus.Synced);
             
             // MANUAL SYNC ALWAYS REFRESHES UI
-            System.Diagnostics.Debug.WriteLine($"✅ Manual sync complete - Found {syncResult.OrdersFound} orders from OrderWeb.net");
+            System.Diagnostics.Debug.WriteLine($" Manual sync complete - Found {syncResult.OrdersFound} orders from OrderWeb.net");
             OnOrdersUpdated?.Invoke();
             
             return (syncResult.OrdersFound, todayCount, syncResult.Message);
@@ -178,7 +185,10 @@ public class CloudOrderService
             var config = await _databaseService.GetCloudConfigAsync();
             var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
+            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
+                ? apiBaseUrl
+                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
@@ -186,14 +196,11 @@ public class CloudOrderService
                 return;
             }
 
-            // OrderWeb.net API endpoint: https://orderweb.net/api/pos/pull-orders?tenant={tenant}
-            // This is fully dynamic - will update when you change Restaurant ID in Settings
-            // CRITICAL: Request CONFIRMED orders with status parameter
-            string endpoint = $"{cloudUrl}/pos/pull-orders?tenant={tenantSlug}&status=confirmed&limit=100";
+            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 100);
             
-            System.Diagnostics.Debug.WriteLine($"🔄 Backup polling check: {endpoint}");
-            System.Diagnostics.Debug.WriteLine($"   🏪 Restaurant: {tenantSlug}");
-            System.Diagnostics.Debug.WriteLine($"   🔑 API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
+            System.Diagnostics.Debug.WriteLine($" Backup polling check: {endpoint}");
+            System.Diagnostics.Debug.WriteLine($"    Restaurant: {tenantSlug}");
+            System.Diagnostics.Debug.WriteLine($"    API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             
             // CRITICAL: Clear ALL headers first to avoid "multiple values" error
             _httpClient.DefaultRequestHeaders.Clear();
@@ -215,18 +222,20 @@ public class CloudOrderService
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"🔄 Aggressive polling check: {endpoint}");
+            System.Diagnostics.Debug.WriteLine($" Aggressive polling check: {endpoint}");
             var apiStartTime = DateTime.Now;
             var response = await _httpClient.GetAsync(endpoint);
             var apiDuration = (DateTime.Now - apiStartTime).TotalMilliseconds;
             
-            System.Diagnostics.Debug.WriteLine($"📊 API Response: Status={response.StatusCode}, Duration={apiDuration:F0}ms");
+            System.Diagnostics.Debug.WriteLine($" API Response: Status={response.StatusCode}, Duration={apiDuration:F0}ms");
             
             if (response.IsSuccessStatusCode)
             {
                 var jsonContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"✅ Polling response in {apiDuration:F0}ms | Content: {jsonContent.Length} chars");
-                System.Diagnostics.Debug.WriteLine($"📄 API RESPONSE: {jsonContent}");
+                System.Diagnostics.Debug.WriteLine($" Polling response in {apiDuration:F0}ms | Content: {jsonContent.Length} chars");
+#if DEBUG
+                System.Diagnostics.Debug.WriteLine($" API RESPONSE: {jsonContent}");
+#endif
                 
                 var parseStart = DateTime.Now;
                 var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
@@ -234,10 +243,10 @@ public class CloudOrderService
                     PropertyNameCaseInsensitive = true
                 });
                 var parseDuration = (DateTime.Now - parseStart).TotalMilliseconds;
-                System.Diagnostics.Debug.WriteLine($"✅ JSON parsed in {parseDuration:F0}ms");
+                System.Diagnostics.Debug.WriteLine($" JSON parsed in {parseDuration:F0}ms");
                 
                 // DEBUG: Log API response structure
-                System.Diagnostics.Debug.WriteLine($"🔍 API Response Details:");
+                System.Diagnostics.Debug.WriteLine($" API Response Details:");
                 System.Diagnostics.Debug.WriteLine($"   Success: {apiResponse?.Success}");
                 System.Diagnostics.Debug.WriteLine($"   Orders count: {apiResponse?.Orders?.Count ?? 0}");
                 System.Diagnostics.Debug.WriteLine($"   PendingOrders count: {apiResponse?.PendingOrders?.Count ?? 0}");
@@ -245,35 +254,35 @@ public class CloudOrderService
                 // Check both Orders (new API) and PendingOrders (old API) for compatibility
                 var ordersToProcess = apiResponse?.Orders?.Any() == true ? apiResponse.Orders : apiResponse?.PendingOrders ?? new List<CloudOrderResponse>();
                 
-                System.Diagnostics.Debug.WriteLine($"📦 Orders to process: {ordersToProcess.Count}");
+                System.Diagnostics.Debug.WriteLine($" Orders to process: {ordersToProcess.Count}");
                 
                 if (apiResponse?.Success == true && ordersToProcess.Any())
                 {
                     var processStart = DateTime.Now;
-                    System.Diagnostics.Debug.WriteLine($"📦 Found {ordersToProcess.Count} orders from API");
+                    System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from API");
                     
                     // Process and save orders to database with UI refresh
                     int newOrdersCount = await ProcessNewOrdersAsync(ordersToProcess);
                     
                     var processDuration = (DateTime.Now - processStart).TotalMilliseconds;
                     var totalDuration = (DateTime.Now - pollStartTime).TotalMilliseconds;
-                    System.Diagnostics.Debug.WriteLine($"✅ Polling complete: Processing {processDuration:F0}ms | Total {totalDuration:F0}ms");
-                    System.Diagnostics.Debug.WriteLine($"📊 New orders saved: {newOrdersCount}, Total processed: {ordersToProcess.Count}");
+                    System.Diagnostics.Debug.WriteLine($" Polling complete: Processing {processDuration:F0}ms | Total {totalDuration:F0}ms");
+                    System.Diagnostics.Debug.WriteLine($" New orders saved: {newOrdersCount}, Total processed: {ordersToProcess.Count}");
                     
-                    // ✅ TRIGGER UI REFRESH IF NEW ORDERS WERE SAVED
+                    //  TRIGGER UI REFRESH IF NEW ORDERS WERE SAVED
                     if (newOrdersCount > 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"🔔 {newOrdersCount} NEW orders detected - triggering UI refresh!");
+                        System.Diagnostics.Debug.WriteLine($" {newOrdersCount} NEW orders detected - triggering UI refresh!");
                         OnOrdersUpdated?.Invoke();
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("✓ No new orders (all already existed in database)");
+                        System.Diagnostics.Debug.WriteLine(" No new orders (all already existed in database)");
                     }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("📊 No new orders from backend polling");
+                    System.Diagnostics.Debug.WriteLine(" No new orders from backend polling");
                 }
                 
                 _lastSyncTime = DateTime.Now; // Update successful sync time
@@ -285,15 +294,15 @@ public class CloudOrderService
         }
         catch (TaskCanceledException)
         {
-            System.Diagnostics.Debug.WriteLine("⚠️ Polling timeout - network may be slow");
+            System.Diagnostics.Debug.WriteLine(" Polling timeout - network may be slow");
         }
         catch (HttpRequestException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Network error during polling: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Network error during polling: {ex.Message}");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error during polling: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error during polling: {ex.Message}");
         }
         finally
         {
@@ -327,9 +336,14 @@ public class CloudOrderService
 
         try
         {
+            if (cloudOrder == null)
+            {
+                return false;
+            }
+
             if (string.IsNullOrWhiteSpace(cloudOrder.Id))
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ Ignoring cloud order with missing id: {cloudOrder.OrderNumber}");
+                System.Diagnostics.Debug.WriteLine($" Ignoring cloud order with missing id: {cloudOrder.OrderNumber}");
                 return false;
             }
 
@@ -339,7 +353,7 @@ public class CloudOrderService
 
                 if (autoPrintEnabled && !await OrderHasPrintJobsAsync(cloudOrder.Id))
                 {
-                    System.Diagnostics.Debug.WriteLine($"🖨️ Existing web order {cloudOrder.OrderNumber} has no print jobs; queueing now");
+                    System.Diagnostics.Debug.WriteLine($" Existing web order {cloudOrder.OrderNumber} has no print jobs; queueing now");
                     _ = AutoPrintOrderAsync(cloudOrder);
                 }
 
@@ -351,11 +365,11 @@ public class CloudOrderService
 
             if (!saveResult.Success)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to save cloud order {cloudOrder.OrderNumber}: {saveResult.Message}");
+                System.Diagnostics.Debug.WriteLine($" Failed to save cloud order {cloudOrder.OrderNumber}: {saveResult.Message}");
                 return false;
             }
 
-            System.Diagnostics.Debug.WriteLine($"✅ Created local order from cloud order {cloudOrder.OrderNumber} ({cloudOrder.Id})");
+            System.Diagnostics.Debug.WriteLine($" Created local order from cloud order {cloudOrder.OrderNumber} ({cloudOrder.Id})");
 
             _ = SendOrderReceivedAsync(cloudOrder.Id, "queued_for_print");
 
@@ -430,7 +444,7 @@ public class CloudOrderService
     private string DeterminePaymentMethod(CloudOrderResponse cloudOrder)
     {
         // Log ALL payment-related fields from OrderWeb.net
-        System.Diagnostics.Debug.WriteLine($"🔍 PAYMENT DEBUG for {cloudOrder.OrderNumber}:");
+        System.Diagnostics.Debug.WriteLine($" PAYMENT DEBUG for {cloudOrder.OrderNumber}:");
         System.Diagnostics.Debug.WriteLine($"   PaymentMethod: '{cloudOrder.PaymentMethod}'");
         System.Diagnostics.Debug.WriteLine($"   PaymentStatus: '{cloudOrder.PaymentStatus}'");
         System.Diagnostics.Debug.WriteLine($"   VoucherCode: '{cloudOrder.VoucherCode}'");
@@ -438,7 +452,7 @@ public class CloudOrderService
         // Priority 1: Check if voucher/gift card is used
         if (!string.IsNullOrWhiteSpace(cloudOrder.VoucherCode))
         {
-            System.Diagnostics.Debug.WriteLine($"✅ DETECTED: Gift Card (has voucher code: {cloudOrder.VoucherCode})");
+            System.Diagnostics.Debug.WriteLine($" DETECTED: Gift Card (has voucher code: {cloudOrder.VoucherCode})");
             return "voucher";
         }
         
@@ -450,14 +464,14 @@ public class CloudOrderService
             // If it's already a specific method, use it
             if (method == "voucher" || method == "cash" || method == "card")
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Using PaymentMethod: '{method}'");
+                System.Diagnostics.Debug.WriteLine($" Using PaymentMethod: '{method}'");
                 return method;
             }
             
             // If it's generic "online" or "online_payment", we need to be smarter
             if (method.Contains("online") || method.Contains("payment"))
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ Generic payment method detected: '{method}' - checking PaymentStatus...");
+                System.Diagnostics.Debug.WriteLine($" Generic payment method detected: '{method}' - checking PaymentStatus...");
                 
                 // Check PaymentStatus for clues
                 if (!string.IsNullOrWhiteSpace(cloudOrder.PaymentStatus))
@@ -466,22 +480,22 @@ public class CloudOrderService
                     if (status == "paid")
                     {
                         // If paid online, it's likely card unless voucher is used
-                        System.Diagnostics.Debug.WriteLine($"✅ INFERRED: Card (paid online, no voucher)");
+                        System.Diagnostics.Debug.WriteLine($" INFERRED: Card (paid online, no voucher)");
                         return "card";
                     }
                 }
                 
                 // Default for online payments
-                System.Diagnostics.Debug.WriteLine($"⚠️ DEFAULTING to: cash (couldn't determine specific method)");
+                System.Diagnostics.Debug.WriteLine($" DEFAULTING to: cash (couldn't determine specific method)");
                 return "cash";
             }
             
-            System.Diagnostics.Debug.WriteLine($"✅ Using PaymentMethod as-is: '{method}'");
+            System.Diagnostics.Debug.WriteLine($" Using PaymentMethod as-is: '{method}'");
             return method;
         }
         
         // Priority 3: Default fallback
-        System.Diagnostics.Debug.WriteLine($"⚠️ NO payment info found - defaulting to: cash");
+        System.Diagnostics.Debug.WriteLine($" NO payment info found - defaulting to: cash");
         return "cash";
     }
 
@@ -537,8 +551,8 @@ public class CloudOrderService
         };
 
         // DEBUG: Log payment method value received from API
-        System.Diagnostics.Debug.WriteLine($"💳 Order {cloudOrder.OrderNumber} - PaymentMethod: '{cloudOrder.PaymentMethod}', PaymentStatus: '{cloudOrder.PaymentStatus}', VoucherCode: '{cloudOrder.VoucherCode}'");
-        System.Diagnostics.Debug.WriteLine($"💳 Final saved payment method: '{localOrder.PaymentMethod}'");
+        System.Diagnostics.Debug.WriteLine($" Order {cloudOrder.OrderNumber} - PaymentMethod: '{cloudOrder.PaymentMethod}', PaymentStatus: '{cloudOrder.PaymentStatus}', VoucherCode: '{cloudOrder.VoucherCode}'");
+        System.Diagnostics.Debug.WriteLine($" Final saved payment method: '{localOrder.PaymentMethod}'");
 
         // Convert order items with proper pricing and addons
         if (cloudOrder.Items != null)
@@ -729,13 +743,11 @@ public class CloudOrderService
             if (string.IsNullOrWhiteSpace(cloudUrl) || string.IsNullOrWhiteSpace(tenantSlug) || string.IsNullOrWhiteSpace(apiKey))
                 return (false, "Missing required parameters");
 
-            // Use the new OrderWeb.net API endpoint structure: /pull-orders?tenant={slug}
-            var endpoint = $"{cloudUrl}?tenant={tenantSlug}";
+            var endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 1);
             
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             client.DefaultRequestHeaders.Clear();
-            // OrderWeb.net REST API uses X-API-Key header, not Bearer token
-            client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 
             var response = await client.GetAsync(endpoint);
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -783,7 +795,10 @@ public class CloudOrderService
             var config = await _databaseService.GetCloudConfigAsync();
             var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api/pos/pull-orders");
+            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
+            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
+                ? apiBaseUrl
+                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
             
             var result = await TestConnectionAsync(cloudUrl, tenantSlug, apiKey);
             return result.Success;
@@ -792,6 +807,34 @@ public class CloudOrderService
         {
             return false;
         }
+    }
+
+    private static string NormalizeApiBaseUrl(string? apiBaseUrl, string tenantSlug)
+    {
+        var baseUrl = (apiBaseUrl ?? "https://orderweb.net/api").Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(tenantSlug) && baseUrl.EndsWith($"/{tenantSlug}", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = baseUrl[..^(tenantSlug.Length + 1)];
+        }
+
+        if (baseUrl.EndsWith("/pos/pull-orders", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = baseUrl[..^"/pos/pull-orders".Length];
+        }
+
+        return baseUrl.TrimEnd('/');
+    }
+
+    private static string BuildPullOrdersEndpoint(string? apiBaseUrl, string tenantSlug, int limit = 100, string? since = null)
+    {
+        var baseUrl = NormalizeApiBaseUrl(apiBaseUrl, tenantSlug);
+        var endpoint = $"{baseUrl}/pos/pull-orders?tenant={Uri.EscapeDataString(tenantSlug)}&status=confirmed&limit={limit}";
+        if (!string.IsNullOrWhiteSpace(since))
+        {
+            endpoint += $"&since={Uri.EscapeDataString(since)}";
+        }
+
+        return endpoint;
     }
 
     /// <summary>
@@ -808,15 +851,24 @@ public class CloudOrderService
     /// </summary>
     public async Task<(bool Success, int OrdersFound, string Message)> SyncOrdersByDateAsync(DateTime targetDate)
     {
-        System.Diagnostics.Debug.WriteLine($"🔄 SYNC: Fetching all orders from {targetDate:yyyy-MM-dd}...");
+        System.Diagnostics.Debug.WriteLine($" SYNC: Fetching all orders from {targetDate:yyyy-MM-dd}...");
         
         try
         {
+            var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+            if (!onlineMasterCheck.Allowed)
+            {
+                return (false, 0, onlineMasterCheck.Reason);
+            }
+
             // Get configuration
             var config = await _databaseService.GetCloudConfigAsync();
             var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
+            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
+                ? apiBaseUrl
+                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
@@ -828,13 +880,13 @@ public class CloudOrderService
             // Format: ISO 8601 (YYYY-MM-DDTHH:MM:SSZ) for API compatibility
             var targetDateUtc = targetDate.Kind == DateTimeKind.Utc ? targetDate : targetDate.ToUniversalTime();
             string sinceParam = targetDateUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            string endpoint = $"{cloudUrl}/pos/pull-orders?tenant={tenantSlug}&status=confirmed&since={sinceParam}&limit=100";
+            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 100, since: sinceParam);
             
             System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine($"🔄 SYNCING ORDERS SINCE: {sinceParam}");
-            System.Diagnostics.Debug.WriteLine($"📍 Endpoint: {endpoint}");
-            System.Diagnostics.Debug.WriteLine($"🏪 Restaurant: {tenantSlug}");
-            System.Diagnostics.Debug.WriteLine($"🔑 API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
+            System.Diagnostics.Debug.WriteLine($" SYNCING ORDERS SINCE: {sinceParam}");
+            System.Diagnostics.Debug.WriteLine($" Endpoint: {endpoint}");
+            System.Diagnostics.Debug.WriteLine($" Restaurant: {tenantSlug}");
+            System.Diagnostics.Debug.WriteLine($" API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             System.Diagnostics.Debug.WriteLine($"⏰ Pulling CONFIRMED orders from {targetDate:MMM dd, yyyy} onwards (max 60 days)");
             System.Diagnostics.Debug.WriteLine("========================================");
             
@@ -845,17 +897,17 @@ public class CloudOrderService
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
             _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 
-            System.Diagnostics.Debug.WriteLine($"🔄 Making sync request...");
+            System.Diagnostics.Debug.WriteLine($" Making sync request...");
             var response = await _httpClient.GetAsync(endpoint);
             
-            System.Diagnostics.Debug.WriteLine($"📊 API Response Status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($"📊 Response Headers: {response.Headers}");
+            System.Diagnostics.Debug.WriteLine($" API Response Status: {response.StatusCode}");
+            System.Diagnostics.Debug.WriteLine($" Response Headers: {response.Headers}");
             
             if (response.IsSuccessStatusCode)
             {
                 var jsonContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine("========================================");
-                System.Diagnostics.Debug.WriteLine($"📄 API RESPONSE ({jsonContent.Length} chars):");
+                System.Diagnostics.Debug.WriteLine($" API RESPONSE ({jsonContent.Length} chars):");
                 System.Diagnostics.Debug.WriteLine($"First 500 chars: {jsonContent.Substring(0, Math.Min(500, jsonContent.Length))}");
                 System.Diagnostics.Debug.WriteLine("========================================");
                 
@@ -865,14 +917,14 @@ public class CloudOrderService
                 });
                 
                 // DEBUG: Log API response structure
-                System.Diagnostics.Debug.WriteLine($"🔍 API Response Parsed:");
+                System.Diagnostics.Debug.WriteLine($" API Response Parsed:");
                 System.Diagnostics.Debug.WriteLine($"   Success: {apiResponse?.Success}");
                 System.Diagnostics.Debug.WriteLine($"   Orders count: {apiResponse?.Orders?.Count ?? 0}");
                 System.Diagnostics.Debug.WriteLine($"   PendingOrders count: {apiResponse?.PendingOrders?.Count ?? 0}");
                 
                 if (apiResponse?.Orders != null && apiResponse.Orders.Any())
                 {
-                    System.Diagnostics.Debug.WriteLine($"📦 First order details:");
+                    System.Diagnostics.Debug.WriteLine($" First order details:");
                     var firstOrder = apiResponse.Orders.First();
                     System.Diagnostics.Debug.WriteLine($"   ID: {firstOrder.Id}");
                     System.Diagnostics.Debug.WriteLine($"   OrderNumber: {firstOrder.OrderNumber}");
@@ -884,16 +936,16 @@ public class CloudOrderService
                 // Check both Orders (new API) and PendingOrders (old API) for compatibility
                 var ordersToProcess = apiResponse?.Orders?.Any() == true ? apiResponse.Orders : apiResponse?.PendingOrders ?? new List<CloudOrderResponse>();
                 
-                System.Diagnostics.Debug.WriteLine($"📦 Orders to process: {ordersToProcess.Count}");
+                System.Diagnostics.Debug.WriteLine($" Orders to process: {ordersToProcess.Count}");
                 
                 if (apiResponse?.Success == true && ordersToProcess.Any())
                 {
-                    System.Diagnostics.Debug.WriteLine($"📦 Found {ordersToProcess.Count} orders from {targetDate:yyyy-MM-dd}");
+                    System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from {targetDate:yyyy-MM-dd}");
                     
                     // Process all orders (will skip duplicates automatically)
                     int newOrdersCount = await ProcessNewOrdersAsync(ordersToProcess);
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ SYNC COMPLETE: Processed {ordersToProcess.Count} orders, {newOrdersCount} were new");
+                    System.Diagnostics.Debug.WriteLine($" SYNC COMPLETE: Processed {ordersToProcess.Count} orders, {newOrdersCount} were new");
                     
                     // Trigger UI refresh
                     OnOrdersUpdated?.Invoke();
@@ -902,20 +954,20 @@ public class CloudOrderService
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"📭 No orders found for {targetDate:yyyy-MM-dd}");
+                    System.Diagnostics.Debug.WriteLine($" No orders found for {targetDate:yyyy-MM-dd}");
                     return (true, 0, $"No orders found for {targetDate:MMM dd, yyyy}");
                 }
             }
             else
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Sync failed: {response.StatusCode} - {errorContent}");
+                System.Diagnostics.Debug.WriteLine($" Sync failed: {response.StatusCode} - {errorContent}");
                 return (false, 0, $"API error: {response.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Sync exception: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Sync exception: {ex.Message}");
             return (false, 0, $"Sync failed: {ex.Message}");
         }
     }
@@ -925,7 +977,7 @@ public class CloudOrderService
     /// </summary>
     private async Task<(bool Success, int OrdersFound, string Message)> SyncTodaysOrdersAsyncOld()
     {
-        System.Diagnostics.Debug.WriteLine("🔄 CATCH-UP SYNC: Fetching all today's orders from OrderWeb.net...");
+        System.Diagnostics.Debug.WriteLine(" CATCH-UP SYNC: Fetching all today's orders from OrderWeb.net...");
         
         try
         {
@@ -946,8 +998,8 @@ public class CloudOrderService
             // Increased limit to 100 to catch more orders
             string endpoint = $"{cloudUrl}/pos/pull-orders?tenant={tenantSlug}&limit=100";
             
-            System.Diagnostics.Debug.WriteLine($"🔄 Catch-up sync from: {endpoint}");
-            System.Diagnostics.Debug.WriteLine($"   🏪 Restaurant: {tenantSlug}");
+            System.Diagnostics.Debug.WriteLine($" Catch-up sync from: {endpoint}");
+            System.Diagnostics.Debug.WriteLine($"    Restaurant: {tenantSlug}");
             
             // CRITICAL: Clear ALL headers first to avoid "multiple values" error
             _httpClient.DefaultRequestHeaders.Clear();
@@ -956,13 +1008,13 @@ public class CloudOrderService
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
             _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 
-            System.Diagnostics.Debug.WriteLine($"🔄 Making catch-up sync request...");
+            System.Diagnostics.Debug.WriteLine($" Making catch-up sync request...");
             var response = await _httpClient.GetAsync(endpoint);
             
             if (response.IsSuccessStatusCode)
             {
                 var jsonContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"📄 CATCH-UP API RESPONSE: {jsonContent}");
+                System.Diagnostics.Debug.WriteLine($" CATCH-UP API RESPONSE: {jsonContent}");
                 
                 var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
                 {
@@ -970,7 +1022,7 @@ public class CloudOrderService
                 });
                 
                 // DEBUG: Log API response structure
-                System.Diagnostics.Debug.WriteLine($"🔍 Catch-up API Response Details:");
+                System.Diagnostics.Debug.WriteLine($" Catch-up API Response Details:");
                 System.Diagnostics.Debug.WriteLine($"   Success: {apiResponse?.Success}");
                 System.Diagnostics.Debug.WriteLine($"   Orders count: {apiResponse?.Orders?.Count ?? 0}");
                 System.Diagnostics.Debug.WriteLine($"   PendingOrders count: {apiResponse?.PendingOrders?.Count ?? 0}");
@@ -978,16 +1030,16 @@ public class CloudOrderService
                 // Check both Orders (new API) and PendingOrders (old API) for compatibility
                 var ordersToProcess = apiResponse?.Orders?.Any() == true ? apiResponse.Orders : apiResponse?.PendingOrders ?? new List<CloudOrderResponse>();
                 
-                System.Diagnostics.Debug.WriteLine($"📦 Orders to process: {ordersToProcess.Count}");
+                System.Diagnostics.Debug.WriteLine($" Orders to process: {ordersToProcess.Count}");
                 
                 if (apiResponse?.Success == true && ordersToProcess.Any())
                 {
-                    System.Diagnostics.Debug.WriteLine($"📦 Catch-up found {ordersToProcess.Count} orders from OrderWeb.net");
+                    System.Diagnostics.Debug.WriteLine($" Catch-up found {ordersToProcess.Count} orders from OrderWeb.net");
                     
                     // Process all orders (will skip duplicates automatically)
                     await ProcessNewOrdersAsync(ordersToProcess);
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ CATCH-UP SYNC COMPLETE: Processed {ordersToProcess.Count} orders");
+                    System.Diagnostics.Debug.WriteLine($" CATCH-UP SYNC COMPLETE: Processed {ordersToProcess.Count} orders");
                     
                     // Trigger UI refresh for catch-up sync
                     OnOrdersUpdated?.Invoke();
@@ -996,20 +1048,20 @@ public class CloudOrderService
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✅ Catch-up sync: No pending orders found");
+                    System.Diagnostics.Debug.WriteLine(" Catch-up sync: No pending orders found");
                     return (true, 0, "No pending orders");
                 }
             }
             else
             {
                 var error = $"HTTP {response.StatusCode}: {response.ReasonPhrase}";
-                System.Diagnostics.Debug.WriteLine($"❌ Catch-up sync failed: {error}");
+                System.Diagnostics.Debug.WriteLine($" Catch-up sync failed: {error}");
                 return (false, 0, error);
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Catch-up sync error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Catch-up sync error: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -1055,14 +1107,14 @@ public class CloudOrderService
                 command.Parameters.AddWithValue("@deviceId", _deviceId);
                 await command.ExecuteNonQueryAsync();
                 
-                System.Diagnostics.Debug.WriteLine($"🆔 Generated new device ID: {_deviceId}");
+                System.Diagnostics.Debug.WriteLine($" Generated new device ID: {_deviceId}");
             }
             
             return _deviceId!;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting device ID: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting device ID: {ex.Message}");
             // Fallback to machine name
             return $"POS_{Environment.MachineName}";
         }
@@ -1083,7 +1135,7 @@ public class CloudOrderService
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ Cannot send Order Received: No configuration");
+                System.Diagnostics.Debug.WriteLine(" Cannot send Order Received: No configuration");
                 return false;
             }
 
@@ -1110,27 +1162,27 @@ public class CloudOrderService
             
             request.Headers.Add("Authorization", $"Bearer {apiKey}");
 
-            System.Diagnostics.Debug.WriteLine($"📨 Sending Order Received for {orderId}: {status}");
+            System.Diagnostics.Debug.WriteLine($" Sending Order Received for {orderId}: {status}");
 
             var response = await _httpClient.SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Order Received sent for {orderId}");
+                System.Diagnostics.Debug.WriteLine($" Order Received sent for {orderId}");
                 await LogOrderReceivedAsync(orderId, deviceId, status, true);
                 return true;
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Order Received failed: {response.StatusCode} - {errorBody}");
+                System.Diagnostics.Debug.WriteLine($" Order Received failed: {response.StatusCode} - {errorBody}");
                 await LogOrderReceivedAsync(orderId, deviceId, status, false);
                 return false;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error sending Order Received: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error sending Order Received: {ex.Message}");
             return false;
         }
     }
@@ -1159,7 +1211,7 @@ public class CloudOrderService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Failed to log order received: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Failed to log order received: {ex.Message}");
         }
     }
     
@@ -1178,7 +1230,7 @@ public class CloudOrderService
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ Cannot send ACK: No configuration");
+                System.Diagnostics.Debug.WriteLine(" Cannot send ACK: No configuration");
                 return false;
             }
 
@@ -1218,19 +1270,19 @@ public class CloudOrderService
             
             request.Headers.Add("Authorization", $"Bearer {apiKey}");
 
-            System.Diagnostics.Debug.WriteLine($"📤 Sending enhanced ACK for order {orderId}: {status}");
+            System.Diagnostics.Debug.WriteLine($" Sending enhanced ACK for order {orderId}: {status}");
 
             var response = await _httpClient.SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ ACK sent successfully for order {orderId}");
+                System.Diagnostics.Debug.WriteLine($" ACK sent successfully for order {orderId}");
                 return true;
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ ACK failed: {response.StatusCode} - {errorBody}");
+                System.Diagnostics.Debug.WriteLine($" ACK failed: {response.StatusCode} - {errorBody}");
                 
                 // Queue for retry
                 await QueueFailedAckAsync(orderId, status, errorReason);
@@ -1239,7 +1291,7 @@ public class CloudOrderService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error sending ACK: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error sending ACK: {ex.Message}");
             
             // Queue for retry later
             await QueueFailedAckAsync(orderId, status, errorReason);
@@ -1272,11 +1324,11 @@ public class CloudOrderService
             
             await command.ExecuteNonQueryAsync();
             
-            System.Diagnostics.Debug.WriteLine($"📝 ACK queued for retry: Order {orderId}");
+            System.Diagnostics.Debug.WriteLine($" ACK queued for retry: Order {orderId}");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Failed to queue ACK: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Failed to queue ACK: {ex.Message}");
         }
     }
     
@@ -1292,7 +1344,7 @@ public class CloudOrderService
             _ackRetryTimer.Dispose();
         }
         
-        System.Diagnostics.Debug.WriteLine("🔄 ACK retry service started");
+        System.Diagnostics.Debug.WriteLine(" ACK retry service started");
         
         // Run every 60 seconds
         _ackRetryTimer = new Timer(
@@ -1310,7 +1362,7 @@ public class CloudOrderService
     {
         _ackRetryTimer?.Dispose();
         _ackRetryTimer = null;
-        System.Diagnostics.Debug.WriteLine("⏸️ ACK retry service stopped");
+        System.Diagnostics.Debug.WriteLine("⏸ ACK retry service stopped");
     }
     
     /// <summary>
@@ -1355,7 +1407,7 @@ public class CloudOrderService
 
             if (pendingAcks.Count == 0) return;
             
-            System.Diagnostics.Debug.WriteLine($"🔄 Retrying {pendingAcks.Count} pending ACK(s)");
+            System.Diagnostics.Debug.WriteLine($" Retrying {pendingAcks.Count} pending ACK(s)");
 
             foreach (var ack in pendingAcks)
             {
@@ -1369,7 +1421,7 @@ public class CloudOrderService
                     updateCmd.CommandText = "DELETE FROM pending_acks WHERE id = @id";
                     updateCmd.Parameters.AddWithValue("@id", ack.Id);
                     await updateCmd.ExecuteNonQueryAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ ACK retry successful: Order {ack.OrderId}");
+                    System.Diagnostics.Debug.WriteLine($" ACK retry successful: Order {ack.OrderId}");
                 }
                 else
                 {
@@ -1386,7 +1438,7 @@ public class CloudOrderService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ ACK retry error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" ACK retry error: {ex.Message}");
         }
     }
     
@@ -1453,7 +1505,7 @@ public class CloudOrderService
             if (existingOrder == null)
             {
                 // NEW ORDER - Save it
-                System.Diagnostics.Debug.WriteLine($"🆕 New order from polling: {orderDto.OrderNumber}");
+                System.Diagnostics.Debug.WriteLine($" New order from polling: {orderDto.OrderNumber}");
                 
                 var order = MapPullDtoToOrder(orderDto);
                 await _orderService.SaveOrderAsync(order);
@@ -1478,14 +1530,14 @@ public class CloudOrderService
                 
                 if (printStatusChanged)
                 {
-                    System.Diagnostics.Debug.WriteLine($"🔄 Order status updated from cloud: {orderDto.OrderNumber}");
+                    System.Diagnostics.Debug.WriteLine($" Order status updated from cloud: {orderDto.OrderNumber}");
                     // Could update local status here if needed
                 }
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error processing polled order {orderDto?.OrderNumber}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error processing polled order {orderDto?.OrderNumber}: {ex.Message}");
         }
     }
     
@@ -1635,24 +1687,24 @@ public class CloudOrderService
             
             request.Headers.Add("Authorization", $"Bearer {apiKey}");
 
-            System.Diagnostics.Debug.WriteLine($"📦 Sending batch ACK: {acknowledgments.Count} items");
+            System.Diagnostics.Debug.WriteLine($" Sending batch ACK: {acknowledgments.Count} items");
 
             var response = await _httpClient.SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Batch ACK sent successfully");
+                System.Diagnostics.Debug.WriteLine($" Batch ACK sent successfully");
                 return true;
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Batch ACK failed: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($" Batch ACK failed: {response.StatusCode}");
                 return false;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error sending batch ACK: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error sending batch ACK: {ex.Message}");
             return false;
         }
     }
@@ -1664,7 +1716,7 @@ public class CloudOrderService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("🔄 Manual retry of pending ACKs triggered");
+            System.Diagnostics.Debug.WriteLine(" Manual retry of pending ACKs triggered");
             
             // Get all pending ACKs
             var pendingAcks = new List<BatchAckItem>();
@@ -1694,11 +1746,11 @@ public class CloudOrderService
             
             if (pendingAcks.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine("ℹ️ No pending ACKs to retry");
+                System.Diagnostics.Debug.WriteLine("Info: No pending ACKs to retry");
                 return (0, 0);
             }
             
-            System.Diagnostics.Debug.WriteLine($"📦 Retrying {pendingAcks.Count} pending ACKs");
+            System.Diagnostics.Debug.WriteLine($" Retrying {pendingAcks.Count} pending ACKs");
             
             // Send as batch
             var success = await SendBatchAcknowledgmentsAsync(pendingAcks);
@@ -1711,18 +1763,18 @@ public class CloudOrderService
                 command.CommandText = "DELETE FROM pending_acks WHERE retry_count < 10";
                 var deleted = await command.ExecuteNonQueryAsync();
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Manual retry successful: {deleted} ACKs cleared");
+                System.Diagnostics.Debug.WriteLine($" Manual retry successful: {deleted} ACKs cleared");
                 return (deleted, 0);
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Manual retry failed");
+                System.Diagnostics.Debug.WriteLine($" Manual retry failed");
                 return (0, pendingAcks.Count);
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Manual retry error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Manual retry error: {ex.Message}");
             return (0, -1);
         }
     }
@@ -1754,7 +1806,7 @@ public class CloudOrderService
             request.Headers.Add("Authorization", $"Bearer {apiKey}");
             request.Headers.Add("X-Device-ID", deviceId);
 
-            System.Diagnostics.Debug.WriteLine($"⚙️ Fetching remote configuration");
+            System.Diagnostics.Debug.WriteLine($" Fetching remote configuration");
 
             var response = await _httpClient.SendAsync(request);
             
@@ -1766,7 +1818,7 @@ public class CloudOrderService
                     PropertyNameCaseInsensitive = true
                 });
                 
-                System.Diagnostics.Debug.WriteLine($"✅ Remote configuration fetched: {remoteConfig?.Count ?? 0} settings");
+                System.Diagnostics.Debug.WriteLine($" Remote configuration fetched: {remoteConfig?.Count ?? 0} settings");
                 
                 // Apply remote configuration to local database
                 if (remoteConfig != null)
@@ -1778,13 +1830,13 @@ public class CloudOrderService
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Config fetch failed: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($" Config fetch failed: {response.StatusCode}");
                 return null;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error fetching config: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error fetching config: {ex.Message}");
             return null;
         }
     }
@@ -1812,11 +1864,11 @@ public class CloudOrderService
                 await command.ExecuteNonQueryAsync();
             }
             
-            System.Diagnostics.Debug.WriteLine($"✅ Applied {remoteConfig.Count} remote config settings");
+            System.Diagnostics.Debug.WriteLine($" Applied {remoteConfig.Count} remote config settings");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error applying config: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error applying config: {ex.Message}");
         }
     }
 }

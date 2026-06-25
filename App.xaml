@@ -1,4 +1,4 @@
-﻿<?xml version = "1.0" encoding = "UTF-8" ?>
+<?xml version = "1.0" encoding = "UTF-8" ?>
 <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:local="clr-namespace:POS_in_NET"
@@ -16,6 +16,7 @@
                 
                 <!-- Syncfusion Modern Theme (NEW!) -->
                 <ResourceDictionary Source="Resources/Styles/SyncfusionTheme.xaml" />
+                <ResourceDictionary Source="Resources/Styles/DialogStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Global Font Family - Modern Sans-Serif (OpenSans) -->

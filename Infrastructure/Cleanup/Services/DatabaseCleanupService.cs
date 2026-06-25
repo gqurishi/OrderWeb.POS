@@ -14,7 +14,7 @@ public class DatabaseCleanupService
 
     public DatabaseCleanupService()
     {
-        _connectionString = "Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;";
+        _connectionString = TerminalConfigurationService.GetPosConnectionString();
     }
 
     /// <summary>
@@ -28,10 +28,10 @@ public class DatabaseCleanupService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            Debug.WriteLine("🧹 Starting database cleanup...");
+            Debug.WriteLine(" Starting database cleanup...");
 
             // Step 1: Count what will be deleted
             var countQuery = @"
@@ -46,12 +46,12 @@ public class DatabaseCleanupService
 
             if (result.OrdersDeleted == 0)
             {
-                Debug.WriteLine("✅ No old OrderWeb.net orders to delete");
+                Debug.WriteLine(" No old OrderWeb.net orders to delete");
                 result.Success = true;
                 return result;
             }
 
-            Debug.WriteLine($"📊 Found {result.OrdersDeleted} cached web orders older than {RETENTION_DAYS} days");
+            Debug.WriteLine($" Found {result.OrdersDeleted} cached web orders older than {RETENTION_DAYS} days");
 
             // Step 2: Get IDs of orders to delete (for logging)
             var idsQuery = @"
@@ -65,7 +65,7 @@ public class DatabaseCleanupService
             idsCmd.Parameters.AddWithValue("@days", RETENTION_DAYS);
             using var reader = await idsCmd.ExecuteReaderAsync();
             
-            Debug.WriteLine("📋 Sample orders to be deleted:");
+            Debug.WriteLine(" Sample orders to be deleted:");
             while (await reader.ReadAsync())
             {
                 var orderNum = reader.GetString(1); // order_number column
@@ -86,7 +86,7 @@ public class DatabaseCleanupService
             deleteAddonsCmd.Parameters.AddWithValue("@days", RETENTION_DAYS);
             result.AddonsDeleted = await deleteAddonsCmd.ExecuteNonQueryAsync();
 
-            Debug.WriteLine($"🗑️  Deleted {result.AddonsDeleted} order addons");
+            Debug.WriteLine($"  Deleted {result.AddonsDeleted} order addons");
 
             // Step 4: Delete order items
             var deleteItemsQuery = @"
@@ -99,7 +99,7 @@ public class DatabaseCleanupService
             deleteItemsCmd.Parameters.AddWithValue("@days", RETENTION_DAYS);
             result.ItemsDeleted = await deleteItemsCmd.ExecuteNonQueryAsync();
 
-            Debug.WriteLine($"🗑️  Deleted {result.ItemsDeleted} order items");
+            Debug.WriteLine($"  Deleted {result.ItemsDeleted} order items");
 
             // Step 5: Delete orders (ONLY OrderWeb.net orders, NEVER local POS)
             var deleteOrdersQuery = @"
@@ -111,7 +111,7 @@ public class DatabaseCleanupService
             deleteOrdersCmd.Parameters.AddWithValue("@days", RETENTION_DAYS);
             var ordersDeleted = await deleteOrdersCmd.ExecuteNonQueryAsync();
 
-            Debug.WriteLine($"🗑️  Deleted {ordersDeleted} OrderWeb.net orders");
+            Debug.WriteLine($"  Deleted {ordersDeleted} OrderWeb.net orders");
 
             // Step 6: Optimize tables (reclaim space)
             await OptimizeTablesAsync(connection);
@@ -119,9 +119,9 @@ public class DatabaseCleanupService
             result.Success = true;
             result.Duration = (DateTime.Now - startTime).TotalMilliseconds;
 
-            Debug.WriteLine($"✅ Cleanup completed in {result.Duration:F0}ms");
-            Debug.WriteLine($"📊 Summary: {result.OrdersDeleted} orders, {result.ItemsDeleted} items, {result.AddonsDeleted} addons deleted");
-            Debug.WriteLine($"🔒 LOCAL POS ORDERS: Untouched and safe!");
+            Debug.WriteLine($" Cleanup completed in {result.Duration:F0}ms");
+            Debug.WriteLine($" Summary: {result.OrdersDeleted} orders, {result.ItemsDeleted} items, {result.AddonsDeleted} addons deleted");
+            Debug.WriteLine($" LOCAL POS ORDERS: Untouched and safe!");
 
             // Save cleanup timestamp
             Preferences.Set("LastCleanupDate", DateTime.Now.ToString("O"));
@@ -132,7 +132,7 @@ public class DatabaseCleanupService
         {
             result.Success = false;
             result.ErrorMessage = ex.Message;
-            Debug.WriteLine($"❌ Cleanup error: {ex.Message}");
+            Debug.WriteLine($" Cleanup error: {ex.Message}");
             return result;
         }
     }
@@ -144,10 +144,10 @@ public class DatabaseCleanupService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            Debug.WriteLine("🔧 Creating database indexes for performance...");
+            Debug.WriteLine(" Creating database indexes for performance...");
 
             // Index for today's orders query (most common)
             await CreateIndexIfNotExistsAsync(connection, 
@@ -173,11 +173,11 @@ public class DatabaseCleanupService
                 "order_items", 
                 "(order_id)");
 
-            Debug.WriteLine("✅ Database indexes created successfully");
+            Debug.WriteLine(" Database indexes created successfully");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"⚠️ Error creating indexes: {ex.Message}");
+            Debug.WriteLine($" Error creating indexes: {ex.Message}");
         }
     }
 
@@ -201,16 +201,16 @@ public class DatabaseCleanupService
                 var createQuery = $"CREATE INDEX {indexName} ON {tableName} {columns}";
                 using var createCmd = new MySqlCommand(createQuery, connection);
                 await createCmd.ExecuteNonQueryAsync();
-                Debug.WriteLine($"   ✅ Created index: {indexName}");
+                Debug.WriteLine($"    Created index: {indexName}");
             }
             else
             {
-                Debug.WriteLine($"   ℹ️  Index exists: {indexName}");
+                Debug.WriteLine($"Info: Index exists: {indexName}");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"   ⚠️ Could not create index {indexName}: {ex.Message}");
+            Debug.WriteLine($"    Could not create index {indexName}: {ex.Message}");
         }
     }
 
@@ -218,7 +218,7 @@ public class DatabaseCleanupService
     {
         try
         {
-            Debug.WriteLine("🔧 Optimizing tables...");
+            Debug.WriteLine(" Optimizing tables...");
 
             var tables = new[] { "orders", "order_items", "order_item_addons" };
             foreach (var table in tables)
@@ -227,11 +227,11 @@ public class DatabaseCleanupService
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            Debug.WriteLine("✅ Tables optimized");
+            Debug.WriteLine(" Tables optimized");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"⚠️ Table optimization warning: {ex.Message}");
+            Debug.WriteLine($" Table optimization warning: {ex.Message}");
         }
     }
 
@@ -244,7 +244,7 @@ public class DatabaseCleanupService
 
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             // Count cached web orders that are eligible for daily cleanup

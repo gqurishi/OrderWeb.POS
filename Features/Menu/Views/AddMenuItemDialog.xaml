@@ -9,7 +9,7 @@
         <views:AddAddonDialog x:Name="AddAddonDialogView" IsVisible="False" ZIndex="3000" />
         <views:CategorySelectorDialog x:Name="CategorySelectorDialogView" IsVisible="False" ZIndex="3000" />
         
-        <Frame BackgroundColor="#80000000"
+        <Frame BackgroundColor="{StaticResource DialogOverlayColor}"
                Padding="0"
                HasShadow="False"
                CornerRadius="0">
@@ -282,7 +282,7 @@
                                                 TextColor="White"
                                                 FontSize="14"
                                                 FontAttributes="Bold"
-                                                CornerRadius="8"
+                                                CornerRadius="14"
                                                 Padding="12,8"
                                                 Clicked="OnAddAddonClicked" />
                                     </Grid>
@@ -321,7 +321,7 @@
                                                                    VerticalOptions="Center" />
                                                         </HorizontalStackLayout>
                                                         <Button Grid.Column="1"
-                                                                Text="✎"
+                                                                Text=""
                                                                 BackgroundColor="#3B82F6"
                                                                 TextColor="White"
                                                                 FontSize="16"
@@ -332,7 +332,7 @@
                                                                 Clicked="OnEditAddonClicked"
                                                                 CommandParameter="{Binding .}" />
                                                         <Button Grid.Column="2"
-                                                                Text="✕"
+                                                                Text=""
                                                                 BackgroundColor="#EF4444"
                                                                 TextColor="White"
                                                                 FontSize="16"
@@ -357,7 +357,7 @@
                                    CornerRadius="14"
                                    HasShadow="False">
                                 <VerticalStackLayout Spacing="16">
-                                    <Label Text="🖨️ Printer Settings"
+                                    <Label Text="Printer Settings"
                                            FontSize="20"
                                            FontAttributes="Bold"
                                            TextColor="#DC2626" />
@@ -403,7 +403,7 @@
                                                LineBreakMode="WordWrap">
                                             <Label.FormattedText>
                                                 <FormattedString>
-                                                    <Span Text="💡 " FontAttributes="Bold" />
+                                                    <Span Text=" " FontAttributes="Bold" />
                                                     <Span Text="Use red printing for special attention items like allergies, spicy dishes, or priority orders. Works with ESC/POS two-color thermal printers." />
                                                 </FormattedString>
                                             </Label.FormattedText>
@@ -428,7 +428,7 @@
                                 TextColor="#64748B"
                                 FontAttributes="Bold"
                                 FontSize="18"
-                                CornerRadius="12"
+                                CornerRadius="14"
                                 HeightRequest="54"
                                 Clicked="OnCancelClicked" />
                         
@@ -439,7 +439,7 @@
                                 TextColor="White"
                                 FontAttributes="Bold"
                                 FontSize="18"
-                                CornerRadius="12"
+                                CornerRadius="14"
                                 HeightRequest="54"
                                 Clicked="OnSaveClicked" />
                     </Grid>

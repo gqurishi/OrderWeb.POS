@@ -100,7 +100,7 @@
                         FontFamily="OpenSansSemibold"
                         FontSize="16"
                         HeightRequest="58"
-                        CornerRadius="12">
+                        CornerRadius="14">
                     <Button.Shadow>
                         <Shadow Brush="#2563EB" Opacity="0.22" Radius="12" Offset="0,6" />
                     </Button.Shadow>
@@ -157,7 +157,7 @@
                                                 FontSize="13"
                                                 HeightRequest="38"
                                                 WidthRequest="72"
-                                                CornerRadius="10"
+                                                CornerRadius="14"
                                                 VerticalOptions="Center" />
                                     </Grid>
                                 </DataTemplate>
@@ -184,7 +184,7 @@
                     FontFamily="OpenSansRegular"
                     FontSize="16"
                     HeightRequest="58"
-                    CornerRadius="12" />
+                    CornerRadius="14" />
 
             <Button Grid.Column="1"
                     Text="Continue to Order"
@@ -194,7 +194,7 @@
                     FontFamily="OpenSansSemibold"
                     FontSize="16"
                     HeightRequest="58"
-                    CornerRadius="12">
+                    CornerRadius="14">
                 <Button.Shadow>
                     <Shadow Brush="#059669" Opacity="0.2" Radius="12" Offset="0,6" />
                 </Button.Shadow>

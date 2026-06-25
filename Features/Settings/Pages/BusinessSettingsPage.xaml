@@ -407,7 +407,7 @@
 
                         <!-- Label Printer Settings -->
                         <VerticalStackLayout Spacing="16" Margin="0,8,0,0">
-                            <Label Text="🏷️ Label Printer Configuration"
+                            <Label Text="Label Printer Configuration"
                                    FontSize="16"
                                    FontFamily="OpenSansSemibold"
                                    TextColor="#374151" />
@@ -483,7 +483,7 @@
                                 </Grid>
                                 
                                 <!-- Test Button -->
-                                <Button Text="🖨️ Test Printer Connection"
+                                <Button Text="Test Printer Connection"
                                         BackgroundColor="#3B82F6"
                                         TextColor="White"
                                         FontSize="14"

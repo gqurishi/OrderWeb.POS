@@ -85,25 +85,6 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
--- Insert sample data with existing table IDs
-INSERT IGNORE INTO TableSessions (TableId, SessionNumber, PartySize, Status, CustomerNotes, SpecialOccasion) VALUES
-(12, 'S001', 4, 'FoodServed', 'Window seat requested', 'Birthday'),
-(13, 'S002', 2, 'Ordering', 'Vegetarian preferences', NULL),
-(14, 'S003', 6, 'Payment', 'Business meeting', NULL);
-
--- Sample session notes
-INSERT IGNORE INTO SessionNotes (SessionId, Note, NoteType, CreatedBy) VALUES
-(1, 'Customer has peanut allergy', 'Allergy', 'Admin'),
-(1, 'Birthday cake needed at 8 PM', 'Request', 'Admin'),
-(2, 'Customer prefers quiet table', 'Request', 'Admin'),
-(3, 'VIP customer - regular visitor', 'VIP', 'Admin');
-
--- Update RestaurantTables with current sessions
-UPDATE RestaurantTables rt
-JOIN TableSessions ts ON rt.Id = ts.TableId AND ts.IsActive = TRUE AND ts.Status != 'Closed'
-SET rt.CurrentSessionId = ts.Id, rt.Status = 'Occupied'
-WHERE ts.Status IN ('Occupied', 'Ordering', 'FoodServed', 'Payment');
-
 -- Create or replace view for complete table information
 DROP VIEW IF EXISTS TableWithSessionInfo;
 CREATE VIEW TableWithSessionInfo AS
@@ -127,12 +108,12 @@ SELECT
     s.EstimatedDuration,
     TIMESTAMPDIFF(MINUTE, s.StartTime, NOW()) AS MinutesOccupied,
     CASE 
-        WHEN s.Status = 'Occupied' THEN '🟡 Just Seated'
-        WHEN s.Status = 'Ordering' THEN '🔵 Taking Order'
-        WHEN s.Status = 'FoodServed' THEN '🟠 Dining'
-        WHEN s.Status = 'Payment' THEN '🟣 Ready to Pay'
-        WHEN s.Status = 'Cleaning' THEN '🔴 Cleaning'
-        ELSE '🟢 Available'
+        WHEN s.Status = 'Occupied' THEN ' Just Seated'
+        WHEN s.Status = 'Ordering' THEN ' Taking Order'
+        WHEN s.Status = 'FoodServed' THEN ' Dining'
+        WHEN s.Status = 'Payment' THEN ' Ready to Pay'
+        WHEN s.Status = 'Cleaning' THEN ' Cleaning'
+        ELSE ' Available'
     END AS StatusDisplay
 FROM RestaurantTables t
 LEFT JOIN Floors f ON t.FloorId = f.Id

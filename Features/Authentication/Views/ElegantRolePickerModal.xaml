@@ -5,7 +5,7 @@
              BackgroundColor="Transparent">
 
     <!-- Overlay Background -->
-    <Grid BackgroundColor="#80000000">
+    <Grid BackgroundColor="{StaticResource DialogOverlayColor}">
         <Grid.GestureRecognizers>
             <TapGestureRecognizer Tapped="OnCancelClicked"/>
         </Grid.GestureRecognizers>

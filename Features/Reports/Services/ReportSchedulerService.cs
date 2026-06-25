@@ -5,24 +5,28 @@ namespace POS_in_NET.Services;
 /// <summary>
 /// Background service that automatically generates daily, weekly, and monthly reports
 /// Runs on schedule:
-/// - Daily: Every day at 11:50 PM (for previous day report)
-/// - Weekly: Every Sunday at 11:50 PM
-/// - Monthly: 1st of month at 11:50 PM
+/// - Daily: Every day at 2:00 AM (generates previous day report, marks OrderWeb upload as pending)
+/// - Weekly: Every Sunday at 2:00 AM
+/// - Monthly: 1st of month at 2:00 AM
 /// Reports are stored in database for historical access (1+ years)
 /// </summary>
 public class ReportSchedulerService
 {
     private readonly ReportGenerationService _reportService;
+    private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
     private Timer? _reportTimer;
     private const int CHECK_INTERVAL_HOURS = 1; // Check every hour
-    private const int REPORT_HOUR = 23; // 11 PM
-    private const int REPORT_MINUTE = 50; // 50 minutes
+    private const int REPORT_HOUR = 2; // 2 AM
+    private const int REPORT_MINUTE = 0;
 
     public bool IsRunning { get; private set; }
 
-    public ReportSchedulerService(ReportGenerationService reportService)
+    public ReportSchedulerService(
+        ReportGenerationService reportService,
+        OrderWebDailyReportSyncService orderWebDailyReportSyncService)
     {
         _reportService = reportService;
+        _orderWebDailyReportSyncService = orderWebDailyReportSyncService;
     }
 
     /// <summary>
@@ -32,21 +36,40 @@ public class ReportSchedulerService
     {
         if (IsRunning) return;
 
-        Debug.WriteLine("🚀 Starting Report Scheduler...");
+        if (!TerminalRoleService.CanGenerateEndOfDayReports)
+        {
+            Debug.WriteLine("Report Scheduler skipped: end-of-day reports run on the mother terminal only.");
+            return;
+        }
+
+        Debug.WriteLine(" Starting Report Scheduler...");
 
         // Wait 30 seconds after app start before first check
         var initialDelay = TimeSpan.FromSeconds(30);
         var checkInterval = TimeSpan.FromHours(CHECK_INTERVAL_HOURS);
 
         _reportTimer = new Timer(
-            async _ => await CheckAndGenerateReportsAsync(),
+            _ =>
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await CheckAndGenerateReportsAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($" Report scheduler timer error: {ex.Message}");
+                    }
+                });
+            },
             null,
             initialDelay,
             checkInterval
         );
 
         IsRunning = true;
-        Debug.WriteLine($"✅ Report Scheduler started (checks every {CHECK_INTERVAL_HOURS}h, generates daily at {REPORT_HOUR}:{REPORT_MINUTE})");
+        Debug.WriteLine($" Report Scheduler started (checks every {CHECK_INTERVAL_HOURS}h, generates daily at {REPORT_HOUR}:{REPORT_MINUTE})");
     }
 
     /// <summary>
@@ -57,7 +80,7 @@ public class ReportSchedulerService
         _reportTimer?.Dispose();
         _reportTimer = null;
         IsRunning = false;
-        Debug.WriteLine("🛑 Report Scheduler stopped");
+        Debug.WriteLine(" Report Scheduler stopped");
     }
 
     /// <summary>
@@ -87,16 +110,16 @@ public class ReportSchedulerService
                 return;
             }
 
-            Debug.WriteLine($"⏱️ Report generation time reached ({REPORT_HOUR}:{REPORT_MINUTE}). Generating reports...");
+            Debug.WriteLine($"⏱ Report generation time reached ({REPORT_HOUR}:{REPORT_MINUTE}). Generating reports...");
             await GenerateAllReportsAsync(now);
 
             // Store last generation time
             Preferences.Set("LastReportGenerationDate", DateTime.Now.ToString("o"));
-            Debug.WriteLine("✅ Report generation completed and stored in database");
+            Debug.WriteLine(" Report generation completed and stored in database");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Report generation error: {ex.Message}");
+            Debug.WriteLine($" Report generation error: {ex.Message}");
         }
     }
 
@@ -110,14 +133,24 @@ public class ReportSchedulerService
             // Generate DAILY report for YESTERDAY (so today's report has complete yesterday's data)
             var yesterday = now.Date.AddDays(-1);
             await _reportService.GenerateDailyReportAsync(yesterday);
-            Debug.WriteLine($"✅ Daily report generated for {yesterday:yyyy-MM-dd}");
+            Debug.WriteLine($" Daily report generated for {yesterday:yyyy-MM-dd}");
+
+            try
+            {
+                var uploadResult = await _orderWebDailyReportSyncService.UploadScheduledAsync(yesterday);
+                Debug.WriteLine($" OrderWeb daily report pending: {uploadResult.Message}");
+            }
+            catch (Exception uploadEx)
+            {
+                Debug.WriteLine($" OrderWeb daily report pending flag failed: {uploadEx.Message}");
+            }
 
             // Generate WEEKLY report if today is Sunday (weekly reports are Mon-Sun)
             if (now.DayOfWeek == DayOfWeek.Sunday)
             {
                 var weekStart = now.Date.AddDays(-(int)now.DayOfWeek + 1); // Get Monday
                 await _reportService.GenerateWeeklyReportAsync(weekStart);
-                Debug.WriteLine($"✅ Weekly report generated for week starting {weekStart:yyyy-MM-dd}");
+                Debug.WriteLine($" Weekly report generated for week starting {weekStart:yyyy-MM-dd}");
             }
 
             // Generate MONTHLY report if today is 1st of month (for previous month)
@@ -125,12 +158,12 @@ public class ReportSchedulerService
             {
                 var previousMonthDate = now.AddMonths(-1);
                 await _reportService.GenerateMonthlyReportAsync(previousMonthDate.Year, previousMonthDate.Month);
-                Debug.WriteLine($"✅ Monthly report generated for {previousMonthDate:yyyy-MM}");
+                Debug.WriteLine($" Monthly report generated for {previousMonthDate:yyyy-MM}");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error during report generation: {ex.Message}\n{ex.StackTrace}");
+            Debug.WriteLine($" Error during report generation: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
     }
@@ -142,13 +175,13 @@ public class ReportSchedulerService
     {
         try
         {
-            Debug.WriteLine($"📋 Manually generating daily report for {date:yyyy-MM-dd}...");
+            Debug.WriteLine($" Manually generating daily report for {date:yyyy-MM-dd}...");
             await _reportService.GenerateDailyReportAsync(date);
-            Debug.WriteLine($"✅ Manual daily report generated successfully");
+            Debug.WriteLine($" Manual daily report generated successfully");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Manual report generation failed: {ex.Message}");
+            Debug.WriteLine($" Manual report generation failed: {ex.Message}");
             throw;
         }
     }
@@ -160,13 +193,13 @@ public class ReportSchedulerService
     {
         try
         {
-            Debug.WriteLine($"📋 Manually generating weekly report for week starting {weekStart:yyyy-MM-dd}...");
+            Debug.WriteLine($" Manually generating weekly report for week starting {weekStart:yyyy-MM-dd}...");
             await _reportService.GenerateWeeklyReportAsync(weekStart);
-            Debug.WriteLine($"✅ Manual weekly report generated successfully");
+            Debug.WriteLine($" Manual weekly report generated successfully");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Manual report generation failed: {ex.Message}");
+            Debug.WriteLine($" Manual report generation failed: {ex.Message}");
             throw;
         }
     }
@@ -178,13 +211,13 @@ public class ReportSchedulerService
     {
         try
         {
-            Debug.WriteLine($"📋 Manually generating monthly report for {year:0000}-{month:00}...");
+            Debug.WriteLine($" Manually generating monthly report for {year:0000}-{month:00}...");
             await _reportService.GenerateMonthlyReportAsync(year, month);
-            Debug.WriteLine($"✅ Manual monthly report generated successfully");
+            Debug.WriteLine($" Manual monthly report generated successfully");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Manual report generation failed: {ex.Message}");
+            Debug.WriteLine($" Manual report generation failed: {ex.Message}");
             throw;
         }
     }

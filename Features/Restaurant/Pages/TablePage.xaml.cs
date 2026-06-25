@@ -51,6 +51,7 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested += OnRefreshRequested;
+            AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
 
@@ -62,10 +63,26 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
+            AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
         }
 
         private async void OnRefreshRequested(object? sender, EventArgs e)
+        {
+            await RefreshTablesIfReadyAsync();
+        }
+
+        private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+        {
+            if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.TableLayout && e.Kind != AppDataChangeKind.All))
+            {
+                return;
+            }
+
+            await RefreshTablesIfReadyAsync();
+        }
+
+        private async Task RefreshTablesIfReadyAsync()
         {
             if ((DateTime.UtcNow - _lastSuccessfulLoadAt).TotalMilliseconds < 600)
             {
@@ -85,16 +102,16 @@ namespace POS_in_NET.Pages
             try
             {
                 _isLoadingTables = true;
-                System.Diagnostics.Debug.WriteLine("🔄 LoadTablesAsync START");
+                System.Diagnostics.Debug.WriteLine(" LoadTablesAsync START");
                 SetLoading(true);
 
-                System.Diagnostics.Debug.WriteLine("�📊 Loading floors...");
+                System.Diagnostics.Debug.WriteLine("� Loading floors...");
                 // Check if floors exist
                 var floorsTask = _floorService.GetAllFloorsAsync();
                 var tablesTask = _tableService.GetAllTablesAsync();
                 await Task.WhenAll(floorsTask, tablesTask);
                 var floors = floorsTask.Result;
-                System.Diagnostics.Debug.WriteLine($"📊 Loaded {floors.Count} floors");
+                System.Diagnostics.Debug.WriteLine($" Loaded {floors.Count} floors");
                 
                 bool hasFloors = floors.Count > 0;
 
@@ -104,28 +121,28 @@ namespace POS_in_NET.Pages
                     AddTableButton.IsEnabled = hasFloors;
                 });
 
-                System.Diagnostics.Debug.WriteLine("📊 Loading tables...");
+                System.Diagnostics.Debug.WriteLine(" Loading tables...");
                 // Load tables
                 var tables = tablesTask.Result;
-                System.Diagnostics.Debug.WriteLine($"📊 Loaded {tables.Count} tables from database");
+                System.Diagnostics.Debug.WriteLine($" Loaded {tables.Count} tables from database");
                 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     _tables.Clear();
                     foreach (var table in tables)
                     {
-                        System.Diagnostics.Debug.WriteLine($"   ➕ Adding table: {table.TableNumber} on {table.FloorName}");
+                        System.Diagnostics.Debug.WriteLine($"    Adding table: {table.TableNumber} on {table.FloorName}");
                         _tables.Add(table);
                     }
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ LoadTablesAsync COMPLETE - {_tables.Count} tables displayed in UI");
+                System.Diagnostics.Debug.WriteLine($" LoadTablesAsync COMPLETE - {_tables.Count} tables displayed in UI");
                 _lastSuccessfulLoadAt = DateTime.UtcNow;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading tables: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+                System.Diagnostics.Debug.WriteLine($" Error loading tables: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
                 
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
@@ -134,7 +151,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine("🏁 LoadTablesAsync FINALLY block");
+                System.Diagnostics.Debug.WriteLine(" LoadTablesAsync FINALLY block");
                 _isLoadingTables = false;
                 SetLoading(false);
             }
@@ -154,13 +171,13 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("🔀 Navigating to Floor Management...");
+                System.Diagnostics.Debug.WriteLine(" Navigating to Floor Management...");
                 await Shell.Current.GoToAsync("//floor");
-                System.Diagnostics.Debug.WriteLine("✅ Navigation successful");
+                System.Diagnostics.Debug.WriteLine(" Navigation successful");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Navigation error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Navigation error: {ex.Message}");
                 await ToastNotification.ShowAsync("Navigation Error", $"Could not navigate to Floor Management: {ex.Message}", NotificationType.Error, 4000);
             }
         }

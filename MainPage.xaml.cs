@@ -33,12 +33,12 @@ public partial class MainPage : ContentPage
 				
 				if (tablesCreated)
 				{
-					StatusLabel.Text += "\n✅ Database and tables ready!";
+					StatusLabel.Text += "\n Database and tables ready!";
 					TestDbBtn.Text = "Connection Successful!";
 				}
 				else
 				{
-					StatusLabel.Text += "\n❌ Failed to create tables";
+					StatusLabel.Text += "\n Failed to create tables";
 					TestDbBtn.Text = "Tables Creation Failed";
 				}
 			}

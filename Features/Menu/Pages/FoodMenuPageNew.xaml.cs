@@ -53,7 +53,7 @@ namespace POS_in_NET.Pages
         {
             base.OnAppearing();
             
-            System.Diagnostics.Debug.WriteLine("🎬 NEW Food Menu Page Loading");
+            System.Diagnostics.Debug.WriteLine(" NEW Food Menu Page Loading");
             
             // Initialize with empty collections
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -66,7 +66,7 @@ namespace POS_in_NET.Pages
                 CategoriesCollectionView.ItemsSource = _categories;
                 SubCategoriesCollectionView.ItemsSource = _subCategories;
                 NotesCollectionView.ItemsSource = _notes;
-                System.Diagnostics.Debug.WriteLine("✅ Page loaded with empty lists");
+                System.Diagnostics.Debug.WriteLine(" Page loaded with empty lists");
             });
             
             // Load items data immediately for Menu Items tab (default visible)
@@ -77,7 +77,7 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("📊 Loading items...");
+                System.Diagnostics.Debug.WriteLine(" Loading items...");
                 // Commented out to start with empty list
                 // var items = await _menuItemService.GetAllItemsAsync();
                 
@@ -89,12 +89,12 @@ namespace POS_in_NET.Pages
                     //     _items.Add(item);
                     // }
                     ItemsCollectionView.ItemsSource = _items;
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_items.Count} items");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_items.Count} items");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading data: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading data: {ex.Message}");
             }
         }
 
@@ -110,12 +110,12 @@ namespace POS_in_NET.Pages
                     {
                         _items.Add(item);
                     }
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_items.Count} items");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_items.Count} items");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading items: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading items: {ex.Message}");
             }
         }
 
@@ -136,12 +136,12 @@ namespace POS_in_NET.Pages
                     {
                         _categories.Add(category);
                     }
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_categories.Count} categories");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_categories.Count} categories");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading categories: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading categories: {ex.Message}");
             }
         }
 
@@ -162,7 +162,7 @@ namespace POS_in_NET.Pages
                     if (parent != null)
                     {
                         subCategory.ParentCategoryName = parent.Name;
-                        System.Diagnostics.Debug.WriteLine($"✅ Sub-category '{subCategory.Name}' → Parent: '{parent.Name}'");
+                        System.Diagnostics.Debug.WriteLine($" Sub-category '{subCategory.Name}' → Parent: '{parent.Name}'");
                     }
                 }
                 
@@ -173,12 +173,12 @@ namespace POS_in_NET.Pages
                     {
                         _subCategories.Add(subCategory);
                     }
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_subCategories.Count} sub-categories");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_subCategories.Count} sub-categories");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading sub-categories: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading sub-categories: {ex.Message}");
             }
         }
 
@@ -199,12 +199,12 @@ namespace POS_in_NET.Pages
                     }
                     
                     UpdateNoteStats();
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_notes.Count} notes");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_notes.Count} notes");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading notes: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading notes: {ex.Message}");
             }
         }
 
@@ -290,37 +290,37 @@ namespace POS_in_NET.Pages
         // Tab Button Handlers
         private void OnItemsButtonClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🔵 ITEMS BUTTON CLICKED!");
+            System.Diagnostics.Debug.WriteLine(" ITEMS BUTTON CLICKED!");
             ActivateTab("Items");
         }
 
         private void OnCategoriesButtonClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🟢 CATEGORIES BUTTON CLICKED!");
+            System.Diagnostics.Debug.WriteLine(" CATEGORIES BUTTON CLICKED!");
             ActivateTab("Categories");
         }
 
         private void OnSubCategoriesButtonClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🟡 SUB-CATEGORIES BUTTON CLICKED!");
+            System.Diagnostics.Debug.WriteLine(" SUB-CATEGORIES BUTTON CLICKED!");
             ActivateTab("SubCategories");
         }
 
         private void OnNotesButtonClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🟠 NOTES BUTTON CLICKED!");
+            System.Diagnostics.Debug.WriteLine(" NOTES BUTTON CLICKED!");
             ActivateTab("Notes");
         }
 
         private void OnMealDealsButtonClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🔴 MEAL DEALS BUTTON CLICKED!");
+            System.Diagnostics.Debug.WriteLine(" MEAL DEALS BUTTON CLICKED!");
             ActivateTab("MealDeals");
         }
 
         private void ActivateTab(string tabName)
         {
-            System.Diagnostics.Debug.WriteLine($"🔄 Activating tab: {tabName}");
+            System.Diagnostics.Debug.WriteLine($" Activating tab: {tabName}");
 
             // Hide all content
             ItemsContent.IsVisible = false;
@@ -361,7 +361,7 @@ namespace POS_in_NET.Pages
                     break;
             }
 
-            System.Diagnostics.Debug.WriteLine($"✅ Tab activated: {tabName}");
+            System.Diagnostics.Debug.WriteLine($" Tab activated: {tabName}");
         }
 
         private void ResetAllButtons()
@@ -393,7 +393,7 @@ namespace POS_in_NET.Pages
         // Item Actions
         private async void OnAddItemClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("➕ Add Item clicked");
+            System.Diagnostics.Debug.WriteLine(" Add Item clicked");
             var result = await AddItemDialog.ShowAsync();
             if (result)
             {
@@ -403,7 +403,7 @@ namespace POS_in_NET.Pages
 
         private async void OnEditItemClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("✏️ Edit Item clicked");
+            System.Diagnostics.Debug.WriteLine(" Edit Item clicked");
             if (sender is Button button && button.CommandParameter is FoodMenuItem item)
             {
                 var result = await AddItemDialog.ShowAsync(item);
@@ -416,7 +416,7 @@ namespace POS_in_NET.Pages
 
         private async void OnDeleteItemClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🗑️ Delete Item clicked");
+            System.Diagnostics.Debug.WriteLine(" Delete Item clicked");
             if (sender is Button button && button.CommandParameter is FoodMenuItem item)
             {
                 bool confirm = await DisplayAlert("Confirm Delete", 
@@ -442,7 +442,7 @@ namespace POS_in_NET.Pages
         // Category Actions
         private async void OnAddCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("➕ Add Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Add Category clicked");
             var result = await AddCategoryDialogView.ShowAsync();
             if (result)
             {
@@ -452,7 +452,7 @@ namespace POS_in_NET.Pages
 
         private async void OnEditCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("✏️ Edit Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Edit Category clicked");
             if (sender is Button button && button.CommandParameter is MenuCategory category)
             {
                 var result = await AddCategoryDialogView.ShowAsync(category);
@@ -465,7 +465,7 @@ namespace POS_in_NET.Pages
 
         private async void OnDeleteCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🗑️ Delete Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Delete Category clicked");
             if (sender is Button button && button.CommandParameter is MenuCategory category)
             {
                 bool confirm = await DisplayAlert("Confirm Delete", 
@@ -491,7 +491,7 @@ namespace POS_in_NET.Pages
         // Sub-Category Actions
         private async void OnAddSubCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("➕ Add Sub-Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Add Sub-Category clicked");
             var result = await AddSubCategoryDialogView.ShowAsync();
             if (result)
             {
@@ -501,7 +501,7 @@ namespace POS_in_NET.Pages
 
         private async void OnEditSubCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("✏️ Edit Sub-Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Edit Sub-Category clicked");
             if (sender is Button button && button.CommandParameter is MenuCategory subCategory)
             {
                 var result = await AddSubCategoryDialogView.ShowAsync(subCategory);
@@ -514,7 +514,7 @@ namespace POS_in_NET.Pages
 
         private async void OnDeleteSubCategoryClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🗑️ Delete Sub-Category clicked");
+            System.Diagnostics.Debug.WriteLine(" Delete Sub-Category clicked");
             if (sender is Button button && button.CommandParameter is MenuCategory subCategory)
             {
                 bool confirm = await DisplayAlert("Confirm Delete", 
@@ -540,7 +540,7 @@ namespace POS_in_NET.Pages
         // Note Actions
         private async void OnAddNoteClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("➕ Add Note clicked");
+            System.Diagnostics.Debug.WriteLine(" Add Note clicked");
             var result = await AddNoteDialogView.ShowAsync();
             if (result)
             {
@@ -550,7 +550,7 @@ namespace POS_in_NET.Pages
 
         private async void OnEditNoteClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("✏️ Edit Note clicked");
+            System.Diagnostics.Debug.WriteLine(" Edit Note clicked");
             if (sender is Button button && button.CommandParameter is PredefinedNote note)
             {
                 var result = await AddNoteDialogView.ShowAsync(note);
@@ -563,7 +563,7 @@ namespace POS_in_NET.Pages
 
         private async void OnDeleteNoteClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🗑️ Delete Note clicked");
+            System.Diagnostics.Debug.WriteLine(" Delete Note clicked");
             if (sender is Button button && button.CommandParameter is PredefinedNote note)
             {
                 bool confirm = await DisplayAlert("Confirm Delete", 
@@ -588,7 +588,7 @@ namespace POS_in_NET.Pages
 
         private async void OnToggleNoteActiveClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🔄 Toggle Note Active clicked");
+            System.Diagnostics.Debug.WriteLine(" Toggle Note Active clicked");
             if (sender is Button button && button.CommandParameter is PredefinedNote note)
             {
                 try
@@ -617,7 +617,7 @@ namespace POS_in_NET.Pages
 
         private async void OnDuplicateNoteClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("📋 Duplicate Note clicked");
+            System.Diagnostics.Debug.WriteLine(" Duplicate Note clicked");
             if (sender is Button button && button.CommandParameter is PredefinedNote note)
             {
                 try
@@ -670,7 +670,7 @@ namespace POS_in_NET.Pages
                         // Update UI
                         _categories.Move(currentIndex, currentIndex - 1);
                         
-                        System.Diagnostics.Debug.WriteLine($"⬆️ Moved '{category.Name}' up");
+                        System.Diagnostics.Debug.WriteLine($"⬆ Moved '{category.Name}' up");
                     }
                     catch (Exception ex)
                     {
@@ -704,7 +704,7 @@ namespace POS_in_NET.Pages
                         // Update UI
                         _categories.Move(currentIndex, currentIndex + 1);
                         
-                        System.Diagnostics.Debug.WriteLine($"⬇️ Moved '{category.Name}' down");
+                        System.Diagnostics.Debug.WriteLine($"⬇ Moved '{category.Name}' down");
                     }
                     catch (Exception ex)
                     {
@@ -739,7 +739,7 @@ namespace POS_in_NET.Pages
                         // Update UI
                         _subCategories.Move(currentIndex, currentIndex - 1);
                         
-                        System.Diagnostics.Debug.WriteLine($"⬆️ Moved '{subCategory.Name}' up");
+                        System.Diagnostics.Debug.WriteLine($"⬆ Moved '{subCategory.Name}' up");
                     }
                     catch (Exception ex)
                     {
@@ -773,7 +773,7 @@ namespace POS_in_NET.Pages
                         // Update UI
                         _subCategories.Move(currentIndex, currentIndex + 1);
                         
-                        System.Diagnostics.Debug.WriteLine($"⬇️ Moved '{subCategory.Name}' down");
+                        System.Diagnostics.Debug.WriteLine($"⬇ Moved '{subCategory.Name}' down");
                     }
                     catch (Exception ex)
                     {
@@ -786,19 +786,19 @@ namespace POS_in_NET.Pages
         // Meal Deal Actions
         private void OnAddMealDealClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("➕ Add Meal Deal clicked");
+            System.Diagnostics.Debug.WriteLine(" Add Meal Deal clicked");
             _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Add Meal Deal", "Add meal deal functionality coming soon");
         }
 
         private void OnEditMealDealClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("✏️ Edit Meal Deal clicked");
+            System.Diagnostics.Debug.WriteLine(" Edit Meal Deal clicked");
             _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Edit Meal Deal", "Edit meal deal functionality coming soon");
         }
 
         private void OnDeleteMealDealClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("🗑️ Delete Meal Deal clicked");
+            System.Diagnostics.Debug.WriteLine(" Delete Meal Deal clicked");
             _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delete Meal Deal", "Delete meal deal functionality coming soon");
         }
     }

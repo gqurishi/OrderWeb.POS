@@ -20,11 +20,35 @@ public class LoyaltyService
     public LoyaltyService(DatabaseService databaseService)
     {
         _httpClient = new HttpClient();
-        _httpClient.Timeout = TimeSpan.FromSeconds(30); // Increased timeout for API calls
+        _httpClient.Timeout = TimeSpan.FromSeconds(30);
         _databaseService = databaseService;
-        
-        // Initialize with cloud settings
-        Task.Run(async () => await InitializeAsync()).Wait();
+    }
+
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    private bool _initialized;
+
+    private async Task EnsureInitializedAsync()
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        await _initLock.WaitAsync();
+        try
+        {
+            if (_initialized)
+            {
+                return;
+            }
+
+            await InitializeAsync();
+            _initialized = true;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
     
     /// <summary>
@@ -32,7 +56,8 @@ public class LoyaltyService
     /// </summary>
     public async Task ReinitializeAsync()
     {
-        await InitializeAsync();
+        _initialized = false;
+        await EnsureInitializedAsync();
     }
 
     private async Task InitializeAsync()
@@ -45,7 +70,7 @@ public class LoyaltyService
             _baseUrl = NormalizeApiBaseUrl(
                 config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", "")));
 
-            System.Diagnostics.Debug.WriteLine($"🔧 LoyaltyService Configuration:");
+            System.Diagnostics.Debug.WriteLine($" LoyaltyService Configuration:");
             System.Diagnostics.Debug.WriteLine($"   API Base: {_baseUrl}");
             System.Diagnostics.Debug.WriteLine($"   Tenant: {_tenantId}");
             System.Diagnostics.Debug.WriteLine($"   API Key: {(_apiKey?.Length > 0 ? _apiKey.Substring(0, Math.Min(20, _apiKey.Length)) + "..." : "NOT SET")}");
@@ -57,16 +82,16 @@ public class LoyaltyService
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                 _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 
-                System.Diagnostics.Debug.WriteLine($"✅ LoyaltyService initialized successfully");
+                System.Diagnostics.Debug.WriteLine($" LoyaltyService initialized successfully");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ LoyaltyService: API Key is missing! Please configure in Cloud Settings.");
+                System.Diagnostics.Debug.WriteLine($" LoyaltyService: API Key is missing! Please configure in Cloud Settings.");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Failed to initialize LoyaltyService: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Failed to initialize LoyaltyService: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"   Stack: {ex.StackTrace}");
         }
     }
@@ -79,6 +104,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<LoyaltyLookupResponse> SearchCustomerAsync(string phone)
     {
+        await EnsureInitializedAsync();
         try
         {
             // Remove any formatting from phone number
@@ -86,7 +112,7 @@ public class LoyaltyService
 
             // Use POS API endpoint as per documentation
             var url = $"{_baseUrl}/pos/loyalty-lookup?tenant={_tenantId}&phone={phone}";
-            System.Diagnostics.Debug.WriteLine($"🔍 Searching customer (POS API): {url}");
+            System.Diagnostics.Debug.WriteLine($" Searching customer (POS API): {url}");
             System.Diagnostics.Debug.WriteLine($"   Bearer Token: {_apiKey?.Substring(0, 20)}...");
 
             var response = await _httpClient.GetAsync(url);
@@ -102,23 +128,23 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Customer found: {result?.Customer?.CustomerName} - {result?.Customer?.PointsBalance} pts");
+                System.Diagnostics.Debug.WriteLine($" Customer found: {result?.Customer?.CustomerName} - {result?.Customer?.PointsBalance} pts");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Customer not found: {phone}");
+                System.Diagnostics.Debug.WriteLine($" Customer not found: {phone}");
                 return new LoyaltyLookupResponse { Success = false, Error = "Customer not found" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ API Error: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" API Error: {response.StatusCode} - {content}");
                 return new LoyaltyLookupResponse { Success = false, Error = $"API Error: {response.StatusCode}" };
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in SearchCustomerAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in SearchCustomerAsync: {ex.Message}");
             return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
         }
     }
@@ -128,6 +154,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<LoyaltyLookupResponse> CreateCustomerAsync(string phone, string name, string? email = null)
     {
+        await EnsureInitializedAsync();
         try
         {
             phone = CleanPhoneNumber(phone);
@@ -144,7 +171,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"➕ Creating customer: {name} - {phone}");
+            System.Diagnostics.Debug.WriteLine($" Creating customer: {name} - {phone}");
             System.Diagnostics.Debug.WriteLine($"   URL: {url}");
             System.Diagnostics.Debug.WriteLine($"   Request: {json}");
 
@@ -161,18 +188,18 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Customer created: {result?.Customer?.LoyaltyCardNumber}");
+                System.Diagnostics.Debug.WriteLine($" Customer created: {result?.Customer?.LoyaltyCardNumber}");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to create customer: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" Failed to create customer: {response.StatusCode} - {content}");
                 return new LoyaltyLookupResponse { Success = false, Error = $"Failed to create customer: {response.StatusCode}" };
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in CreateCustomerAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in CreateCustomerAsync: {ex.Message}");
             return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
         }
     }
@@ -183,6 +210,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<LoyaltyLookupResponse> AddPointsAsync(string phone, int points, string reason)
     {
+        await EnsureInitializedAsync();
         try
         {
             phone = CleanPhoneNumber(phone);
@@ -200,7 +228,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"💳 ADD {points} points for {phone}");
+            System.Diagnostics.Debug.WriteLine($" ADD {points} points for {phone}");
             System.Diagnostics.Debug.WriteLine($"   URL: {url}");
             System.Diagnostics.Debug.WriteLine($"   Request: {json}");
 
@@ -217,18 +245,18 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Points added: New balance = {result?.Customer?.PointsBalance} pts");
+                System.Diagnostics.Debug.WriteLine($" Points added: New balance = {result?.Customer?.PointsBalance} pts");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to add points: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" Failed to add points: {response.StatusCode} - {content}");
                 return new LoyaltyLookupResponse { Success = false, Error = $"Failed to add points: {content}" };
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in AddPointsAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in AddPointsAsync: {ex.Message}");
             return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
         }
     }
@@ -239,6 +267,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<LoyaltyLookupResponse> RedeemPointsAsync(string phone, int points, string reason)
     {
+        await EnsureInitializedAsync();
         try
         {
             phone = CleanPhoneNumber(phone);
@@ -256,7 +285,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"💳 REDEEM {points} points for {phone}");
+            System.Diagnostics.Debug.WriteLine($" REDEEM {points} points for {phone}");
             System.Diagnostics.Debug.WriteLine($"   URL: {url}");
             System.Diagnostics.Debug.WriteLine($"   Request: {json}");
 
@@ -273,18 +302,18 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Points redeemed: New balance = {result?.Customer?.PointsBalance} pts");
+                System.Diagnostics.Debug.WriteLine($" Points redeemed: New balance = {result?.Customer?.PointsBalance} pts");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to redeem points: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" Failed to redeem points: {response.StatusCode} - {content}");
                 return new LoyaltyLookupResponse { Success = false, Error = $"Failed to redeem points: {content}" };
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in RedeemPointsAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in RedeemPointsAsync: {ex.Message}");
             return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
         }
     }
@@ -298,6 +327,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<GiftCardLookupResponse> CheckGiftCardBalanceAsync(string cardNumber)
     {
+        await EnsureInitializedAsync();
         try
         {
             await InitializeAsync();
@@ -305,7 +335,7 @@ public class LoyaltyService
             // Verify configuration
             if (string.IsNullOrWhiteSpace(_apiKey) || string.IsNullOrWhiteSpace(_tenantId))
             {
-                System.Diagnostics.Debug.WriteLine("❌ Gift card check failed: Missing API configuration");
+                System.Diagnostics.Debug.WriteLine(" Gift card check failed: Missing API configuration");
                 return new GiftCardLookupResponse 
                 { 
                     Success = false, 
@@ -318,7 +348,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"🎁 Checking gift card: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine($" Checking gift card: {cardNumber}");
             System.Diagnostics.Debug.WriteLine($"   URL: {url}");
             System.Diagnostics.Debug.WriteLine($"   Request: {json}");
             System.Diagnostics.Debug.WriteLine($"   API Key: {_apiKey?.Substring(0, Math.Min(20, _apiKey.Length))}...");
@@ -336,12 +366,12 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Gift card balance: £{result?.GiftCard?.Balance:F2}");
+                System.Diagnostics.Debug.WriteLine($" Gift card balance: £{result?.GiftCard?.Balance:F2}");
                 return result ?? new GiftCardLookupResponse { Success = false, Error = "Invalid response" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Gift card lookup failed: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($" Gift card lookup failed: {response.StatusCode}");
                 
                 // Try to parse error from response
                 string errorMessage = "Gift card not found";
@@ -370,7 +400,7 @@ public class LoyaltyService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in CheckGiftCardBalanceAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in CheckGiftCardBalanceAsync: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"   Stack Trace: {ex.StackTrace}");
             return new GiftCardLookupResponse { Success = false, Error = $"Error: {ex.Message}" };
         }
@@ -381,6 +411,7 @@ public class LoyaltyService
     /// </summary>
     public async Task<GiftCardRedeemResponse> RedeemGiftCardAsync(string cardNumber, decimal amount, string description)
     {
+        await EnsureInitializedAsync();
         try
         {
             await InitializeAsync();
@@ -405,7 +436,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($"💰 Redeeming £{amount:F2} from gift card: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine($" Redeeming £{amount:F2} from gift card: {cardNumber}");
 
             var response = await _httpClient.PostAsync(url, httpContent);
             var content = await response.Content.ReadAsStringAsync();
@@ -417,7 +448,7 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"✅ Gift card redeemed: Remaining balance = £{result?.RemainingBalance:F2}");
+                System.Diagnostics.Debug.WriteLine($" Gift card redeemed: Remaining balance = £{result?.RemainingBalance:F2}");
                 return result ?? new GiftCardRedeemResponse { Success = false, Error = "Invalid response" };
             }
             else
@@ -427,13 +458,13 @@ public class LoyaltyService
                     PropertyNameCaseInsensitive = true
                 });
 
-                System.Diagnostics.Debug.WriteLine($"❌ Failed to redeem gift card: {errorResponse?.Error}");
+                System.Diagnostics.Debug.WriteLine($" Failed to redeem gift card: {errorResponse?.Error}");
                 return errorResponse ?? new GiftCardRedeemResponse { Success = false, Error = "Failed to redeem gift card" };
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Exception in RedeemGiftCardAsync: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Exception in RedeemGiftCardAsync: {ex.Message}");
             return new GiftCardRedeemResponse { Success = false, Error = ex.Message };
         }
     }
@@ -460,7 +491,7 @@ public class LoyaltyService
         {
             // Remove '44' and add '0' prefix
             digitsOnly = "0" + digitsOnly.Substring(2);
-            System.Diagnostics.Debug.WriteLine($"📞 Normalized UK phone: +44 → 0 format: {digitsOnly}");
+            System.Diagnostics.Debug.WriteLine($" Normalized UK phone: +44 → 0 format: {digitsOnly}");
         }
 
         return digitsOnly;

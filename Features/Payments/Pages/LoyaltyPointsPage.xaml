@@ -97,7 +97,7 @@
                         </Grid>
                         
                         <!-- Debug Test Connection Button -->
-                        <Button Text="🔧 Test API Connection"
+                        <Button Text="Test API Connection"
                                 BackgroundColor="#F59E0B"
                                 TextColor="White"
                                 FontAttributes="Bold"
@@ -385,7 +385,7 @@
                                TextColor="#1F2937" />
                         
                         <Button Grid.Column="1"
-                                Text="✕"
+                                Text="X"
                                 FontSize="24"
                                 TextColor="#6B7280"
                                 BackgroundColor="Transparent"
@@ -463,13 +463,13 @@
                     <!-- Header with Close Button -->
                     <Grid ColumnDefinitions="*,Auto">
                         <Label Grid.Column="0"
-                               Text="➕ Add New Customer" 
+                               Text="Add New Customer" 
                                FontSize="28"
                                FontAttributes="Bold"
                                TextColor="#10B981" />
                         
                         <Button Grid.Column="1"
-                                Text="✕"
+                                Text="X"
                                 FontSize="24"
                                 TextColor="#6B7280"
                                 BackgroundColor="Transparent"
@@ -598,7 +598,7 @@
                             StrokeShape="RoundRectangle 8"
                             Padding="16,12">
                         <VerticalStackLayout Spacing="4">
-                            <Label Text="ℹ️ Customer Information" 
+                            <Label Text="Customer Information" 
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1E40AF" />

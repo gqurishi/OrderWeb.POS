@@ -106,7 +106,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error getting tables: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error getting tables: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
             }
 
@@ -226,7 +226,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error getting tables by floor: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error getting tables by floor: {ex.Message}");
             }
 
             return tables;
@@ -287,7 +287,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error getting table by ID: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error getting table by ID: {ex.Message}");
             }
 
             return null;
@@ -320,7 +320,7 @@ namespace POS_in_NET.Services
                         using var alterCmd2 = new MySqlCommand(alterQuery2, connection);
                         await alterCmd2.ExecuteNonQueryAsync();
                         
-                        System.Diagnostics.Debug.WriteLine("✅ Position columns created successfully");
+                        System.Diagnostics.Debug.WriteLine(" Position columns created successfully");
                     }
                     catch (Exception alterEx)
                     {
@@ -345,17 +345,25 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"✅ Table position updated: ID={tableId} to ({positionX}, {positionY})");
+                    await TerminalEventSyncService.PublishAsync(
+                        connection,
+                        AppDataChangeKind.TableLayout,
+                        "table",
+                        tableId.ToString(),
+                        null,
+                        new { action = "position_updated", positionX, positionY });
+
+                    System.Diagnostics.Debug.WriteLine($" Table position updated: ID={tableId} to ({positionX}, {positionY})");
                     return true;
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ No rows affected for table ID={tableId}");
+                    System.Diagnostics.Debug.WriteLine($" No rows affected for table ID={tableId}");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error updating table position: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error updating table position: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
             }
 
@@ -392,7 +400,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error checking table number uniqueness: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error checking table number uniqueness: {ex.Message}");
                 return false;
             }
         }
@@ -441,22 +449,30 @@ namespace POS_in_NET.Services
 
                 var newId = Convert.ToInt32(await command.ExecuteScalarAsync());
 
-                System.Diagnostics.Debug.WriteLine($"✅ Table created: {tableNumber} on floor ID {floorId} (ID: {newId}) with design: {tableDesignIcon}");
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "table",
+                    newId.ToString(),
+                    null,
+                    new { action = "created", tableNumber, floorId });
+
+                System.Diagnostics.Debug.WriteLine($" Table created: {tableNumber} on floor ID {floorId} (ID: {newId}) with design: {tableDesignIcon}");
                 return (true, $"Table '{tableNumber}' created successfully", newId);
             }
             catch (MySqlException ex) when (ex.Number == 1062)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Duplicate table error creating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Duplicate table error creating table: {ex.Message}");
                 return (false, $"Table '{tableNumber}' already exists on the selected floor", null);
             }
             catch (MySqlException ex) when (ex.Number == 1452)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Foreign key error creating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Foreign key error creating table: {ex.Message}");
                 return (false, "Selected floor does not exist", null);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error creating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error creating table: {ex.Message}");
                 return (false, $"Error creating table: {ex.Message}", null);
             }
         }
@@ -514,7 +530,15 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"✅ Table updated: {tableNumber} (ID: {id}) with design: {tableDesignIcon}");
+                    await TerminalEventSyncService.PublishAsync(
+                        connection,
+                        AppDataChangeKind.TableLayout,
+                        "table",
+                        id.ToString(),
+                        null,
+                        new { action = "updated", tableNumber, floorId, status = status.ToString() });
+
+                    System.Diagnostics.Debug.WriteLine($" Table updated: {tableNumber} (ID: {id}) with design: {tableDesignIcon}");
                     return (true, $"Table '{tableNumber}' updated successfully");
                 }
                 else
@@ -524,17 +548,17 @@ namespace POS_in_NET.Services
             }
             catch (MySqlException ex) when (ex.Number == 1062)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Duplicate table error updating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Duplicate table error updating table: {ex.Message}");
                 return (false, $"Table '{tableNumber}' already exists on the selected floor");
             }
             catch (MySqlException ex) when (ex.Number == 1452)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Foreign key error updating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Foreign key error updating table: {ex.Message}");
                 return (false, "Selected floor does not exist");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error updating table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error updating table: {ex.Message}");
                 return (false, $"Error updating table: {ex.Message}");
             }
         }
@@ -558,7 +582,15 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"✅ Table deleted (ID: {id})");
+                    await TerminalEventSyncService.PublishAsync(
+                        connection,
+                        AppDataChangeKind.TableLayout,
+                        "table",
+                        id.ToString(),
+                        null,
+                        new { action = "deleted" });
+
+                    System.Diagnostics.Debug.WriteLine($" Table deleted (ID: {id})");
                     return (true, "Table deleted successfully");
                 }
                 else
@@ -568,7 +600,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error deleting table: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error deleting table: {ex.Message}");
                 return (false, $"Error deleting table: {ex.Message}");
             }
         }
@@ -606,7 +638,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error getting table statistics: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error getting table statistics: {ex.Message}");
             }
 
             return (0, 0, 0, 0);
@@ -625,7 +657,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error checking floors existence: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error checking floors existence: {ex.Message}");
                 return false;
             }
         }

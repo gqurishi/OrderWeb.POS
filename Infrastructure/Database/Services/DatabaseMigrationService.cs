@@ -15,10 +15,10 @@ public class DatabaseMigrationService
     public DatabaseMigrationService()
     {
         // Old database connection
-        _oldConnectionString = "Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;";
+        _oldConnectionString = TerminalConfigurationService.GetPosConnectionString();
         
         // New database connection
-        _newConnectionString = "Server=localhost;Database=restaurant_local;Uid=root;Pwd=root;Port=3306;";
+        _newConnectionString = TerminalConfigurationService.GetPosConnectionString(databaseName: "restaurant_local");
     }
 
     /// <summary>
@@ -28,7 +28,7 @@ public class DatabaseMigrationService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine("🚀 Starting database migration from Pos-net to restaurant_local...");
+            System.Diagnostics.Debug.WriteLine(" Starting database migration from Pos-net to restaurant_local...");
 
             // Step 1: Create new database
             await CreateNewDatabaseAsync();
@@ -45,24 +45,24 @@ public class DatabaseMigrationService
             // Step 4.5: Create reporting views
             await CreateReportingViewsAsync();
 
-            // Step 5: Insert default data
-            await InsertDefaultDataAsync();
+            // Step 5: Ensure production defaults only
+            await EnsureProductionDefaultsAsync();
 
-            System.Diagnostics.Debug.WriteLine("✅ Database migration completed successfully!");
-            System.Diagnostics.Debug.WriteLine("📊 New database 'restaurant_local' is ready with comprehensive restaurant management structure");
+            System.Diagnostics.Debug.WriteLine(" Database migration completed successfully!");
+            System.Diagnostics.Debug.WriteLine(" New database 'restaurant_local' is ready with comprehensive restaurant management structure");
             
             return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Database migration failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Database migration failed: {ex.Message}");
             return false;
         }
     }
 
     private async Task CreateNewDatabaseAsync()
     {
-        var connectionStringWithoutDb = "Server=localhost;Uid=root;Pwd=root;Port=3306;";
+        var connectionStringWithoutDb = TerminalConfigurationService.GetPosConnectionString(includeDatabase: false, pooled: false);
         
         using var connection = new MySqlConnection(connectionStringWithoutDb);
         await connection.OpenAsync();
@@ -75,7 +75,7 @@ public class DatabaseMigrationService
         using var command = new MySqlCommand(createDbCommand, connection);
         await command.ExecuteNonQueryAsync();
         
-        System.Diagnostics.Debug.WriteLine("✅ Created database: restaurant_local");
+        System.Diagnostics.Debug.WriteLine(" Created database: restaurant_local");
     }
 
     private async Task CreateNewTableStructureAsync()
@@ -425,13 +425,13 @@ public class DatabaseMigrationService
         {
             using var command = new MySqlCommand(sql, connection);
             await command.ExecuteNonQueryAsync();
-            System.Diagnostics.Debug.WriteLine($"✅ Created table: {tableName}");
+            System.Diagnostics.Debug.WriteLine($" Created table: {tableName}");
         }
     }
 
     private async Task MigrateExistingDataAsync()
     {
-        System.Diagnostics.Debug.WriteLine("📦 Migrating existing data...");
+        System.Diagnostics.Debug.WriteLine(" Migrating existing data...");
 
         // Migrate Users to Staff
         await MigrateUsersToStaffAsync();
@@ -501,11 +501,11 @@ public class DatabaseMigrationService
                 await insertCommand.ExecuteNonQueryAsync();
             }
 
-            System.Diagnostics.Debug.WriteLine($"✅ Migrated {users.Count} users to staff table");
+            System.Diagnostics.Debug.WriteLine($" Migrated {users.Count} users to staff table");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error migrating users: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error migrating users: {ex.Message}");
         }
     }
 
@@ -607,11 +607,11 @@ public class DatabaseMigrationService
                 await insertCommand.ExecuteNonQueryAsync();
             }
 
-            System.Diagnostics.Debug.WriteLine($"✅ Migrated {orders.Count} orders to online_orders table");
+            System.Diagnostics.Debug.WriteLine($" Migrated {orders.Count} orders to online_orders table");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error migrating orders: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error migrating orders: {ex.Message}");
         }
     }
 
@@ -691,30 +691,30 @@ public class DatabaseMigrationService
                 await insertCommand.ExecuteNonQueryAsync();
             }
 
-            System.Diagnostics.Debug.WriteLine($"✅ Migrated {items.Count} order items to online_order_items table");
+            System.Diagnostics.Debug.WriteLine($" Migrated {items.Count} order items to online_order_items table");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error migrating order items: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error migrating order items: {ex.Message}");
         }
     }
 
     private async Task MigrateSettingsAsync()
     {
         await CopyTableData("settings", "settings");
-        System.Diagnostics.Debug.WriteLine("✅ Migrated settings table");
+        System.Diagnostics.Debug.WriteLine(" Migrated settings table");
     }
 
     private async Task MigrateCloudConfigAsync()
     {
         await CopyTableData("cloud_config", "cloud_config");
-        System.Diagnostics.Debug.WriteLine("✅ Migrated cloud_config table");
+        System.Diagnostics.Debug.WriteLine(" Migrated cloud_config table");
     }
 
     private async Task MigrateBusinessInfoAsync()
     {
         await CopyTableData("business_info", "business_info");
-        System.Diagnostics.Debug.WriteLine("✅ Migrated business_info table");
+        System.Diagnostics.Debug.WriteLine(" Migrated business_info table");
     }
 
     private async Task CopyTableData(string sourceTable, string targetTable)
@@ -753,7 +753,7 @@ public class DatabaseMigrationService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error copying {sourceTable}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error copying {sourceTable}: {ex.Message}");
         }
     }
 
@@ -803,11 +803,11 @@ public class DatabaseMigrationService
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ Index creation warning: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Index creation warning: {ex.Message}");
             }
         }
 
-        System.Diagnostics.Debug.WriteLine("✅ Created performance indexes");
+        System.Diagnostics.Debug.WriteLine(" Created performance indexes");
     }
 
     private async Task CreateReportingViewsAsync()
@@ -857,39 +857,23 @@ public class DatabaseMigrationService
         {
             using var viewCommand = new MySqlCommand(createVatReportViewSql, connection);
             await viewCommand.ExecuteNonQueryAsync();
-            System.Diagnostics.Debug.WriteLine("✅ Created reporting view: vat_report_by_date_order_type");
+            System.Diagnostics.Debug.WriteLine(" Created reporting view: vat_report_by_date_order_type");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Reporting view creation warning: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Reporting view creation warning: {ex.Message}");
         }
     }
 
-    private async Task InsertDefaultDataAsync()
+    private async Task EnsureProductionDefaultsAsync()
     {
         using var connection = new MySqlConnection(_newConnectionString);
         await connection.OpenAsync();
 
-        // Insert default menu categories and sample items
-        var defaultMenuItems = @"
-            INSERT IGNORE INTO menu_items (item_code, name, description, category, price, is_available) VALUES
-            ('BURGER001', 'Classic Burger', 'Beef patty with lettuce, tomato, onion', 'Burgers', 12.99, TRUE),
-            ('PIZZA001', 'Margherita Pizza', 'Fresh mozzarella, tomato sauce, basil', 'Pizza', 14.99, TRUE),
-            ('DRINK001', 'Coca Cola', 'Classic cola drink', 'Beverages', 2.99, TRUE),
-            ('FRIES001', 'French Fries', 'Golden crispy fries', 'Sides', 4.99, TRUE)";
-
-        // Insert default inventory items
-        var defaultInventory = @"
-            INSERT IGNORE INTO inventory (item_code, item_name, category, unit, current_stock, minimum_stock, unit_cost) VALUES
-            ('RAW001', 'Ground Beef', 'Meat', 'kg', 50.0, 10.0, 8.50),
-            ('RAW002', 'Cheese', 'Dairy', 'kg', 20.0, 5.0, 12.00),
-            ('RAW003', 'Tomatoes', 'Vegetables', 'kg', 30.0, 8.0, 3.50),
-            ('RAW004', 'Potatoes', 'Vegetables', 'kg', 100.0, 25.0, 1.20)";
-
-        // Insert default settings
+        // Insert production-safe settings only. Menu, inventory, reports, and orders must
+        // start empty so a new installation does not contain demo business data.
         var defaultSettings = @"
             INSERT IGNORE INTO settings (setting_key, setting_value, category, description) VALUES
-            ('restaurant_name', 'My Restaurant', 'business', 'Restaurant display name'),
             ('tax_rate', '8.5', 'business', 'Tax percentage rate'),
             ('service_charge', '0.0', 'business', 'Service charge percentage'),
             ('auto_print_kitchen', 'true', 'printing', 'Auto print kitchen orders'),
@@ -898,20 +882,14 @@ public class DatabaseMigrationService
 
         try
         {
-            using var menuCommand = new MySqlCommand(defaultMenuItems, connection);
-            await menuCommand.ExecuteNonQueryAsync();
-
-            using var inventoryCommand = new MySqlCommand(defaultInventory, connection);
-            await inventoryCommand.ExecuteNonQueryAsync();
-
             using var settingsCommand = new MySqlCommand(defaultSettings, connection);
             await settingsCommand.ExecuteNonQueryAsync();
 
-            System.Diagnostics.Debug.WriteLine("✅ Inserted default data (menu, inventory, settings)");
+            System.Diagnostics.Debug.WriteLine(" Ensured production defaults");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"⚠️ Error inserting default data: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error ensuring production defaults: {ex.Message}");
         }
     }
 
@@ -929,12 +907,12 @@ public class DatabaseMigrationService
             using var command = new MySqlCommand(testQuery, connection);
             var tableCount = Convert.ToInt32(await command.ExecuteScalarAsync());
 
-            System.Diagnostics.Debug.WriteLine($"✅ New database test successful - {tableCount} tables found");
+            System.Diagnostics.Debug.WriteLine($" New database test successful - {tableCount} tables found");
             return tableCount >= 10;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ New database test failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" New database test failed: {ex.Message}");
             return false;
         }
     }

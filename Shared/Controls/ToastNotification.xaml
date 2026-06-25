@@ -44,7 +44,7 @@
                 </Border.StrokeShape>
                 
                 <Label x:Name="IconLabel"
-                       Text="✓"
+                       Text="i"
                        FontSize="16"
                        FontAttributes="Bold"
                       TextColor="#3730A3"
@@ -85,7 +85,7 @@
                     <TapGestureRecognizer Tapped="OnCloseTapped"/>
                 </Border.GestureRecognizers>
                 
-                <Label Text="✕"
+                <Label Text="X"
                        FontSize="14"
                       TextColor="#9CA3AF"
                        HorizontalOptions="Center"

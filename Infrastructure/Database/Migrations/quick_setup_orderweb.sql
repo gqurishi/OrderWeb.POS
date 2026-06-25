@@ -67,19 +67,19 @@ ON DUPLICATE KEY UPDATE
 
 -- Verify configuration
 SELECT 
-    '✅ CONFIGURATION SAVED!' as status,
+    ' CONFIGURATION SAVED!' as status,
     tenant_slug as restaurant_id,
     CONCAT(SUBSTRING(api_key, 1, 12), '...', SUBSTRING(api_key, -4)) as api_key_masked,
     cloud_url,
-    CASE WHEN is_enabled = 1 THEN 'Enabled ✅' ELSE 'Disabled ❌' END as enabled,
+    CASE WHEN is_enabled = 1 THEN 'Enabled ' ELSE 'Disabled ' END as enabled,
     CONCAT(polling_interval_seconds, ' seconds') as polling_interval,
-    CASE WHEN auto_print_enabled = 1 THEN 'Yes ✅' ELSE 'No ❌' END as auto_print
+    CASE WHEN auto_print_enabled = 1 THEN 'Yes ' ELSE 'No ' END as auto_print
 FROM cloud_config
 LIMIT 1;
 
 -- Next steps after running this:
 SELECT 
-    '📋 NEXT STEPS' as action,
+    ' NEXT STEPS' as action,
     '1. Restart the POS application' as step_1,
     '2. Orders will automatically sync every 3 seconds' as step_2,
     '3. Or go to Web Orders page and click "Sync Now"' as step_3,

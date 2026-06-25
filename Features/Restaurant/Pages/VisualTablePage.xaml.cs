@@ -185,6 +185,7 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested += OnRefreshRequested;
+            AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
 
@@ -196,10 +197,38 @@ namespace POS_in_NET.Pages
             }
 
             AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
+            AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
         }
 
+        private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+        {
+            if (e.IsFromCurrentTerminal)
+            {
+                return;
+            }
+
+            if (e.Kind == AppDataChangeKind.Orders)
+            {
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
+                });
+                return;
+            }
+
+            if (e.Kind == AppDataChangeKind.TableLayout || e.Kind == AppDataChangeKind.All)
+            {
+                await OnMainThreadRefreshLayoutAsync();
+            }
+        }
+
         private async void OnRefreshRequested(object? sender, EventArgs e)
+        {
+            await OnMainThreadRefreshLayoutAsync();
+        }
+
+        private async Task OnMainThreadRefreshLayoutAsync()
         {
             if ((DateTime.UtcNow - _lastSuccessfulLayoutLoadAt).TotalMilliseconds < 1200)
             {

@@ -130,7 +130,7 @@ public partial class PrintGroupSelectorDialog : ContentView
         {
             nameStack.Add(new Label
             {
-                Text = "⚠️",
+                Text = "",
                 FontSize = 14,
                 VerticalOptions = LayoutOptions.Center
             });
@@ -151,7 +151,7 @@ public partial class PrintGroupSelectorDialog : ContentView
         {
             grid.Add(new Label
             {
-                Text = "✓",
+                Text = "",
                 FontSize = 24,
                 TextColor = Color.FromArgb(colorCode),
                 FontAttributes = FontAttributes.Bold,

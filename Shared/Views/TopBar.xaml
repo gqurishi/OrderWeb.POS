@@ -3,8 +3,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.TopBar"
              HeightRequest="150">
-    
-    <Border BackgroundColor="#F6F9FC"
+
+    <Grid RowDefinitions="Auto,*">
+        <Border x:Name="MotherDisconnectedBanner"
+                Grid.Row="0"
+                BackgroundColor="#FEF2F2"
+                Stroke="#FECACA"
+                StrokeThickness="1"
+                Padding="12,8"
+                IsVisible="False">
+            <Label x:Name="MotherDisconnectedLabel"
+                   Text="Mother terminal disconnected"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="#B91C1C"
+                   HorizontalOptions="Center"/>
+        </Border>
+
+    <Border Grid.Row="1"
+            BackgroundColor="#F6F9FC"
             StrokeThickness="0">
         
         <Grid Padding="20,0">
@@ -77,4 +94,5 @@
             
         </Grid>
     </Border>
+    </Grid>
 </ContentView>

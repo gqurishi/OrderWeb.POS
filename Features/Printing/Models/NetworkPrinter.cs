@@ -40,7 +40,7 @@ public class NetworkPrinter
     // Computed Properties
     public string ConnectionString => $"{IpAddress}:{Port}";
     
-    public string StatusDisplay => IsOnline ? "🟢 Online" : "🔴 Offline";
+    public string StatusDisplay => IsOnline ? " Online" : " Offline";
     
     public string TypeDisplay => PrinterType switch
     {

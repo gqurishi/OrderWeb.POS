@@ -98,6 +98,24 @@ namespace POS_in_NET.Views
             }
         }
 
+        public void SetCancelText(string text)
+        {
+            CancelButton.Text = text;
+        }
+
+        public void HighlightGridOption(string optionText, string backgroundColor, string textColor, string borderColor)
+        {
+            foreach (var child in GridOptionsContainer.Children)
+            {
+                if (child is Button button && string.Equals(button.Text, optionText, StringComparison.OrdinalIgnoreCase))
+                {
+                    button.BackgroundColor = ParseColor(backgroundColor, button.BackgroundColor);
+                    button.TextColor = ParseColor(textColor, button.TextColor);
+                    button.BorderColor = ParseColor(borderColor, button.BorderColor);
+                }
+            }
+        }
+
         private static Color ParseColor(string? value, Color fallback)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -122,22 +140,22 @@ namespace POS_in_NET.Views
             }
 
             var lowered = input.ToLowerInvariant();
-            if (lowered is "🧾" or "📋" or "list")
+            if (lowered is "list")
             {
                 return "i";
             }
 
-            if (lowered is "⚠️" or "⚠" or "warning")
+            if (lowered is "warning")
             {
                 return "!";
             }
 
-            if (lowered is "✅" or "ok" or "success")
+            if (lowered is "ok" or "success")
             {
                 return "OK";
             }
 
-            if (lowered is "❌" or "x" or "error")
+            if (lowered is "x" or "error")
             {
                 return "X";
             }
@@ -152,39 +170,16 @@ namespace POS_in_NET.Views
 
         public async Task<string?> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<string?>();
-            
-            if (Application.Current?.MainPage != null)
+
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _parentGrid))
             {
-                var pageContent = GetPageContent(Application.Current.MainPage);
-                if (pageContent is Grid mainGrid)
-                {
-                    _parentGrid = mainGrid;
-                    
-                    Grid.SetRowSpan(this, mainGrid.RowDefinitions.Count > 0 ? mainGrid.RowDefinitions.Count : 1);
-                    Grid.SetColumnSpan(this, mainGrid.ColumnDefinitions.Count > 0 ? mainGrid.ColumnDefinitions.Count : 1);
-                    Grid.SetRow(this, 0);
-                    Grid.SetColumn(this, 0);
-                    
-                    mainGrid.Children.Add(this);
-                }
+                _taskCompletionSource.TrySetResult(null);
+                return null;
             }
 
             return await _taskCompletionSource.Task;
-        }
-
-        private View? GetPageContent(Page page)
-        {
-            if (page is Shell shell && shell.CurrentPage is ContentPage currentPage)
-            {
-                return currentPage.Content;
-            }
-            else if (page is ContentPage contentPage)
-            {
-                return contentPage.Content;
-            }
-            return null;
         }
 
         private void OnCancelClicked(object sender, EventArgs e)
@@ -195,10 +190,8 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
-            if (_parentGrid != null)
-            {
-                _parentGrid.Children.Remove(this);
-            }
+            DialogOverlayHelper.DetachOverlay(this, _parentGrid);
+            _parentGrid = null;
         }
     }
 }

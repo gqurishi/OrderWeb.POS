@@ -1,4 +1,5 @@
 using POS_in_NET.Services;
+using System.Linq;
 
 namespace POS_in_NET.Pages;
 
@@ -220,7 +221,12 @@ public partial class ManagerDashboardPage : ContentPage
             }
             else
             {
-                await Shell.Current.GoToAsync($"//{resolvedRoute}");
+                if (resolvedRoute.Equals("visuallayout", StringComparison.OrdinalIgnoreCase))
+                {
+                    ClearShellDetailStacks();
+                }
+
+                await Shell.Current.GoToAsync($"//{resolvedRoute}", false);
             }
         }
         catch (Exception ex)
@@ -243,6 +249,31 @@ public partial class ManagerDashboardPage : ContentPage
     {
         _inactivityService.ResetActivity();
         Shell.Current.FlyoutIsPresented = true;
+    }
+
+    private static void ClearShellDetailStacks()
+    {
+        if (Shell.Current is not Shell shell)
+        {
+            return;
+        }
+
+        foreach (var shellItem in shell.Items)
+        {
+            foreach (var shellSection in shellItem.Items)
+            {
+                var nav = shellSection.Navigation;
+                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
+                {
+                    continue;
+                }
+
+                foreach (var page in nav.NavigationStack.Skip(1).ToList())
+                {
+                    nav.RemovePage(page);
+                }
+            }
+        }
     }
 
     private async void OnLogoutClicked(object sender, EventArgs e)

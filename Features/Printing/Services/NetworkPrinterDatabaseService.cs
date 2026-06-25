@@ -65,6 +65,9 @@ public class NetworkPrinterDatabaseService
                     retry_count INT DEFAULT 0,
                     max_retries INT DEFAULT 5,
                     error_message TEXT NULL,
+                    created_by_terminal_name VARCHAR(120) NULL,
+                    claimed_by_terminal_name VARCHAR(120) NULL,
+                    claimed_at DATETIME NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     started_at DATETIME NULL,
                     completed_at DATETIME NULL,
@@ -78,11 +81,11 @@ public class NetworkPrinterDatabaseService
 
             await MigratePrinterTablesAsync(connection);
 
-            System.Diagnostics.Debug.WriteLine("✅ Printer tables ensured");
+            System.Diagnostics.Debug.WriteLine(" Printer tables ensured");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error ensuring printer tables: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error ensuring printer tables: {ex.Message}");
             throw;
         }
     }
@@ -112,7 +115,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting printers: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting printers: {ex.Message}");
         }
 
         return printers;
@@ -144,7 +147,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting printers by type: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting printers by type: {ex.Message}");
         }
 
         return printers;
@@ -170,7 +173,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting printer by ID: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting printer by ID: {ex.Message}");
         }
 
         return null;
@@ -214,12 +217,12 @@ public class NetworkPrinterDatabaseService
             var result = await cmd.ExecuteScalarAsync();
             var newId = Convert.ToInt32(result);
             
-            System.Diagnostics.Debug.WriteLine($"✅ Added printer: {printer.Name} (ID: {newId})");
+            System.Diagnostics.Debug.WriteLine($" Added printer: {printer.Name} (ID: {newId})");
             return newId;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error adding printer: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error adding printer: {ex.Message}");
             throw;
         }
     }
@@ -268,12 +271,12 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@printGroupId", printer.PrintGroupId ?? (object)DBNull.Value);
 
             var rows = await cmd.ExecuteNonQueryAsync();
-            System.Diagnostics.Debug.WriteLine($"✅ Updated printer: {printer.Name}");
+            System.Diagnostics.Debug.WriteLine($" Updated printer: {printer.Name}");
             return rows > 0;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error updating printer: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error updating printer: {ex.Message}");
             throw;
         }
     }
@@ -291,12 +294,12 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@id", id);
 
             var rows = await cmd.ExecuteNonQueryAsync();
-            System.Diagnostics.Debug.WriteLine($"✅ Deleted printer ID: {id}");
+            System.Diagnostics.Debug.WriteLine($" Deleted printer ID: {id}");
             return rows > 0;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error deleting printer: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error deleting printer: {ex.Message}");
             throw;
         }
     }
@@ -322,7 +325,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error updating printer status: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error updating printer status: {ex.Message}");
         }
     }
 
@@ -345,7 +348,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error toggling printer: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error toggling printer: {ex.Message}");
             throw;
         }
     }
@@ -365,8 +368,8 @@ public class NetworkPrinterDatabaseService
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
                 INSERT INTO network_print_queue 
-                (printer_id, order_id, job_type, print_data, status, max_retries)
-                VALUES (@printer, @order, @type, @data, 'pending', @max);
+                (printer_id, order_id, job_type, print_data, status, max_retries, created_by_terminal_name)
+                VALUES (@printer, @order, @type, @data, 'pending', @max, @createdByTerminalName);
                 SELECT LAST_INSERT_ID();";
 
             cmd.Parameters.AddWithValue("@printer", job.PrinterId);
@@ -374,13 +377,14 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@type", job.JobType.ToString().ToLower().Replace("kitchenticket", "kitchen_ticket"));
             cmd.Parameters.AddWithValue("@data", job.PrintData ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@max", job.MaxRetries);
+            cmd.Parameters.AddWithValue("@createdByTerminalName", GetCurrentTerminalName());
 
             var result = await cmd.ExecuteScalarAsync();
             return Convert.ToInt32(result);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error enqueueing print job: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error enqueueing print job: {ex.Message}");
             throw;
         }
     }
@@ -411,7 +415,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting pending jobs: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting pending jobs: {ex.Message}");
         }
 
         return jobs;
@@ -471,7 +475,7 @@ public class NetworkPrinterDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error updating job status: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error updating job status: {ex.Message}");
         }
     }
 
@@ -530,6 +534,27 @@ public class NetworkPrinterDatabaseService
                 ADD COLUMN last_attempt DATETIME NULL AFTER printed_at");
         }
 
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "created_by_terminal_name"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN created_by_terminal_name VARCHAR(120) NULL AFTER error_message");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "claimed_by_terminal_name"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN claimed_by_terminal_name VARCHAR(120) NULL AFTER created_by_terminal_name");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "claimed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN claimed_at DATETIME NULL AFTER claimed_by_terminal_name");
+        }
+
         await CreateIndexIfMissingAsync(connection, "network_print_queue", "idx_network_print_queue_status", "CREATE INDEX idx_network_print_queue_status ON network_print_queue(status)");
         await CreateIndexIfMissingAsync(connection, "network_print_queue", "idx_network_print_queue_printer_status", "CREATE INDEX idx_network_print_queue_printer_status ON network_print_queue(printer_id, status)");
     }
@@ -579,6 +604,18 @@ public class NetworkPrinterDatabaseService
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static string GetCurrentTerminalName()
+    {
+        try
+        {
+            return TerminalConfigurationService.GetConfiguration().TerminalName;
+        }
+        catch
+        {
+            return "Terminal";
+        }
     }
 
     #endregion

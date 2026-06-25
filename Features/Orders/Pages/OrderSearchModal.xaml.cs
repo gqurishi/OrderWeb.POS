@@ -148,16 +148,16 @@ namespace POS_in_NET.Pages
 
             return normalized switch
             {
-                "pickup" => "📦",
-                "collection" => "📦",
-                "col" => "📦",
-                "delivery" => "🚗",
-                "del" => "🚗",
-                "table" => "🍽",
-                "tbl" => "🍽",
-                "dine_in" => "🍽",
-                "dine-in" => "🍽",
-                _ => "📋"
+                "pickup" => "",
+                "collection" => "",
+                "col" => "",
+                "delivery" => "",
+                "del" => "",
+                "table" => "",
+                "tbl" => "",
+                "dine_in" => "",
+                "dine-in" => "",
+                _ => ""
             };
         }
 

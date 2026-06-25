@@ -103,7 +103,7 @@ namespace POS_in_NET.Views
                 {
                     var checkmark = new Label
                     {
-                        Text = "✓",
+                        Text = "",
                         FontSize = 12,
                         TextColor = Colors.White,
                         HorizontalOptions = LayoutOptions.Center,
@@ -166,7 +166,7 @@ namespace POS_in_NET.Views
                     {
                         radioCircle.Content = new Label
                         {
-                            Text = "✓",
+                            Text = "",
                             FontSize = 12,
                             TextColor = Colors.White,
                             HorizontalOptions = LayoutOptions.Center,

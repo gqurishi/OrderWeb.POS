@@ -43,13 +43,13 @@ public sealed class PdfPrintService
             var content = BuildPrintContent(order, group, items);
             await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
 
-            System.Diagnostics.Debug.WriteLine($"✅ PDF print saved: {filePath}");
+            System.Diagnostics.Debug.WriteLine($" PDF print saved: {filePath}");
             
             return (true, filePath, $"Print saved: {fileName}");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error generating PDF print: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error generating PDF print: {ex.Message}");
             return (false, string.Empty, $"Error: {ex.Message}");
         }
     }

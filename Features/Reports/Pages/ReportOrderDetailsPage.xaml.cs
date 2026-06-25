@@ -74,6 +74,17 @@ public partial class ReportOrderDetailsPage : ContentPage
             return;
         }
 
+        if (!TerminalRoleService.CanViewFullReports)
+        {
+            _isLoaded = true;
+            HeaderLine = "Mother terminal only";
+            await AppAlertService.ShowAlertAsync(
+                "Mother Terminal Only",
+                "Order drill-down reports are available on the mother terminal. Child terminals can view limited live reports from the shared database.");
+            await Shell.Current.GoToAsync("..");
+            return;
+        }
+
         _isLoading = true;
         try
         {

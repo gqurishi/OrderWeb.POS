@@ -10,7 +10,7 @@ public class BusinessSettingsService
 
     public BusinessSettingsService()
     {
-        _connectionString = "Server=localhost;Database=Pos-net;Uid=root;Pwd=root;Port=3306;";
+        _connectionString = TerminalConfigurationService.GetPosConnectionString();
         EnsureBusinessInfoTableExists();
         EnsureBusinessInfoColumnsExist();
     }
@@ -19,7 +19,7 @@ public class BusinessSettingsService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             connection.Open();
 
             var createTableQuery = @"
@@ -73,7 +73,7 @@ public class BusinessSettingsService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             connection.Open();
 
             var alterStatements = new[]
@@ -106,7 +106,7 @@ public class BusinessSettingsService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"
@@ -164,7 +164,7 @@ public class BusinessSettingsService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"
@@ -224,7 +224,7 @@ public class BusinessSettingsService
     {
         try
         {
-            using var connection = new MySqlConnection(_connectionString);
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
             var query = @"

@@ -2,7 +2,7 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Pages.OrderDetailsModal"
-             BackgroundColor="#80000000">
+             BackgroundColor="{StaticResource DialogOverlayColor}">
 
     <Frame BackgroundColor="White"
            Margin="40"
@@ -35,7 +35,7 @@
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnCloseClicked"/>
                     </Border.GestureRecognizers>
-                    <Label Text="✕"
+                    <Label Text=""
                            FontSize="24"
                            TextColor="White"
                            HorizontalOptions="Center"

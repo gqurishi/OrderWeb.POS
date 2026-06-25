@@ -130,16 +130,6 @@ INSERT INTO app_settings (setting_key, setting_value, description) VALUES
     ('printer_health_check_interval', '60', 'Seconds between printer status checks')
 ON DUPLICATE KEY UPDATE setting_value=setting_value;
 
--- Insert sample printers (optional - for testing)
--- Uncomment to create default printer setup
-/*
-INSERT INTO printers (printer_name, printer_type, printer_technology, ip_address, port, color_code, display_order, notes) VALUES
-    ('Kitchen Station 1', 'Kitchen', 'Thermal', '192.168.1.101', 9100, '#EF4444', 1, 'Main kitchen printer - near grill'),
-    ('Bar Station', 'Bar', 'Thermal', '192.168.1.102', 9100, '#3B82F6', 2, 'Bar printer - drinks and cold items'),
-    ('Receipt Printer', 'Receipt', 'DotMatrix', '192.168.1.103', 9100, '#64748B', 3, 'Customer receipts - dot matrix for copies'),
-    ('Online Order Printer', 'Online', 'Thermal', '192.168.1.104', 9100, '#10B981', 4, 'Packing station for delivery/takeaway orders');
-*/
-
 -- ============================================
 -- VERIFICATION QUERIES
 -- Run these to verify installation

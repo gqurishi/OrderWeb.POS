@@ -2,22 +2,23 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.CardPaymentDialog"
-             BackgroundColor="#80000000"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Fill" HorizontalOptions="Fill">
         <Border BackgroundColor="White"
-               StrokeThickness="0"
-               Padding="40"
+               Stroke="{StaticResource DialogShellStrokeColor}"
+               StrokeThickness="1"
+               Padding="30"
                WidthRequest="600"
                VerticalOptions="Center"
                HorizontalOptions="Center">
             <Border.StrokeShape>
-                <RoundRectangle CornerRadius="16"/>
+                <RoundRectangle CornerRadius="22"/>
             </Border.StrokeShape>
             <Border.Shadow>
-                <Shadow Brush="Black" Offset="0,4" Radius="20" Opacity="0.3"/>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
             <VerticalStackLayout Spacing="25">
@@ -38,7 +39,7 @@
                             FontAttributes="Bold"
                             WidthRequest="90"
                             HeightRequest="45"
-                            CornerRadius="8"
+                            CornerRadius="14"
                             Clicked="OnCancelClicked"/>
                 </Grid>
                 
@@ -100,7 +101,7 @@
                             TextColor="#DC2626"
                             FontSize="26"
                             FontAttributes="Bold"
-                            CornerRadius="12"
+                            CornerRadius="14"
                             HeightRequest="70"
                             Clicked="OnNoClicked"/>
                     
@@ -110,7 +111,7 @@
                             TextColor="White"
                             FontSize="26"
                             FontAttributes="Bold"
-                            CornerRadius="12"
+                            CornerRadius="14"
                             HeightRequest="70"
                             Clicked="OnYesClicked"/>
                 </Grid>

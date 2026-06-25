@@ -10,6 +10,10 @@ namespace POS_in_NET.Views
     {
         private TaskCompletionSource<bool>? _taskCompletionSource;
         private Grid? _parentGrid;
+        private string _title = "Confirm";
+        private string _message = string.Empty;
+        private string _yesText = "Yes";
+        private string _noText = "No";
 
         public ModernConfirmDialog()
         {
@@ -18,16 +22,29 @@ namespace POS_in_NET.Views
 
         public void SetConfirm(string title, string message, string yesText = "Yes", string noText = "No", string icon = "!", string iconBgColor = "#2563EB")
         {
-            TitleLabel.Text = title;
-            MessageLabel.Text = message;
-            YesButton.Text = yesText;
-            NoButton.Text = noText;
+            _title = title?.Trim() ?? "Confirm";
+            _message = message?.Trim() ?? string.Empty;
+            _yesText = yesText;
+            _noText = noText;
+            TitleLabel.Text = _title;
+            MessageLabel.Text = _message;
+            YesButton.Text = _yesText;
+            NoButton.Text = _noText;
             
-            IconBorder.BackgroundColor = ParseColor(iconBgColor, Color.FromArgb("#2563EB"));
-            IconLabel.Text = NormalizeIconText(icon);
+            var normalizedIcon = NormalizeIconText(icon);
+            var useLogo = normalizedIcon == "__LOGO__";
+            IconBorder.BackgroundColor = useLogo
+                ? Colors.White
+                : ParseColor(iconBgColor, Color.FromArgb("#2563EB"));
+            IconBorder.Stroke = new SolidColorBrush(useLogo
+                ? Color.FromArgb("#E2E8F0")
+                : Colors.White);
+            IconImage.IsVisible = useLogo;
+            IconLabel.IsVisible = !useLogo;
+            IconLabel.Text = useLogo ? string.Empty : normalizedIcon;
 
-            var loweredTitle = (title ?? string.Empty).ToLowerInvariant();
-            var loweredYesText = (yesText ?? string.Empty).ToLowerInvariant();
+            var loweredTitle = _title.ToLowerInvariant();
+            var loweredYesText = _yesText.ToLowerInvariant();
             var isDestructive = loweredTitle.Contains("danger") || loweredTitle.Contains("delete") || loweredTitle.Contains("void") || loweredYesText.Contains("delete") || loweredYesText.Contains("void");
             if (isDestructive)
             {
@@ -65,17 +82,22 @@ namespace POS_in_NET.Views
             }
 
             var lowered = input.ToLowerInvariant();
-            if (lowered is "⚠️" or "⚠" or "warning")
+            if (lowered is "warning")
             {
                 return "!";
             }
 
-            if (lowered is "✅" or "ok" or "success")
+            if (lowered is "logo" or "company" or "orderweb")
+            {
+                return "__LOGO__";
+            }
+
+            if (lowered is "ok" or "success")
             {
                 return "OK";
             }
 
-            if (lowered is "❌" or "x" or "error")
+            if (lowered is "x" or "error")
             {
                 return "X";
             }
@@ -90,39 +112,22 @@ namespace POS_in_NET.Views
 
         public async Task<bool> ShowAsync()
         {
-            using var idleGuard = POS_in_NET.Pages.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
+            using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _taskCompletionSource = new TaskCompletionSource<bool>();
-            
-            if (Application.Current?.MainPage != null)
+
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _parentGrid))
             {
-                var pageContent = GetPageContent(Application.Current.MainPage);
-                if (pageContent is Grid mainGrid)
+                var page = Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
+                if (page != null)
                 {
-                    _parentGrid = mainGrid;
-                    
-                    Grid.SetRowSpan(this, mainGrid.RowDefinitions.Count > 0 ? mainGrid.RowDefinitions.Count : 1);
-                    Grid.SetColumnSpan(this, mainGrid.ColumnDefinitions.Count > 0 ? mainGrid.ColumnDefinitions.Count : 1);
-                    Grid.SetRow(this, 0);
-                    Grid.SetColumn(this, 0);
-                    
-                    mainGrid.Children.Add(this);
+                    var result = await page.DisplayAlert(_title, _message, _yesText, _noText);
+                    return result;
                 }
+
+                return false;
             }
 
             return await _taskCompletionSource.Task;
-        }
-
-        private View? GetPageContent(Page page)
-        {
-            if (page is Shell shell && shell.CurrentPage is ContentPage currentPage)
-            {
-                return currentPage.Content;
-            }
-            else if (page is ContentPage contentPage)
-            {
-                return contentPage.Content;
-            }
-            return null;
         }
 
         private void OnYesClicked(object sender, EventArgs e)
@@ -139,10 +144,8 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
-            if (_parentGrid != null)
-            {
-                _parentGrid.Children.Remove(this);
-            }
+            DialogOverlayHelper.DetachOverlay(this, _parentGrid);
+            _parentGrid = null;
         }
     }
 }

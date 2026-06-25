@@ -95,12 +95,12 @@ namespace POS_in_NET.Views
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ParentCategoryCollectionView.ItemsSource = _filteredCategories;
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded {_parentCategories.Count} parent categories");
+                    System.Diagnostics.Debug.WriteLine($" Loaded {_parentCategories.Count} parent categories");
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading parent categories: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading parent categories: {ex.Message}");
             }
         }
 
@@ -137,7 +137,7 @@ namespace POS_in_NET.Views
                 _selectedParentCategory = selectedCategory;
                 SelectedCategoryFrame.IsVisible = true;
                 SelectedCategoryLabel.Text = $"Selected: {selectedCategory.Name}";
-                System.Diagnostics.Debug.WriteLine($"✓ Selected parent category: {selectedCategory.Name}");
+                System.Diagnostics.Debug.WriteLine($" Selected parent category: {selectedCategory.Name}");
             }
         }
 
@@ -179,7 +179,7 @@ namespace POS_in_NET.Views
                         DisplayOrder = 0,
                         Active = ActiveSwitch.IsToggled,
                         Color = "#8B5CF6",
-                        Icon = "📂",
+                        Icon = "",
                         CreatedAt = DateTime.Now,
                         UpdatedAt = DateTime.Now
                     };

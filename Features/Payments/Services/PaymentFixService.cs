@@ -23,7 +23,7 @@ namespace POS_in_NET.Services
         {
             try
             {
-                Debug.WriteLine("🔧 MANUAL FIX: Setting correct payment methods...");
+                Debug.WriteLine(" MANUAL FIX: Setting correct payment methods...");
 
                 // These are the known correct payment methods from OrderWeb.net website
                 var fixes = new Dictionary<string, string>
@@ -54,11 +54,11 @@ namespace POS_in_NET.Services
                     if (rows > 0)
                     {
                         fixedCount++;
-                        Debug.WriteLine($"✅ Fixed {fix.Key}: {fix.Value}");
+                        Debug.WriteLine($" Fixed {fix.Key}: {fix.Value}");
                     }
                     else
                     {
-                        Debug.WriteLine($"⚠️ Order {fix.Key} not found in database");
+                        Debug.WriteLine($" Order {fix.Key} not found in database");
                     }
                 }
 
@@ -66,7 +66,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ Error fixing payments: {ex.Message}");
+                Debug.WriteLine($" Error fixing payments: {ex.Message}");
                 return (0, $"Error: {ex.Message}");
             }
         }

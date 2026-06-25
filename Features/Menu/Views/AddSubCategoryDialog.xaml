@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.AddSubCategoryDialog">
     
-    <Frame BackgroundColor="#80000000"
+    <Frame BackgroundColor="{StaticResource DialogOverlayColor}"
            Padding="0"
            HasShadow="False"
            CornerRadius="0">
@@ -132,7 +132,7 @@
                                        HasShadow="False">
                                     <Grid ColumnDefinitions="Auto,*">
                                         <Label Grid.Column="0"
-                                               Text="✓"
+                                               Text=""
                                                FontSize="16"
                                                FontAttributes="Bold"
                                                TextColor="#8B5CF6"
@@ -189,7 +189,7 @@
                                 TextColor="#64748B"
                                 FontAttributes="Bold"
                                 FontSize="15"
-                                CornerRadius="8"
+                                CornerRadius="14"
                                 HeightRequest="48"
                                 Clicked="OnCancelClicked" />
                         
@@ -200,7 +200,7 @@
                                 TextColor="White"
                                 FontAttributes="Bold"
                                 FontSize="15"
-                                CornerRadius="8"
+                                CornerRadius="14"
                                 HeightRequest="48"
                                 Clicked="OnSaveClicked" />
                     </Grid>

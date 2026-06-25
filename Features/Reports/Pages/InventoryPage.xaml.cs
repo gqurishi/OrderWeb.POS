@@ -23,10 +23,17 @@ public partial class InventoryPage : ContentPage
     {
         base.OnAppearing();
 
-        if (!await _permissionService.HasPermissionAsync(PermissionKeys.InventoryView))
+        try
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Inventory.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            if (!await _permissionService.HasPermissionAsync(PermissionKeys.InventoryView))
+            {
+                await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Inventory.");
+                await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Inventory page error: {ex.Message}");
         }
     }
 }

@@ -141,12 +141,12 @@ SELECT
     s.EstimatedDuration,
     TIMESTAMPDIFF(MINUTE, s.StartTime, NOW()) AS MinutesOccupied,
     CASE 
-        WHEN s.Status = 'Occupied' THEN '🟡 Just Seated'
-        WHEN s.Status = 'Ordering' THEN '🔵 Taking Order'
-        WHEN s.Status = 'FoodServed' THEN '🟠 Dining'
-        WHEN s.Status = 'Payment' THEN '🟣 Ready to Pay'
-        WHEN s.Status = 'Cleaning' THEN '🔴 Cleaning'
-        ELSE '🟢 Available'
+        WHEN s.Status = 'Occupied' THEN ' Just Seated'
+        WHEN s.Status = 'Ordering' THEN ' Taking Order'
+        WHEN s.Status = 'FoodServed' THEN ' Dining'
+        WHEN s.Status = 'Payment' THEN ' Ready to Pay'
+        WHEN s.Status = 'Cleaning' THEN ' Cleaning'
+        ELSE ' Available'
     END AS StatusDisplay
 FROM RestaurantTables t
 LEFT JOIN Floors f ON t.FloorId = f.Id

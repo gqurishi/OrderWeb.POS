@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- Overlay -->
+    <Color x:Key="DialogOverlayColor">#80000000</Color>
+    <Color x:Key="DialogShellStrokeColor">#DCE3EE</Color>
+    <Color x:Key="DialogTitleColor">#1F2937</Color>
+    <Color x:Key="DialogMessageColor">#6B7280</Color>
+    <Color x:Key="DialogFieldLabelColor">#64748B</Color>
+    <Color x:Key="DialogInputBackgroundColor">#F8FAFC</Color>
+    <Color x:Key="DialogInputStrokeColor">#D8E1ED</Color>
+    <Color x:Key="DialogPrimaryColor">#2563EB</Color>
+    <Color x:Key="DialogSuccessColor">#0F766E</Color>
+    <Color x:Key="DialogCancelBackgroundColor">#E2E8F0</Color>
+    <Color x:Key="DialogCancelTextColor">#334155</Color>
+
+    <x:Double x:Key="DialogCornerRadius">22</x:Double>
+    <x:Double x:Key="DialogInputCornerRadius">14</x:Double>
+    <x:Double x:Key="DialogButtonCornerRadius">14</x:Double>
+    <x:Double x:Key="DialogButtonHeight">48</x:Double>
+    <x:Double x:Key="DialogIconSize">74</x:Double>
+
+    <Style x:Key="DialogTitleStyle" TargetType="Label">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="TextColor" Value="{StaticResource DialogTitleColor}" />
+        <Setter Property="HorizontalOptions" Value="Center" />
+        <Setter Property="HorizontalTextAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="DialogMessageStyle" TargetType="Label">
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="TextColor" Value="{StaticResource DialogMessageColor}" />
+        <Setter Property="HorizontalOptions" Value="Center" />
+        <Setter Property="HorizontalTextAlignment" Value="Center" />
+        <Setter Property="LineBreakMode" Value="WordWrap" />
+    </Style>
+
+    <Style x:Key="DialogFieldLabelStyle" TargetType="Label">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="TextColor" Value="{StaticResource DialogFieldLabelColor}" />
+        <Setter Property="Margin" Value="2,0,0,0" />
+    </Style>
+
+    <Style x:Key="DialogSectionTitleStyle" TargetType="Label">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="TextColor" Value="{StaticResource DialogTitleColor}" />
+    </Style>
+
+    <Style x:Key="DialogInputEntryStyle" TargetType="Entry">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="TextColor" Value="{StaticResource DialogTitleColor}" />
+        <Setter Property="PlaceholderColor" Value="#9CA3AF" />
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="HeightRequest" Value="42" />
+    </Style>
+
+    <Style x:Key="DialogInputEditorStyle" TargetType="Editor">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="TextColor" Value="{StaticResource DialogTitleColor}" />
+        <Setter Property="PlaceholderColor" Value="#9CA3AF" />
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="MinimumHeightRequest" Value="80" />
+    </Style>
+
+    <Style x:Key="DialogCancelButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource DialogCancelBackgroundColor}" />
+        <Setter Property="TextColor" Value="{StaticResource DialogCancelTextColor}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="{StaticResource DialogButtonCornerRadius}" />
+        <Setter Property="HeightRequest" Value="{StaticResource DialogButtonHeight}" />
+        <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <Style x:Key="DialogPrimaryButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource DialogPrimaryColor}" />
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="{StaticResource DialogButtonCornerRadius}" />
+        <Setter Property="HeightRequest" Value="{StaticResource DialogButtonHeight}" />
+        <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <Style x:Key="DialogSuccessButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource DialogSuccessColor}" />
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="{StaticResource DialogButtonCornerRadius}" />
+        <Setter Property="HeightRequest" Value="{StaticResource DialogButtonHeight}" />
+        <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <Style x:Key="DialogBackButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource DialogCancelBackgroundColor}" />
+        <Setter Property="TextColor" Value="{StaticResource DialogCancelTextColor}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="{StaticResource DialogButtonCornerRadius}" />
+        <Setter Property="HeightRequest" Value="45" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="WidthRequest" Value="90" />
+    </Style>
+
+    <Style x:Key="DialogCloseButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="#FEE2E2" />
+        <Setter Property="TextColor" Value="#DC2626" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="WidthRequest" Value="40" />
+        <Setter Property="HeightRequest" Value="40" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style x:Key="DialogHighlightPanelStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="#EFF6FF" />
+        <Setter Property="Stroke" Value="#BFDBFE" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="14" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="DialogInfoPanelStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="#FFFBEB" />
+        <Setter Property="Stroke" Value="#FDE68A" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="14" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

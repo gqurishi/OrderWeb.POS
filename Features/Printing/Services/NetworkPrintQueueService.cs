@@ -71,7 +71,7 @@ public class NetworkPrintQueueService : IDisposable
         _dbService = dbService;
         _printerService = printerService;
         _databaseService = databaseService;
-        Debug.WriteLine("📋 NetworkPrintQueueService initialized");
+        Debug.WriteLine(" NetworkPrintQueueService initialized");
     }
 
     /// <summary>
@@ -95,6 +95,9 @@ public class NetworkPrintQueueService : IDisposable
                     retry_count INT DEFAULT 0,
                     max_retries INT DEFAULT 5,
                     error_message TEXT,
+                    created_by_terminal_name VARCHAR(120) NULL,
+                    claimed_by_terminal_name VARCHAR(120) NULL,
+                    claimed_at TIMESTAMP NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     started_at TIMESTAMP NULL,
                     completed_at TIMESTAMP NULL,
@@ -107,11 +110,11 @@ public class NetworkPrintQueueService : IDisposable
             
             await command.ExecuteNonQueryAsync();
             await MigrateQueueTableAsync(connection);
-            Debug.WriteLine("✅ network_print_queue table ready");
+            Debug.WriteLine(" network_print_queue table ready");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error creating print_queue table: {ex.Message}");
+            Debug.WriteLine($" Error creating print_queue table: {ex.Message}");
         }
     }
 
@@ -126,7 +129,7 @@ public class NetworkPrintQueueService : IDisposable
         {
             if (_isRunning)
             {
-                Debug.WriteLine("⚠️ NetworkPrintQueueService already running");
+                Debug.WriteLine(" NetworkPrintQueueService already running");
                 return;
             }
 
@@ -140,7 +143,7 @@ public class NetworkPrintQueueService : IDisposable
                 TimeSpan.FromMilliseconds(PROCESS_INTERVAL_MS)
             );
             
-            Debug.WriteLine($"✅ NetworkPrintQueueService STARTED - processing every {PROCESS_INTERVAL_MS / 1000}s");
+            Debug.WriteLine($" NetworkPrintQueueService STARTED - processing every {PROCESS_INTERVAL_MS / 1000}s");
         }
     }
 
@@ -160,7 +163,7 @@ public class NetworkPrintQueueService : IDisposable
             _processTimer = null;
             _isRunning = false;
             
-            Debug.WriteLine("🛑 NetworkPrintQueueService STOPPED");
+            Debug.WriteLine(" NetworkPrintQueueService STOPPED");
         }
     }
 
@@ -175,24 +178,25 @@ public class NetworkPrintQueueService : IDisposable
             using var command = connection.CreateCommand();
             
             command.CommandText = @"
-                INSERT INTO network_print_queue (printer_id, job_type, print_data, order_id, status)
-                VALUES (@printerId, @jobType, @printData, @orderId, 'pending');
+                INSERT INTO network_print_queue (printer_id, job_type, print_data, order_id, status, created_by_terminal_name)
+                VALUES (@printerId, @jobType, @printData, @orderId, 'pending', @createdByTerminalName);
                 SELECT LAST_INSERT_ID();";
             
             command.Parameters.AddWithValue("@printerId", printerId);
             command.Parameters.AddWithValue("@jobType", jobType);
             command.Parameters.AddWithValue("@printData", printData);
             command.Parameters.AddWithValue("@orderId", orderId ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@createdByTerminalName", GetCurrentTerminalName());
             
             var result = await command.ExecuteScalarAsync();
             var jobId = Convert.ToInt32(result);
             
-            Debug.WriteLine($"📥 Print job #{jobId} enqueued for printer #{printerId}");
+            Debug.WriteLine($" Print job #{jobId} enqueued for printer #{printerId}");
             return jobId;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error enqueueing print job: {ex.Message}");
+            Debug.WriteLine($" Error enqueueing print job: {ex.Message}");
             throw;
         }
     }
@@ -220,7 +224,7 @@ public class NetworkPrintQueueService : IDisposable
                 return;
             }
 
-            Debug.WriteLine($"📋 Processing {jobs.Count} pending print job(s)...");
+            Debug.WriteLine($" Processing {jobs.Count} pending print job(s)...");
 
             foreach (var job in jobs)
             {
@@ -231,7 +235,7 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Queue processing error: {ex.Message}");
+            Debug.WriteLine($" Queue processing error: {ex.Message}");
         }
         finally
         {
@@ -292,7 +296,7 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error getting pending jobs: {ex.Message}");
+            Debug.WriteLine($" Error getting pending jobs: {ex.Message}");
         }
         
         return jobs;
@@ -305,10 +309,13 @@ public class NetworkPrintQueueService : IDisposable
     {
         try
         {
-            Debug.WriteLine($"🖨️ Processing job #{job.Id} for '{job.PrinterName}'...");
+            Debug.WriteLine($" Processing job #{job.Id} for '{job.PrinterName}'...");
             
-            // Mark as printing
-            await UpdateJobStatusAsync(job.Id, "printing");
+            if (!await TryClaimJobAsync(job))
+            {
+                Debug.WriteLine($"Info: Job #{job.Id} already claimed by another terminal");
+                return;
+            }
             
             // Get printer
             var printer = await _dbService.GetPrinterByIdAsync(job.PrinterId);
@@ -332,7 +339,7 @@ public class NetworkPrintQueueService : IDisposable
                 await CompleteJobAsync(job.Id);
                 JobsProcessedToday++;
                 
-                Debug.WriteLine($"✅ Job #{job.Id} printed successfully");
+                Debug.WriteLine($" Job #{job.Id} printed successfully");
                 
                 JobCompleted?.Invoke(this, new PrintJobCompletedEventArgs
                 {
@@ -349,15 +356,12 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Job #{job.Id} error: {ex.Message}");
+            Debug.WriteLine($" Job #{job.Id} error: {ex.Message}");
             await RetryJobAsync(job, ex.Message);
         }
     }
 
-    /// <summary>
-    /// Update job status
-    /// </summary>
-    private async Task UpdateJobStatusAsync(int jobId, string status)
+    private async Task<bool> TryClaimJobAsync(NetworkPrintJob job)
     {
         try
         {
@@ -366,17 +370,25 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = @status, started_at = NOW(), last_attempt = NOW()
-                WHERE id = @id";
+                SET status = 'printing',
+                    started_at = COALESCE(started_at, NOW()),
+                    last_attempt = NOW(),
+                    claimed_by_terminal_name = @claimedByTerminalName,
+                    claimed_at = NOW()
+                WHERE id = @id
+                  AND status IN ('pending', 'failed')
+                  AND retry_count < COALESCE(max_retries, @maxRetries)";
             
-            command.Parameters.AddWithValue("@id", jobId);
-            command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@id", job.Id);
+            command.Parameters.AddWithValue("@claimedByTerminalName", GetCurrentTerminalName());
+            command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             
-            await command.ExecuteNonQueryAsync();
+            return await command.ExecuteNonQueryAsync() > 0;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error updating job status: {ex.Message}");
+            Debug.WriteLine($" Error claiming job: {ex.Message}");
+            return false;
         }
     }
 
@@ -400,7 +412,7 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error completing job: {ex.Message}");
+            Debug.WriteLine($" Error completing job: {ex.Message}");
         }
     }
 
@@ -433,7 +445,7 @@ public class NetworkPrintQueueService : IDisposable
             if (finalFailure)
             {
                 JobsFailedToday++;
-                Debug.WriteLine($"❌ Job #{job.Id} permanently failed: {errorMessage}");
+                Debug.WriteLine($" Job #{job.Id} permanently failed: {errorMessage}");
 
                 JobFailed?.Invoke(this, new PrintJobFailedEventArgs
                 {
@@ -446,12 +458,12 @@ public class NetworkPrintQueueService : IDisposable
             }
             else
             {
-                Debug.WriteLine($"🔄 Job #{job.Id} will retry: {errorMessage}");
+                Debug.WriteLine($" Job #{job.Id} will retry: {errorMessage}");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error retrying job: {ex.Message}");
+            Debug.WriteLine($" Error retrying job: {ex.Message}");
         }
     }
 
@@ -481,7 +493,7 @@ public class NetworkPrintQueueService : IDisposable
             
             JobsFailedToday++;
             
-            Debug.WriteLine($"❌ Job #{job.Id} permanently failed: {errorMessage}");
+            Debug.WriteLine($" Job #{job.Id} permanently failed: {errorMessage}");
             
             JobFailed?.Invoke(this, new PrintJobFailedEventArgs
             {
@@ -494,7 +506,7 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error failing job: {ex.Message}");
+            Debug.WriteLine($" Error failing job: {ex.Message}");
         }
     }
 
@@ -549,7 +561,7 @@ public class NetworkPrintQueueService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error getting queue stats: {ex.Message}");
+            Debug.WriteLine($" Error getting queue stats: {ex.Message}");
         }
         
         return stats;
@@ -574,12 +586,12 @@ public class NetworkPrintQueueService : IDisposable
             
             var affected = await command.ExecuteNonQueryAsync();
             
-            Debug.WriteLine($"🔄 Reset {affected} failed jobs for retry");
+            Debug.WriteLine($" Reset {affected} failed jobs for retry");
             return affected;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error retrying failed jobs: {ex.Message}");
+            Debug.WriteLine($" Error retrying failed jobs: {ex.Message}");
             return 0;
         }
     }
@@ -603,12 +615,12 @@ public class NetworkPrintQueueService : IDisposable
             
             var affected = await command.ExecuteNonQueryAsync();
             
-            Debug.WriteLine($"🧹 Cleared {affected} old completed jobs");
+            Debug.WriteLine($" Cleared {affected} old completed jobs");
             return affected;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error clearing old jobs: {ex.Message}");
+            Debug.WriteLine($" Error clearing old jobs: {ex.Message}");
             return 0;
         }
     }
@@ -651,6 +663,27 @@ public class NetworkPrintQueueService : IDisposable
                 ALTER TABLE network_print_queue
                 ADD COLUMN last_attempt TIMESTAMP NULL AFTER printed_at");
         }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "created_by_terminal_name"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN created_by_terminal_name VARCHAR(120) NULL AFTER error_message");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "claimed_by_terminal_name"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN claimed_by_terminal_name VARCHAR(120) NULL AFTER created_by_terminal_name");
+        }
+
+        if (!await ColumnExistsAsync(connection, "network_print_queue", "claimed_at"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                ADD COLUMN claimed_at TIMESTAMP NULL AFTER claimed_by_terminal_name");
+        }
     }
 
     private static async Task<bool> ColumnExistsAsync(MySqlConnection connection, string tableName, string columnName)
@@ -674,6 +707,18 @@ public class NetworkPrintQueueService : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static string GetCurrentTerminalName()
+    {
+        try
+        {
+            return TerminalConfigurationService.GetConfiguration().TerminalName;
+        }
+        catch
+        {
+            return "Terminal";
+        }
     }
 
     public void Dispose()

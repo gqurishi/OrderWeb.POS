@@ -56,11 +56,11 @@ namespace POS_in_NET.Models
         
         public string StatusIcon => ItemStatus switch
         {
-            RestaurantItemStatus.Ordered => "📝",
-            RestaurantItemStatus.Preparing => "👨‍🍳",
-            RestaurantItemStatus.Ready => "✅",
-            RestaurantItemStatus.Served => "🍽️",
-            _ => "❓"
+            RestaurantItemStatus.Ordered => "",
+            RestaurantItemStatus.Preparing => "‍",
+            RestaurantItemStatus.Ready => "",
+            RestaurantItemStatus.Served => "",
+            _ => ""
         };
         
         public int ModifiersCount => AppliedModifiers?.Count ?? 0;
@@ -94,10 +94,10 @@ namespace POS_in_NET.Models
             get
             {
                 var info = new List<string>();
-                if (MenuItem?.IsSpicy == true) info.Add("🌶️");
-                if (MenuItem?.IsVegan == true) info.Add("🌿");
-                else if (MenuItem?.IsVegetarian == true) info.Add("🌱");
-                if (MenuItem?.IsGlutenFree == true) info.Add("🚫🌾");
+                if (MenuItem?.IsSpicy == true) info.Add("");
+                if (MenuItem?.IsVegan == true) info.Add("");
+                else if (MenuItem?.IsVegetarian == true) info.Add("");
+                if (MenuItem?.IsGlutenFree == true) info.Add("");
                 return string.Join(" ", info);
             }
         }

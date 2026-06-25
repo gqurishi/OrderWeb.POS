@@ -40,6 +40,8 @@ public class CloudConfiguration
     // Features
     public bool AutoPrintEnabled { get; set; } = true;
     public bool NotificationsEnabled { get; set; } = true;
+    public bool OnlineOrderMasterEnabled { get; set; } = true;
+    public string OnlineOrderMasterTerminalName { get; set; } = "";
     
     // Timestamps
     public DateTime? LastSync { get; set; }
@@ -106,17 +108,17 @@ public class CloudConfiguration
     public string GetConnectionStatus()
     {
         if (!IsConfigured())
-            return "🔴 Not configured";
+            return " Not configured";
 
         if (IsEnabled && IsFullyTested())
-            return "🟢 LIVE - Ready to receive orders";
+            return " LIVE - Ready to receive orders";
 
         if (IsFullyTested())
-            return "🟡 Configured and tested - Ready to start";
+            return " Configured and tested - Ready to start";
 
         if (IsConfigured())
-            return "🟠 Configured - Not tested";
+            return " Configured - Not tested";
 
-        return "🔴 Not configured";
+        return " Not configured";
     }
 }

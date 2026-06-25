@@ -45,6 +45,7 @@ public sealed class ReportSummary
 	public decimal GrossSales { get; set; }
 	public decimal NetSales { get; set; }
 	public decimal VatAmount { get; set; }
+	public decimal DeliveryChargeTotal { get; set; }
 	public decimal AverageOrderValue { get; set; }
 }
 
@@ -192,22 +193,50 @@ public sealed class DailyReportService
 		ReportSourceFilter sourceFilter = ReportSourceFilter.All,
 		ReportOrderTypeFilter orderTypeFilter = ReportOrderTypeFilter.All)
 	{
+		if (startDate.Date == endDate.Date)
+		{
+			return await GetHourlyTrendAsync(startDate, endDate, sourceFilter, orderTypeFilter);
+		}
+
+		return await GetDailyTrendInternalAsync(startDate, endDate, sourceFilter, orderTypeFilter, groupByHour: false);
+	}
+
+	private async Task<List<ReportDailyTrendRow>> GetHourlyTrendAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		return await GetDailyTrendInternalAsync(startDate, endDate, sourceFilter, orderTypeFilter, groupByHour: true);
+	}
+
+	private async Task<List<ReportDailyTrendRow>> GetDailyTrendInternalAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter,
+		bool groupByHour)
+	{
 		var normalizedStart = startDate.Date;
 		var normalizedEndExclusive = endDate.Date.AddDays(1);
 
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
-		var query = new StringBuilder(@"
+		var bucketExpression = groupByHour
+			? "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')"
+			: "business_date";
+
+		var query = new StringBuilder($@"
 			SELECT
-				business_date,
-				COALESCE(SUM(order_count), 0) AS order_count,
-				COALESCE(SUM(gross_sales), 0.00) AS gross_sales,
-				COALESCE(SUM(net_sales), 0.00) AS net_sales,
-				COALESCE(SUM(vat_amount), 0.00) AS vat_amount
-			FROM vw_report_daily_kpis_live
-			WHERE business_date >= @startDate
-			  AND business_date < @endDate");
+				{bucketExpression} AS bucket,
+				COUNT(DISTINCT order_db_id) AS order_count,
+				COALESCE(SUM(line_gross), 0.00) AS gross_sales,
+				COALESCE(SUM(line_net), 0.00) AS net_sales,
+				COALESCE(SUM(line_vat), 0.00) AS vat_amount
+			FROM vw_report_order_lines_live
+			WHERE created_at >= @startDate
+			  AND created_at < @endDate");
 
 		if (sourceFilter != ReportSourceFilter.All)
 		{
@@ -219,9 +248,9 @@ public sealed class DailyReportService
 			query.Append(" AND order_type = @orderType");
 		}
 
-		query.Append(@"
-			GROUP BY business_date
-			ORDER BY business_date");
+		query.Append($@"
+			GROUP BY bucket
+			ORDER BY bucket");
 
 		await using var command = new MySqlCommand(query.ToString(), connection);
 		command.Parameters.AddWithValue("@startDate", normalizedStart);
@@ -241,9 +270,12 @@ public sealed class DailyReportService
 		await using var reader = await command.ExecuteReaderAsync();
 		while (await reader.ReadAsync())
 		{
+			var bucket = GetString(reader, "bucket");
 			rows.Add(new ReportDailyTrendRow
 			{
-				BusinessDate = GetDateTime(reader, "business_date"),
+				BusinessDate = DateTime.TryParse(bucket, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+					? parsed
+					: normalizedStart,
 				OrderCount = GetInt32(reader, "order_count"),
 				GrossSales = GetDecimal(reader, "gross_sales"),
 				NetSales = GetDecimal(reader, "net_sales"),
@@ -270,14 +302,81 @@ public sealed class DailyReportService
 			OrderTypeFilter = orderTypeFilter
 		};
 
+		var queryEndDate = snapshot.EndDate.AddDays(1);
+		var summaryTask = LoadSummaryWithConnectionAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var deliveryChargeTask = LoadDeliveryChargeTotalAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var ordersTask = LoadOrdersWithConnectionAsync(snapshot.StartDate, queryEndDate, snapshot.SearchText, sourceFilter, orderTypeFilter);
+		var topItemsTask = LoadTopItemsWithConnectionAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
+
+		await Task.WhenAll(summaryTask, deliveryChargeTask, ordersTask, topItemsTask);
+
+		snapshot.Summary = await summaryTask;
+		snapshot.Summary.DeliveryChargeTotal = await deliveryChargeTask;
+		snapshot.Orders = await ordersTask;
+		snapshot.TopItems = await topItemsTask;
+
+		return snapshot;
+	}
+
+	private async Task<ReportSummary> LoadSummaryWithConnectionAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+		return await LoadSummaryAsync(connection, startDate, endDate, sourceFilter, orderTypeFilter);
+	}
+
+	private async Task<decimal> LoadDeliveryChargeTotalAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
-		snapshot.Summary = await LoadSummaryAsync(connection, snapshot.StartDate, snapshot.EndDate.AddDays(1), sourceFilter, orderTypeFilter);
-		snapshot.Orders = await LoadOrdersAsync(connection, snapshot.StartDate, snapshot.EndDate.AddDays(1), snapshot.SearchText, sourceFilter, orderTypeFilter);
-		snapshot.TopItems = await LoadTopItemsAsync(connection, snapshot.StartDate, snapshot.EndDate.AddDays(1), sourceFilter, orderTypeFilter);
+		var query = new StringBuilder(@"
+			SELECT COALESCE(SUM(delivery_fee), 0.00)
+			FROM orders
+			WHERE created_at >= @startDate
+			  AND created_at < @endDate
+			  AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
+			  AND COALESCE(local_lifecycle_state, '') <> 'voided'");
 
-		return snapshot;
+		AppendOptionalFilters(query, sourceFilter, orderTypeFilter);
+
+		await using var command = new MySqlCommand(query.ToString(), connection);
+		command.Parameters.AddWithValue("@startDate", startDate);
+		command.Parameters.AddWithValue("@endDate", endDate);
+		AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+
+		return Convert.ToDecimal(await command.ExecuteScalarAsync() ?? 0m, CultureInfo.InvariantCulture);
+	}
+
+	private async Task<List<ReportOrderRow>> LoadOrdersWithConnectionAsync(
+		DateTime startDate,
+		DateTime endDate,
+		string searchText,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+		return await LoadOrdersAsync(connection, startDate, endDate, searchText, sourceFilter, orderTypeFilter);
+	}
+
+	private async Task<List<ReportTopItemRow>> LoadTopItemsWithConnectionAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+		return await LoadTopItemsAsync(connection, startDate, endDate, sourceFilter, orderTypeFilter);
 	}
 
 	public async Task<DailyReportSnapshot> GetTopSellReportAsync(
@@ -324,8 +423,8 @@ public sealed class DailyReportService
 		builder.AppendLine($"Search,{EscapeCsv(report.SearchText)}");
 		builder.AppendLine();
 		builder.AppendLine("Summary");
-		builder.AppendLine("Order Count,Gross Sales,Net Sales,VAT,Average Order Value");
-		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.VatAmount:F2},{report.Summary.AverageOrderValue:F2}");
+		builder.AppendLine("Order Count,Gross Sales,Net Sales,VAT,Delivery Charges,Average Order Value");
+		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.VatAmount:F2},{report.Summary.DeliveryChargeTotal:F2},{report.Summary.AverageOrderValue:F2}");
 		builder.AppendLine();
 		builder.AppendLine("Orders");
 		builder.AppendLine("Created At,Order Number,Customer,Phone,Source,Type,Status,Items,Gross,Net,VAT");
@@ -453,12 +552,13 @@ public sealed class DailyReportService
 
 		y += 34;
 
-		var metricWidth = (contentWidth - 32) / 5;
+		var metricWidth = (contentWidth - 40) / 6;
 		DrawMetricBlock(graphics, "Orders", report.Summary.OrderCount.ToString(CultureInfo.InvariantCulture), 20, y, metricWidth);
 		DrawMetricBlock(graphics, "Gross", $"£{report.Summary.GrossSales:F2}", 20 + (metricWidth + 8), y, metricWidth);
 		DrawMetricBlock(graphics, "Net", $"£{report.Summary.NetSales:F2}", 20 + ((metricWidth + 8) * 2), y, metricWidth);
 		DrawMetricBlock(graphics, "VAT", $"£{report.Summary.VatAmount:F2}", 20 + ((metricWidth + 8) * 3), y, metricWidth);
-		DrawMetricBlock(graphics, "AOV", $"£{report.Summary.AverageOrderValue:F2}", 20 + ((metricWidth + 8) * 4), y, metricWidth);
+		DrawMetricBlock(graphics, "Delivery", $"£{report.Summary.DeliveryChargeTotal:F2}", 20 + ((metricWidth + 8) * 4), y, metricWidth);
+		DrawMetricBlock(graphics, "AOV", $"£{report.Summary.AverageOrderValue:F2}", 20 + ((metricWidth + 8) * 5), y, metricWidth);
 		y += 72;
 
 		graphics.DrawString("Top Items", headingFont, PdfBrushes.Black, new PdfPointF(20, y));

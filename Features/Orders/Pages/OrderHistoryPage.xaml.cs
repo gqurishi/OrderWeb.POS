@@ -3,6 +3,7 @@ using Microsoft.Maui.Controls.Shapes;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using MySqlConnector;
@@ -23,141 +24,153 @@ namespace POS_in_NET.Pages
         {
             InitializeComponent();
             
-            _databaseService = new DatabaseService();
+            _databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
             _selectedDate = DateTime.Today;
             
-            // Set page title
             TopBar.SetPageTitle("Order History");
             
-            // Bind collections
             CompletedOrdersCollection.ItemsSource = CompletedOrders;
             VoidedOrdersCollection.ItemsSource = VoidedOrders;
 
             UpdateTabSelection();
-            
-            // Load today's orders
             UpdateDateDisplay();
-            LoadOrders();
         }
 
         protected override void OnAppearing()
         {
             base.OnAppearing();
-            LoadOrders();
+            _ = LoadOrdersSafeAsync();
+        }
+
+        private async Task LoadOrdersSafeAsync()
+        {
+            try
+            {
+                await LoadCompletedOrdersAsync();
+                await LoadVoidedOrdersAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Order history load failed: {ex.Message}");
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await AppAlertService.ShowAlertAsync("Error", $"Failed to load order history: {ex.Message}");
+                });
+            }
         }
 
         private void UpdateDateDisplay()
         {
-            SelectedDateLabel.Text = _selectedDate.ToString("MMMM dd, yyyy");
-        }
-
-        private async void LoadOrders()
-        {
-            await LoadCompletedOrdersAsync();
-            await LoadVoidedOrdersAsync();
+            if (SelectedDateLabel != null)
+            {
+                SelectedDateLabel.Text = _selectedDate.ToString("MMMM dd, yyyy");
+            }
         }
 
         private async Task LoadCompletedOrdersAsync()
         {
-            try
+            var rows = new List<OrderHistoryItem>();
+
+            using var connection = await _databaseService.GetConnectionAsync();
+            var orderTypeFilter = BuildOrderTypeFilter();
+
+            var query = $@"
+                SELECT o.id, o.order_id, o.order_type, o.total_amount, 
+                       o.created_at, o.status
+                FROM orders o
+                WHERE DATE(o.created_at) = @selectedDate
+                      AND COALESCE(o.source_channel, 'local') = 'local'
+                {orderTypeFilter}
+                AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'paid' OR LOWER(o.status) IN ('completed', 'closed', 'paid'))
+                ORDER BY o.created_at DESC";
+
+            using var command = new MySqlCommand(query, connection);
+            command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var orderType = ReadString(reader, "order_type");
+                var createdAt = reader.GetDateTime("created_at");
+
+                rows.Add(new OrderHistoryItem
+                {
+                    Id = reader.GetInt32("id"),
+                    OrderId = ReadString(reader, "order_id"),
+                    OrderType = orderType,
+                    OrderIcon = GetOrderIcon(orderType),
+                    TotalAmount = reader.GetDecimal("total_amount"),
+                    OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
+                    Status = ReadString(reader, "status")
+                });
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
                 CompletedOrders.Clear();
-                
-                using var connection = await _databaseService.GetConnectionAsync();
-                
-                // Build query based on selected order type
-                string orderTypeFilter = BuildOrderTypeFilter();
-                
-                var query = $@"
-                    SELECT o.id, o.order_id, o.order_type, o.total_amount, 
-                           o.created_at, o.status
-                    FROM orders o
-                    WHERE DATE(o.created_at) = @selectedDate
-                          AND COALESCE(o.source_channel, 'local') = 'local'
-                    {orderTypeFilter}
-                    AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'paid' OR LOWER(o.status) IN ('completed', 'closed', 'paid'))
-                    ORDER BY o.created_at DESC";
-                
-                using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
-                
-                using var reader = await command.ExecuteReaderAsync();
-                
-                while (await reader.ReadAsync())
+                foreach (var row in rows)
                 {
-                    var orderType = reader.GetString("order_type");
-                    var orderIcon = GetOrderIcon(orderType);
-                    var createdAt = reader.GetDateTime("created_at");
-                    
-                    CompletedOrders.Add(new OrderHistoryItem
-                    {
-                        Id = reader.GetInt32("id"),
-                        OrderId = reader.GetString("order_id"),
-                        OrderType = orderType,
-                        OrderIcon = orderIcon,
-                        TotalAmount = reader.GetDecimal("total_amount"),
-                        OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
-                        Status = reader.GetString("status")
-                    });
+                    CompletedOrders.Add(row);
                 }
-                
+
                 CompletedEmptyLabel.IsVisible = CompletedOrders.Count == 0;
-            }
-            catch (Exception ex)
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to load orders: {ex.Message}");
-            }
+            });
         }
 
         private async Task LoadVoidedOrdersAsync()
         {
-            try
+            var rows = new List<OrderHistoryItem>();
+
+            using var connection = await _databaseService.GetConnectionAsync();
+            var orderTypeFilter = BuildOrderTypeFilter();
+
+            var query = $@"
+                SELECT o.id, o.order_id, o.order_type, o.total_amount, 
+                       o.created_at, o.status
+                FROM orders o
+                WHERE DATE(o.created_at) = @selectedDate
+                      AND COALESCE(o.source_channel, 'local') = 'local'
+                {orderTypeFilter}
+                AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'voided' OR LOWER(o.status) IN ('void', 'cancelled'))
+                ORDER BY o.created_at DESC";
+
+            using var command = new MySqlCommand(query, connection);
+            command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var orderType = ReadString(reader, "order_type");
+                var createdAt = reader.GetDateTime("created_at");
+
+                rows.Add(new OrderHistoryItem
+                {
+                    Id = reader.GetInt32("id"),
+                    OrderId = ReadString(reader, "order_id"),
+                    OrderType = orderType,
+                    OrderIcon = "",
+                    TotalAmount = reader.GetDecimal("total_amount"),
+                    OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
+                    Status = ReadString(reader, "status")
+                });
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
                 VoidedOrders.Clear();
-                
-                using var connection = await _databaseService.GetConnectionAsync();
-                
-                // Build query based on selected order type
-                string orderTypeFilter = BuildOrderTypeFilter();
-                
-                var query = $@"
-                    SELECT o.id, o.order_id, o.order_type, o.total_amount, 
-                           o.created_at, o.status
-                    FROM orders o
-                    WHERE DATE(o.created_at) = @selectedDate
-                          AND COALESCE(o.source_channel, 'local') = 'local'
-                    {orderTypeFilter}
-                    AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'voided' OR LOWER(o.status) IN ('void', 'cancelled'))
-                    ORDER BY o.created_at DESC";
-                
-                using var command = new MySqlCommand(query, connection);
-                command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
-                
-                using var reader = await command.ExecuteReaderAsync();
-                
-                while (await reader.ReadAsync())
+                foreach (var row in rows)
                 {
-                    var orderType = reader.GetString("order_type");
-                    var createdAt = reader.GetDateTime("created_at");
-                    
-                    VoidedOrders.Add(new OrderHistoryItem
-                    {
-                        Id = reader.GetInt32("id"),
-                        OrderId = reader.GetString("order_id"),
-                        OrderType = orderType,
-                        OrderIcon = "❌",
-                        TotalAmount = reader.GetDecimal("total_amount"),
-                        OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
-                        Status = reader.GetString("status")
-                    });
+                    VoidedOrders.Add(row);
                 }
-                
+
                 VoidedOrdersLayout.IsVisible = VoidedOrders.Count > 0;
-            }
-            catch (Exception ex)
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to load voided orders: {ex.Message}");
-            }
+            });
+        }
+
+        private static string ReadString(MySqlDataReader reader, string column)
+        {
+            var ordinal = reader.GetOrdinal(column);
+            return reader.IsDBNull(ordinal) ? string.Empty : reader.GetString(ordinal);
         }
 
         private string GetOrderIcon(string orderType)
@@ -166,16 +179,16 @@ namespace POS_in_NET.Pages
 
             return normalized switch
             {
-                "pickup" => "📦",
-                "collection" => "📦",
-                "col" => "📦",
-                "delivery" => "🚗",
-                "del" => "🚗",
-                "table" => "🍽",
-                "tbl" => "🍽",
-                "dine_in" => "🍽",
-                "dine-in" => "🍽",
-                _ => "📋"
+                "pickup" => "",
+                "collection" => "",
+                "col" => "",
+                "delivery" => "",
+                "del" => "",
+                "table" => "",
+                "tbl" => "",
+                "dine_in" => "",
+                "dine-in" => "",
+                _ => ""
             };
         }
 
@@ -195,28 +208,28 @@ namespace POS_in_NET.Pages
         {
             _selectedOrderType = "ALL";
             UpdateTabSelection();
-            LoadOrders();
+            _ = LoadOrdersSafeAsync();
         }
 
         private void OnCollectionTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "COL";
             UpdateTabSelection();
-            LoadOrders();
+            _ = LoadOrdersSafeAsync();
         }
 
         private void OnDeliveryTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "DEL";
             UpdateTabSelection();
-            LoadOrders();
+            _ = LoadOrdersSafeAsync();
         }
 
         private void OnTableTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "TBL";
             UpdateTabSelection();
-            LoadOrders();
+            _ = LoadOrdersSafeAsync();
         }
 
         private void UpdateTabSelection()
@@ -432,7 +445,7 @@ namespace POS_in_NET.Pages
                 {
                     _selectedDate = calendar.SelectedDate.Value;
                     UpdateDateDisplay();
-                    LoadOrders();
+                    _ = LoadOrdersSafeAsync();
                 }
                 await Navigation.PopModalAsync();
             };
@@ -460,7 +473,7 @@ namespace POS_in_NET.Pages
             {
                 _selectedDate = orderDate;
                 UpdateDateDisplay();
-                LoadOrders();
+                _ = LoadOrdersSafeAsync();
             };
             
             await Navigation.PushModalAsync(searchPage);
@@ -499,7 +512,7 @@ namespace POS_in_NET.Pages
                 if (confirm)
                 {
                     var refundModal = new RefundModal(order.Id, order.OrderId, order.TotalAmount);
-                    refundModal.RefundCompleted += () => LoadOrders();
+                    refundModal.RefundCompleted += () => _ = LoadOrdersSafeAsync();
                     await Navigation.PushModalAsync(refundModal);
                 }
             }

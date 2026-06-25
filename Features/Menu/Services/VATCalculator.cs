@@ -222,11 +222,11 @@ namespace MyFirstMauiApp.Services
         {
             return new List<ComponentTypeOption>
             {
-                new ComponentTypeOption("HotFood", "Hot Food", "20% VAT", "🔥"),
-                new ComponentTypeOption("ColdFood", "Cold Food", "0% VAT (takeaway)", "❄️"),
-                new ComponentTypeOption("HotBeverage", "Hot Beverage", "20% VAT", "☕"),
-                new ComponentTypeOption("ColdBeverage", "Cold Beverage", "0% VAT (takeaway)", "🥤"),
-                new ComponentTypeOption("Alcohol", "Alcohol", "20% VAT", "🍺")
+                new ComponentTypeOption("HotFood", "Hot Food", "20% VAT", ""),
+                new ComponentTypeOption("ColdFood", "Cold Food", "0% VAT (takeaway)", ""),
+                new ComponentTypeOption("HotBeverage", "Hot Beverage", "20% VAT", ""),
+                new ComponentTypeOption("ColdBeverage", "Cold Beverage", "0% VAT (takeaway)", ""),
+                new ComponentTypeOption("Alcohol", "Alcohol", "20% VAT", "")
             };
         }
     }

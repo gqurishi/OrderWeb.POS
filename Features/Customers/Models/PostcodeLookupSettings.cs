@@ -1,30 +1,25 @@
 namespace POS_in_NET.Models;
 
 /// <summary>
-/// Settings for postcode lookup service
-/// Stored in cloud database for centralized configuration
+/// Settings for OrderWeb UK address lookup (shared platform owp_ key).
 /// </summary>
 public class PostcodeLookupSettings
 {
     public int Id { get; set; }
-    
-    /// <summary>
-    /// Active provider: "Mapbox" or "Custom"
-    /// </summary>
-    public string Provider { get; set; } = "Mapbox";
-    
-    // Mapbox Settings
-    public string MapboxApiToken { get; set; } = string.Empty;
-    public bool MapboxEnabled { get; set; } = true;
-    
-    // Custom PAF Settings (for future use)
-    public string CustomApiUrl { get; set; } = string.Empty;
-    public string CustomAuthToken { get; set; } = string.Empty;
-    public bool CustomEnabled { get; set; } = false;
-    
-    // Statistics
-    public int TotalLookups { get; set; } = 0;
+
+    public string Provider { get; set; } = "OrderWeb";
+
+    public string OrderWebAddressApiKey { get; set; } = string.Empty;
+
+    public string OrderWebBaseUrl { get; set; } = "https://orderweb.net";
+
+    public bool OrderWebAddressEnabled { get; set; } = true;
+
+    public int TotalLookups { get; set; }
+
     public DateTime? LastUsed { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }

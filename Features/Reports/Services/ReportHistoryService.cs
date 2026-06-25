@@ -60,7 +60,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching available reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching available reports: {ex.Message}");
         }
 
         return result;
@@ -109,7 +109,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching daily reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching daily reports: {ex.Message}");
         }
 
         return result;
@@ -158,7 +158,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching weekly reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching weekly reports: {ex.Message}");
         }
 
         return result;
@@ -207,7 +207,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching monthly reports: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching monthly reports: {ex.Message}");
         }
 
         return result;
@@ -242,7 +242,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching report: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching report: {ex.Message}");
         }
 
         return null;
@@ -283,7 +283,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching report from months ago: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching report from months ago: {ex.Message}");
         }
 
         return null;
@@ -326,7 +326,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching daily report for date: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching daily report for date: {ex.Message}");
         }
 
         return null;
@@ -375,7 +375,7 @@ public sealed class ReportHistoryService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ [ReportHistory] Error fetching previous report: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" [ReportHistory] Error fetching previous report: {ex.Message}");
         }
 
         return null;

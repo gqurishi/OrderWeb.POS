@@ -1,6 +1,7 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
 using POS_in_NET.Models;
+using POS_in_NET.Views;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -13,28 +14,45 @@ namespace POS_in_NET.Pages
         private readonly AuthenticationService _authService;
         private readonly RoleAccessService _roleAccessService;
         private readonly OrderService _orderService;
+        private readonly ZReportService _zReportService;
+        private readonly ZReportPrintService _zReportPrintService;
         private readonly CloudOrderService? _cloudService;
         private bool _isDashboardLoading;
+        private bool _isZReportLoading;
         private bool _isRestaurantNavigationInProgress;
+        private ZReportSnapshot? _currentZReport;
 
         public DashboardPage()
         {
             InitializeComponent();
             _authService = AuthenticationService.Instance;
             _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
-            _orderService = new OrderService();
+            _orderService = ServiceHelper.GetService<OrderService>() ?? new OrderService();
+            _zReportService = ServiceHelper.GetService<ZReportService>()
+                ?? new ZReportService(
+                    new DatabaseService(),
+                    new DailyReportService(new DatabaseService()),
+                    new TillExpenseService(new DatabaseService(), _authService),
+                    new DiscountAuditService(new DatabaseService(), _authService),
+                    new BusinessSettingsService());
+            _zReportPrintService = ServiceHelper.GetService<ZReportPrintService>()
+                ?? new ZReportPrintService(
+                    _zReportService,
+                    new NetworkPrinterDatabaseService(new DatabaseService()),
+                    new NetworkPrinterService(),
+                    ServiceHelper.GetService<OrderWebDailyReportSyncService>()
+                        ?? new OrderWebDailyReportSyncService(new DatabaseService(), _zReportService));
             _cloudService = ServiceHelper.GetService<CloudOrderService>();
             
-            // Set the page title in the TopBar
             TopBar.SetPageTitle("Dashboard");
         }
 
         protected override async void OnAppearing()
         {
             base.OnAppearing();
-            System.Diagnostics.Debug.WriteLine("🏠 Dashboard appearing - starting initialization");
+            System.Diagnostics.Debug.WriteLine(" Dashboard appearing - starting initialization");
 
-            if (!_roleAccessService.IsAdmin(_authService.CurrentUser?.Role))
+            if (!_roleAccessService.CanViewZReport(_authService.CurrentUser?.Role))
             {
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Dashboard.");
                 await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
@@ -43,14 +61,14 @@ namespace POS_in_NET.Pages
             
             try
             {
-                // Load dashboard data - run in background but catch errors
+                UpdateZReportTerminalHint();
                 _ = LoadDashboardDataSafely();
-                
-                System.Diagnostics.Debug.WriteLine("✅ Dashboard initialization complete");
+                _ = LoadZReportSummaryAsync(DateTime.Today);
+                System.Diagnostics.Debug.WriteLine(" Dashboard initialization complete");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Dashboard OnAppearing error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Dashboard OnAppearing error: {ex.Message}");
             }
         }
         
@@ -58,14 +76,14 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("📊 Loading dashboard data...");
+                System.Diagnostics.Debug.WriteLine(" Loading dashboard data...");
                 await LoadDashboardData();
-                System.Diagnostics.Debug.WriteLine("✅ Dashboard data loaded successfully");
+                System.Diagnostics.Debug.WriteLine(" Dashboard data loaded successfully");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Dashboard data load failed: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+                System.Diagnostics.Debug.WriteLine($" Dashboard data load failed: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -84,7 +102,7 @@ namespace POS_in_NET.Pages
             try
             {
                 _isDashboardLoading = true;
-                System.Diagnostics.Debug.WriteLine("📊 Starting parallel data load...");
+                System.Diagnostics.Debug.WriteLine(" Starting parallel data load...");
 
                 var allOrders = await _orderService.GetOrdersAsync();
                 var today = DateTime.Today;
@@ -92,7 +110,6 @@ namespace POS_in_NET.Pages
                 var todayOrders = allOrders.Where(o => o.CreatedAt.Date == today).ToList();
                 var weekOrders = allOrders.Where(o => o.CreatedAt.Date >= startOfWindow && o.CreatedAt.Date <= today).ToList();
                 
-                // Load stats and cloud status in parallel with individual error handling
                 var tasks = new List<Task>
                 {
                     Task.Run(async () =>
@@ -103,7 +120,7 @@ namespace POS_in_NET.Pages
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"❌ LoadTodaysStats error: {ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($" LoadTodaysStats error: {ex.Message}");
                         }
                     }),
                     Task.Run(async () =>
@@ -114,28 +131,27 @@ namespace POS_in_NET.Pages
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"❌ LoadWeeklySales error: {ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($" LoadWeeklySales error: {ex.Message}");
                         }
                     })
                 };
                 
-                // Wait for all with timeout
                 var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
                 var completedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
                 
                 if (completedTask == timeoutTask)
                 {
-                    System.Diagnostics.Debug.WriteLine("⚠️ Dashboard data load timed out after 10 seconds");
+                    System.Diagnostics.Debug.WriteLine(" Dashboard data load timed out after 10 seconds");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✅ Dashboard data loaded successfully");
+                    System.Diagnostics.Debug.WriteLine(" Dashboard data loaded successfully");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Dashboard load error: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+                System.Diagnostics.Debug.WriteLine($" Dashboard load error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
             }
             finally
             {
@@ -143,13 +159,110 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async Task LoadZReportSummaryAsync(DateTime reportDate)
+        {
+            if (_isZReportLoading)
+            {
+                return;
+            }
+
+            try
+            {
+                _isZReportLoading = true;
+                var user = _authService.CurrentUser;
+                var displayName = user == null
+                    ? "Admin"
+                    : !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
+
+                var snapshot = await _zReportService.GetSummaryAsync(reportDate, displayName);
+                _currentZReport = snapshot;
+                await ApplyZReportToUiAsync(snapshot);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($" Z-Report load error: {ex.Message}");
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (ZReportUpdatedLabel != null)
+                    {
+                        ZReportUpdatedLabel.Text = "Could not load Z-Report summary";
+                    }
+                });
+            }
+            finally
+            {
+                _isZReportLoading = false;
+            }
+        }
+
+        private async Task ApplyZReportToUiAsync(ZReportSnapshot snapshot)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (TodaysOrdersLabel != null)
+                {
+                    TodaysOrdersLabel.Text = snapshot.OrderCount.ToString();
+                }
+
+                if (TodaysSalesLabel != null)
+                {
+                    TodaysSalesLabel.Text = snapshot.GrossDisplay;
+                }
+
+                if (ZReportDateLabel != null)
+                {
+                    ZReportDateLabel.Text = $"{snapshot.DateDisplay} · {snapshot.TerminalName}";
+                }
+
+                if (ZReportUpdatedLabel != null)
+                {
+                    ZReportUpdatedLabel.Text = snapshot.LastUpdatedDisplay;
+                }
+
+                if (ZReportGrossLabel != null) ZReportGrossLabel.Text = snapshot.GrossDisplay;
+                if (ZReportNetLabel != null) ZReportNetLabel.Text = snapshot.NetDisplay;
+                if (ZReportVatLabel != null) ZReportVatLabel.Text = snapshot.VatDisplay;
+                if (ZReportCashLabel != null) ZReportCashLabel.Text = snapshot.CashDisplay;
+                if (ZReportCardLabel != null) ZReportCardLabel.Text = snapshot.CardDisplay;
+                if (ZReportGiftTipsLabel != null)
+                {
+                    ZReportGiftTipsLabel.Text = $"£{(snapshot.GiftCardTotal + snapshot.TipsTotal):F2}";
+                }
+                if (ZReportPosLabel != null)
+                {
+                    ZReportPosLabel.Text = $"{snapshot.PosDisplay} ({snapshot.PosOrderCount})";
+                }
+                if (ZReportOnlineLabel != null)
+                {
+                    ZReportOnlineLabel.Text = $"{snapshot.OnlineDisplay} ({snapshot.OnlineOrderCount})";
+                }
+                if (ZReportTillOutLabel != null) ZReportTillOutLabel.Text = snapshot.TillNetOutDisplay;
+                if (ZReportExpectedCashLabel != null) ZReportExpectedCashLabel.Text = snapshot.ExpectedCashDisplay;
+                if (ZReportVsYesterdayLabel != null) ZReportVsYesterdayLabel.Text = snapshot.SalesVsYesterdayDisplay;
+
+                UpdateZReportTerminalHint();
+            });
+        }
+
+        private void UpdateZReportTerminalHint()
+        {
+            if (ZReportMotherTerminalLabel == null || ZReportPrintTodayButton == null || ZReportPrintYesterdayButton == null)
+            {
+                return;
+            }
+
+            var canPrint = TerminalRoleService.CanPrintZReport;
+            ZReportMotherTerminalLabel.IsVisible = !canPrint;
+            ZReportPrintTodayButton.IsEnabled = canPrint;
+            ZReportPrintYesterdayButton.IsEnabled = canPrint;
+            ZReportPrintTodayButton.Opacity = canPrint ? 1 : 0.5;
+            ZReportPrintYesterdayButton.Opacity = canPrint ? 1 : 0.5;
+        }
+
         private async Task LoadTodaysStats(List<Order> todayOrders)
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("📈 Loading today's stats...");
-                
-                // Set defaults first on main thread
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (TodaysOrdersLabel != null)
@@ -157,16 +270,9 @@ namespace POS_in_NET.Pages
                     if (TodaysSalesLabel != null)
                         TodaysSalesLabel.Text = "£0.00";
                 });
-                System.Diagnostics.Debug.WriteLine($"✅ Today's orders filtered: {todayOrders.Count}");
                 
-                decimal todaysSales = 0;
-                foreach (var order in todayOrders)
-                {
-                    todaysSales += order.TotalAmount;
-                }
-                System.Diagnostics.Debug.WriteLine($"✅ Today's sales calculated: £{todaysSales:F2}");
+                decimal todaysSales = todayOrders.Sum(order => order.TotalAmount);
 
-                // Update UI on main thread
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (TodaysOrdersLabel != null)
@@ -174,14 +280,10 @@ namespace POS_in_NET.Pages
                     if (TodaysSalesLabel != null)
                         TodaysSalesLabel.Text = $"£{todaysSales:F2}";
                 });
-                
-                System.Diagnostics.Debug.WriteLine("✅ Today's stats updated in UI");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading today's stats: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
-                
+                System.Diagnostics.Debug.WriteLine($" Error loading today's stats: {ex.Message}");
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (TodaysOrdersLabel != null)
@@ -196,31 +298,23 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("📈 Loading weekly sales...");
-                
-                // Set default first
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (WeeklySalesLabel != null)
                         WeeklySalesLabel.Text = "£0.00";
                 });
-                decimal weeklySales = 0;
-                foreach (var order in weekOrders)
-                {
-                    weeklySales += order.TotalAmount;
-                }
+
+                var weeklySales = weekOrders.Sum(order => order.TotalAmount);
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (WeeklySalesLabel != null)
                         WeeklySalesLabel.Text = $"£{weeklySales:F2}";
                 });
-                
-                System.Diagnostics.Debug.WriteLine($"✅ Weekly sales: £{weeklySales:F2}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading weekly sales: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error loading weekly sales: {ex.Message}");
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     if (WeeklySalesLabel != null)
@@ -229,11 +323,111 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async void OnZReportRefreshClicked(object sender, EventArgs e)
+        {
+            await LoadZReportSummaryAsync(DateTime.Today);
+        }
+
+        private async void OnZReportShortcutClicked(object sender, EventArgs e)
+        {
+            await LoadZReportSummaryAsync(DateTime.Today);
+            await PrintZReportAsync(DateTime.Today, isReprint: false);
+        }
+
+        private async void OnPrintZReportTodayClicked(object sender, EventArgs e)
+        {
+            await PrintZReportAsync(DateTime.Today, isReprint: false);
+        }
+
+        private async void OnPrintZReportYesterdayClicked(object sender, EventArgs e)
+        {
+            var yesterday = DateTime.Today.AddDays(-1);
+            await PrintZReportAsync(yesterday, isReprint: true);
+        }
+
+        private async Task PrintZReportAsync(DateTime reportDate, bool isReprint)
+        {
+            if (!_roleAccessService.CanPrintZReport(_authService.CurrentUser?.Role))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can print Z-Reports.");
+                return;
+            }
+
+            if (!TerminalRoleService.CanPrintZReport)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Mother Terminal Required",
+                    "Z-Report printing runs on the mother terminal only. You can still view the live summary here.");
+                return;
+            }
+
+            try
+            {
+                var user = _authService.CurrentUser;
+                var displayName = user == null
+                    ? "Admin"
+                    : !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
+
+                var snapshot = await _zReportService.GetSummaryAsync(reportDate, displayName);
+                snapshot.IsReprint = isReprint;
+                _currentZReport = snapshot;
+
+                if (reportDate.Date == DateTime.Today)
+                {
+                    await ApplyZReportToUiAsync(snapshot);
+                }
+
+                var confirmDialog = new ModernConfirmDialog();
+                confirmDialog.SetConfirm(
+                    isReprint ? "Reprint Z-Report" : "Print Z-Report",
+                    $"Print Z-Report for {snapshot.DateDisplay} to the receipt printer?",
+                    "Print",
+                    "Cancel",
+                    "logo",
+                    "#0F766E");
+                var confirm = await confirmDialog.ShowAsync();
+
+                if (!confirm)
+                {
+                    return;
+                }
+
+                var includeDetail = false;
+                if (snapshot.TopItems.Count > 0)
+                {
+                    var detailDialog = new ModernConfirmDialog();
+                    detailDialog.SetConfirm(
+                        "Detail Slip",
+                        "Also print a detail slip with top 5 selling items?",
+                        "Yes",
+                        "No",
+                        "logo",
+                        "#0F766E");
+                    includeDetail = await detailDialog.ShowAsync();
+                }
+
+                var result = await _zReportPrintService.PrintAsync(snapshot, includeDetail, user?.Id);
+
+                if (result.Success)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Z-Report Printed", result.Message);
+                }
+                else
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Print Failed", result.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($" Z-Report print error: {ex.Message}");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Print Failed", ex.Message);
+            }
+        }
+
         private async void OnCollectionClicked(object sender, EventArgs e)
         {
             try
             {
-                // Clear navigation stack before navigating to modal
                 while (Navigation.NavigationStack.Count > 1)
                 {
                     await Navigation.PopAsync(false);
@@ -250,7 +444,6 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                // Clear navigation stack before navigating to modal
                 while (Navigation.NavigationStack.Count > 1)
                 {
                     await Navigation.PopAsync(false);
@@ -273,11 +466,7 @@ namespace POS_in_NET.Pages
             try
             {
                 _isRestaurantNavigationInProgress = true;
-
-                // Clear all shell section detail stacks so Visual Layout always opens at root page.
                 ClearShellDetailStacks();
-
-                // Now navigate to restaurant layout with instant route reset
                 await Shell.Current.GoToAsync("//visuallayout");
             }
             catch (Exception ex)
@@ -316,18 +505,6 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async void OnTodaysSalesClicked(object sender, EventArgs e)
-        {
-            try
-            {
-                await Shell.Current.GoToAsync("//report");
-            }
-            catch (Exception ex)
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to open report page: {ex.Message}");
-            }
-        }
-
         private async void OnViewWebOrdersClicked(object sender, EventArgs e)
         {
             try
@@ -354,14 +531,12 @@ namespace POS_in_NET.Pages
 
         private async void OnLogoutClicked(object sender, EventArgs e)
         {
-            // Get authentication service
             var authService = ServiceHelper.GetService<AuthenticationService>();
             if (authService != null)
             {
                 await authService.LogoutAsync();
             }
 
-            // Navigate to login page immediately
             await Shell.Current.GoToAsync("//login");
         }
     }

@@ -2,20 +2,26 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.AddFloorDialog"
-             BackgroundColor="#80000000"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Center" 
           HorizontalOptions="Center"
           Padding="40">
-        <Frame BackgroundColor="White"
-               CornerRadius="16"
-               Padding="35"
-               WidthRequest="500"
-               HasShadow="True"
-               VerticalOptions="Center"
-               HorizontalOptions="Center">
+        <Border BackgroundColor="White"
+                Stroke="{StaticResource DialogShellStrokeColor}"
+                StrokeThickness="1"
+                Padding="35"
+                WidthRequest="500"
+                VerticalOptions="Center"
+                HorizontalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="22"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
+            </Border.Shadow>
             <VerticalStackLayout Spacing="25">
                 
                 <!-- Title -->
@@ -61,7 +67,7 @@
                             BackgroundColor="#F3F4F6"
                             TextColor="#6B7280"
                             FontFamily="OpenSansSemibold"
-                            CornerRadius="10"
+                            CornerRadius="14"
                             HeightRequest="48"
                             FontSize="16"
                             Clicked="OnCancelClicked" />
@@ -72,7 +78,7 @@
                             BackgroundColor="#3B82F6"
                             TextColor="White"
                             FontFamily="OpenSansSemibold"
-                            CornerRadius="10"
+                            CornerRadius="14"
                             HeightRequest="48"
                             FontSize="16"
                             FontAttributes="Bold"
@@ -80,7 +86,7 @@
                 </Grid>
                 
             </VerticalStackLayout>
-        </Frame>
+        </Border>
     </Grid>
     
 </ContentView>

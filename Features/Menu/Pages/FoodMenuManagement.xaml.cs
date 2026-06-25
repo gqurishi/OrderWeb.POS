@@ -1373,7 +1373,8 @@ namespace POS_in_NET.Pages
             {
                 filteredDeals = filteredDeals.Where(d => 
                     d.Name.ToLower().Contains(_searchText) ||
-                    (d.Description?.ToLower().Contains(_searchText) ?? false));
+                    (d.Description?.ToLower().Contains(_searchText) ?? false) ||
+                    d.Choices.Any(c => c.Name.ToLower().Contains(_searchText)));
             }
             
             foreach (var deal in filteredDeals)
@@ -1418,7 +1419,7 @@ namespace POS_in_NET.Pages
             // Price
             grid.Add(new Label { Text = $"£{deal.Price:F2}", FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#F59E0B"), VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Center }, 1);
             
-            // Items count badge
+            // Pick rule badge
             grid.Add(new Border
             {
                 BackgroundColor = Color.FromArgb("#FEF3C7"),
@@ -1427,20 +1428,23 @@ namespace POS_in_NET.Pages
                 StrokeShape = new RoundRectangle { CornerRadius = 12 },
                 Padding = new Thickness(10, 4),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = $"{deal.Categories.Count}", FontSize = 12, TextColor = Color.FromArgb("#F59E0B"), FontAttributes = FontAttributes.Bold }
+                Content = new Label { Text = deal.PickRuleDisplay, FontSize = 12, TextColor = Color.FromArgb("#F59E0B"), FontAttributes = FontAttributes.Bold }
             }, 2);
             
-            // Status
-            var statusColor = deal.Active ? "#10B981" : "#EF4444";
-            grid.Add(new Border
+            // Status (tap to toggle)
+            var statusBorder = new Border
             {
                 BackgroundColor = Color.FromArgb(deal.Active ? "#D1FAE5" : "#FEE2E2"),
                 StrokeThickness = 0,
                 StrokeShape = new RoundRectangle { CornerRadius = 12 },
                 Padding = new Thickness(10, 4),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = deal.Active ? "Active" : "Inactive", FontSize = 11, TextColor = Color.FromArgb(statusColor), FontAttributes = FontAttributes.Bold }
-            }, 3);
+                Content = new Label { Text = deal.Active ? "Active" : "Inactive", FontSize = 11, TextColor = Color.FromArgb(deal.Active ? "#10B981" : "#EF4444"), FontAttributes = FontAttributes.Bold }
+            };
+            var statusTap = new TapGestureRecognizer();
+            statusTap.Tapped += async (_, _) => await ToggleMealDealStatus(deal);
+            statusBorder.GestureRecognizers.Add(statusTap);
+            grid.Add(statusBorder, 3);
             
             // Actions
             var actionsStack = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
@@ -1452,6 +1456,9 @@ namespace POS_in_NET.Pages
                 StrokeShape = new RoundRectangle { CornerRadius = 10 },
                 Content = new Label { Text = "\u2710", FontSize = 22, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
             };
+            var editTap = new TapGestureRecognizer();
+            editTap.Tapped += (_, _) => OnEditMealDealClicked(deal);
+            editBtn.GestureRecognizers.Add(editTap);
             
             var deleteBtn = new Border
             {
@@ -1461,6 +1468,9 @@ namespace POS_in_NET.Pages
                 StrokeShape = new RoundRectangle { CornerRadius = 10 },
                 Content = new Label { Text = "\u2716", FontSize = 20, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
             };
+            var deleteTap = new TapGestureRecognizer();
+            deleteTap.Tapped += async (_, _) => await OnDeleteMealDealClicked(deal);
+            deleteBtn.GestureRecognizers.Add(deleteTap);
             
             actionsStack.Add(editBtn);
             actionsStack.Add(deleteBtn);
@@ -1470,6 +1480,22 @@ namespace POS_in_NET.Pages
             container.Add(grid);
             container.Add(new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E2E8F0") });
             return container;
+        }
+
+        private async Task ToggleMealDealStatus(MealDeal deal)
+        {
+            try
+            {
+                await _mealDealService.ToggleActiveAsync(deal.Id);
+                deal.Active = !deal.Active;
+                OrderPlacementPageSimple.InvalidateMenuCache();
+                BuildMealDealsList();
+                await ToastNotification.ShowAsync("Success", $"Meal deal {(deal.Active ? "activated" : "deactivated")}", NotificationType.Success, 1500);
+            }
+            catch (Exception ex)
+            {
+                await ToastNotification.ShowAsync("Error", ex.Message, NotificationType.Error);
+            }
         }
 
         #endregion
@@ -1852,7 +1878,7 @@ namespace POS_in_NET.Pages
             {
                 var checkmark = new Label
                 {
-                    Text = "✓",
+                    Text = "",
                     FontSize = 28,
                     TextColor = Color.FromArgb("#10B981"),
                     FontAttributes = FontAttributes.Bold,
@@ -2130,8 +2156,38 @@ namespace POS_in_NET.Pages
 
         private void OnAddMealDealClicked(object sender, EventArgs e)
         {
-            // TODO: Implement meal deal dialog
-            ToastNotification.ShowAsync("Coming Soon", "Meal deal dialog", NotificationType.Info, 1500);
+            Navigation.PushAsync(new AddEditMealDealPage());
+        }
+
+        private void OnEditMealDealClicked(MealDeal deal)
+        {
+            Navigation.PushAsync(new AddEditMealDealPage(deal));
+        }
+
+        private async Task OnDeleteMealDealClicked(MealDeal deal)
+        {
+            bool confirm = await ShowDeleteConfirmAsync(
+                "Delete Meal Deal",
+                $"Are you sure you want to delete '{deal.Name}'?",
+                "This action cannot be undone.");
+
+            if (!confirm)
+            {
+                return;
+            }
+
+            try
+            {
+                await _mealDealService.DeleteDealAsync(deal.Id);
+                _allMealDeals.Remove(deal);
+                OrderPlacementPageSimple.InvalidateMenuCache();
+                BuildMealDealsList();
+                await ToastNotification.ShowAsync("Success", "Meal deal deleted", NotificationType.Success, 2000);
+            }
+            catch (Exception ex)
+            {
+                await ToastNotification.ShowAsync("Error", ex.Message, NotificationType.Error, 3000);
+            }
         }
 
         #endregion
@@ -2147,7 +2203,6 @@ namespace POS_in_NET.Pages
                 HorizontalOptions = LayoutOptions.Center,
                 Children =
                 {
-                    new Label { Text = "📦", FontSize = 48, HorizontalOptions = LayoutOptions.Center },
                     new Label { Text = title, FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#64748B"), HorizontalOptions = LayoutOptions.Center },
                     new Label { Text = message, FontSize = 14, TextColor = Color.FromArgb("#94A3B8"), HorizontalOptions = LayoutOptions.Center }
                 }

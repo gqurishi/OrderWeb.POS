@@ -39,7 +39,7 @@ public class OrderWebRestApiService
         _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        System.Diagnostics.Debug.WriteLine($"🔧 REST API configured: {_apiBaseUrl}");
+        System.Diagnostics.Debug.WriteLine($" REST API configured: {_apiBaseUrl}");
     }
 
     /// <summary>
@@ -59,7 +59,7 @@ public class OrderWebRestApiService
 
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine("✅ API connection test successful");
+                System.Diagnostics.Debug.WriteLine(" API connection test successful");
                 return (true, "API connection successful");
             }
             else
@@ -69,7 +69,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ API connection test failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" API connection test failed: {ex.Message}");
             return (false, $"Connection error: {ex.Message}");
         }
     }
@@ -84,14 +84,14 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/gift-cards/{cardNumber}/balance";
-            System.Diagnostics.Debug.WriteLine($"🎁 Checking gift card balance: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine($" Checking gift card balance: {cardNumber}");
 
             var response = await _httpClient.GetAsync(url);
 
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<GiftCardBalanceResponse>();
-                System.Diagnostics.Debug.WriteLine($"✅ Gift card balance: ${result?.Balance ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Gift card balance: ${result?.Balance ?? 0}");
                 return (true, result?.Balance ?? 0, "Balance retrieved");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -105,7 +105,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error checking gift card: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error checking gift card: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -118,7 +118,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/gift-cards/{cardNumber}/deduct";
-            System.Diagnostics.Debug.WriteLine($"🎁 Deducting ${amount} from gift card: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine($" Deducting ${amount} from gift card: {cardNumber}");
 
             var request = new
             {
@@ -132,7 +132,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<GiftCardDeductResponse>();
-                System.Diagnostics.Debug.WriteLine($"✅ Gift card deducted. Remaining: ${result?.RemainingBalance ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Gift card deducted. Remaining: ${result?.RemainingBalance ?? 0}");
                 return (true, result?.RemainingBalance ?? 0, "Deduction successful");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -150,7 +150,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error deducting gift card: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error deducting gift card: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -172,7 +172,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<LoyaltyPointsResponse>();
-                System.Diagnostics.Debug.WriteLine($"✅ Loyalty points: {result?.Points ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Loyalty points: {result?.Points ?? 0}");
                 return (true, result?.Points ?? 0, "Points retrieved");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -186,7 +186,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error checking loyalty: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error checking loyalty: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -213,7 +213,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<LoyaltyRedeemResponse>();
-                System.Diagnostics.Debug.WriteLine($"✅ Points redeemed. Remaining: {result?.RemainingPoints ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Points redeemed. Remaining: {result?.RemainingPoints ?? 0}");
                 return (true, result?.RemainingPoints ?? 0, "Points redeemed successfully");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -231,7 +231,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error redeeming loyalty: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error redeeming loyalty: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -258,7 +258,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<LoyaltyAddResponse>();
-                System.Diagnostics.Debug.WriteLine($"✅ Points added. New total: {result?.NewPoints ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Points added. New total: {result?.NewPoints ?? 0}");
                 return (true, result?.NewPoints ?? 0, "Points added successfully");
             }
             else
@@ -268,7 +268,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error adding loyalty: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error adding loyalty: {ex.Message}");
             return (false, 0, $"Error: {ex.Message}");
         }
     }
@@ -283,7 +283,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/reports/daily";
-            System.Diagnostics.Debug.WriteLine($"📊 Uploading daily report for: {reportDate:yyyy-MM-dd}");
+            System.Diagnostics.Debug.WriteLine($" Uploading daily report for: {reportDate:yyyy-MM-dd}");
 
             var request = new
             {
@@ -298,7 +298,7 @@ public class OrderWebRestApiService
 
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine("✅ Daily report uploaded successfully");
+                System.Diagnostics.Debug.WriteLine(" Daily report uploaded successfully");
                 return (true, "Report uploaded successfully");
             }
             else
@@ -308,7 +308,7 @@ public class OrderWebRestApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error uploading report: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error uploading report: {ex.Message}");
             return (false, $"Error: {ex.Message}");
         }
     }

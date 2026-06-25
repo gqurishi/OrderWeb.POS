@@ -50,7 +50,7 @@ public class CloudSyncService
 
             if (_isEnabled)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Cloud Sync configured: {_cloudApiUrl}");
+                System.Diagnostics.Debug.WriteLine($" Cloud Sync configured: {_cloudApiUrl}");
             }
         }
         catch (Exception ex)
@@ -82,18 +82,18 @@ public class CloudSyncService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"💚 Heartbeat sent successfully: {result}");
+                System.Diagnostics.Debug.WriteLine($" Heartbeat sent successfully: {result}");
                 HeartbeatStatusChanged?.Invoke(this, "Online");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"⚠️ Heartbeat failed: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($" Heartbeat failed: {response.StatusCode}");
                 HeartbeatStatusChanged?.Invoke(this, $"Warning: {response.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Heartbeat error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Heartbeat error: {ex.Message}");
             HeartbeatStatusChanged?.Invoke(this, "Offline");
         }
     }
@@ -140,7 +140,7 @@ public class CloudSyncService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"📊 Generating daily report for {reportDate:yyyy-MM-dd}...");
+            System.Diagnostics.Debug.WriteLine($" Generating daily report for {reportDate:yyyy-MM-dd}...");
 
             // Generate report from local database
             var report = await GenerateDailyReportAsync(reportDate);
@@ -160,7 +160,7 @@ public class CloudSyncService
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Daily report uploaded successfully");
+                System.Diagnostics.Debug.WriteLine($" Daily report uploaded successfully");
                 
                 // Log sync activity
                 await LogSyncActivityAsync("daily_report", "upload", "completed", $"Report for {reportDate:yyyy-MM-dd}");
@@ -171,7 +171,7 @@ public class CloudSyncService
             else
             {
                 var error = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Report upload failed: {error}");
+                System.Diagnostics.Debug.WriteLine($" Report upload failed: {error}");
                 
                 await LogSyncActivityAsync("daily_report", "upload", "failed", error);
                 return (false, $"Upload failed: {response.StatusCode}");
@@ -179,7 +179,7 @@ public class CloudSyncService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Daily report error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Daily report error: {ex.Message}");
             await LogSyncActivityAsync("daily_report", "upload", "failed", ex.Message);
             return (false, $"Error: {ex.Message}");
         }
@@ -221,7 +221,7 @@ public class CloudSyncService
                     GeneratedAt = DateTime.UtcNow
                 };
 
-                System.Diagnostics.Debug.WriteLine($"📊 Report generated: {report.TotalLocalOrders} orders, £{report.TotalLocalSales:F2} sales");
+                System.Diagnostics.Debug.WriteLine($" Report generated: {report.TotalLocalOrders} orders, £{report.TotalLocalSales:F2} sales");
                 return report;
             }
 
@@ -244,7 +244,7 @@ public class CloudSyncService
         var uploadTime = tomorrow.AddHours(23).AddMinutes(59); // 11:59 PM
         var delay = uploadTime - now;
 
-        System.Diagnostics.Debug.WriteLine($"📅 Daily report scheduled for {uploadTime:yyyy-MM-dd HH:mm:ss}");
+        System.Diagnostics.Debug.WriteLine($" Daily report scheduled for {uploadTime:yyyy-MM-dd HH:mm:ss}");
 
         Task.Run(async () =>
         {
@@ -272,7 +272,7 @@ public class CloudSyncService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🎁 Recording gift card transaction: {cardNumber}, Amount: £{amountUsed:F2}");
+            System.Diagnostics.Debug.WriteLine($" Recording gift card transaction: {cardNumber}, Amount: £{amountUsed:F2}");
 
             var transaction = new GiftCardTransactionModel
             {
@@ -294,21 +294,21 @@ public class CloudSyncService
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Gift card transaction recorded");
+                System.Diagnostics.Debug.WriteLine($" Gift card transaction recorded");
                 await LogSyncActivityAsync("gift_card", "upload", "completed", $"Card: {cardNumber}, Amount: £{amountUsed:F2}");
                 return (true, "Transaction recorded");
             }
             else
             {
                 var error = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Gift card transaction failed: {error}");
+                System.Diagnostics.Debug.WriteLine($" Gift card transaction failed: {error}");
                 await LogSyncActivityAsync("gift_card", "upload", "failed", error);
                 return (false, $"Failed: {response.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Gift card error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Gift card error: {ex.Message}");
             await LogSyncActivityAsync("gift_card", "upload", "failed", ex.Message);
             return (false, $"Error: {ex.Message}");
         }
@@ -354,21 +354,21 @@ public class CloudSyncService
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Loyalty transaction recorded");
+                System.Diagnostics.Debug.WriteLine($" Loyalty transaction recorded");
                 await LogSyncActivityAsync("loyalty", "upload", "completed", $"Customer: {customerPhone}, Points: {pointsUsed}");
                 return (true, "Transaction recorded");
             }
             else
             {
                 var error = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Loyalty transaction failed: {error}");
+                System.Diagnostics.Debug.WriteLine($" Loyalty transaction failed: {error}");
                 await LogSyncActivityAsync("loyalty", "upload", "failed", error);
                 return (false, $"Failed: {response.StatusCode}");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Loyalty error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Loyalty error: {ex.Message}");
             await LogSyncActivityAsync("loyalty", "upload", "failed", ex.Message);
             return (false, $"Error: {ex.Message}");
         }

@@ -129,11 +129,15 @@ namespace POS_in_NET.Pages
                 {
                     var updateOrderQuery = @"
                         UPDATE orders 
-                        SET status = 'refunded', updated_at = NOW()
+                        SET status = 'refunded',
+                            updated_by_terminal_name = @updatedByTerminalName,
+                            updated_by_terminal_at = NOW(),
+                            updated_at = NOW()
                         WHERE id = @orderId";
                     
                     using var updateCommand = new MySqlCommand(updateOrderQuery, connection);
                     updateCommand.Parameters.AddWithValue("@orderId", _orderId);
+                    updateCommand.Parameters.AddWithValue("@updatedByTerminalName", GetCurrentTerminalName());
                     await updateCommand.ExecuteNonQueryAsync();
                 }
                 
@@ -187,6 +191,18 @@ namespace POS_in_NET.Pages
         private async void OnCancelClicked(object sender, EventArgs e)
         {
             await Navigation.PopModalAsync();
+        }
+
+        private static string GetCurrentTerminalName()
+        {
+            try
+            {
+                return TerminalConfigurationService.GetConfiguration().TerminalName;
+            }
+            catch
+            {
+                return "Terminal";
+            }
         }
     }
 }

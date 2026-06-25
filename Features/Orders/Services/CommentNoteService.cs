@@ -15,7 +15,7 @@ namespace MyFirstMauiApp.Services
 
         public CommentNoteService()
         {
-            _connectionString = "Server=localhost;Database=Pos-net;User=root;Password=root;";
+            _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
         }
 
         // ========================================
@@ -31,7 +31,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -65,7 +65,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -100,7 +100,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -134,7 +134,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 if (string.IsNullOrEmpty(comment.Id))
@@ -175,7 +175,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -214,7 +214,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = "DELETE FROM PredefinedComments WHERE Id = @Id";
@@ -245,7 +245,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -288,7 +288,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -332,7 +332,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -366,7 +366,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 if (string.IsNullOrEmpty(note.Id))
@@ -408,7 +408,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -449,7 +449,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = "DELETE FROM PredefinedNotes WHERE Id = @Id";
@@ -480,7 +480,7 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 var query = @"
@@ -515,7 +515,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(_connectionString);
+                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
 
                 using var transaction = await connection.BeginTransactionAsync();

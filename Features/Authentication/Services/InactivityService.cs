@@ -7,7 +7,7 @@ public sealed class InactivityService
 {
     private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan StaffLogoutTimeout = TimeSpan.FromMinutes(3);
-    private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(15);
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
     private readonly ConditionalWeakTable<VisualElement, object> _trackedElements = new();
@@ -40,7 +40,18 @@ public sealed class InactivityService
         };
         _timer.Elapsed += (_, _) =>
         {
-            MainThread.BeginInvokeOnMainThread(async () => await CheckIdleAsync());
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                try
+                {
+                    await CheckIdleAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Inactivity timer error: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+                }
+            });
         };
         _timer.Start();
     }
@@ -83,34 +94,56 @@ public sealed class InactivityService
 
     public void TrackPage(Page? page)
     {
-        if (page == null)
+        try
         {
-            return;
+            if (page is ContentPage contentPage)
+            {
+                TrackElement(contentPage.Content);
+            }
         }
-
-        if (page is ContentPage contentPage)
+        catch (Exception ex)
         {
-            TrackElement(contentPage.Content);
+            System.Diagnostics.Debug.WriteLine($"TrackPage skipped: {ex.Message}");
         }
     }
 
-    private void TrackElement(Element? element)
+    private void TrackElement(Element? element, int depth = 0)
     {
-        if (element == null)
+        if (element == null || depth > 8)
         {
             return;
         }
 
-        if (element is VisualElement visualElement && !_trackedElements.TryGetValue(visualElement, out _))
+        try
         {
-            _trackedElements.Add(visualElement, new object());
-            AttachActivityHandlers(visualElement);
-        }
+            if (ShouldSkipElement(element))
+            {
+                return;
+            }
 
-        foreach (var child in GetChildElements(element))
-        {
-            TrackElement(child);
+            if (element is VisualElement visualElement && !_trackedElements.TryGetValue(visualElement, out _))
+            {
+                _trackedElements.Add(visualElement, new object());
+                AttachActivityHandlers(visualElement);
+            }
+
+            foreach (var child in GetChildElements(element))
+            {
+                TrackElement(child, depth + 1);
+            }
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"TrackElement skipped: {ex.Message}");
+        }
+    }
+
+    private static bool ShouldSkipElement(Element element)
+    {
+        var typeName = element.GetType().FullName ?? string.Empty;
+        return typeName.Contains("Syncfusion", StringComparison.OrdinalIgnoreCase)
+            || typeName.Contains("CollectionView", StringComparison.OrdinalIgnoreCase)
+            || typeName.Contains("SfDataGrid", StringComparison.OrdinalIgnoreCase);
     }
 
     private void AttachActivityHandlers(VisualElement element)
@@ -245,6 +278,11 @@ public sealed class InactivityService
         {
             await HandleIdleAsync(idleAction);
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Idle action failed ({idleAction}): {ex.Message}");
+            System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+        }
         finally
         {
             lock (_sync)
@@ -293,41 +331,111 @@ public sealed class InactivityService
 
     public async Task ReturnToDashboardForIdleAsync()
     {
-        var user = _authService.CurrentUser;
-        if (user == null)
+        try
         {
-            return;
-        }
-
-        var handlers = GetBeforeIdleReturnHandlersSnapshot();
-        foreach (var handler in handlers)
-        {
-            try
+            var user = _authService.CurrentUser;
+            if (user == null)
             {
-                await handler();
+                return;
             }
-            catch (Exception ex)
+
+            var handlers = GetBeforeIdleReturnHandlersSnapshot();
+            foreach (var handler in handlers)
             {
-                System.Diagnostics.Debug.WriteLine($"Idle pre-return handler failed: {ex.Message}");
+                try
+                {
+                    await handler();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Idle pre-return handler failed: {ex.Message}");
+                }
+            }
+
+            var dashboardRoute = _roleAccessService.ResolveDashboardRoute(user.Role);
+            if (IsAlreadyOnRoute(dashboardRoute))
+            {
+                lock (_sync)
+                {
+                    _hasReturnedToDashboardForIdlePeriod = true;
+                }
+
+                return;
+            }
+
+            SuppressAutomaticNavigationActivity();
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+            }
+
+            lock (_sync)
+            {
+                _hasReturnedToDashboardForIdlePeriod = true;
             }
         }
-
-        var dashboardRoute = _roleAccessService.ResolveDashboardRoute(user.Role);
-        SuppressAutomaticNavigationActivity();
-        await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
-
-        lock (_sync)
+        catch (Exception ex)
         {
-            _hasReturnedToDashboardForIdlePeriod = true;
+            System.Diagnostics.Debug.WriteLine($"Idle dashboard return failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine(ex.StackTrace);
         }
     }
 
     private async Task LogoutForIdleAsync()
     {
-        await RunBeforeIdleHandlersAsync();
-        SuppressAutomaticNavigationActivity();
-        await _authService.LogoutAsync();
-        await Shell.Current.GoToAsync("//login", false);
+        try
+        {
+            if (IsAlreadyOnRoute("login"))
+            {
+                if (_authService.CurrentUser != null)
+                {
+                    await _authService.LogoutAsync();
+                }
+
+                return;
+            }
+
+            await RunBeforeIdleHandlersAsync();
+            SuppressAutomaticNavigationActivity();
+            await _authService.LogoutAsync();
+
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("//login", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Idle logout failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+
+            try
+            {
+                await _authService.LogoutAsync();
+            }
+            catch (Exception logoutEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Idle logout cleanup failed: {logoutEx.Message}");
+            }
+        }
+    }
+
+    private static bool IsAlreadyOnRoute(string route)
+    {
+        try
+        {
+            var location = Shell.Current?.CurrentState?.Location?.OriginalString;
+            if (string.IsNullOrWhiteSpace(location))
+            {
+                return false;
+            }
+
+            return location.Contains(route, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task RunBeforeIdleHandlersAsync()

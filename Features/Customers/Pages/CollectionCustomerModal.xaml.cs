@@ -6,6 +6,7 @@ namespace POS_in_NET.Pages;
 public partial class CollectionCustomerModal : ContentPage
 {
     private readonly CollectionCustomerService _customerService;
+    private readonly CustomerDataService _customerDataService = new();
     private CollectionCustomer? _selectedCustomer;
 
     public CollectionCustomerModal()
@@ -33,11 +34,11 @@ public partial class CollectionCustomerModal : ContentPage
 
         try
         {
-            var results = await _customerService.SearchCustomersByNameAsync(searchName, searchPhone);
+            var results = await _customerDataService.SearchForCollectionAsync(searchName, searchPhone);
 
-            if (results.Any())
+            if (results.Count > 0)
             {
-                SearchResultsCollection.ItemsSource = results;
+                SearchResultsCollection.ItemsSource = results.Select(ToCollectionCustomer).ToList();
                 SearchResultsBorder.IsVisible = true;
                 NoResultsLabel.IsVisible = false;
             }
@@ -111,6 +112,15 @@ public partial class CollectionCustomerModal : ContentPage
                 return;
             }
 
+            try
+            {
+                await _customerDataService.UpsertCollectionCustomerAsync(name, phone);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CollectionCustomerModal] Customer Data save: {ex.Message}");
+            }
+
             // Navigate to order placement page with customer info
             var orderPlacementPage = new OrderPlacementPageSimple("COL", 1, "Staff", 1);
             
@@ -131,5 +141,17 @@ public partial class CollectionCustomerModal : ContentPage
         var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
         await Shell.Current.GoToAsync($"//{dashboardRoute}");
+    }
+
+    private static CollectionCustomer ToCollectionCustomer(CustomerDataRecord record)
+    {
+        return new CollectionCustomer
+        {
+            Id = record.Id,
+            Name = record.Name,
+            PhoneNumber = record.PhoneNumber,
+            CreatedAt = record.CreatedAt,
+            LastOrderDate = record.LastOrderDate
+        };
     }
 }

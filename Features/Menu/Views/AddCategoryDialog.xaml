@@ -1,95 +1,92 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="POS_in_NET.Views.AddCategoryDialog">
-    
-    <Frame BackgroundColor="#80000000"
-           Padding="0"
-           HasShadow="False"
-           CornerRadius="0">
-        
-        <Grid HorizontalOptions="Center"
-              VerticalOptions="Center"
-              WidthRequest="500">
-            
-            <Frame BackgroundColor="White"
-                   CornerRadius="16"
-                   Padding="0"
-                   HasShadow="True">
-                
-                <VerticalStackLayout Spacing="0">
-                    <!-- Header -->
-                    <Grid BackgroundColor="#6366F1"
-                          Padding="24,20">
-                        <Label x:Name="DialogTitle"
-                               Text="Add New Category"
-                               FontSize="20"
-                               FontAttributes="Bold"
-                               TextColor="White"
-                               HorizontalOptions="Center" />
-                    </Grid>
-                    
-                    <!-- Content -->
-                    <VerticalStackLayout Padding="24" Spacing="20">
-                        
-                        <!-- Category Name -->
-                        <VerticalStackLayout Spacing="8">
-                            <Label Text="Category Name *"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   TextColor="#1E293B" />
-                            <Entry x:Name="NameEntry"
-                                   Placeholder="Enter category name"
-                                   FontSize="15"
-                                   TextColor="#1E293B"
-                                   PlaceholderColor="#94A3B8"
-                                   BackgroundColor="#F8FAFC"
-                                   HeightRequest="48" />
-                        </VerticalStackLayout>
-                        
-                        <!-- Active Switch -->
-                        <HorizontalStackLayout Spacing="12">
-                            <Switch x:Name="ActiveSwitch"
-                                    IsToggled="True"
-                                    OnColor="#6366F1" />
-                            <Label Text="Active"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   TextColor="#1E293B"
-                                   VerticalOptions="Center" />
-                        </HorizontalStackLayout>
-                        
-                    </VerticalStackLayout>
-                    
-                    <!-- Buttons -->
-                    <Grid ColumnDefinitions="*,*"
-                          Padding="24,0,24,24"
-                          ColumnSpacing="12">
-                        
-                        <Button Grid.Column="0"
-                                Text="Cancel"
-                                BackgroundColor="#E2E8F0"
-                                TextColor="#64748B"
-                                FontAttributes="Bold"
-                                FontSize="15"
-                                CornerRadius="8"
-                                HeightRequest="48"
-                                Clicked="OnCancelClicked" />
-                        
-                        <Button Grid.Column="1"
-                                x:Name="SaveButton"
-                                Text="Save"
-                                BackgroundColor="#6366F1"
-                                TextColor="White"
-                                FontAttributes="Bold"
-                                FontSize="15"
-                                CornerRadius="8"
-                                HeightRequest="48"
-                                Clicked="OnSaveClicked" />
-                    </Grid>
-                    
-                </VerticalStackLayout>
-            </Frame>
-        </Grid>
-    </Frame>
+             x:Class="POS_in_NET.Views.AddCategoryDialog"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
+             VerticalOptions="Fill"
+             HorizontalOptions="Fill">
+
+    <Grid VerticalOptions="Center"
+          HorizontalOptions="Center"
+          Padding="36">
+        <Border BackgroundColor="White"
+                Stroke="{StaticResource DialogShellStrokeColor}"
+                StrokeThickness="1"
+                Padding="30"
+                WidthRequest="460"
+                VerticalOptions="Center"
+                HorizontalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="22"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
+            </Border.Shadow>
+
+            <VerticalStackLayout Spacing="18">
+                <Border BackgroundColor="{StaticResource DialogPrimaryColor}"
+                        Stroke="#FFFFFF"
+                        StrokeThickness="2"
+                        WidthRequest="74"
+                        HeightRequest="74"
+                        HorizontalOptions="Center"
+                        Margin="0,0,0,4">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="37"/>
+                    </Border.StrokeShape>
+                    <Label Text="+"
+                           FontSize="36"
+                           FontAttributes="Bold"
+                           TextColor="White"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"/>
+                </Border>
+
+                <Label x:Name="DialogTitle"
+                       Text="Add New Category"
+                       Style="{StaticResource DialogTitleStyle}"/>
+
+                <Label Text="Create a menu category for grouping items."
+                       Style="{StaticResource DialogMessageStyle}"/>
+
+                <Label Text="Category Name *"
+                       Style="{StaticResource DialogFieldLabelStyle}"/>
+
+                <Border BackgroundColor="{StaticResource DialogInputBackgroundColor}"
+                        Stroke="{StaticResource DialogInputStrokeColor}"
+                        StrokeThickness="1"
+                        Padding="14,12">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14"/>
+                    </Border.StrokeShape>
+                    <Entry x:Name="NameEntry"
+                           Placeholder="Enter category name"
+                           Style="{StaticResource DialogInputEntryStyle}"/>
+                </Border>
+
+                <HorizontalStackLayout Spacing="12">
+                    <Switch x:Name="ActiveSwitch"
+                            IsToggled="True"
+                            OnColor="{StaticResource DialogPrimaryColor}"/>
+                    <Label Text="Active"
+                           Style="{StaticResource DialogSectionTitleStyle}"
+                           VerticalOptions="Center"/>
+                </HorizontalStackLayout>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="14"
+                      Margin="0,8,0,0">
+                    <Button Grid.Column="0"
+                            Text="Cancel"
+                            Style="{StaticResource DialogCancelButtonStyle}"
+                            Clicked="OnCancelClicked"/>
+                    <Button Grid.Column="1"
+                            x:Name="SaveButton"
+                            Text="Save"
+                            Style="{StaticResource DialogPrimaryButtonStyle}"
+                            Clicked="OnSaveClicked"/>
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
 </ContentView>

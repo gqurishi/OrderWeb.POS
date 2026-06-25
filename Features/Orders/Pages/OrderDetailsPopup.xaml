@@ -43,7 +43,7 @@
                     
                     <Button Grid.Column="1"
                             x:Name="CloseButton"
-                            Text="✕"
+                            Text=""
                             BackgroundColor="Transparent"
                             TextColor="#ef4444"
                             FontSize="28"
@@ -107,7 +107,7 @@
                                                VerticalOptions="Center" />
                                         <HorizontalStackLayout Grid.Column="1" Spacing="8">
                                             <Label x:Name="PaymentIcon"
-                                                   Text="💵"
+                                                   Text=""
                                                    FontSize="18"
                                                    VerticalOptions="Center" />
                                             <Label x:Name="PaymentMethodLabel"
@@ -326,7 +326,7 @@
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
                         <HorizontalStackLayout Grid.Column="1" Spacing="12">
                             <Button x:Name="PrintButton"
-                                    Text="🖨️  Print"
+                                    Text="Print"
                                     BackgroundColor="White"
                                     TextColor="#111827"
                                     FontFamily="AlegreyaBold"

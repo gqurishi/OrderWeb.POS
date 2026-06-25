@@ -68,11 +68,11 @@ namespace POS_in_NET.Models
         
         public string TypeIcon => ModifierType switch
         {
-            ModifierType.Addition => "➕",
-            ModifierType.Substitution => "🔄",
-            ModifierType.Removal => "➖",
-            ModifierType.Size => "📏",
-            _ => "⚙️"
+            ModifierType.Addition => "",
+            ModifierType.Substitution => "",
+            ModifierType.Removal => "",
+            ModifierType.Size => "",
+            _ => ""
         };
         
         public string RequiredDisplay => IsRequired ? "Required" : "Optional";

@@ -127,82 +127,79 @@
 
             <!-- Header Section -->
             <VerticalStackLayout Spacing="8" Margin="0,0,0,8">
-                <Label Text="Postcode Lookup Settings" 
-                       FontSize="28" 
+                <Label Text="UK Address Lookup"
+                       FontSize="28"
                        FontFamily="OpenSansBold"
                        TextColor="#1F2937" />
-                <Label Text="Configure address lookup provider for delivery orders" 
-                       FontSize="15" 
+                <Label Text="OrderWeb platform API (shared owp_ key for all restaurants)"
+                       FontSize="15"
                        FontFamily="OpenSansRegular"
                        TextColor="#6B7280" />
             </VerticalStackLayout>
 
-            <!-- Mapbox Settings -->
-            <Frame x:Name="MapboxFrame" 
-                   BackgroundColor="White" 
-                   CornerRadius="12" 
-                   Padding="24" 
+            <Frame BackgroundColor="White"
+                   CornerRadius="12"
+                   Padding="24"
                    HasShadow="False"
-                   BorderColor="#E5E7EB"
-                   IsVisible="True">
+                   BorderColor="#E5E7EB">
                 <VerticalStackLayout Spacing="16">
-                    
-                    <Label Text="Mapbox Configuration" 
-                           FontSize="18" 
+                    <Label Text="OrderWeb Address API"
+                           FontSize="18"
                            FontAttributes="Bold"
                            TextColor="#1F2937"/>
 
-                    <!-- API Token -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Base URL" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
+                        <Entry x:Name="OrderWebBaseUrlEntry"
+                               Placeholder="https://orderweb.net"
+                               FontSize="14"
+                               TextColor="#1F2937"/>
+                    </VerticalStackLayout>
+
                     <VerticalStackLayout Spacing="6">
                         <HorizontalStackLayout Spacing="8">
-                            <Label Text="API Access Token" FontSize="14" FontAttributes="Bold" TextColor="#374151" VerticalOptions="Center"/>
-                            <Button x:Name="ToggleMapboxTokenButton"
+                            <Label Text="API Key (owp_...)" FontSize="14" FontAttributes="Bold" TextColor="#374151" VerticalOptions="Center"/>
+                            <Button x:Name="ToggleOrderWebApiKeyButton"
                                     Text="Show"
                                     FontSize="12"
                                     Padding="8,4"
                                     BackgroundColor="#E5E7EB"
                                     TextColor="#374151"
                                     CornerRadius="6"
-                                    Clicked="OnToggleMapboxToken"/>
+                                    Clicked="OnToggleOrderWebApiKey"/>
                         </HorizontalStackLayout>
-                        <Entry x:Name="MapboxTokenEntry"
-                               Placeholder="sk.eyJ1Ijo... or pk.eyJ1Ijo..."
+                        <Entry x:Name="OrderWebAddressApiKeyEntry"
+                               Placeholder="owp_..."
                                FontSize="14"
                                IsPassword="True"
                                BackgroundColor="White"
                                TextColor="#1F2937"/>
                     </VerticalStackLayout>
 
-                    <!-- Test Connection Button -->
-                    <Button x:Name="TestMapboxButton"
-                            Text="Test Connection"
-                            Clicked="OnTestMapboxClicked"
-                            BackgroundColor="#3B82F6"
-                            TextColor="White"
-                            CornerRadius="8"
-                            HeightRequest="44"
-                            FontSize="14"
-                            FontAttributes="Bold"/>
+                    <HorizontalStackLayout Spacing="8">
+                        <Button x:Name="TestOrderWebButton"
+                                Text="Test"
+                                Clicked="OnTestOrderWebClicked"
+                                BackgroundColor="#3B82F6"
+                                TextColor="White"
+                                CornerRadius="8"
+                                HeightRequest="44"
+                                FontSize="14"
+                                FontAttributes="Bold"/>
+                    </HorizontalStackLayout>
 
-                    <!-- Connection Status -->
-                    <Frame x:Name="MapboxStatusFrame"
+                    <Frame x:Name="OrderWebStatusFrame"
                            Padding="14"
                            CornerRadius="8"
                            IsVisible="False"
                            HasShadow="False"
                            BorderColor="#E5E7EB">
-                        <HorizontalStackLayout Spacing="10">
-                            <Label x:Name="MapboxStatusIcon" 
-                                   FontSize="16" 
-                                   VerticalOptions="Center"/>
-                            <Label x:Name="MapboxStatusText" 
-                                   FontSize="13" 
-                                   VerticalOptions="Center"/>
-                        </HorizontalStackLayout>
+                        <Label x:Name="OrderWebStatusText"
+                               FontSize="13"
+                               LineBreakMode="WordWrap"/>
                     </Frame>
 
-                    <!-- Usage Statistics -->
-                    <Frame x:Name="MapboxStatsFrame"
+                    <Frame x:Name="OrderWebStatsFrame"
                            Padding="16"
                            BackgroundColor="#F3F4F6"
                            BorderColor="#E5E7EB"
@@ -210,99 +207,16 @@
                            IsVisible="False"
                            HasShadow="False">
                         <VerticalStackLayout Spacing="6">
-                            <Label Text="Usage Statistics" 
-                                   FontSize="13" 
+                            <Label Text="Usage on this terminal"
+                                   FontSize="13"
                                    FontAttributes="Bold"
                                    TextColor="#374151"/>
-                            <Label x:Name="MapboxUsageLabel" 
-                                   FontSize="12" 
+                            <Label x:Name="OrderWebUsageLabel"
+                                   FontSize="12"
                                    TextColor="#6B7280"/>
-                            <Label x:Name="MapboxLastUsedLabel" 
-                                   FontSize="11" 
+                            <Label x:Name="OrderWebLastUsedLabel"
+                                   FontSize="11"
                                    TextColor="#9CA3AF"/>
-                        </VerticalStackLayout>
-                    </Frame>
-                </VerticalStackLayout>
-            </Frame>
-
-            <!-- Custom PAF Settings -->
-            <Frame x:Name="CustomFrame" 
-                   BackgroundColor="White" 
-                   CornerRadius="12" 
-                   Padding="24" 
-                   HasShadow="False"
-                   BorderColor="#E5E7EB"
-                   IsVisible="False">
-                <VerticalStackLayout Spacing="16">
-                    
-                    <Label Text="Custom PAF Database" 
-                           FontSize="18" 
-                           FontAttributes="Bold"
-                           TextColor="#1F2937"/>
-
-                    <!-- API URL -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="API Endpoint URL" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
-                        <Entry x:Name="CustomUrlEntry"
-                               Placeholder="https://your-api.com"
-                               FontSize="14"
-                               BackgroundColor="White"
-                               TextColor="#1F2937"/>
-                    </VerticalStackLayout>
-
-                    <!-- Auth Token -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="Authentication Token (Optional)" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
-                        <Entry x:Name="CustomTokenEntry"
-                               Placeholder="Bearer token for API authentication"
-                               FontSize="14"
-                               IsPassword="True"
-                               BackgroundColor="White"
-                               TextColor="#1F2937"/>
-                    </VerticalStackLayout>
-
-                    <!-- Test Connection Button -->
-                    <Button x:Name="TestCustomButton"
-                            Text="Test Connection"
-                            Clicked="OnTestCustomClicked"
-                            BackgroundColor="#8B5CF6"
-                            TextColor="White"
-                            CornerRadius="8"
-                            HeightRequest="44"
-                            FontSize="14"
-                            FontAttributes="Bold"/>
-
-                    <!-- Connection Status -->
-                    <Frame x:Name="CustomStatusFrame"
-                           Padding="14"
-                           CornerRadius="8"
-                           IsVisible="False"
-                           HasShadow="False"
-                           BorderColor="#E5E7EB">
-                        <HorizontalStackLayout Spacing="10">
-                            <Label x:Name="CustomStatusIcon" 
-                                   FontSize="16" 
-                                   VerticalOptions="Center"/>
-                            <Label x:Name="CustomStatusText" 
-                                   FontSize="13" 
-                                   VerticalOptions="Center"/>
-                        </HorizontalStackLayout>
-                    </Frame>
-
-                    <!-- Info Box -->
-                    <Frame Padding="16"
-                           BackgroundColor="#FEF3C7"
-                           BorderColor="#F59E0B"
-                           CornerRadius="8"
-                           HasShadow="False">
-                        <VerticalStackLayout Spacing="6">
-                            <Label Text="Future Feature" 
-                                   FontSize="13" 
-                                   FontAttributes="Bold"
-                                   TextColor="#92400E"/>
-                            <Label Text="Use this when you build your own Royal Mail PAF database"
-                                   FontSize="12" 
-                                   TextColor="#78350F"/>
                         </VerticalStackLayout>
                     </Frame>
                 </VerticalStackLayout>

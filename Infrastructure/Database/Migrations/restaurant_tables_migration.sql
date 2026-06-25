@@ -56,30 +56,6 @@ CREATE TABLE IF NOT EXISTS RestaurantTables (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- SAMPLE DATA (Optional - Remove if you don't want sample data)
--- =============================================================================
-
--- Insert sample floors
-INSERT INTO Floors (Name, Description) VALUES
-    ('Ground Floor', 'Main dining area'),
-    ('First Floor', 'Private dining rooms'),
-    ('Rooftop', 'Outdoor seating area')
-ON DUPLICATE KEY UPDATE Description = VALUES(Description);
-
--- Insert sample tables (only if floors exist)
-INSERT INTO RestaurantTables (TableNumber, FloorId, Capacity, Shape, Status) VALUES
-    ('Table 1', (SELECT Id FROM Floors WHERE Name = 'Ground Floor'), 4, 'Square', 'Available'),
-    ('Table 2', (SELECT Id FROM Floors WHERE Name = 'Ground Floor'), 2, 'Rectangle', 'Occupied'),
-    ('Table 3', (SELECT Id FROM Floors WHERE Name = 'Ground Floor'), 6, 'Square', 'Available'),
-    ('Table 4', (SELECT Id FROM Floors WHERE Name = 'Ground Floor'), 4, 'Rectangle', 'Available'),
-    ('Table 1', (SELECT Id FROM Floors WHERE Name = 'First Floor'), 8, 'Rectangle', 'Reserved'),
-    ('Table 2', (SELECT Id FROM Floors WHERE Name = 'First Floor'), 4, 'Square', 'Available'),
-    ('Table 3', (SELECT Id FROM Floors WHERE Name = 'First Floor'), 6, 'Rectangle', 'Available'),
-    ('Table 1', (SELECT Id FROM Floors WHERE Name = 'Rooftop'), 4, 'Square', 'Available'),
-    ('Table 2', (SELECT Id FROM Floors WHERE Name = 'Rooftop'), 8, 'Rectangle', 'Available')
-ON DUPLICATE KEY UPDATE Capacity = VALUES(Capacity), Shape = VALUES(Shape);
-
--- =============================================================================
 -- VERIFICATION QUERIES
 -- =============================================================================
 
@@ -118,4 +94,5 @@ ON DUPLICATE KEY UPDATE Capacity = VALUES(Capacity), Shape = VALUES(Shape);
 -- 3. utf8mb4 charset: Supports emojis and international characters
 -- 4. Indexes added for better performance on common queries
 -- 5. IsActive flag: For soft delete functionality (optional, can use hard delete)
+-- 6. Production migrations intentionally leave floors and tables empty.
 -- =============================================================================

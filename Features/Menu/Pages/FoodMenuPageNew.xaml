@@ -154,7 +154,7 @@
                                                VerticalOptions="Center" />
                                         
                                         <Button Grid.Column="2"
-                                                Text="✏️"
+                                                Text=""
                                                 BackgroundColor="#3B82F6"
                                                 TextColor="White"
                                                 CornerRadius="8"
@@ -163,7 +163,7 @@
                                                 CommandParameter="{Binding .}" />
                                         
                                         <Button Grid.Column="3"
-                                                Text="🗑️"
+                                                Text=""
                                                 BackgroundColor="#EF4444"
                                                 TextColor="White"
                                                 CornerRadius="8"
@@ -209,7 +209,7 @@
                                     <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
                                         <!-- Drag Handle -->
                                         <Label Grid.Column="0"
-                                               Text="☰"
+                                               Text=""
                                                FontSize="24"
                                                TextColor="#94A3B8"
                                                VerticalOptions="Center"
@@ -321,7 +321,7 @@
                                     <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="10">
                                         <!-- Drag Handle -->
                                         <Label Grid.Column="0"
-                                               Text="☰"
+                                               Text=""
                                                FontSize="24"
                                                TextColor="#94A3B8"
                                                VerticalOptions="Center"
@@ -359,7 +359,7 @@
                                                    FontAttributes="Bold"
                                                    TextColor="#1E293B" />
                                             <HorizontalStackLayout Spacing="6">
-                                                <Label Text="📁"
+                                                <Label Text=""
                                                        FontSize="12"
                                                        VerticalOptions="Center" />
                                                 <Label Text="{Binding ParentCategoryName}"
@@ -540,7 +540,7 @@
                                                    VerticalOptions="Center" />
                                             
                                             <Label Grid.Column="1"
-                                                   Text="{Binding Category, StringFormat='📋 {0}'}"
+                                                   Text="{Binding Category, StringFormat=' {0}'}"
                                                    FontSize="12"
                                                    TextColor="White"
                                                    HorizontalOptions="Center"
@@ -600,7 +600,7 @@
                                                     HorizontalOptions="Start" />
                                             
                                             <Button Grid.Column="1"
-                                                    Text="📝"
+                                                    Text=""
                                                     BackgroundColor="#3B82F6"
                                                     TextColor="White"
                                                     FontSize="16"
@@ -610,7 +610,7 @@
                                                     CommandParameter="{Binding .}" />
                                             
                                             <Button Grid.Column="2"
-                                                    Text="📋"
+                                                    Text=""
                                                     BackgroundColor="#8B5CF6"
                                                     TextColor="White"
                                                     FontSize="16"
@@ -620,7 +620,7 @@
                                                     CommandParameter="{Binding .}" />
                                             
                                             <Button Grid.Column="3"
-                                                    Text="🗑️"
+                                                    Text=""
                                                     BackgroundColor="#EF4444"
                                                     TextColor="White"
                                                     FontSize="16"

@@ -14,6 +14,8 @@ public class HeartbeatService
     private Timer? _heartbeatTimer;
     private string? _deviceId;
     private bool _isRunning = false;
+
+    public bool IsRunning => _isRunning;
     
     public HeartbeatService(DatabaseService databaseService)
     {
@@ -21,7 +23,7 @@ public class HeartbeatService
         _httpClient.Timeout = TimeSpan.FromSeconds(10);
         _databaseService = databaseService;
         
-        System.Diagnostics.Debug.WriteLine("💓 HeartbeatService initialized");
+        System.Diagnostics.Debug.WriteLine(" HeartbeatService initialized");
     }
     
     /// <summary>
@@ -31,14 +33,14 @@ public class HeartbeatService
     {
         if (_isRunning)
         {
-            System.Diagnostics.Debug.WriteLine("⚠️ Heartbeat already running");
+            System.Diagnostics.Debug.WriteLine(" Heartbeat already running");
             return;
         }
         
         _deviceId = await GetDeviceIdAsync();
         _isRunning = true;
         
-        System.Diagnostics.Debug.WriteLine("💓 Starting heartbeat service (30s interval)");
+        System.Diagnostics.Debug.WriteLine(" Starting heartbeat service (30s interval)");
         
         // Send immediate heartbeat
         _ = Task.Run(async () => await SendHeartbeatAsync());
@@ -60,7 +62,7 @@ public class HeartbeatService
         _heartbeatTimer?.Dispose();
         _heartbeatTimer = null;
         _isRunning = false;
-        System.Diagnostics.Debug.WriteLine("💓 Heartbeat service stopped");
+        System.Diagnostics.Debug.WriteLine(" Heartbeat service stopped");
     }
     
     /// <summary>
@@ -73,11 +75,20 @@ public class HeartbeatService
             var config = await _databaseService.GetCloudConfigAsync();
             var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
+            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
+                ? apiBaseUrl
+                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
                 return; // Silently skip if not configured
+            }
+
+            cloudUrl = cloudUrl.Trim().TrimEnd('/');
+            if (cloudUrl.EndsWith($"/{tenantSlug}", StringComparison.OrdinalIgnoreCase))
+            {
+                cloudUrl = cloudUrl[..^(tenantSlug.Length + 1)];
             }
 
             var url = $"{cloudUrl}/pos/heartbeat";
@@ -110,19 +121,19 @@ public class HeartbeatService
             
             if (response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"💓 Heartbeat sent: {stats.PendingOrders} orders, {stats.PendingAcks} ACKs");
+                System.Diagnostics.Debug.WriteLine($" Heartbeat sent: {stats.PendingOrders} orders, {stats.PendingAcks} ACKs");
                 await LogHeartbeatAsync(stats, true);
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"❌ Heartbeat failed: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($" Heartbeat failed: {response.StatusCode}");
                 await LogHeartbeatAsync(stats, false);
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Heartbeat error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Heartbeat error: {ex.Message}");
         }
     }
     
@@ -222,7 +233,7 @@ public class HeartbeatService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error getting heartbeat stats: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error getting heartbeat stats: {ex.Message}");
         }
         
         return stats;
@@ -253,7 +264,7 @@ public class HeartbeatService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Failed to log heartbeat: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Failed to log heartbeat: {ex.Message}");
         }
     }
     

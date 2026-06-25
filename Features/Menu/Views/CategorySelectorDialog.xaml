@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.CategorySelectorDialog">
     
-    <Frame BackgroundColor="#80000000"
+    <Frame BackgroundColor="{StaticResource DialogOverlayColor}"
            Padding="0"
            HasShadow="False"
            CornerRadius="0">
@@ -28,15 +28,13 @@
                                WidthRequest="80"
                                HeightRequest="80"
                                CornerRadius="18"
-                               BackgroundColor="#6366F1"
-                               Padding="0"
+                               BackgroundColor="White"
+                               Padding="8"
                                HasShadow="True"
                                HorizontalOptions="Center"
                                Margin="0,0,0,16">
-                            <Label Text=".NET"
-                                   FontSize="20"
-                                   FontAttributes="Bold"
-                                   TextColor="White"
+                            <Image Source="companylogo.png"
+                                   Aspect="AspectFit"
                                    HorizontalOptions="Center"
                                    VerticalOptions="Center" />
                         </Frame>
@@ -84,7 +82,7 @@
                                 TextColor="#475569"
                                 FontSize="16"
                                 FontAttributes="Bold"
-                                CornerRadius="12"
+                                CornerRadius="14"
                                 HeightRequest="50"
                                 Clicked="OnCancelClicked" />
                     </Grid>

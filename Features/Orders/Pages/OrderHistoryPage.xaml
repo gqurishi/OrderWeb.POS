@@ -217,7 +217,7 @@
                                                 <Border.GestureRecognizers>
                                                     <TapGestureRecognizer Tapped="OnViewOrderClicked"/>
                                                 </Border.GestureRecognizers>
-                                                <Label Text="👁 View" 
+                                                <Label Text="View" 
                                                        TextColor="White"
                                                        FontSize="13"
                                                        FontAttributes="Bold"

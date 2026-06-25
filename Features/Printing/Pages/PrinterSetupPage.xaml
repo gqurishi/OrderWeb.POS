@@ -292,7 +292,7 @@
                                     <Border.GestureRecognizers>
                                         <TapGestureRecognizer Tapped="OnCloseFormClicked"/>
                                     </Border.GestureRecognizers>
-                                    <Label Text="✕" 
+                                    <Label Text="" 
                                            FontSize="16" 
                                            TextColor="#64748B" 
                                            HorizontalOptions="Center" 

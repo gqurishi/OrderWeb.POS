@@ -201,7 +201,7 @@ public partial class BusinessSettingsPage : ContentPage
                 await _orderNumberService.UpdatePrefixAsync(orderPrefix);
                 await LoadOrderNumberSettingsAsync();
 
-                ShowStatusMessage("✅ Business information saved successfully!", Colors.Green);
+                ShowStatusMessage(" Business information saved successfully!", Colors.Green);
                 UpdatePreview();
                 
                 // Auto-hide status message after 3 seconds
@@ -210,12 +210,12 @@ public partial class BusinessSettingsPage : ContentPage
             }
             else
             {
-                ShowStatusMessage("❌ Failed to save business information.", Colors.Red);
+                ShowStatusMessage(" Failed to save business information.", Colors.Red);
             }
         }
         catch (Exception ex)
         {
-            ShowStatusMessage($"❌ Error: {ex.Message}", Colors.Red);
+            ShowStatusMessage($" Error: {ex.Message}", Colors.Red);
         }
         finally
         {
@@ -393,27 +393,27 @@ public partial class BusinessSettingsPage : ContentPage
             
             var labelService = new LabelPrintingService(ip, port, true);
             
-            ShowStatusMessage("🔄 Testing printer connection...", Colors.Blue);
+            ShowStatusMessage(" Testing printer connection...", Colors.Blue);
             
             var connected = await labelService.TestPrinterConnectionAsync();
             
             if (connected)
             {
-                ShowStatusMessage("🖨️ Printing test label...", Colors.Blue);
+                ShowStatusMessage(" Printing test label...", Colors.Blue);
                 var printed = await labelService.PrintTestLabelAsync();
                 
                 if (printed)
                 {
-                    ShowStatusMessage("✅ Printer test successful! Check for test label.", Colors.Green);
+                    ShowStatusMessage(" Printer test successful! Check for test label.", Colors.Green);
                 }
                 else
                 {
-                    ShowStatusMessage("⚠️ Connected but failed to print. Check printer status.", Colors.Orange);
+                    ShowStatusMessage(" Connected but failed to print. Check printer status.", Colors.Orange);
                 }
             }
             else
             {
-                ShowStatusMessage($"❌ Cannot connect to printer at {ip}:{port}", Colors.Red);
+                ShowStatusMessage($" Cannot connect to printer at {ip}:{port}", Colors.Red);
             }
             
             await Task.Delay(5000);
@@ -421,7 +421,7 @@ public partial class BusinessSettingsPage : ContentPage
         }
         catch (Exception ex)
         {
-            ShowStatusMessage($"❌ Test failed: {ex.Message}", Colors.Red);
+            ShowStatusMessage($" Test failed: {ex.Message}", Colors.Red);
         }
         finally
         {

@@ -27,6 +27,9 @@ public class RoleAccessService
         "dashboard",
         "table",
         "floor",
+        "terminalsetup",
+        "terminalhealth",
+        "customerdata",
         "login"
     };
 
@@ -35,7 +38,8 @@ public class RoleAccessService
         {
             [UserRole.User] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "login", "userdashboard", "collection", "delivery", "liveorder", "visuallayout"
+                "login", "userdashboard", "collection", "delivery", "liveorder", "visuallayout",
+                "reservation"
             },
             [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -48,7 +52,8 @@ public class RoleAccessService
                 "login", "dashboard", "managerdashboard", "userdashboard", "restaurant",
                 "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
-                "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings"
+                "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings",
+                "terminalhealth", "customerdata"
             }
         };
 
@@ -76,7 +81,7 @@ public class RoleAccessService
             return ResolveDashboardRoute(role);
         }
 
-        if (role == UserRole.User && normalized.Equals("restaurant", StringComparison.OrdinalIgnoreCase))
+        if (normalized.Equals("restaurant", StringComparison.OrdinalIgnoreCase))
         {
             return "visuallayout";
         }
@@ -90,7 +95,8 @@ public class RoleAccessService
         return CanAccessRoute(role, resolvedRoute);
     }
 
-    public bool CanOpenCashDrawer(UserRole? role) => IsManagerOrAdmin(role);
+    public bool CanOpenCashDrawer(UserRole? role) =>
+        role is UserRole.User or UserRole.Manager or UserRole.Admin;
 
     public bool CanAccessRoute(UserRole? role, string route)
     {
@@ -100,7 +106,8 @@ public class RoleAccessService
             return false;
         }
 
-        if (normalized.Equals("login", StringComparison.OrdinalIgnoreCase))
+        if (normalized.Equals("login", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("terminalsetup", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -136,6 +143,10 @@ public class RoleAccessService
 
     public bool IsAdmin(UserRole? role) => role == UserRole.Admin;
     public bool IsManagerOrAdmin(UserRole? role) => role == UserRole.Manager || role == UserRole.Admin;
+
+    public bool CanViewZReport(UserRole? role) => role == UserRole.Admin;
+
+    public bool CanPrintZReport(UserRole? role) => role == UserRole.Admin;
 
     private static string NormalizeRoute(string route)
     {

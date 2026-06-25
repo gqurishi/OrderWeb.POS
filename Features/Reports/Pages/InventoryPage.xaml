@@ -1,24 +1,338 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-                      xmlns:views="clr-namespace:POS_in_NET.Views"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
              x:Class="POS_in_NET.Pages.InventoryPage"
              Title="Inventory"
-                      BackgroundColor="#F8F9FA">
-       <Grid RowDefinitions="Auto,*">
-              <views:TopBar x:Name="TopBar" Grid.Row="0" />
+             BackgroundColor="#F8FAFC">
 
-              <VerticalStackLayout Grid.Row="1" Padding="24" Spacing="12" VerticalOptions="Center">
-                     <Label Text="Inventory"
-                               FontFamily="OpenSansSemibold"
-                               FontSize="28"
-                               HorizontalOptions="Center"
-                               TextColor="#111827" />
-                     <Label Text="Inventory area is currently reserved for Admin access."
-                               FontFamily="OpenSansRegular"
-                               FontSize="15"
-                               HorizontalOptions="Center"
-                               TextColor="#4B5563" />
-              </VerticalStackLayout>
-       </Grid>
+    <Grid RowDefinitions="Auto,*">
+        <views:TopBar x:Name="TopBar" Grid.Row="0" />
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20,18,20,24"
+                                 Spacing="14">
+
+                <Border Stroke="#D8E1ED"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        StrokeShape="RoundRectangle 20"
+                        Padding="20">
+                    <Grid ColumnDefinitions="*,360"
+                          ColumnSpacing="22">
+                        <VerticalStackLayout Spacing="12"
+                                             VerticalOptions="Center">
+                            <Border BackgroundColor="#EFF6FF"
+                                    Stroke="#BFDBFE"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 999"
+                                    Padding="12,6"
+                                    HorizontalOptions="Start">
+                                <Label Text="In Construction"
+                                       FontFamily="OpenSansSemibold"
+                                       FontSize="12"
+                                       TextColor="#1D4ED8" />
+                            </Border>
+
+                            <Label Text="Inventory"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="38"
+                                   TextColor="#0F172A" />
+
+                            <Label Text="Coming soon: a production inventory workspace for stock counts, supplier purchasing, low-stock alerts, and ingredient cost control."
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="15"
+                                   TextColor="#475569"
+                                   LineBreakMode="WordWrap"
+                                   MaxLines="3" />
+
+                            <Grid ColumnDefinitions="Auto,Auto,Auto"
+                                  ColumnSpacing="10"
+                                  Margin="0,6,0,0">
+                                <Border BackgroundColor="#ECFDF5"
+                                        Stroke="#BBF7D0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="12,8">
+                                    <Label Text="Stock Control"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="12"
+                                           TextColor="#047857" />
+                                </Border>
+
+                                <Border Grid.Column="1"
+                                        BackgroundColor="#FFF7ED"
+                                        Stroke="#FED7AA"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="12,8">
+                                    <Label Text="Purchase Orders"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="12"
+                                           TextColor="#C2410C" />
+                                </Border>
+
+                                <Border Grid.Column="2"
+                                        BackgroundColor="#FDF2F8"
+                                        Stroke="#FBCFE8"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="12,8">
+                                    <Label Text="Waste Tracking"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="12"
+                                           TextColor="#BE185D" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+
+                        <Border Grid.Column="1"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                BackgroundColor="#F8FAFC"
+                                StrokeShape="RoundRectangle 18"
+                                Padding="18">
+                            <Grid ColumnDefinitions="96,*"
+                                  ColumnSpacing="16"
+                                  VerticalOptions="Center">
+                                <Border BackgroundColor="#FFFFFF"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 18"
+                                        Padding="16"
+                                        WidthRequest="96"
+                                        HeightRequest="96">
+                                    <Image Source="inventory.png"
+                                           Aspect="AspectFit" />
+                                </Border>
+
+                                <VerticalStackLayout Grid.Column="1"
+                                                     Spacing="6"
+                                                     VerticalOptions="Center">
+                                    <Label Text="Inventory app preview"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="18"
+                                           TextColor="#0F172A" />
+                                    <Label Text="Designed for managers to check stock movement before service starts."
+                                           FontFamily="OpenSansRegular"
+                                           FontSize="13"
+                                           TextColor="#64748B"
+                                           LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*,*,*"
+                      ColumnSpacing="12">
+                    <Border Stroke="#BFDBFE"
+                            StrokeThickness="1"
+                            BackgroundColor="#EFF6FF"
+                            StrokeShape="RoundRectangle 16"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="5">
+                            <Label Text="Stock Items"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#1E40AF" />
+                            <Label Text="Coming Soon"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="22"
+                                   TextColor="#1D4ED8" />
+                            <Label Text="Track ingredients and packaged items"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Stroke="#BBF7D0"
+                            StrokeThickness="1"
+                            BackgroundColor="#F0FDF4"
+                            StrokeShape="RoundRectangle 16"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="5">
+                            <Label Text="Low Stock"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#166534" />
+                            <Label Text="Alerts"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="22"
+                                   TextColor="#059669" />
+                            <Label Text="Know what needs ordering"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            Stroke="#FED7AA"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFF7ED"
+                            StrokeShape="RoundRectangle 16"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="5">
+                            <Label Text="Suppliers"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#9A3412" />
+                            <Label Text="Ordering"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="22"
+                                   TextColor="#EA580C" />
+                            <Label Text="Build purchase orders quickly"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="3"
+                            Stroke="#FBCFE8"
+                            StrokeThickness="1"
+                            BackgroundColor="#FDF2F8"
+                            StrokeShape="RoundRectangle 16"
+                            Padding="16">
+                        <VerticalStackLayout Spacing="5">
+                            <Label Text="Margins"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#9D174D" />
+                            <Label Text="Costing"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="22"
+                                   TextColor="#DB2777" />
+                            <Label Text="Connect ingredients to menu profit"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="1.2*,0.8*"
+                      ColumnSpacing="14">
+                    <Border Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="18">
+                        <VerticalStackLayout Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <VerticalStackLayout Spacing="3">
+                                    <Label Text="Stock Ledger Preview"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="20"
+                                           TextColor="#0F172A" />
+                                    <Label Text="The live inventory ledger will appear here once the module is released."
+                                           FontFamily="OpenSansRegular"
+                                           FontSize="13"
+                                           TextColor="#64748B" />
+                                </VerticalStackLayout>
+
+                                <Border Grid.Column="1"
+                                        BackgroundColor="#F1F5F9"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="12,8"
+                                        VerticalOptions="Center">
+                                    <Label Text="Coming Soon"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="12"
+                                           TextColor="#334155" />
+                                </Border>
+                            </Grid>
+
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                                  ColumnDefinitions="2*,*,*,*"
+                                  RowSpacing="0">
+                                <Border Grid.Row="0" Grid.ColumnSpan="4" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12,12,0,0" Padding="12,10">
+                                    <Grid ColumnDefinitions="2*,*,*,*">
+                                        <Label Text="Item" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#475569" />
+                                        <Label Grid.Column="1" Text="Unit" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#475569" />
+                                        <Label Grid.Column="2" Text="Status" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#475569" />
+                                        <Label Grid.Column="3" Text="Action" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#475569" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="1" Grid.ColumnSpan="4" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" Padding="12,12">
+                                    <Grid ColumnDefinitions="2*,*,*,*">
+                                        <Label Text="Fresh Produce" FontFamily="OpenSansRegular" FontSize="13" TextColor="#0F172A" />
+                                        <Label Grid.Column="1" Text="kg" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                        <Label Grid.Column="2" Text="Monitor" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0284C7" />
+                                        <Label Grid.Column="3" Text="Count" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="2" Grid.ColumnSpan="4" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" Padding="12,12">
+                                    <Grid ColumnDefinitions="2*,*,*,*">
+                                        <Label Text="Dry Store" FontFamily="OpenSansRegular" FontSize="13" TextColor="#0F172A" />
+                                        <Label Grid.Column="1" Text="case" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                        <Label Grid.Column="2" Text="Ready" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#059669" />
+                                        <Label Grid.Column="3" Text="Order" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="3" Grid.ColumnSpan="4" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 0,0,12,12" Padding="12,12">
+                                    <Grid ColumnDefinitions="2*,*,*,*">
+                                        <Label Text="Chilled Items" FontFamily="OpenSansRegular" FontSize="13" TextColor="#0F172A" />
+                                        <Label Grid.Column="1" Text="tray" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                        <Label Grid.Column="2" Text="Review" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#EA580C" />
+                                        <Label Grid.Column="3" Text="Audit" FontFamily="OpenSansRegular" FontSize="13" TextColor="#64748B" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Stroke="#D8E1ED"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="18">
+                        <VerticalStackLayout Spacing="14">
+                            <Label Text="Planned Inventory Tools"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="20"
+                                   TextColor="#0F172A" />
+
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                                  RowSpacing="10">
+                                <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                                    <Label Text="Daily stock count sheets"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="14"
+                                           TextColor="#334155" />
+                                </Border>
+                                <Border Grid.Row="1" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                                    <Label Text="Supplier price tracking"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="14"
+                                           TextColor="#334155" />
+                                </Border>
+                                <Border Grid.Row="2" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                                    <Label Text="Waste and variance reports"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="14"
+                                           TextColor="#334155" />
+                                </Border>
+                                <Border Grid.Row="3" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                                    <Label Text="Menu ingredient costing"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="14"
+                                           TextColor="#334155" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

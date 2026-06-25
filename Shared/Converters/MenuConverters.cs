@@ -12,7 +12,7 @@ namespace POS_in_NET.Converters
         {
             if (value is bool boolValue)
             {
-                return boolValue ? "🚫 Disable" : "✅ Enable";
+                return boolValue ? " Disable" : " Enable";
             }
             return "Toggle";
         }

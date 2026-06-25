@@ -201,6 +201,13 @@ namespace POS_in_NET.Services
                     Description = floorDescription?.Trim() ?? string.Empty,
                     IsActive = true
                 });
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "floor",
+                    newFloorId.ToString(),
+                    null,
+                    new { action = "created", floorName });
                 AppDataRefreshService.RequestRefresh();
                 
                 return (true, $"Floor '{floorName}' created successfully", newFloorId);
@@ -283,6 +290,14 @@ namespace POS_in_NET.Services
                 
                 if (floorsDeleted > 0)
                 {
+                    await TerminalEventSyncService.PublishAsync(
+                        connection,
+                        AppDataChangeKind.TableLayout,
+                        "floor",
+                        floorId.ToString(),
+                        null,
+                        new { action = "deleted", tableCount });
+
                     NotifyFloorsChanged(FloorChangeAction.Deleted, new Floor
                     {
                         Id = floorId,
@@ -345,7 +360,15 @@ namespace POS_in_NET.Services
 
                 if (affectedRows > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"✅ Floor background updated: ID={floorId}");
+                    await TerminalEventSyncService.PublishAsync(
+                        connection,
+                        AppDataChangeKind.TableLayout,
+                        "floor",
+                        floorId.ToString(),
+                        null,
+                        new { action = "background_updated" });
+
+                    System.Diagnostics.Debug.WriteLine($" Floor background updated: ID={floorId}");
                     return true;
                 }
             }
@@ -414,6 +437,12 @@ namespace POS_in_NET.Services
                 Description = floorDescription?.Trim() ?? string.Empty,
                 IsActive = true
             });
+            await TerminalEventSyncService.PublishAsync(
+                AppDataChangeKind.TableLayout,
+                "floor",
+                floorId.ToString(),
+                null,
+                new { action = "updated", floorName });
             AppDataRefreshService.RequestRefresh();
 
             return (true, $"Floor '{floorName}' updated successfully");

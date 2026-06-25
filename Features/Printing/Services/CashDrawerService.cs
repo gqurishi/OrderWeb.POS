@@ -173,6 +173,7 @@ public sealed class CashDrawerService
                     printer_port INT NULL,
                     success TINYINT(1) NOT NULL DEFAULT 0,
                     error_message TEXT NULL,
+                    till_expense_id INT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_cash_drawer_event_at (event_at),
                     INDEX idx_cash_drawer_user_time (requested_by_user_id, event_at),
@@ -258,7 +259,8 @@ public sealed class CashDrawerService
                  printer_ip,
                  printer_port,
                  success,
-                 error_message)
+                 error_message,
+                 till_expense_id)
             VALUES
                 (NOW(),
                  @userId,
@@ -276,7 +278,8 @@ public sealed class CashDrawerService
                  @printerIp,
                  @printerPort,
                  @success,
-                 @errorMessage);
+                 @errorMessage,
+                 @tillExpenseId);
             SELECT LAST_INSERT_ID();";
 
         command.Parameters.AddWithValue("@userId", currentUser?.Id ?? (object)DBNull.Value);
@@ -295,6 +298,7 @@ public sealed class CashDrawerService
         command.Parameters.AddWithValue("@printerPort", printer?.Port ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("@success", success);
         command.Parameters.AddWithValue("@errorMessage", string.IsNullOrWhiteSpace(errorMessage) ? DBNull.Value : errorMessage.Trim());
+        command.Parameters.AddWithValue("@tillExpenseId", request.TillExpenseId ?? (object)DBNull.Value);
 
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt32(result);

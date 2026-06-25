@@ -85,7 +85,7 @@ public class ConnectionManager
     {
         try
         {
-            Debug.WriteLine("🚀 ConnectionManager: Initializing connections...");
+            Debug.WriteLine(" ConnectionManager: Initializing connections...");
             
             // Load configuration
             var config = await _databaseService.GetCloudConfigAsync();
@@ -96,10 +96,10 @@ public class ConnectionManager
             var apiOk = await TestApiConnectionAsync();
             var orderWebOk = await TestOrderWebNetConnectionAsync();
             
-            Debug.WriteLine($"📊 Connection Test Results:");
-            Debug.WriteLine($"   Database: {(databaseOk ? "✅ Healthy" : "❌ Failed")}");
-            Debug.WriteLine($"   API: {(apiOk ? "✅ Healthy" : "❌ Failed")}");
-            Debug.WriteLine($"   OrderWeb.net: {(orderWebOk ? "✅ Healthy" : "❌ Failed")}");
+            Debug.WriteLine($" Connection Test Results:");
+            Debug.WriteLine($"   Database: {(databaseOk ? " Healthy" : " Failed")}");
+            Debug.WriteLine($"   API: {(apiOk ? " Healthy" : " Failed")}");
+            Debug.WriteLine($"   OrderWeb.net: {(orderWebOk ? " Healthy" : " Failed")}");
             
             // Select best available connection
             if (databaseOk)
@@ -116,7 +116,7 @@ public class ConnectionManager
             }
             else
             {
-                Debug.WriteLine("❌ All connections failed!");
+                Debug.WriteLine(" All connections failed!");
                 _currentConnection = ConnectionType.None;
                 return false;
             }
@@ -132,7 +132,7 @@ public class ConnectionManager
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ ConnectionManager initialization error: {ex.Message}");
+            Debug.WriteLine($" ConnectionManager initialization error: {ex.Message}");
             return false;
         }
     }
@@ -310,7 +310,7 @@ public class ConnectionManager
             // Check cooldown period to prevent rapid switching
             if ((DateTime.Now - _lastConnectionSwitch).TotalSeconds < _switchCooldownSeconds)
             {
-                Debug.WriteLine($"⏸️ Connection switch on cooldown. Waiting...");
+                Debug.WriteLine($"⏸ Connection switch on cooldown. Waiting...");
                 return;
             }
             
@@ -319,7 +319,7 @@ public class ConnectionManager
             _lastConnectionSwitch = DateTime.Now;
             _connectionSwitchCount++;
             
-            Debug.WriteLine($"🔄 Switching connection: {oldConnection} → {newConnection}");
+            Debug.WriteLine($" Switching connection: {oldConnection} → {newConnection}");
             Debug.WriteLine($"   Reason: {reason}");
             
             // Start monitoring for the new connection
@@ -327,17 +327,17 @@ public class ConnectionManager
             {
                 case ConnectionType.Database:
                     await _directDatabaseService.StartRealTimeMonitoringAsync();
-                    Debug.WriteLine("⚡ Direct database monitoring started (0.5s latency)");
+                    Debug.WriteLine(" Direct database monitoring started (0.5s latency)");
                     break;
                     
                 case ConnectionType.API:
                     // API polling should already be running
-                    Debug.WriteLine("📡 API polling active (2-4s latency)");
+                    Debug.WriteLine(" API polling active (2-4s latency)");
                     break;
                     
                 case ConnectionType.OrderWebNet:
                     await _directDatabaseService.StartRealTimeMonitoringAsync();
-                    Debug.WriteLine("🌐 OrderWeb.net monitoring started (0.5s latency)");
+                    Debug.WriteLine(" OrderWeb.net monitoring started (0.5s latency)");
                     break;
             }
             
@@ -352,7 +352,7 @@ public class ConnectionManager
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"❌ Error switching connection: {ex.Message}");
+            Debug.WriteLine($" Error switching connection: {ex.Message}");
         }
     }
     
@@ -375,7 +375,7 @@ public class ConnectionManager
             }
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(_healthCheckIntervalSeconds));
         
-        Debug.WriteLine($"💚 Health monitoring started (checking every {_healthCheckIntervalSeconds}s)");
+        Debug.WriteLine($" Health monitoring started (checking every {_healthCheckIntervalSeconds}s)");
     }
     
     /// <summary>
@@ -397,7 +397,7 @@ public class ConnectionManager
             }
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(_reconnectIntervalSeconds));
         
-        Debug.WriteLine($"🔄 Reconnect monitoring started (checking every {_reconnectIntervalSeconds}s)");
+        Debug.WriteLine($" Reconnect monitoring started (checking every {_reconnectIntervalSeconds}s)");
     }
     
     /// <summary>
@@ -424,7 +424,7 @@ public class ConnectionManager
         
         if (!currentHealthy)
         {
-            Debug.WriteLine($"⚠️ Current connection ({_currentConnection}) is unhealthy! Attempting failover...");
+            Debug.WriteLine($" Current connection ({_currentConnection}) is unhealthy! Attempting failover...");
             await FailoverToNextBestConnectionAsync();
         }
     }
@@ -449,7 +449,7 @@ public class ConnectionManager
         }
         else
         {
-            Debug.WriteLine("❌ All connections failed! No failover available.");
+            Debug.WriteLine(" All connections failed! No failover available.");
             _currentConnection = ConnectionType.None;
         }
     }
@@ -503,7 +503,7 @@ public class ConnectionManager
     /// </summary>
     public async Task ForceConnectionSwitchAsync(ConnectionType targetConnection)
     {
-        Debug.WriteLine($"🔧 Manual connection switch requested: → {targetConnection}");
+        Debug.WriteLine($" Manual connection switch requested: → {targetConnection}");
         await SwitchToConnectionAsync(targetConnection, "Manual switch");
     }
     
@@ -518,13 +518,13 @@ public class ConnectionManager
         {
             StartHealthMonitoring();
             StartReconnectMonitoring();
-            Debug.WriteLine("✅ Auto-failover enabled");
+            Debug.WriteLine(" Auto-failover enabled");
         }
         else
         {
             _healthCheckTimer?.Dispose();
             _reconnectTimer?.Dispose();
-            Debug.WriteLine("⏸️ Auto-failover disabled");
+            Debug.WriteLine("⏸ Auto-failover disabled");
         }
         
         // Save to config

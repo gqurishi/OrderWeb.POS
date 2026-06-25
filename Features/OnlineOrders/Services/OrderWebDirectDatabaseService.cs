@@ -37,7 +37,7 @@ public class OrderWebDirectDatabaseService
         _orderService = orderService;
         _receiptService = receiptService;
         
-        System.Diagnostics.Debug.WriteLine("🔥 OrderWebDirectDatabaseService initialized for INSTANT database access!");
+        System.Diagnostics.Debug.WriteLine(" OrderWebDirectDatabaseService initialized for INSTANT database access!");
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ public class OrderWebDirectDatabaseService
     {
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🔧 Configuring database connection...");
+            System.Diagnostics.Debug.WriteLine($" Configuring database connection...");
             System.Diagnostics.Debug.WriteLine($"   Host: {host}");
             System.Diagnostics.Debug.WriteLine($"   Database: {database}");
             System.Diagnostics.Debug.WriteLine($"   Username: {username}");
@@ -81,13 +81,13 @@ public class OrderWebDirectDatabaseService
                 // Save connection details to local database
                 await SaveConnectionConfigAsync(host, database, username, password, port);
                 ConnectionStatus = "Connected";
-                System.Diagnostics.Debug.WriteLine("✅ Direct database connection configured successfully!");
+                System.Diagnostics.Debug.WriteLine(" Direct database connection configured successfully!");
                 return true;
             }
             else
             {
                 ConnectionStatus = $"Failed: {testResult.ErrorMessage}";
-                System.Diagnostics.Debug.WriteLine($"❌ Database connection failed: {testResult.ErrorMessage}");
+                System.Diagnostics.Debug.WriteLine($" Database connection failed: {testResult.ErrorMessage}");
                 _orderWebConnectionString = null; // Clear failed connection
                 return false;
             }
@@ -95,7 +95,7 @@ public class OrderWebDirectDatabaseService
         catch (Exception ex)
         {
             ConnectionStatus = $"Error: {ex.Message}";
-            System.Diagnostics.Debug.WriteLine($"❌ Error configuring database connection: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error configuring database connection: {ex.Message}");
             _orderWebConnectionString = null; // Clear failed connection
             return false;
         }
@@ -123,34 +123,34 @@ public class OrderWebDirectDatabaseService
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("❌ Unsupported connection string format");
+                System.Diagnostics.Debug.WriteLine(" Unsupported connection string format");
                 ConnectionStatus = "Unsupported connection string format";
                 return false;
             }
 
             _orderWebConnectionString = finalConnectionString;
             
-            System.Diagnostics.Debug.WriteLine($"🔧 Testing parsed connection string");
+            System.Diagnostics.Debug.WriteLine($" Testing parsed connection string");
             
             // Test the connection
             var testResult = await TestOrderWebDatabaseConnectionAsync();
             if (testResult.Success)
             {
                 ConnectionStatus = "Connected";
-                System.Diagnostics.Debug.WriteLine("✅ Connection string configured successfully!");
+                System.Diagnostics.Debug.WriteLine(" Connection string configured successfully!");
                 return true;
             }
             else
             {
                 ConnectionStatus = $"Failed: {testResult.ErrorMessage}";
-                System.Diagnostics.Debug.WriteLine($"❌ Connection failed: {testResult.ErrorMessage}");
+                System.Diagnostics.Debug.WriteLine($" Connection failed: {testResult.ErrorMessage}");
                 return false;
             }
         }
         catch (Exception ex)
         {
             ConnectionStatus = $"Error: {ex.Message}";
-            System.Diagnostics.Debug.WriteLine($"❌ Error configuring connection string: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error configuring connection string: {ex.Message}");
             return false;
         }
     }
@@ -184,7 +184,7 @@ public class OrderWebDirectDatabaseService
                 UseCompression = false
             };
 
-            System.Diagnostics.Debug.WriteLine($"📋 Parsed MySQL URL:");
+            System.Diagnostics.Debug.WriteLine($" Parsed MySQL URL:");
             System.Diagnostics.Debug.WriteLine($"   Host: {host}");
             System.Diagnostics.Debug.WriteLine($"   Database: {database}");
             System.Diagnostics.Debug.WriteLine($"   Username: {username}");
@@ -194,7 +194,7 @@ public class OrderWebDirectDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error parsing MySQL URL: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error parsing MySQL URL: {ex.Message}");
             throw new ArgumentException($"Invalid MySQL URL format: {ex.Message}");
         }
     }
@@ -206,7 +206,7 @@ public class OrderWebDirectDatabaseService
     {
         if (string.IsNullOrEmpty(_orderWebConnectionString))
         {
-            System.Diagnostics.Debug.WriteLine("❌ Cannot start monitoring - database connection not configured");
+            System.Diagnostics.Debug.WriteLine(" Cannot start monitoring - database connection not configured");
             return;
         }
 
@@ -222,8 +222,8 @@ public class OrderWebDirectDatabaseService
         // Reset monitoring state
         _lastOrderCheck = DateTime.UtcNow.AddMinutes(-5); // Check last 5 minutes initially
 
-        System.Diagnostics.Debug.WriteLine("🚀 Starting REAL-TIME database monitoring (0.5 second intervals)!");
-        System.Diagnostics.Debug.WriteLine("⚡ Orders will appear INSTANTLY when customers place them!");
+        System.Diagnostics.Debug.WriteLine(" Starting REAL-TIME database monitoring (0.5 second intervals)!");
+        System.Diagnostics.Debug.WriteLine(" Orders will appear INSTANTLY when customers place them!");
 
         // Start immediate check, then ultra-fast monitoring
         _ = Task.Run(async () => await MonitorForNewOrdersAsync());
@@ -233,7 +233,7 @@ public class OrderWebDirectDatabaseService
             null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
 
         ConnectionStatus = "Real-time monitoring active";
-        System.Diagnostics.Debug.WriteLine("✅ Real-time order monitoring started successfully!");
+        System.Diagnostics.Debug.WriteLine(" Real-time order monitoring started successfully!");
     }
 
     /// <summary>
@@ -245,7 +245,7 @@ public class OrderWebDirectDatabaseService
         _realTimeMonitorTimer = null;
         _isMonitoring = false;
         ConnectionStatus = "Monitoring stopped";
-        System.Diagnostics.Debug.WriteLine("🛑 Real-time order monitoring stopped");
+        System.Diagnostics.Debug.WriteLine(" Real-time order monitoring stopped");
     }
 
     /// <summary>
@@ -263,7 +263,7 @@ public class OrderWebDirectDatabaseService
         try
         {
             var monitorStart = DateTime.Now;
-            System.Diagnostics.Debug.WriteLine($"⚡ REAL-TIME CHECK at {monitorStart:HH:mm:ss.fff}");
+            System.Diagnostics.Debug.WriteLine($" REAL-TIME CHECK at {monitorStart:HH:mm:ss.fff}");
 
             // Get tenant configuration
             var config = await _localDatabase.GetCloudConfigAsync();
@@ -271,7 +271,7 @@ public class OrderWebDirectDatabaseService
 
             if (string.IsNullOrEmpty(tenantSlug))
             {
-                System.Diagnostics.Debug.WriteLine("❌ No tenant slug configured");
+                System.Diagnostics.Debug.WriteLine(" No tenant slug configured");
                 return;
             }
 
@@ -281,7 +281,7 @@ public class OrderWebDirectDatabaseService
             if (newOrders.Any())
             {
                 var processingStart = DateTime.Now;
-                System.Diagnostics.Debug.WriteLine($"🔥 INSTANT ORDERS DETECTED: {newOrders.Count} new orders!");
+                System.Diagnostics.Debug.WriteLine($" INSTANT ORDERS DETECTED: {newOrders.Count} new orders!");
 
                 // Process each order immediately
                 foreach (var order in newOrders)
@@ -296,7 +296,7 @@ public class OrderWebDirectDatabaseService
                 var processingDuration = (DateTime.Now - processingStart).TotalMilliseconds;
                 var totalDuration = (DateTime.Now - monitorStart).TotalMilliseconds;
                 
-                System.Diagnostics.Debug.WriteLine($"⚡ INSTANT DELIVERY COMPLETE: Processing {processingDuration:F0}ms | Total {totalDuration:F0}ms");
+                System.Diagnostics.Debug.WriteLine($" INSTANT DELIVERY COMPLETE: Processing {processingDuration:F0}ms | Total {totalDuration:F0}ms");
 
                 // Notify UI immediately
                 OnNewOrdersDetected?.Invoke();
@@ -304,12 +304,12 @@ public class OrderWebDirectDatabaseService
             else
             {
                 var checkDuration = (DateTime.Now - monitorStart).TotalMilliseconds;
-                System.Diagnostics.Debug.WriteLine($"📊 No new orders - Check completed in {checkDuration:F0}ms");
+                System.Diagnostics.Debug.WriteLine($" No new orders - Check completed in {checkDuration:F0}ms");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error during real-time monitoring: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error during real-time monitoring: {ex.Message}");
             ConnectionStatus = $"Monitoring error: {ex.Message}";
         }
     }
@@ -401,7 +401,7 @@ public class OrderWebDirectDatabaseService
                     };
 
                     // DEBUG: Log payment information from database
-                    System.Diagnostics.Debug.WriteLine($"💳 OrderWeb DB - Order {order.OrderNumber}:");
+                    System.Diagnostics.Debug.WriteLine($" OrderWeb DB - Order {order.OrderNumber}:");
                     System.Diagnostics.Debug.WriteLine($"   PaymentMethod: '{order.PaymentMethod}'");
                     System.Diagnostics.Debug.WriteLine($"   PaymentStatus: '{order.PaymentStatus}'");
                     System.Diagnostics.Debug.WriteLine($"   VoucherCode: '{order.VoucherCode}'");
@@ -448,11 +448,11 @@ public class OrderWebDirectDatabaseService
             }
 
             orders = orderDict.Values.ToList();
-            System.Diagnostics.Debug.WriteLine($"📥 Retrieved {orders.Count} new orders directly from OrderWeb.net database");
+            System.Diagnostics.Debug.WriteLine($" Retrieved {orders.Count} new orders directly from OrderWeb.net database");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error querying OrderWeb.net database: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error querying OrderWeb.net database: {ex.Message}");
             throw;
         }
 
@@ -469,7 +469,7 @@ public class OrderWebDirectDatabaseService
             // Check if we already have this order locally
             if (await OrderExistsLocallyAsync(order.Id))
             {
-                System.Diagnostics.Debug.WriteLine($"📝 Order {order.OrderNumber} already exists - updating payment info");
+                System.Diagnostics.Debug.WriteLine($" Order {order.OrderNumber} already exists - updating payment info");
                 
                 // Update existing order with latest payment information from OrderWeb.net
                 await UpdateOrderPaymentInfoAsync(order);
@@ -484,7 +484,7 @@ public class OrderWebDirectDatabaseService
 
             if (saveResult.Success)
             {
-                System.Diagnostics.Debug.WriteLine($"🎉 INSTANT ORDER CREATED: {order.OrderNumber} - Ready for kitchen!");
+                System.Diagnostics.Debug.WriteLine($" INSTANT ORDER CREATED: {order.OrderNumber} - Ready for kitchen!");
 
                 // Auto-print if enabled
                 var config = await _localDatabase.GetCloudConfigAsync();
@@ -498,7 +498,7 @@ public class OrderWebDirectDatabaseService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error processing instant order {order.OrderNumber}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error processing instant order {order.OrderNumber}: {ex.Message}");
         }
     }
 
@@ -525,12 +525,12 @@ public class OrderWebDirectDatabaseService
             
             if (rowsAffected > 0)
             {
-                System.Diagnostics.Debug.WriteLine($"✅ Updated payment method for {cloudOrder.OrderNumber}: '{cloudOrder.PaymentMethod}'");
+                System.Diagnostics.Debug.WriteLine($" Updated payment method for {cloudOrder.OrderNumber}: '{cloudOrder.PaymentMethod}'");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error updating payment info for {cloudOrder.OrderNumber}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Error updating payment info for {cloudOrder.OrderNumber}: {ex.Message}");
         }
     }
 
@@ -546,7 +546,7 @@ public class OrderWebDirectDatabaseService
 
         try
         {
-            System.Diagnostics.Debug.WriteLine($"🔧 Testing connection...");
+            System.Diagnostics.Debug.WriteLine($" Testing connection...");
             
             // Create connection with timeout using CancellationToken
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 5 second timeout
@@ -563,7 +563,7 @@ public class OrderWebDirectDatabaseService
                 return (false, "Connection timeout - Cannot reach database server (Check host/port/firewall)");
             }
 
-            System.Diagnostics.Debug.WriteLine("✅ Database connection established successfully!");
+            System.Diagnostics.Debug.WriteLine(" Database connection established successfully!");
 
             // Discover available tables (with timeout)
             using var tablesCommand = new MySqlCommand("SHOW TABLES", connection);
@@ -578,24 +578,24 @@ public class OrderWebDirectDatabaseService
             }
             await tablesReader.CloseAsync();
 
-            System.Diagnostics.Debug.WriteLine($"📋 Available tables: {string.Join(", ", tables)}");
+            System.Diagnostics.Debug.WriteLine($" Available tables: {string.Join(", ", tables)}");
 
             // Look for order-related tables
             var orderTables = tables.Where(t => t.ToLower().Contains("order")).ToList();
             if (orderTables.Any())
             {
-                System.Diagnostics.Debug.WriteLine($"🍽️ Order-related tables found: {string.Join(", ", orderTables)}");
+                System.Diagnostics.Debug.WriteLine($" Order-related tables found: {string.Join(", ", orderTables)}");
                 
                 // Test querying the first order table
                 var firstOrderTable = orderTables.First();
                 using var testCommand = new MySqlCommand($"SELECT COUNT(*) FROM `{firstOrderTable}` LIMIT 1", connection);
                 testCommand.CommandTimeout = 5;
                 var count = await testCommand.ExecuteScalarAsync(cts.Token);
-                System.Diagnostics.Debug.WriteLine($"📊 {firstOrderTable} contains {count} records");
+                System.Diagnostics.Debug.WriteLine($" {firstOrderTable} contains {count} records");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ No order-related tables found. Available tables listed above.");
+                System.Diagnostics.Debug.WriteLine(" No order-related tables found. Available tables listed above.");
             }
 
             return (true, $"Connection successful! Found {tables.Count} tables");
@@ -609,19 +609,19 @@ public class OrderWebDirectDatabaseService
                 2003 => "Can't connect to server - Check host and port",
                 _ => $"MySQL Error {ex.Number}: {ex.Message}"
             };
-            System.Diagnostics.Debug.WriteLine($"❌ {errorMsg}");
+            System.Diagnostics.Debug.WriteLine($" {errorMsg}");
             return (false, errorMsg);
         }
         catch (OperationCanceledException)
         {
             var errorMsg = "Operation timeout - Connection took too long";
-            System.Diagnostics.Debug.WriteLine($"❌ {errorMsg}");
+            System.Diagnostics.Debug.WriteLine($" {errorMsg}");
             return (false, errorMsg);
         }
         catch (Exception ex)
         {
             var errorMsg = $"Connection error: {ex.Message}";
-            System.Diagnostics.Debug.WriteLine($"❌ {errorMsg}");
+            System.Diagnostics.Debug.WriteLine($" {errorMsg}");
             return (false, errorMsg);
         }
     }
@@ -813,7 +813,7 @@ public class OrderWebDirectDatabaseService
         int updatedCount = 0;
         try
         {
-            System.Diagnostics.Debug.WriteLine("🔧 Starting payment method fix for all orders...");
+            System.Diagnostics.Debug.WriteLine(" Starting payment method fix for all orders...");
 
             // FIRST: Ensure payment_method column exists in orders table
             try
@@ -833,7 +833,7 @@ public class OrderWebDirectDatabaseService
                 
                 if (!columnExists)
                 {
-                    System.Diagnostics.Debug.WriteLine("📝 payment_method column doesn't exist - adding it now...");
+                    System.Diagnostics.Debug.WriteLine(" payment_method column doesn't exist - adding it now...");
                     
                     using var alterCommand = connection.CreateCommand();
                     alterCommand.CommandText = @"
@@ -841,21 +841,21 @@ public class OrderWebDirectDatabaseService
                         ADD COLUMN payment_method VARCHAR(50) NULL AFTER order_type";
                     
                     await alterCommand.ExecuteNonQueryAsync();
-                    System.Diagnostics.Debug.WriteLine("✅ payment_method column added successfully");
+                    System.Diagnostics.Debug.WriteLine(" payment_method column added successfully");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✅ payment_method column already exists");
+                    System.Diagnostics.Debug.WriteLine(" payment_method column already exists");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error checking/adding payment_method column: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Error checking/adding payment_method column: {ex.Message}");
                 return (0, $"Database schema error: {ex.Message}");
             }
 
             // USE API TO GET ORDERS (not direct database connection)
-            System.Diagnostics.Debug.WriteLine("📡 Fetching orders from OrderWeb.net API...");
+            System.Diagnostics.Debug.WriteLine(" Fetching orders from OrderWeb.net API...");
             
             // Get config
             var config = await _localDatabase.GetCloudConfigAsync();
@@ -875,7 +875,7 @@ public class OrderWebDirectDatabaseService
             // Use the SAME endpoint that's working for regular sync
             var apiUrl = $"https://orderweb.net/api/{tenantSlug}";
             
-            System.Diagnostics.Debug.WriteLine($"📡 API Request: {apiUrl}");
+            System.Diagnostics.Debug.WriteLine($" API Request: {apiUrl}");
             
             var response = await httpClient.GetAsync(apiUrl);
             
@@ -887,7 +887,7 @@ public class OrderWebDirectDatabaseService
             var json = await response.Content.ReadAsStringAsync();
             
             // DEBUG: Log first 500 characters of JSON to see structure
-            System.Diagnostics.Debug.WriteLine($"📄 API Response (first 500 chars): {json.Substring(0, Math.Min(500, json.Length))}");
+            System.Diagnostics.Debug.WriteLine($" API Response (first 500 chars): {json.Substring(0, Math.Min(500, json.Length))}");
             
             // Try to deserialize - might fail if wrong structure
             List<CloudOrderResponse>? apiOrders = null;
@@ -909,7 +909,7 @@ public class OrderWebDirectDatabaseService
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ JSON deserialization failed: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($" JSON deserialization failed: {ex.Message}");
                     return (0, $"Failed to parse API response: {ex.Message}");
                 }
             }
@@ -919,13 +919,13 @@ public class OrderWebDirectDatabaseService
                 return (0, "No orders found from API");
             }
 
-            System.Diagnostics.Debug.WriteLine($"📦 Found {apiOrders.Count} orders from API");
+            System.Diagnostics.Debug.WriteLine($" Found {apiOrders.Count} orders from API");
 
             // DEBUG: Log payment info for first order
             if (apiOrders.Count > 0)
             {
                 var firstOrder = apiOrders[0];
-                System.Diagnostics.Debug.WriteLine($"🔍 First order debug:");
+                System.Diagnostics.Debug.WriteLine($" First order debug:");
                 System.Diagnostics.Debug.WriteLine($"   OrderNumber: {firstOrder.OrderNumber}");
                 System.Diagnostics.Debug.WriteLine($"   PaymentMethod: '{firstOrder.PaymentMethod}'");
                 System.Diagnostics.Debug.WriteLine($"   PaymentStatus: '{firstOrder.PaymentStatus}'");
@@ -938,7 +938,7 @@ public class OrderWebDirectDatabaseService
                 try
                 {
                     // Log each order's payment info
-                    System.Diagnostics.Debug.WriteLine($"💳 Processing {apiOrder.OrderNumber}: PaymentMethod='{apiOrder.PaymentMethod}'");
+                    System.Diagnostics.Debug.WriteLine($" Processing {apiOrder.OrderNumber}: PaymentMethod='{apiOrder.PaymentMethod}'");
                     
                     using var connection = await _localDatabase.GetConnectionAsync();
                     using var command = connection.CreateCommand();
@@ -956,27 +956,27 @@ public class OrderWebDirectDatabaseService
                     if (rowsAffected > 0)
                     {
                         updatedCount++;
-                        System.Diagnostics.Debug.WriteLine($"✅ Fixed {apiOrder.OrderNumber}: {apiOrder.PaymentMethod}");
+                        System.Diagnostics.Debug.WriteLine($" Fixed {apiOrder.OrderNumber}: {apiOrder.PaymentMethod}");
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine($"⚠️ No rows updated for {apiOrder.OrderNumber} (not in local database)");
+                        System.Diagnostics.Debug.WriteLine($" No rows updated for {apiOrder.OrderNumber} (not in local database)");
                     }
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Error updating {apiOrder.OrderNumber}: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($" Error updating {apiOrder.OrderNumber}: {ex.Message}");
                 }
             }
 
             var message = $"Updated {updatedCount} out of {apiOrders.Count} orders";
-            System.Diagnostics.Debug.WriteLine($"✅ {message}");
+            System.Diagnostics.Debug.WriteLine($" {message}");
             return (updatedCount, message);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"❌ Error fixing payment methods: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+            System.Diagnostics.Debug.WriteLine($" Error fixing payment methods: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($" Stack trace: {ex.StackTrace}");
             return (0, $"Error: {ex.Message}");
         }
     }
