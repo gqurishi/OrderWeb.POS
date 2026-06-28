@@ -16,11 +16,10 @@ public static class MauiProgram
 		
 		try
 		{
-			var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-			File.AppendAllText(logPath, $"\n\n=== MAUI PROGRAM START {DateTime.Now} ===\n");
-			
+			AppDiagnostics.Log("=== MAUI PROGRAM START ===");
+
 			var builder = MauiApp.CreateBuilder();
-			File.AppendAllText(logPath, " MauiApp.CreateBuilder() completed\n");
+			AppDiagnostics.Log("MauiApp.CreateBuilder() completed");
 		builder
 			.UseMauiApp<App>()
 			.UseMauiCommunityToolkit() // Add Community Toolkit support
@@ -54,6 +53,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<FloorService>();
 		builder.Services.AddSingleton<RestaurantTableService>();
 		builder.Services.AddSingleton<TableSessionService>();
+		builder.Services.AddSingleton<ReservationSyncService>();
 		// MenuService and OrderTakingService removed - using FoodMenu system instead
 		
 		// Register Cloud Services (Lazy loaded)
@@ -83,6 +83,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<DailyReportService>();
 		builder.Services.AddSingleton<DiscountAuditService>();
 		builder.Services.AddSingleton<ZReportService>();
+		builder.Services.AddSingleton<TimeClockService>();
 		builder.Services.AddSingleton<OrderWebDailyReportSyncService>();
 		builder.Services.AddSingleton<ZReportPrintService>();
 		
@@ -156,6 +157,7 @@ public static class MauiProgram
 		builder.Services.AddTransient<TerminalHealthPage>();
 		builder.Services.AddTransient<CustomerDataPage>();
 		builder.Services.AddTransient<TerminalSetupPage>();
+		builder.Services.AddTransient<InitialAdminSetupPage>();
 
 		var app = builder.Build();
 
@@ -316,7 +318,7 @@ public static class MauiProgram
 			}
 		});
 		
-		File.AppendAllText(logPath, " MauiProgram.CreateMauiApp completed successfully\n");
+		AppDiagnostics.Log("MauiProgram.CreateMauiApp completed successfully");
 
 		// Database initialization can be added later when web order services are fully integrated
 		// Task.Run(async () =>
@@ -334,22 +336,12 @@ public static class MauiProgram
 		//     }
 		// });
 
-			File.AppendAllText(logPath, " Returning MauiApp instance\n");
+			AppDiagnostics.Log("Returning MauiApp instance");
 			return app;
 		}
 		catch (Exception ex)
 		{
-			var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-			File.AppendAllText(logPath, $" FATAL ERROR in CreateMauiApp: {ex.Message}\n");
-			File.AppendAllText(logPath, $"Stack Trace: {ex.StackTrace}\n");
-			
-			// Show error dialog to user
-			if (ex.InnerException != null)
-			{
-				File.AppendAllText(logPath, $"Inner Exception: {ex.InnerException.Message}\n");
-			}
-			
-			// Re-throw to see in crash logs
+			AppDiagnostics.LogFatal("CreateMauiApp", ex);
 			throw;
 		}
 	}

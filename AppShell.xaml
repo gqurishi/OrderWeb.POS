@@ -220,6 +220,19 @@
                         </Grid>
                     </StackLayout>
 
+                    <!-- Staff Clock -->
+                    <StackLayout x:Name="StaffClockMenuItem" BackgroundColor="Transparent" Padding="16,14">
+                        <StackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="staffclock" />
+                        </StackLayout.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
+                            <Image Grid.Column="0" Source="orderhistory.png" WidthRequest="32" HeightRequest="32"
+                                   HorizontalOptions="Start" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="Staff Clock" FontFamily="OpenSansBold"
+                                   FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
+                        </Grid>
+                    </StackLayout>
+
                     <!-- Inventory -->
                     <StackLayout x:Name="InventoryMenuItem" BackgroundColor="Transparent" Padding="16,14">
                         <StackLayout.GestureRecognizers>
@@ -416,6 +429,13 @@
         Shell.FlyoutItemIsVisible="False" />
 
     <ShellContent
+        Title="Staff Clock"
+        ContentTemplate="{DataTemplate pages:StaffAttendancePage}"
+        Route="staffclock"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
         ContentTemplate="{DataTemplate pages:InventoryPage}"
         Route="inventory"
         Shell.NavBarIsVisible="False"
@@ -463,6 +483,13 @@
         Title="Terminal Setup"
         ContentTemplate="{DataTemplate pages:TerminalSetupPage}"
         Route="terminalsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Initial Admin Setup"
+        ContentTemplate="{DataTemplate pages:InitialAdminSetupPage}"
+        Route="initialadminsetup"
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 

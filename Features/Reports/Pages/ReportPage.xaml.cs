@@ -23,6 +23,7 @@ public partial class ReportPage : ContentPage
     private readonly DiscountAuditService _discountAuditService;
     private readonly TillExpenseService _tillExpenseService;
     private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
+    private readonly TimeClockService _timeClockService;
 
     private bool _hasLoaded;
     private bool _isLoading;
@@ -91,13 +92,17 @@ public partial class ReportPage : ContentPage
     private Color _cashDrawerFailuresColor = Color.FromArgb("#0F172A");
     private Color _discountEventsColor = Color.FromArgb("#0F172A");
     private Color _discountTotalColor = Color.FromArgb("#0F172A");
+    private string _staffHoursTotalText = "0h 0m";
+    private string _staffHoursStaffCountText = "0 staff";
+    private string _staffHoursOpenText = "0 open shifts";
 
     private enum ReportViewMode
     {
         Orders,
         TopSellItems,
         CashDrawer,
-        DiscountAudit
+        DiscountAudit,
+        StaffHours
     }
 
     private enum CalendarTarget
@@ -112,6 +117,7 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<CashDrawerReportRow> CashDrawerAudits { get; } = new();
     public ObservableCollection<TillExpenseReportRow> TillExpenses { get; } = new();
     public ObservableCollection<DiscountAuditReportRow> DiscountAudits { get; } = new();
+    public ObservableCollection<LabourReportRow> StaffHoursRows { get; } = new();
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
     public ObservableCollection<string> SourceFilters { get; } = new() { "All", "Local", "Web" };
@@ -120,6 +126,7 @@ public partial class ReportPage : ContentPage
     public bool IsTopItemsEmpty => TopItems.Count == 0;
     public bool HasVoidAudits => VoidAudits.Count > 0;
     public bool HasCashDrawerAudits => CashDrawerAudits.Count > 0;
+    public bool HasStaffHoursRows => StaffHoursRows.Count > 0;
     public bool HasTillExpenses => TillExpenses.Count > 0;
     public bool HasDiscountAudits => DiscountAudits.Count > 0;
     public bool HasHistoricalReports => HistoricalReports.Count > 0;
@@ -286,6 +293,47 @@ public partial class ReportPage : ContentPage
     public bool IsCashDrawerReportVisible => _reportViewMode == ReportViewMode.CashDrawer && CanUseAuditReports;
 
     public bool IsDiscountAuditReportVisible => _reportViewMode == ReportViewMode.DiscountAudit && CanUseAuditReports;
+
+    public bool IsStaffHoursReportVisible => _reportViewMode == ReportViewMode.StaffHours && CanUseAuditReports;
+
+    public string StaffHoursTotalText
+    {
+        get => _staffHoursTotalText;
+        set
+        {
+            if (_staffHoursTotalText != value)
+            {
+                _staffHoursTotalText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string StaffHoursStaffCountText
+    {
+        get => _staffHoursStaffCountText;
+        set
+        {
+            if (_staffHoursStaffCountText != value)
+            {
+                _staffHoursStaffCountText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string StaffHoursOpenText
+    {
+        get => _staffHoursOpenText;
+        set
+        {
+            if (_staffHoursOpenText != value)
+            {
+                _staffHoursOpenText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
     public int TopSellRangeDays
     {
@@ -977,7 +1025,14 @@ public partial class ReportPage : ContentPage
                         _reportService,
                         _tillExpenseService,
                         _discountAuditService,
-                        _businessSettingsService));
+                        _businessSettingsService),
+                ServiceHelper.GetService<TimeClockService>() ?? new TimeClockService(new DatabaseService()));
+        _timeClockService = ServiceHelper.GetService<TimeClockService>() ?? new TimeClockService(new DatabaseService());
+
+        StaffHoursRows.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasStaffHoursRows));
+        };
 
         BindingContext = this;
         TopBar.SetPageTitle("Report");
@@ -1148,6 +1203,25 @@ public partial class ReportPage : ContentPage
                 }
 
                 ApplyReportMode(ReportViewMode.DiscountAudit);
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                UpdatePresetButtonStyles();
+                await LoadReportAsync();
+                return;
+            }
+
+            if (button.Text == "Staff Hours")
+            {
+                if (!CanUseAuditReports)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
+                ApplyReportMode(ReportViewMode.StaffHours);
+                ApplyPreset(ReportDatePreset.Today, false);
+                IsCustomRangeVisible = false;
+                IsCustomRangeDirty = false;
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
@@ -1371,6 +1445,7 @@ public partial class ReportPage : ContentPage
         OnPropertyChanged(nameof(IsTopSellReportVisible));
         OnPropertyChanged(nameof(IsCashDrawerReportVisible));
         OnPropertyChanged(nameof(IsDiscountAuditReportVisible));
+        OnPropertyChanged(nameof(IsStaffHoursReportVisible));
         UpdatePresetButtonStyles();
     }
 
@@ -1530,6 +1605,16 @@ public partial class ReportPage : ContentPage
 
         try
         {
+            if (_reportViewMode == ReportViewMode.StaffHours)
+            {
+                var csv = await _timeClockService.ExportLabourCsvAsync(StartDate, EndDate);
+                var fileName = $"staff-hours-{StartDate:yyyyMMdd}-{EndDate:yyyyMMdd}.csv";
+                var staffHoursFilePath = Path.Combine(FileSystem.CacheDirectory, fileName);
+                await File.WriteAllTextAsync(staffHoursFilePath, csv);
+                await OpenExportedFileAsync(staffHoursFilePath, "Staff Hours CSV Exported");
+                return;
+            }
+
             var report = await LoadSnapshotAsync();
             if (report == null)
             {
@@ -1702,6 +1787,7 @@ public partial class ReportPage : ContentPage
         ApplyPresetStyle(TopSellItemButton, _reportViewMode == ReportViewMode.TopSellItems);
         ApplyPresetStyle(CashDrawerButton, _reportViewMode == ReportViewMode.CashDrawer);
         ApplyPresetStyle(DiscountAuditButton, _reportViewMode == ReportViewMode.DiscountAudit);
+        ApplyPresetStyle(StaffHoursButton, _reportViewMode == ReportViewMode.StaffHours);
     }
 
     private static void ApplyPresetStyle(Button? button, bool isActive)
@@ -1771,6 +1857,19 @@ public partial class ReportPage : ContentPage
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ApplyDiscountAudits(discountAuditRows);
+                    LastUpdatedText = lastUpdated;
+                });
+                return;
+            }
+
+            if (_reportViewMode == ReportViewMode.StaffHours)
+            {
+                var (rows, summary) = await _timeClockService.GetLabourReportAsync(StartDate, EndDate);
+                var lastUpdated = $"Staff hours · {StartDate:dd MMM} – {EndDate:dd MMM} · updated {DateTime.Now:HH:mm:ss}";
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ApplyStaffHoursReport(rows, summary);
                     LastUpdatedText = lastUpdated;
                 });
                 return;
@@ -1956,6 +2055,23 @@ public partial class ReportPage : ContentPage
         }
 
         OnPropertyChanged(nameof(HasCashDrawerAudits));
+    }
+
+    private void ApplyStaffHoursReport(List<LabourReportRow> rows, LabourReportSummary summary)
+    {
+        StaffHoursRows.Clear();
+        foreach (var row in rows)
+        {
+            StaffHoursRows.Add(row);
+        }
+
+        StaffHoursTotalText = summary.TotalHoursDisplay;
+        StaffHoursStaffCountText = $"{summary.StaffCount} staff";
+        StaffHoursOpenText = summary.OpenSessionCount > 0
+            ? $"{summary.OpenSessionCount} open shifts"
+            : "No open shifts";
+
+        OnPropertyChanged(nameof(HasStaffHoursRows));
     }
 
     private void ApplyTillExpenses(TillExpenseSummary summary, List<TillExpense> expenses, List<TillExpense> pendingRows)

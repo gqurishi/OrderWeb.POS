@@ -13,9 +13,9 @@ public sealed class TerminalConfiguration
     public string TerminalName { get; init; } = "Main";
     public string DatabaseHost { get; init; } = "localhost";
     public int DatabasePort { get; init; } = 3306;
-    public string DatabaseName { get; init; } = "Pos-net";
-    public string DatabaseUser { get; init; } = "root";
-    public string DatabasePassword { get; init; } = "root";
+    public string DatabaseName { get; init; } = PosDatabaseDefaults.ProductionDatabaseName;
+    public string DatabaseUser { get; init; } = PosDatabaseDefaults.ProductionDatabaseUser;
+    public string DatabasePassword { get; init; } = string.Empty;
 
     public bool IsMother => Mode == TerminalMode.Mother;
     public bool IsChild => Mode == TerminalMode.Child;

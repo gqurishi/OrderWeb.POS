@@ -185,34 +185,10 @@ public class PostcodeLookupService
         await TryAddColumnAsync(connection, "orderweb_base_url", "VARCHAR(500) DEFAULT 'https://orderweb.net'");
         await TryAddColumnAsync(connection, "orderweb_address_enabled", "BOOLEAN DEFAULT TRUE");
 
-        await MigrateLegacyAddressKeyAsync(connection);
-
         using var seedCommand = new MySqlCommand(
             "INSERT INTO postcode_lookup_settings (provider, orderweb_address_enabled) SELECT 'OrderWeb', TRUE FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM postcode_lookup_settings LIMIT 1)",
             connection);
         await seedCommand.ExecuteNonQueryAsync();
-    }
-
-    private static async Task MigrateLegacyAddressKeyAsync(MySqlConnection connection)
-    {
-        try
-        {
-            const string sql = @"
-                UPDATE postcode_lookup_settings
-                SET orderweb_address_api_key = mapbox_api_token,
-                    provider = 'OrderWeb',
-                    orderweb_address_enabled = TRUE
-                WHERE (orderweb_address_api_key IS NULL OR orderweb_address_api_key = '')
-                  AND mapbox_api_token IS NOT NULL
-                  AND mapbox_api_token != ''";
-
-            using var command = new MySqlCommand(sql, connection);
-            await command.ExecuteNonQueryAsync();
-        }
-        catch (MySqlException ex) when (ex.Number == 1054)
-        {
-            // Legacy mapbox column not present — nothing to migrate.
-        }
     }
 
     private static async Task TryAddColumnAsync(MySqlConnection connection, string columnName, string definition)

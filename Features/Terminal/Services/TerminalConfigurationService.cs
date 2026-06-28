@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Maui.Storage;
+using MySqlConnector;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -14,6 +16,12 @@ public static class TerminalConfigurationService
     private const string DatabaseNameKey = Prefix + "database_name";
     private const string DatabaseUserKey = Prefix + "database_user";
     private const string DatabasePasswordKey = Prefix + "database_password";
+    private const string InstallerConfigAppliedKey = Prefix + "installer_db_applied";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public static bool IsConfigured => Preferences.Default.Get(IsConfiguredKey, false);
     public static bool IsMotherTerminal => GetConfiguration().IsMother;
@@ -35,14 +43,98 @@ public static class TerminalConfigurationService
             TerminalName = Preferences.Default.Get(TerminalNameKey, mode == TerminalMode.Mother ? "Main" : "Terminal"),
             DatabaseHost = Preferences.Default.Get(DatabaseHostKey, defaultHost),
             DatabasePort = Preferences.Default.Get(DatabasePortKey, 3306),
-            DatabaseName = Preferences.Default.Get(DatabaseNameKey, "Pos-net"),
-            DatabaseUser = Preferences.Default.Get(DatabaseUserKey, "root"),
-            DatabasePassword = Preferences.Default.Get(DatabasePasswordKey, "root")
+            DatabaseName = Preferences.Default.Get(DatabaseNameKey, PosDatabaseDefaults.ProductionDatabaseName),
+            DatabaseUser = Preferences.Default.Get(DatabaseUserKey, PosDatabaseDefaults.ProductionDatabaseUser),
+            DatabasePassword = Preferences.Default.Get(DatabasePasswordKey, string.Empty)
         };
+    }
+
+    /// <summary>
+    /// Loads database credentials written by Inno Setup / OrderWeb.DatabaseSetup.exe.
+    /// Searches app data and common application data (Windows installer path).
+    /// </summary>
+    public static bool TryApplyInstallerDatabaseConfig(bool forceReapply = false)
+    {
+        if (!forceReapply && Preferences.Default.Get(InstallerConfigAppliedKey, false))
+        {
+            return false;
+        }
+
+        foreach (var path in GetInstallerConfigCandidatePaths())
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(path);
+                var installerConfig = JsonSerializer.Deserialize<InstallerDatabaseConfig>(json, JsonOptions);
+                if (installerConfig == null || string.IsNullOrWhiteSpace(installerConfig.DatabasePassword))
+                {
+                    continue;
+                }
+
+                var databaseUser = string.IsNullOrWhiteSpace(installerConfig.DatabaseUser)
+                    ? PosDatabaseDefaults.ProductionDatabaseUser
+                    : installerConfig.DatabaseUser.Trim();
+                var databasePassword = installerConfig.DatabasePassword.Trim();
+                var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
+                if (!validation.IsValid)
+                {
+                    AppDiagnostics.Log($"Skipping invalid installer config at {path}: {validation.Message}");
+                    continue;
+                }
+
+                var current = GetConfiguration();
+                Save(new TerminalConfiguration
+                {
+                    IsConfigured = current.IsConfigured,
+                    Mode = current.Mode,
+                    TerminalName = current.TerminalName,
+                    DatabaseHost = string.IsNullOrWhiteSpace(installerConfig.DatabaseHost)
+                        ? current.DatabaseHost
+                        : installerConfig.DatabaseHost.Trim(),
+                    DatabasePort = installerConfig.DatabasePort <= 0 ? 3306 : installerConfig.DatabasePort,
+                    DatabaseName = string.IsNullOrWhiteSpace(installerConfig.DatabaseName)
+                        ? PosDatabaseDefaults.ProductionDatabaseName
+                        : installerConfig.DatabaseName.Trim(),
+                    DatabaseUser = string.IsNullOrWhiteSpace(installerConfig.DatabaseUser)
+                        ? PosDatabaseDefaults.ProductionDatabaseUser
+                        : installerConfig.DatabaseUser.Trim(),
+                    DatabasePassword = databasePassword
+                });
+
+                Preferences.Default.Set(InstallerConfigAppliedKey, true);
+                AppDiagnostics.Log($"Applied installer database config from {path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.LogFatal("ApplyInstallerDatabaseConfig", ex);
+            }
+        }
+
+        return false;
     }
 
     public static void Save(TerminalConfiguration configuration)
     {
+        var databaseUser = string.IsNullOrWhiteSpace(configuration.DatabaseUser)
+            ? PosDatabaseDefaults.ProductionDatabaseUser
+            : configuration.DatabaseUser.Trim();
+        var databasePassword = configuration.DatabasePassword ?? string.Empty;
+
+        if (configuration.IsMother)
+        {
+            var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
+            if (!validation.IsValid)
+            {
+                throw new InvalidOperationException(validation.Message);
+            }
+        }
+
         var host = configuration.IsMother ? "localhost" : configuration.DatabaseHost.Trim();
         var terminalName = string.IsNullOrWhiteSpace(configuration.TerminalName)
             ? (configuration.IsMother ? "Main" : "Terminal")
@@ -53,8 +145,12 @@ public static class TerminalConfigurationService
         Preferences.Default.Set(TerminalNameKey, terminalName);
         Preferences.Default.Set(DatabaseHostKey, string.IsNullOrWhiteSpace(host) ? "localhost" : host);
         Preferences.Default.Set(DatabasePortKey, configuration.DatabasePort <= 0 ? 3306 : configuration.DatabasePort);
-        Preferences.Default.Set(DatabaseNameKey, string.IsNullOrWhiteSpace(configuration.DatabaseName) ? "Pos-net" : configuration.DatabaseName.Trim());
-        Preferences.Default.Set(DatabaseUserKey, string.IsNullOrWhiteSpace(configuration.DatabaseUser) ? "root" : configuration.DatabaseUser.Trim());
+        Preferences.Default.Set(DatabaseNameKey, string.IsNullOrWhiteSpace(configuration.DatabaseName)
+            ? PosDatabaseDefaults.ProductionDatabaseName
+            : configuration.DatabaseName.Trim());
+        Preferences.Default.Set(DatabaseUserKey, string.IsNullOrWhiteSpace(configuration.DatabaseUser)
+            ? PosDatabaseDefaults.ProductionDatabaseUser
+            : configuration.DatabaseUser.Trim());
         Preferences.Default.Set(DatabasePasswordKey, configuration.DatabasePassword ?? string.Empty);
     }
 
@@ -73,14 +169,34 @@ public static class TerminalConfigurationService
         var config = GetConfiguration();
         var host = string.IsNullOrWhiteSpace(config.DatabaseHost) ? "localhost" : config.DatabaseHost;
         var selectedDatabase = string.IsNullOrWhiteSpace(databaseName) ? config.DatabaseName : databaseName.Trim();
-        var databasePart = includeDatabase ? $"Database={selectedDatabase};" : string.Empty;
-        var poolingPart = pooled
-            ? "Pooling=true;Minimum Pool Size=10;Maximum Pool Size=200;Connection Idle Timeout=60;Connection Reset=false;Keepalive=15;"
-            : string.Empty;
 
-        return $"Server={host};{databasePart}Uid={config.DatabaseUser};Pwd={config.DatabasePassword};Port={config.DatabasePort};" +
-               $"Connection Timeout={connectionTimeoutSeconds};Default Command Timeout={defaultCommandTimeoutSeconds};" +
-               $"{poolingPart}Allow User Variables=true;";
+        var builder = new MySqlConnectionStringBuilder
+        {
+            Server = host,
+            UserID = config.DatabaseUser,
+            Password = config.DatabasePassword,
+            Port = (uint)(config.DatabasePort <= 0 ? 3306 : config.DatabasePort),
+            ConnectionTimeout = (uint)Math.Max(1, connectionTimeoutSeconds),
+            DefaultCommandTimeout = (uint)Math.Max(1, defaultCommandTimeoutSeconds),
+            Pooling = pooled,
+            AllowUserVariables = true
+        };
+
+        if (includeDatabase)
+        {
+            builder.Database = selectedDatabase;
+        }
+
+        if (pooled)
+        {
+            builder.MinimumPoolSize = 10;
+            builder.MaximumPoolSize = 200;
+            builder.ConnectionIdleTimeout = 60;
+            builder.ConnectionReset = false;
+            builder.Keepalive = 15;
+        }
+
+        return builder.ConnectionString;
     }
 
     public static void Reset()
@@ -93,5 +209,29 @@ public static class TerminalConfigurationService
         Preferences.Default.Remove(DatabaseNameKey);
         Preferences.Default.Remove(DatabaseUserKey);
         Preferences.Default.Remove(DatabasePasswordKey);
+        Preferences.Default.Remove(InstallerConfigAppliedKey);
+    }
+
+    public static string GetActiveDatabaseName() =>
+        GetConfiguration().DatabaseName;
+
+    private static IEnumerable<string> GetInstallerConfigCandidatePaths()
+    {
+        var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        if (!string.IsNullOrWhiteSpace(commonAppData))
+        {
+            yield return Path.Combine(commonAppData, PosDatabaseDefaults.InstallerConfigFolderName, PosDatabaseDefaults.InstallerConfigFileName);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var programData = Environment.GetEnvironmentVariable("ProgramData");
+            if (!string.IsNullOrWhiteSpace(programData))
+            {
+                yield return Path.Combine(programData, PosDatabaseDefaults.InstallerConfigFolderName, PosDatabaseDefaults.InstallerConfigFileName);
+            }
+        }
+
+        yield return Path.Combine(FileSystem.AppDataDirectory, PosDatabaseDefaults.InstallerConfigFileName);
     }
 }

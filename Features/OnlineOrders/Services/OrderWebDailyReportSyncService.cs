@@ -21,6 +21,7 @@ public sealed class OrderWebDailyReportSyncService
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
     private readonly ZReportService _zReportService;
+    private readonly TimeClockService _timeClockService;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private static bool _schemaEnsured;
 
@@ -30,10 +31,14 @@ public sealed class OrderWebDailyReportSyncService
     private bool _cloudEnabled;
     private bool _initialized;
 
-    public OrderWebDailyReportSyncService(DatabaseService databaseService, ZReportService zReportService)
+    public OrderWebDailyReportSyncService(
+        DatabaseService databaseService,
+        ZReportService zReportService,
+        TimeClockService timeClockService)
     {
         _databaseService = databaseService;
         _zReportService = zReportService;
+        _timeClockService = timeClockService;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(30)
@@ -137,6 +142,7 @@ public sealed class OrderWebDailyReportSyncService
 
         var payload = await _zReportService.BuildInRestaurantDailyUploadAsync(businessDate);
         payload.Tenant = _tenantId!.Trim();
+        payload.Labour = await _timeClockService.BuildCloudLabourPayloadAsync(businessDate);
 
         Exception? lastError = null;
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
@@ -151,7 +157,8 @@ public sealed class OrderWebDailyReportSyncService
                     TotalSales = payload.TotalSales,
                     TotalOrders = payload.TotalOrders,
                     CashSales = payload.CashSales,
-                    CardSales = payload.CardSales
+                    CardSales = payload.CardSales,
+                    Labour = payload.Labour
                 };
 
                 var json = JsonSerializer.Serialize(requestBody, JsonOptions);
@@ -165,6 +172,7 @@ public sealed class OrderWebDailyReportSyncService
 
                 if (response.IsSuccessStatusCode)
                 {
+                    await _timeClockService.MarkSessionsSyncedForBusinessDateAsync(businessDate);
                     await LogSyncAsync(businessDate, payload, trigger, true, null, responseBody);
                     if (GetPendingUploadDate() == businessDate)
                     {
@@ -375,5 +383,8 @@ public sealed class OrderWebDailyReportSyncService
 
         [JsonPropertyName("cardSales")]
         public decimal CardSales { get; set; }
+
+        [JsonPropertyName("labour")]
+        public OrderWebLabourUploadPayload? Labour { get; set; }
     }
 }

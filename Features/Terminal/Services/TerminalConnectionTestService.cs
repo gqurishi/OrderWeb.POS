@@ -29,9 +29,24 @@ public static class TerminalConnectionTestService
             await using var command = new MySqlCommand("SELECT 1", connection);
             await command.ExecuteScalarAsync(cts.Token);
 
-            return config.Mode == TerminalMode.Child
-                ? new TerminalConnectionTestResult(true, "Connected", $"Connected to Mother Terminal ({config.DatabaseHost})")
-                : new TerminalConnectionTestResult(true, "Connected", "Connected to Local Mother Database");
+            if (config.Mode == TerminalMode.Child)
+            {
+                var schemaGate = await ChildSchemaVersionGateService.CheckAsync(connection, cts.Token);
+                if (!schemaGate.IsCompatible)
+                {
+                    return new TerminalConnectionTestResult(
+                        false,
+                        "Mother Database Outdated",
+                        schemaGate.Message);
+                }
+
+                return new TerminalConnectionTestResult(
+                    true,
+                    "Connected",
+                    $"Connected to mother terminal ({config.DatabaseHost}). Database schema version {schemaGate.CurrentSchemaVersion}.");
+            }
+
+            return new TerminalConnectionTestResult(true, "Connected", "Connected to Local Mother Database");
         }
         catch (Exception ex)
         {

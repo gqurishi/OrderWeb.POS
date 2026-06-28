@@ -355,15 +355,15 @@
                             </Border>
                         </Grid>
                         
-                        <!-- Sign In Button - Modern & Clean -->
-                        <Button x:Name="LoginButton"
-                                Text="Sign In" 
-                                Clicked="OnLoginClicked" 
+                        <!-- Clock In/Out — full width (Sign In removed; PIN auto-logs in) -->
+                        <Button x:Name="ClockInOutButton"
+                                Text="Clock In/Out"
+                                Clicked="OnClockInOutClicked"
                                 BackgroundColor="#6366F1"
                                 TextColor="White"
-                                FontSize="22" 
+                                FontSize="22"
                                 FontAttributes="Bold"
-                                WidthRequest="320" 
+                                WidthRequest="336"
                                 HeightRequest="60"
                                 CornerRadius="30"
                                 Margin="0,24,0,0"

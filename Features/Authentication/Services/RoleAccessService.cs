@@ -28,8 +28,10 @@ public class RoleAccessService
         "table",
         "floor",
         "terminalsetup",
+        "initialadminsetup",
         "terminalhealth",
         "customerdata",
+        "staffclock",
         "login"
     };
 
@@ -53,7 +55,7 @@ public class RoleAccessService
                 "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
                 "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings",
-                "terminalhealth", "customerdata"
+                "terminalhealth", "customerdata", "staffclock"
             }
         };
 
@@ -107,7 +109,8 @@ public class RoleAccessService
         }
 
         if (normalized.Equals("login", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("terminalsetup", StringComparison.OrdinalIgnoreCase))
+            || normalized.Equals("terminalsetup", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("initialadminsetup", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

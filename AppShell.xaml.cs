@@ -149,7 +149,15 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             Shell.Current.FlyoutIsPresented = false;
 
             var databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
-            await databaseService.InitializeDatabaseAsync();
+            var schemaResult = await databaseService.EnsureProductionSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Database Update Required",
+                    schemaResult.Message);
+                return;
+            }
+
             var cloudSyncMessage = await TrySyncCloudOrdersAsync(databaseService);
 
             OrderPlacementPageSimple.InvalidateMenuCache();
@@ -348,6 +356,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         CashDrawerMenuItem.IsVisible = _roleAccessService.CanOpenCashDrawer(role);
 
         ReportMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "report");
+        StaffClockMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "staffclock");
         InventoryMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "inventory");
         FoodMenuMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "foodmenu");
         PrintersMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "printersetup");
@@ -364,7 +373,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                 DashboardMenuItem, RestaurantMenuItem, FoodMenuMenuItem, WebOrdersMenuItem,
                 SettingsMenuItem, CollectionMenuItem, DeliveryMenuItem, OrderHistoryMenuItem,
                 LiveOrderMenuItem, GiftCardsMenuItem, LoyaltyMenuItem, ReservationMenuItem,
-                CashDrawerMenuItem, ReportMenuItem, InventoryMenuItem, PrintersMenuItem,
+                CashDrawerMenuItem, ReportMenuItem, StaffClockMenuItem, InventoryMenuItem, PrintersMenuItem,
                 TerminalHealthMenuItem, CustomerDataMenuItem
             };
 

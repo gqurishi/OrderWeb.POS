@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.InitialAdminSetupPage"
+             BackgroundColor="#F8FAFC"
+             Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="*,Auto,*" Padding="36">
+        <Border Grid.Row="1"
+                WidthRequest="640"
+                MaximumWidthRequest="640"
+                BackgroundColor="White"
+                Stroke="#E2E8F0"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 28"
+                Padding="40"
+                HorizontalOptions="Center">
+            <VerticalStackLayout Spacing="22">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Create Admin Account"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="38"
+                           TextColor="#0F172A" />
+                    <Label Text="Set up the first administrator PIN for this mother terminal. No default PIN is created automatically."
+                           FontFamily="OpenSansRegular"
+                           FontSize="16"
+                           TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Admin Name"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="AdminNameEntry"
+                           Placeholder="Example: Manager"
+                           Text="Admin"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="4-Digit PIN"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="PinEntry"
+                           Placeholder="Choose a 4-digit PIN"
+                           Keyboard="Numeric"
+                           MaxLength="4"
+                           IsPassword="True"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Confirm PIN"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="ConfirmPinEntry"
+                           Placeholder="Re-enter PIN"
+                           Keyboard="Numeric"
+                           MaxLength="4"
+                           IsPassword="True"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                </VerticalStackLayout>
+
+                <Label x:Name="StatusLabel"
+                       Text=""
+                       FontFamily="OpenSansRegular"
+                       FontSize="15"
+                       TextColor="#64748B" />
+
+                <Button x:Name="CreateButton"
+                        Text="Create Admin &amp; Continue"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="18"
+                        HeightRequest="58"
+                        CornerRadius="16"
+                        BackgroundColor="#2563EB"
+                        TextColor="White"
+                        Clicked="OnCreateClicked" />
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

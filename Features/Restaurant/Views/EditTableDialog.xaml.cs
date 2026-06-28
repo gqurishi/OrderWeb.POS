@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using Microsoft.Maui.Controls.Shapes;
 
 namespace POS_in_NET.Views;
 
@@ -9,6 +10,9 @@ public partial class EditTableDialog : ContentView
     private int _currentTableId;
     private string _selectedDesignIcon = "table_1.png"; // Default design
     private readonly FloorService _floorService;
+    private List<Floor> _floors = new();
+    private readonly List<Border> _floorBorders = new();
+    private int _selectedFloorId;
     private string _selectedFloorName = string.Empty;
 
     public EditTableDialog()
@@ -19,8 +23,30 @@ public partial class EditTableDialog : ContentView
 
     public void SetFloors(List<Floor> floors)
     {
-        FloorPicker.ItemsSource = floors;
-        FloorPicker.ItemDisplayBinding = new Binding("Name");
+        _floors = floors;
+        FloorSelectionStack.Children.Clear();
+        _floorBorders.Clear();
+
+        for (int i = 0; i < floors.Count; i++)
+        {
+            var floor = floors[i];
+            var index = i;
+            var isSelected = floor.Id == _selectedFloorId || (_selectedFloorId == 0 && i == 0);
+
+            var border = CreateFloorCard(floor, isSelected);
+            var tapGesture = new TapGestureRecognizer();
+            tapGesture.Tapped += (s, e) => OnFloorSelected(index);
+            border.GestureRecognizers.Add(tapGesture);
+
+            _floorBorders.Add(border);
+            FloorSelectionStack.Children.Add(border);
+        }
+
+        if (floors.Count > 0)
+        {
+            var selectedIndex = Math.Max(0, floors.FindIndex(f => f.Id == _selectedFloorId));
+            OnFloorSelected(selectedIndex);
+        }
     }
 
     public void SetTableData(int tableId, string tableName, int floorId, string tableDesignIcon = "table_1.png")
@@ -39,16 +65,12 @@ public partial class EditTableDialog : ContentView
         };
         SelectDesign(designNumber);
         
-        // Select the floor in the picker
-        var floors = FloorPicker.ItemsSource as List<Floor>;
-        if (floors != null)
+        _selectedFloorId = floorId;
+
+        if (_floors.Count > 0)
         {
-            var floor = floors.FirstOrDefault(f => f.Id == floorId);
-            if (floor != null)
-            {
-                FloorPicker.SelectedItem = floor;
-                _selectedFloorName = floor.Name;
-            }
+            var selectedIndex = Math.Max(0, _floors.FindIndex(f => f.Id == floorId));
+            OnFloorSelected(selectedIndex);
         }
     }
 
@@ -75,7 +97,6 @@ public partial class EditTableDialog : ContentView
     private async void OnSaveClicked(object sender, EventArgs e)
     {
         var tableName = TableNumberEntry.Text?.Trim();
-        var selectedFloor = FloorPicker.SelectedItem as Floor;
 
         if (string.IsNullOrWhiteSpace(tableName))
         {
@@ -83,13 +104,13 @@ public partial class EditTableDialog : ContentView
             return;
         }
 
-        if (selectedFloor == null)
+        if (_selectedFloorId == 0)
         {
             _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Required", "Please select a floor");
             return;
         }
 
-        var freshFloor = await _floorService.GetFloorByIdAsync(selectedFloor.Id);
+        var freshFloor = await _floorService.GetFloorByIdAsync(_selectedFloorId);
         if (freshFloor == null)
         {
             var latestFloors = await _floorService.GetAllFloorsAsync();
@@ -101,11 +122,103 @@ public partial class EditTableDialog : ContentView
                 return;
             }
 
-            selectedFloor = freshFloor;
+            _selectedFloorId = freshFloor.Id;
         }
 
+        _selectedFloorName = freshFloor.Name;
         IsVisible = false;
-        _taskCompletionSource?.SetResult((true, selectedFloor.Id, _selectedFloorName, tableName, _selectedDesignIcon));
+        _taskCompletionSource?.SetResult((true, _selectedFloorId, _selectedFloorName, tableName, _selectedDesignIcon));
+    }
+
+    private Border CreateFloorCard(Floor floor, bool isSelected)
+    {
+        var border = new Border
+        {
+            BackgroundColor = isSelected ? Color.FromArgb("#EEF2FF") : Colors.White,
+            Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB"),
+            StrokeThickness = isSelected ? 2 : 1,
+            Padding = new Thickness(15, 12),
+            StrokeShape = new RoundRectangle { CornerRadius = 10 }
+        };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 10
+        };
+
+        var floorStack = new VerticalStackLayout
+        {
+            Spacing = 2,
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        floorStack.Children.Add(new Label
+        {
+            Text = floor.Name,
+            FontSize = 15,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb("#1F2937"),
+            FontAttributes = FontAttributes.Bold
+        });
+
+        floorStack.Children.Add(new Label
+        {
+            Text = $"{floor.TableCount} table(s)",
+            FontSize = 12,
+            FontFamily = "OpenSansRegular",
+            TextColor = Color.FromArgb("#6B7280")
+        });
+
+        var radioCircle = new Border
+        {
+            WidthRequest = 20,
+            HeightRequest = 20,
+            BackgroundColor = isSelected ? Color.FromArgb("#6366F1") : Colors.Transparent,
+            Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#D1D5DB"),
+            StrokeThickness = 2,
+            StrokeShape = new RoundRectangle { CornerRadius = 10 },
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        grid.Children.Add(floorStack);
+        Grid.SetColumn(floorStack, 0);
+        grid.Children.Add(radioCircle);
+        Grid.SetColumn(radioCircle, 1);
+
+        border.Content = grid;
+        return border;
+    }
+
+    private void OnFloorSelected(int index)
+    {
+        if (index < 0 || index >= _floors.Count)
+        {
+            return;
+        }
+
+        _selectedFloorId = _floors[index].Id;
+        _selectedFloorName = _floors[index].Name;
+
+        for (int i = 0; i < _floorBorders.Count; i++)
+        {
+            var border = _floorBorders[i];
+            var isSelected = i == index;
+
+            border.BackgroundColor = isSelected ? Color.FromArgb("#EEF2FF") : Colors.White;
+            border.Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
+            border.StrokeThickness = isSelected ? 2 : 1;
+
+            if (border.Content is Grid grid && grid.Children.Count > 1 && grid.Children[1] is Border radioCircle)
+            {
+                radioCircle.BackgroundColor = isSelected ? Color.FromArgb("#6366F1") : Colors.Transparent;
+                radioCircle.Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#D1D5DB");
+            }
+        }
     }
 
     // Table Design Selection Methods

@@ -1,4 +1,5 @@
 using POS_in_NET.Services;
+using POS_in_NET.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -10,11 +11,16 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 {
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
+    private readonly ReservationSyncService? _reservationSyncService;
     private readonly List<ReservationRow> _allReservations = new();
     private DateTime _selectedDate = DateTime.Today;
     private DateTime _displayedMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private DateTime _lastUpdatedAt = DateTime.Now;
     private string _searchText = string.Empty;
+    private string _syncStatusText = "Website sync ready";
+    private CancellationTokenSource? _searchDebounceCts;
+    private bool _isBusy;
+    private bool _hasLoadedOnce;
 
     public ObservableCollection<ReservationCalendarDay> CalendarDays { get; } = new();
     public ObservableCollection<ReservationRow> Reservations { get; } = new();
@@ -24,8 +30,22 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     public string TodayCountText => TodayReservations.Count().ToString(CultureInfo.InvariantCulture);
     public string GuestCountText => TodayReservations.Sum(row => row.Guests).ToString(CultureInfo.InvariantCulture);
     public string NextReservationText => TodayReservations.OrderBy(row => row.Time).FirstOrDefault()?.TimeText ?? "--";
-    public string SyncStatusText => "Website sync ready";
+    public string SyncStatusText => _syncStatusText;
     public string LastUpdatedText => $"Updated {_lastUpdatedAt:HH:mm}";
+    public bool IsLoading
+    {
+        get => _isBusy;
+        private set
+        {
+            if (_isBusy == value)
+            {
+                return;
+            }
+
+            _isBusy = value;
+            OnPropertyChanged();
+        }
+    }
 
     private IEnumerable<ReservationRow> TodayReservations => _allReservations.Where(row => row.Date.Date == DateTime.Today);
 
@@ -35,6 +55,11 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         TopBar.SetPageTitle("Reservation");
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+        _reservationSyncService = ServiceHelper.GetService<ReservationSyncService>();
+        if (_reservationSyncService != null)
+        {
+            _reservationSyncService.SyncCompleted += OnReservationSyncCompleted;
+        }
         BindingContext = this;
         RefreshView();
     }
@@ -47,6 +72,12 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access Reservation.");
             await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            return;
+        }
+
+        if (!_hasLoadedOnce)
+        {
+            await LoadReservationsAsync();
         }
     }
 
@@ -57,25 +88,25 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         RefreshView();
     }
 
-    private void OnTodayClicked(object sender, EventArgs e)
+    private async void OnTodayClicked(object sender, EventArgs e)
     {
         _selectedDate = DateTime.Today;
         _displayedMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
-        RefreshView();
+        await LoadReservationsAsync();
     }
 
-    private void OnPreviousMonthClicked(object sender, EventArgs e)
+    private async void OnPreviousMonthClicked(object sender, EventArgs e)
     {
         _displayedMonth = _displayedMonth.AddMonths(-1);
         _selectedDate = _displayedMonth;
-        RefreshView();
+        await LoadReservationsAsync();
     }
 
-    private void OnNextMonthClicked(object sender, EventArgs e)
+    private async void OnNextMonthClicked(object sender, EventArgs e)
     {
         _displayedMonth = _displayedMonth.AddMonths(1);
         _selectedDate = _displayedMonth;
-        RefreshView();
+        await LoadReservationsAsync();
     }
 
     private async void OnNewReservationClicked(object sender, EventArgs e)
@@ -87,22 +118,61 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private async void OnUpdateClicked(object sender, EventArgs e)
     {
-        _selectedDate = DateTime.Today;
-        _displayedMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
         _searchText = string.Empty;
-        _lastUpdatedAt = DateTime.Now;
         SearchEntry.Text = string.Empty;
-        RefreshView();
 
-        await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
-            "Reservation",
-            "Reservation information refreshed.");
+        if (_reservationSyncService == null)
+        {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Reservation", "Reservation sync service is not available.");
+            return;
+        }
+
+        try
+        {
+            IsLoading = true;
+            _syncStatusText = "Syncing website reservations...";
+            OnPropertyChanged(nameof(SyncStatusText));
+
+            var result = await _reservationSyncService.SyncDateAsync(_selectedDate, useSince: false, includeCancelled: true);
+            await LoadReservationsAsync(showBusy: false);
+
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                result.Success ? "Reservation Sync" : "Sync Failed",
+                result.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        _searchText = e.NewTextValue?.Trim() ?? string.Empty;
-        RefreshReservations();
+        _searchDebounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        var nextValue = e.NewTextValue?.Trim() ?? string.Empty;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(180, cts.Token);
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (cts.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    _searchText = nextValue;
+                    RefreshReservations();
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
     }
 
     private void OnSearchBoxTapped(object sender, TappedEventArgs e)
@@ -110,7 +180,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         SearchEntry.Focus();
     }
 
-    private void OnCalendarDaySelected(object sender, SelectionChangedEventArgs e)
+    private async void OnCalendarDaySelected(object sender, SelectionChangedEventArgs e)
     {
         if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day)
         {
@@ -118,8 +188,16 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         }
 
         _selectedDate = day.Date;
+        var monthChanged = day.Date.Month != _displayedMonth.Month || day.Date.Year != _displayedMonth.Year;
         _displayedMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
         CalendarCollectionView.SelectedItem = null;
+
+        if (monthChanged)
+        {
+            await LoadReservationsAsync();
+            return;
+        }
+
         RefreshView();
     }
 
@@ -135,6 +213,77 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         OnPropertyChanged(nameof(NextReservationText));
         OnPropertyChanged(nameof(LastUpdatedText));
         OnPropertyChanged(nameof(SyncStatusText));
+    }
+
+    private async Task LoadReservationsAsync(bool showBusy = true)
+    {
+        try
+        {
+            if (showBusy)
+            {
+                IsLoading = true;
+            }
+
+            if (_reservationSyncService == null)
+            {
+                _syncStatusText = "Website sync not available";
+                RefreshView();
+                return;
+            }
+
+            var startDate = _displayedMonth.AddDays(-7);
+            var endDate = _displayedMonth.AddMonths(1).AddDays(7);
+            var reservations = await _reservationSyncService.GetReservationsAsync(startDate, endDate);
+
+            _allReservations.Clear();
+            _allReservations.AddRange(reservations.Select(ToReservationRow));
+            _hasLoadedOnce = true;
+            _lastUpdatedAt = DateTime.Now;
+            _syncStatusText = "Website sync ready";
+            RefreshView();
+        }
+        catch (Exception ex)
+        {
+            _syncStatusText = "Website sync error";
+            RefreshView();
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Reservation", $"Could not load reservations: {ex.Message}");
+        }
+        finally
+        {
+            if (showBusy)
+            {
+                IsLoading = false;
+            }
+        }
+    }
+
+    private void OnReservationSyncCompleted(object? sender, ReservationSyncCompletedEventArgs e)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            _syncStatusText = e.Result.Success ? "Website sync ready" : "Website sync error";
+            await LoadReservationsAsync();
+        });
+    }
+
+    private static ReservationRow ToReservationRow(CloudReservation reservation)
+    {
+        var noteParts = new[]
+        {
+            reservation.Reference,
+            reservation.Notes,
+            string.IsNullOrWhiteSpace(reservation.Allergies) ? "" : $"Allergies: {reservation.Allergies}"
+        }.Where(part => !string.IsNullOrWhiteSpace(part));
+
+        return new ReservationRow(
+            reservation.ReservationDate,
+            TimeOnly.FromTimeSpan(reservation.ReservationTime),
+            string.IsNullOrWhiteSpace(reservation.CustomerName) ? "Guest" : reservation.CustomerName,
+            reservation.CustomerPhone,
+            reservation.Covers,
+            string.IsNullOrWhiteSpace(reservation.TableNumber) ? "-" : reservation.TableNumber,
+            CultureInfo.InvariantCulture.TextInfo.ToTitleCase(reservation.Status.Replace("_", " ")),
+            string.Join(" | ", noteParts));
     }
 
     private void RefreshReservations()

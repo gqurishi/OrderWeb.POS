@@ -41,7 +41,10 @@ namespace POS_in_NET.Pages
                     new NetworkPrinterDatabaseService(new DatabaseService()),
                     new NetworkPrinterService(),
                     ServiceHelper.GetService<OrderWebDailyReportSyncService>()
-                        ?? new OrderWebDailyReportSyncService(new DatabaseService(), _zReportService));
+                        ?? new OrderWebDailyReportSyncService(
+                            new DatabaseService(),
+                            _zReportService,
+                            new TimeClockService(new DatabaseService())));
             _cloudService = ServiceHelper.GetService<CloudOrderService>();
             
             TopBar.SetPageTitle("Dashboard");

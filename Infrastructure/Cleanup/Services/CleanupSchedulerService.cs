@@ -136,99 +136,26 @@ public class CleanupSchedulerService
     }
 
     /// <summary>
-    /// Initialize database indexes on first run
+    /// Verifies production schema on startup. DDL is owned by OrderWeb.DatabaseSetup.exe.
     /// </summary>
     public async Task InitializeDatabaseAsync()
     {
         try
         {
-            // Check if indexes were already created
-            var indexesCreated = Preferences.Get("DatabaseIndexesCreated", false);
+            if (!TerminalConfigurationService.IsConfigured)
+            {
+                return;
+            }
 
-            if (!indexesCreated)
+            var result = await _databaseService.EnsureProductionSchemaAsync();
+            if (!result.Success)
             {
-                Debug.WriteLine(" First run: Creating database indexes...");
-                await _cleanupService.CreateIndexesAsync();
-                Preferences.Set("DatabaseIndexesCreated", true);
-                Debug.WriteLine(" Database indexes created for faster queries");
+                Debug.WriteLine($"Production schema check: {result.Message}");
             }
-            else
-            {
-                Debug.WriteLine("Info: Database indexes already exist");
-            }
-            
-            // Ensure pending_acks table exists (needed for OrderWeb.net features)
-            await EnsureOrderWebTablesExistAsync();
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($" Error initializing database: {ex.Message}");
-        }
-    }
-    
-    /// <summary>
-    /// Ensure OrderWeb.net related tables exist
-    /// </summary>
-    private async Task EnsureOrderWebTablesExistAsync()
-    {
-        try
-        {
-            using var connection = await _databaseService.GetConnectionAsync();
-            
-            // Create pending_acks table if not exists
-            using var cmd1 = connection.CreateCommand();
-            cmd1.CommandText = @"
-                CREATE TABLE IF NOT EXISTS pending_acks (
-                    id INT PRIMARY KEY AUTO_INCREMENT,
-                    order_id VARCHAR(255) NOT NULL,
-                    status VARCHAR(20) NOT NULL,
-                    reason TEXT NULL,
-                    printed_at DATETIME NULL,
-                    device_id VARCHAR(50) NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    retry_count INT DEFAULT 0,
-                    last_retry_at DATETIME NULL,
-                    INDEX idx_pending_acks_created (created_at),
-                    INDEX idx_pending_acks_retry (retry_count, created_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-            await cmd1.ExecuteNonQueryAsync();
-            
-            // Create heartbeat_log table if not exists
-            using var cmd2 = connection.CreateCommand();
-            cmd2.CommandText = @"
-                CREATE TABLE IF NOT EXISTS heartbeat_log (
-                    id INT PRIMARY KEY AUTO_INCREMENT,
-                    device_id VARCHAR(100) NOT NULL,
-                    status VARCHAR(20) NOT NULL,
-                    pending_acks_count INT DEFAULT 0,
-                    pending_orders_count INT DEFAULT 0,
-                    last_print_at DATETIME NULL,
-                    sent_at DATETIME NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_heartbeat_device (device_id, sent_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-            await cmd2.ExecuteNonQueryAsync();
-            
-            // Create order_received_log table if not exists
-            using var cmd3 = connection.CreateCommand();
-            cmd3.CommandText = @"
-                CREATE TABLE IF NOT EXISTS order_received_log (
-                    id INT PRIMARY KEY AUTO_INCREMENT,
-                    order_id VARCHAR(255) NOT NULL,
-                    received_at DATETIME NOT NULL,
-                    device_id VARCHAR(100) NULL,
-                    status VARCHAR(20) DEFAULT 'received',
-                    sent_to_cloud BOOLEAN DEFAULT FALSE,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_order_received (order_id, received_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-            await cmd3.ExecuteNonQueryAsync();
-            
-            Debug.WriteLine(" OrderWeb.net tables verified/created");
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($" Error creating OrderWeb tables: {ex.Message}");
+            Debug.WriteLine($"Production schema check error: {ex.Message}");
         }
     }
 }

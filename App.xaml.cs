@@ -11,201 +11,140 @@ public partial class App : Application
 	{
 		try
 		{
-			// Register Syncfusion license key FIRST (before InitializeComponent)
-			// Updated: December 9, 2025 - Essential Studio v27.1.48 License
 			Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("NDE1MDY0NUAzMjM3MmUzMDJlMzBQUWtDaHdJdXBlVTM0bmFxUVEveGZ1bkswUGJ6SXN1UExNeWtobERJK2p3PQ==");
-			
-			var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-			File.AppendAllText(logPath, $"\n\n=== APP CONSTRUCTOR {DateTime.Now} ===\n");
-			
+
+			AppDiagnostics.Log("=== APP CONSTRUCTOR ===");
+
 			InitializeComponent();
-			File.AppendAllText(logPath, " InitializeComponent() completed\n");
-			
-			// Add global exception handler
+			AppDiagnostics.Log("InitializeComponent() completed");
+
 			AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 			TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
-			
-			File.AppendAllText(logPath, " App constructor completed\n");
+
+			AppDiagnostics.Log("App constructor completed");
 		}
 		catch (Exception ex)
 		{
-			// Try to log even if logging failed
-			try
-			{
-				var logPath = "/tmp/pos-error.log";
-				File.AppendAllText(logPath, $"CONSTRUCTOR ERROR: {ex.Message}\n{ex.StackTrace}\n");
-			}
-			catch { }
+			AppDiagnostics.LogFatal("AppConstructor", ex);
 			throw;
 		}
 	}
-	
+
 	private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
 	{
-		if (e.ExceptionObject is Exception ex)
+		if (e.ExceptionObject is not Exception ex)
 		{
-			System.Diagnostics.Debug.WriteLine($" UNHANDLED EXCEPTION: {ex.Message}");
-			System.Diagnostics.Debug.WriteLine($"Stack Trace: {ex.StackTrace}");
-			System.Diagnostics.Debug.WriteLine($"Is Terminating: {e.IsTerminating}");
-
-			try
-			{
-				var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-				File.AppendAllText(logPath,
-                    $"\n=== UNHANDLED EXCEPTION {DateTime.Now} ===\n{ex}\nIs Terminating: {e.IsTerminating}\n");
-			}
-			catch
-			{
-				// Ignore logging failures during crash handling.
-			}
+			return;
 		}
+
+#if DEBUG
+		AppDiagnostics.Log($"UNHANDLED EXCEPTION (terminating={e.IsTerminating}): {ex}");
+#else
+		AppDiagnostics.LogFatal("UnhandledException", ex);
+#endif
 	}
-	
+
 	private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
 	{
-		System.Diagnostics.Debug.WriteLine($" UNOBSERVED TASK EXCEPTION: {e.Exception.Message}");
-		foreach (var ex in e.Exception.InnerExceptions)
-		{
-			System.Diagnostics.Debug.WriteLine($"  - {ex.Message}");
-			System.Diagnostics.Debug.WriteLine($"    {ex.StackTrace}");
-		}
-		e.SetObserved(); // Prevent app from crashing
+#if DEBUG
+		AppDiagnostics.Log($"UNOBSERVED TASK EXCEPTION: {e.Exception}");
+#endif
+		e.SetObserved();
 	}
 
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pos-debug.log");
-		File.AppendAllText(logPath, $"\n\n=== APP START {DateTime.Now} ===\n");
-		File.AppendAllText(logPath, " CreateWindow called - Starting app initialization\n");
-		
+		AppDiagnostics.Log("=== APP START ===");
+		AppDiagnostics.Log("CreateWindow called - Starting app initialization");
+
 		try
 		{
 			var appShell = new AppShell();
-			File.AppendAllText(logPath, " AppShell created successfully\n");
-			
-			// Navigate to terminal setup on first run, otherwise login.
+			AppDiagnostics.Log("AppShell created successfully");
+
 			var window = new Window(appShell);
-			File.AppendAllText(logPath, " Window created successfully\n");
-			
-			// Use dispatcher to navigate immediately - maximum speed
+			AppDiagnostics.Log("Window created successfully");
+
 			Dispatcher.Dispatch(async () =>
 			{
 				try
 				{
-					var startupRoute = TerminalConfigurationService.IsConfigured ? "//login" : "//terminalsetup";
-					File.AppendAllText(logPath, $" Attempting navigation to {startupRoute}\n");
+					TerminalConfigurationService.TryApplyInstallerDatabaseConfig();
+					var startupRoute = await StartupNavigationService.GetInitialRouteAsync();
+					AppDiagnostics.Log($"Attempting navigation to {startupRoute}");
 					await appShell.GoToAsync(startupRoute);
-					File.AppendAllText(logPath, $" Navigation to {startupRoute} successful\n");
+					AppDiagnostics.Log($"Navigation to {startupRoute} successful");
 				}
 				catch (Exception ex)
 				{
-					File.AppendAllText(logPath, $" Navigation error: {ex.Message}\n");
-					File.AppendAllText(logPath, $" Stack trace: {ex.StackTrace}\n");
-					if (ex.InnerException != null)
-					{
-						File.AppendAllText(logPath, $" Inner exception: {ex.InnerException.Message}\n");
-					}
+					AppDiagnostics.LogFatal("StartupNavigation", ex);
 				}
 			});
-		
-		// Initialize everything in background - completely non-blocking
-		_ = Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalConfigurationService.IsConfigured)
-				{
-					File.AppendAllText(logPath, "Info: Database initialization skipped until terminal setup is complete\n");
-					return;
-				}
 
-				File.AppendAllText(logPath, " Starting database initialization...\n");
-				// Test database connection (non-blocking)
-				var authService = AuthenticationService.Instance;
-				var connectionTest = await authService.TestDatabaseConnectionAsync();
-				
-				if (connectionTest.Success)
+			_ = Task.Run(async () =>
+			{
+				try
 				{
-					File.AppendAllText(logPath, " " + connectionTest.Message + "\n");
-					
-					// Ensure default admin user exists
-					var result = await authService.EnsureDefaultAdminUserAsync();
-					
-					if (result.Success)
+					if (!TerminalConfigurationService.IsConfigured)
 					{
-						File.AppendAllText(logPath, " " + result.Message + "\n");
+						AppDiagnostics.Log("Database initialization skipped until terminal setup is complete");
+						return;
 					}
-					
-					// Create PIN user "0000" for admin login (system initialization - no auth required)
-					try
+
+					AppDiagnostics.Log("Starting database initialization...");
+					var authService = AuthenticationService.Instance;
+					var connectionTest = await authService.TestDatabaseConnectionAsync();
+
+					if (connectionTest.Success)
 					{
-						var pinResult = await authService.EnsureUserExistsAsync("Admin", "0000", "0000", Models.UserRole.Admin);
-						if (pinResult.Success)
-						{
-							File.AppendAllText(logPath, " PIN user '0000' created successfully\n");
-						}
-						else if (pinResult.Message.Contains("already exists"))
-						{
-							File.AppendAllText(logPath, "Info: PIN user '0000' already exists\n");
-						}
-						else
-						{
-							File.AppendAllText(logPath, $"  PIN user creation: {pinResult.Message}\n");
-						}
+						AppDiagnostics.Log(connectionTest.Message);
+						await authService.EnsureAuthenticationSchemaAsync();
 					}
-					catch (Exception pinEx)
+					else
 					{
-						File.AppendAllText(logPath, $"  PIN user creation error: {pinEx.Message}\n");
+						AppDiagnostics.Log($"Database connection failed: {connectionTest.Message}");
 					}
 				}
-				else
+				catch (Exception ex)
 				{
-					File.AppendAllText(logPath, " Database: " + connectionTest.Message + "\n");
+					AppDiagnostics.LogFatal("DatabaseInit", ex);
 				}
-			}
-			catch (Exception ex)
-			{
-				File.AppendAllText(logPath, $" Database init: {ex.Message}\n");
-			}
-		});
-		
-		// Initialize cloud services in separate background task
-		_ = Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalConfigurationService.IsConfigured)
-				{
-					File.AppendAllText(logPath, "Info: Cloud services skipped until terminal setup is complete\n");
-					return;
-				}
+			});
 
-				var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync();
-				if (!onlineMasterCheck.Allowed)
-				{
-					File.AppendAllText(logPath, $"Info: Cloud services skipped: {onlineMasterCheck.Reason}\n");
-					return;
-				}
-
-				File.AppendAllText(logPath, "  Starting cloud services initialization...\n");
-				// Delay cloud services initialization to prioritize UI
-				await Task.Delay(5000);
-				await InitializeCloudServicesAsync();
-			}
-			catch (Exception ex)
+			_ = Task.Run(async () =>
 			{
-				File.AppendAllText(logPath, $" Cloud services: {ex.Message}\n");
-			}
-		});
-		
-		File.AppendAllText(logPath, " Window initialization complete, returning window\n");
-		return window;
+				try
+				{
+					if (!TerminalConfigurationService.IsConfigured)
+					{
+						AppDiagnostics.Log("Cloud services skipped until terminal setup is complete");
+						return;
+					}
+
+					var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync();
+					if (!onlineMasterCheck.Allowed)
+					{
+						AppDiagnostics.Log($"Cloud services skipped: {onlineMasterCheck.Reason}");
+						return;
+					}
+
+					AppDiagnostics.Log("Starting cloud services initialization...");
+					await Task.Delay(5000);
+					await InitializeCloudServicesAsync();
+				}
+				catch (Exception ex)
+				{
+					AppDiagnostics.LogFatal("CloudServicesInit", ex);
+				}
+			});
+
+			AppDiagnostics.Log("Window initialization complete, returning window");
+			return window;
 		}
 		catch (Exception ex)
 		{
-			File.AppendAllText(logPath, $" FATAL ERROR in CreateWindow: {ex.Message}\n");
-			File.AppendAllText(logPath, $" Stack trace: {ex.StackTrace}\n");
-			throw; // Re-throw to see full error
+			AppDiagnostics.LogFatal("CreateWindow", ex);
+			throw;
 		}
 	}
 
@@ -216,24 +155,31 @@ public partial class App : Application
 			var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync();
 			if (!onlineMasterCheck.Allowed)
 			{
-				System.Diagnostics.Debug.WriteLine($"Cloud services disabled: {onlineMasterCheck.Reason}");
+				AppDiagnostics.Log($"Cloud services disabled: {onlineMasterCheck.Reason}");
 				return;
 			}
 
 			var serviceProvider = Current?.Handler?.MauiContext?.Services;
 			if (serviceProvider == null)
 			{
-				System.Diagnostics.Debug.WriteLine("ServiceProvider is NULL during cloud init");
+				AppDiagnostics.Log("ServiceProvider is null during cloud init");
 				return;
 			}
 
 			_cloudOrderService = serviceProvider.GetService<CloudOrderService>();
 
+			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
+			if (reservationSyncService != null)
+			{
+				await reservationSyncService.StartAsync();
+				AppDiagnostics.Log("Reservation sync service started");
+			}
+
 			var connectionKeeper = serviceProvider.GetService<OrderWebConnectionKeeperService>();
 			if (connectionKeeper != null)
 			{
 				await connectionKeeper.StartAsync();
-				System.Diagnostics.Debug.WriteLine("OrderWeb connection keeper started from app startup");
+				AppDiagnostics.Log("OrderWeb connection keeper started");
 			}
 
 			_directDatabaseService = serviceProvider.GetService<OrderWebDirectDatabaseService>();
@@ -244,7 +190,7 @@ public partial class App : Application
 		}
 		catch (Exception ex)
 		{
-			System.Diagnostics.Debug.WriteLine($"Failed to initialize cloud services: {ex.Message}");
+			AppDiagnostics.LogFatal("InitializeCloudServices", ex);
 		}
 	}
 
@@ -252,13 +198,14 @@ public partial class App : Application
 	{
 		try
 		{
-			// Get database service to check for saved connection settings
 			var databaseService = Current?.Handler?.MauiContext?.Services?.GetService<DatabaseService>();
-			if (databaseService == null) return;
+			if (databaseService == null)
+			{
+				return;
+			}
 
 			var config = await databaseService.GetCloudConfigAsync();
-			
-			// Check if direct database is enabled and configured
+
 			if (config.GetValueOrDefault("direct_db_enabled", "False") == "True")
 			{
 				var host = config.GetValueOrDefault("db_host", "");
@@ -267,43 +214,42 @@ public partial class App : Application
 				var password = config.GetValueOrDefault("db_password", "");
 				var portText = config.GetValueOrDefault("db_port", "3306");
 
-				if (!string.IsNullOrEmpty(host) && !string.IsNullOrEmpty(database) && 
+				if (!string.IsNullOrEmpty(host) && !string.IsNullOrEmpty(database) &&
 				    !string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password) &&
 				    int.TryParse(portText, out int port))
 				{
-					System.Diagnostics.Debug.WriteLine(" Configuring direct database connection...");
-					
+					AppDiagnostics.Log("Configuring direct database connection...");
+
 					var success = await _directDatabaseService!.ConfigureDatabaseConnectionAsync(host, database, username, password, port);
-					
+
 					if (success)
 					{
 						await _directDatabaseService.StartRealTimeMonitoringAsync();
-						System.Diagnostics.Debug.WriteLine(" Direct database connection established - 0.5s order delivery active!");
+						AppDiagnostics.Log("Direct database connection established");
 					}
 					else
 					{
-						System.Diagnostics.Debug.WriteLine(" Direct database connection failed");
+						AppDiagnostics.Log("Direct database connection failed");
 					}
 				}
 				else
 				{
-					System.Diagnostics.Debug.WriteLine(" Direct database enabled but configuration incomplete");
+					AppDiagnostics.Log("Direct database enabled but configuration incomplete");
 				}
 			}
 			else
 			{
-				System.Diagnostics.Debug.WriteLine("Info: Direct database connection disabled");
+				AppDiagnostics.Log("Direct database connection disabled");
 			}
 		}
 		catch (Exception ex)
 		{
-			System.Diagnostics.Debug.WriteLine($" Failed to initialize direct database: {ex.Message}");
+			AppDiagnostics.LogFatal("InitializeDirectDatabase", ex);
 		}
 	}
 
 	protected override void CleanUp()
 	{
-		// Stop cloud services when app is closing
 		_cloudOrderService?.StopPolling();
 		_directDatabaseService?.StopRealTimeMonitoring();
 		base.CleanUp();

@@ -68,14 +68,15 @@
                                           TextColor="#64748B" />
                             </VerticalStackLayout>
 
-                            <Grid ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="8">
-                                   <Button x:Name="TodayPresetButton" Text="Today" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="SevenDaysPresetButton" Grid.Column="1" Text="7 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="ThirtyDaysPresetButton" Grid.Column="2" Text="30 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="CustomPresetButton" Grid.Column="3" Text="Custom" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="TopSellItemButton" Grid.Column="4" Text="Top Sell Item" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="CashDrawerButton" Grid.Column="5" Text="Cash Drawer" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="DiscountAuditButton" Grid.Column="6" Text="Discount Audit" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="8" RowSpacing="8">
+                                   <Button x:Name="TodayPresetButton" Grid.Row="0" Text="Today" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="SevenDaysPresetButton" Grid.Row="0" Grid.Column="1" Text="7 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="ThirtyDaysPresetButton" Grid.Row="0" Grid.Column="2" Text="30 Days" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="CustomPresetButton" Grid.Row="0" Grid.Column="3" Text="Custom" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="TopSellItemButton" Grid.Row="0" Grid.Column="4" Text="Top Sell Item" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="CashDrawerButton" Grid.Row="0" Grid.Column="5" Text="Cash Drawer" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="DiscountAuditButton" Grid.Row="0" Grid.Column="6" Text="Discount Audit" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="StaffHoursButton" Grid.Row="1" Grid.ColumnSpan="2" Text="Staff Hours" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                             </Grid>
 
                             <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12" IsVisible="{Binding IsCustomRangeVisible, FallbackValue=False}" RowSpacing="8">
@@ -1018,6 +1019,149 @@
                                    </VerticalStackLayout>
                             </Border>
 
+                     </VerticalStackLayout>
+              </Border>
+
+              <Border Grid.Row="4"
+                      IsVisible="{Binding IsStaffHoursReportVisible}"
+                      Margin="20,14,20,0"
+                      Stroke="#E2E8F0"
+                      StrokeThickness="1"
+                      BackgroundColor="#FFFFFF"
+                      StrokeShape="RoundRectangle 20"
+                      Padding="16">
+                     <VerticalStackLayout Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                   <VerticalStackLayout Spacing="6">
+                                          <Label Text="Staff Hours"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="40"
+                                                 TextColor="#0F172A" />
+                                          <Label Text="Payroll-ready labour report with clock in/out times, hours worked, and cloud sync status."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+
+                                   <Border Grid.Column="1"
+                                           BackgroundColor="#EEF2FF"
+                                           Stroke="#C7D2FE"
+                                           StrokeThickness="1"
+                                           StrokeShape="RoundRectangle 14"
+                                           Padding="14,10"
+                                           VerticalOptions="Center">
+                                          <Label Text="Labour / Payroll"
+                                                 FontFamily="OpenSansSemibold"
+                                                 FontSize="13"
+                                                 TextColor="#4338CA" />
+                                   </Border>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                   <Border Stroke="#C7D2FE" StrokeThickness="1" BackgroundColor="#EEF2FF" StrokeShape="RoundRectangle 12" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Total Hours"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="11"
+                                                        TextColor="#4338CA" />
+                                                 <Label Text="{Binding StaffHoursTotalText}"
+                                                        FontFamily="AlegreyaBold"
+                                                        FontSize="18"
+                                                        TextColor="#312E81" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#BBF7D0" StrokeThickness="1" BackgroundColor="#F0FDF4" StrokeShape="RoundRectangle 12" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Staff"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="11"
+                                                        TextColor="#166534" />
+                                                 <Label Text="{Binding StaffHoursStaffCountText}"
+                                                        FontFamily="AlegreyaBold"
+                                                        FontSize="18"
+                                                        TextColor="#14532D" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#FDE68A" StrokeThickness="1" BackgroundColor="#FFFBEB" StrokeShape="RoundRectangle 12" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Open Shifts"
+                                                        FontFamily="OpenSansSemibold"
+                                                        FontSize="11"
+                                                        TextColor="#92400E" />
+                                                 <Label Text="{Binding StaffHoursOpenText}"
+                                                        FontFamily="AlegreyaBold"
+                                                        FontSize="18"
+                                                        TextColor="#78350F" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+
+                            <CollectionView ItemsSource="{Binding StaffHoursRows}" SelectionMode="None" HeightRequest="520">
+                                   <CollectionView.EmptyView>
+                                          <Label Text="No staff clock sessions in the selected date range."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B" />
+                                   </CollectionView.EmptyView>
+                                   <CollectionView.ItemTemplate>
+                                          <DataTemplate>
+                                                 <Border Stroke="#E2E8F0"
+                                                         StrokeThickness="1"
+                                                         BackgroundColor="#FFFFFF"
+                                                         StrokeShape="RoundRectangle 12"
+                                                         Padding="10"
+                                                         Margin="0,0,0,8">
+                                                        <Grid ColumnDefinitions="1.3*,1*,1*,Auto,Auto" ColumnSpacing="10">
+                                                               <VerticalStackLayout Spacing="2">
+                                                                      <Label Text="{Binding StaffName}"
+                                                                             FontFamily="OpenSansSemibold"
+                                                                             FontSize="12"
+                                                                             TextColor="#0F172A" />
+                                                                      <Label Text="{Binding Username}"
+                                                                             FontFamily="OpenSansRegular"
+                                                                             FontSize="11"
+                                                                             TextColor="#64748B" />
+                                                               </VerticalStackLayout>
+                                                               <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                                                      <Label Text="{Binding ClockInDisplay}"
+                                                                             FontFamily="OpenSansSemibold"
+                                                                             FontSize="12"
+                                                                             TextColor="#334155" />
+                                                                      <Label Text="{Binding TerminalIn}"
+                                                                             FontFamily="OpenSansRegular"
+                                                                             FontSize="11"
+                                                                             TextColor="#64748B" />
+                                                               </VerticalStackLayout>
+                                                               <VerticalStackLayout Grid.Column="2" Spacing="2">
+                                                                      <Label Text="{Binding ClockOutDisplay}"
+                                                                             FontFamily="OpenSansSemibold"
+                                                                             FontSize="12"
+                                                                             TextColor="#334155" />
+                                                                      <Label Text="{Binding TerminalOut}"
+                                                                             FontFamily="OpenSansRegular"
+                                                                             FontSize="11"
+                                                                             TextColor="#64748B" />
+                                                               </VerticalStackLayout>
+                                                               <Label Grid.Column="3"
+                                                                      Text="{Binding HoursDisplay}"
+                                                                      FontFamily="OpenSansSemibold"
+                                                                      FontSize="12"
+                                                                      TextColor="#4338CA"
+                                                                      VerticalTextAlignment="Center"
+                                                                      HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="4"
+                                                                      Text="{Binding SyncDisplay}"
+                                                                      FontFamily="OpenSansSemibold"
+                                                                      FontSize="11"
+                                                                      TextColor="#64748B"
+                                                                      VerticalTextAlignment="Center"
+                                                                      HorizontalTextAlignment="End" />
+                                                        </Grid>
+                                                 </Border>
+                                          </DataTemplate>
+                                   </CollectionView.ItemTemplate>
+                            </CollectionView>
                      </VerticalStackLayout>
               </Border>
 

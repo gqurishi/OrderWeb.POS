@@ -65,18 +65,11 @@
                            TextColor="#374151"
                            HorizontalOptions="Start" />
                     
-                    <Border BackgroundColor="#F9FAFB"
-                            Stroke="#E5E7EB"
-                            StrokeThickness="1"
-                            StrokeShape="RoundRectangle 10"
-                            Padding="0">
-                        <Picker x:Name="FloorPicker"
-                                FontSize="16"
-                                FontFamily="OpenSansRegular"
-                                TextColor="#1F2937"
-                                BackgroundColor="Transparent"
-                                HeightRequest="50" />
-                    </Border>
+                    <ScrollView MaximumHeightRequest="170"
+                                VerticalScrollBarVisibility="Never">
+                        <VerticalStackLayout x:Name="FloorSelectionStack"
+                                             Spacing="8" />
+                    </ScrollView>
                 </VerticalStackLayout>
                 
                 <!-- Table Design Selection -->

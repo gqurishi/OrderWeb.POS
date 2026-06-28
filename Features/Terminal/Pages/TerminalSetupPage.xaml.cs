@@ -1,4 +1,3 @@
-using MySqlConnector;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 
@@ -7,10 +6,15 @@ namespace POS_in_NET.Pages;
 public partial class TerminalSetupPage : ContentPage
 {
     private TerminalMode _selectedMode = TerminalMode.Mother;
+    private bool _installerConfigApplied;
 
     public TerminalSetupPage()
     {
         InitializeComponent();
+#if !DEBUG
+        GenerateDatabaseCredentialsButton.IsVisible = false;
+#endif
+        TerminalConfigurationService.TryApplyInstallerDatabaseConfig();
         LoadExistingConfiguration();
         UpdateModeUi();
     }
@@ -22,6 +26,16 @@ public partial class TerminalSetupPage : ContentPage
         TerminalNameEntry.Text = config.TerminalName;
         MotherIpEntry.Text = config.IsChild ? config.DatabaseHost : string.Empty;
         PairingCodeEntry.Text = string.Empty;
+
+        DatabaseNameEntry.Text = config.DatabaseName;
+        DatabaseUserEntry.Text = config.DatabaseUser;
+        DatabasePasswordEntry.Text = config.DatabasePassword;
+
+        _installerConfigApplied = !string.IsNullOrWhiteSpace(config.DatabasePassword);
+        InstallerConfigLabel.IsVisible = _installerConfigApplied;
+        InstallerConfigLabel.Text = _installerConfigApplied
+            ? "Database credentials loaded from orderweb-database.json. Edit them if this computer uses different MariaDB credentials."
+            : string.Empty;
     }
 
     private void OnMotherTapped(object sender, TappedEventArgs e)
@@ -56,33 +70,65 @@ public partial class TerminalSetupPage : ContentPage
         ChildCard.Stroke = Color.FromArgb(isMother ? "#CBD5E1" : "#2563EB");
         ChildCard.StrokeThickness = isMother ? 2 : 3;
 
+        MotherDatabaseSection.IsVisible = isMother;
         MotherIpSection.IsVisible = !isMother;
         PairingCodeSection.IsVisible = !isMother;
         StatusLabel.Text = isMother
             ? "This terminal will use its own local database."
-            : "This terminal will connect to the mother terminal database with a pairing code.";
+            : "Uses database credentials from orderweb-database.json and connects to the mother terminal IP.";
     }
 
     private async void OnContinueClicked(object sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(TerminalNameEntry.Text))
         {
-            StatusLabel.TextColor = Color.FromArgb("#DC2626");
-            StatusLabel.Text = "Please enter a terminal name.";
+            ShowError("Please enter a terminal name.");
             return;
         }
 
         if (_selectedMode == TerminalMode.Child && string.IsNullOrWhiteSpace(MotherIpEntry.Text))
         {
-            StatusLabel.TextColor = Color.FromArgb("#DC2626");
-            StatusLabel.Text = "Please enter the mother terminal IP address.";
+            ShowError("Please enter the mother terminal IP address.");
             return;
         }
 
         if (_selectedMode == TerminalMode.Child && string.IsNullOrWhiteSpace(PairingCodeEntry.Text))
         {
-            StatusLabel.TextColor = Color.FromArgb("#DC2626");
-            StatusLabel.Text = "Please enter the pairing code from the mother terminal.";
+            ShowError("Please enter the pairing code from the mother terminal.");
+            return;
+        }
+
+        var databaseName = string.IsNullOrWhiteSpace(DatabaseNameEntry.Text)
+            ? PosDatabaseDefaults.ProductionDatabaseName
+            : DatabaseNameEntry.Text.Trim();
+        var databaseUser = string.IsNullOrWhiteSpace(DatabaseUserEntry.Text)
+            ? PosDatabaseDefaults.ProductionDatabaseUser
+            : DatabaseUserEntry.Text.Trim();
+        var databasePassword = DatabasePasswordEntry.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(databasePassword))
+        {
+            databasePassword = TerminalConfigurationService.GetConfiguration().DatabasePassword;
+        }
+
+        if (_selectedMode == TerminalMode.Mother)
+        {
+            if (string.IsNullOrWhiteSpace(databaseName) || string.IsNullOrWhiteSpace(databaseUser))
+            {
+                ShowError("Database name and user are required.");
+                return;
+            }
+
+            var credentialValidation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
+            if (!credentialValidation.IsValid)
+            {
+                ShowError(credentialValidation.Message);
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(databasePassword))
+        {
+            ShowError("Database password is required. Run the installer or enter credentials from orderweb-database.json.");
             return;
         }
 
@@ -91,42 +137,45 @@ public partial class TerminalSetupPage : ContentPage
         StatusLabel.TextColor = Color.FromArgb("#64748B");
         StatusLabel.Text = "Testing database connection...";
 
+        var existing = TerminalConfigurationService.GetConfiguration();
         var config = new TerminalConfiguration
         {
             IsConfigured = true,
             Mode = _selectedMode,
             TerminalName = TerminalNameEntry.Text.Trim(),
             DatabaseHost = _selectedMode == TerminalMode.Mother ? "localhost" : MotherIpEntry.Text.Trim(),
-            DatabasePort = 3306,
-            DatabaseName = "Pos-net",
-            DatabaseUser = "root",
-            DatabasePassword = "root"
+            DatabasePort = existing.DatabasePort > 0 ? existing.DatabasePort : 3306,
+            DatabaseName = databaseName,
+            DatabaseUser = databaseUser,
+            DatabasePassword = databasePassword
         };
 
-        TerminalConfigurationService.Save(config);
-
-        if (config.IsMother)
+        try
         {
-            var initialized = await new DatabaseService().InitializeDatabaseAsync();
-            if (!initialized)
-            {
-                TerminalConfigurationService.SetConfigured(false);
-                ContinueButton.IsEnabled = true;
-                ContinueButton.Text = "Save & Continue";
-                StatusLabel.TextColor = Color.FromArgb("#DC2626");
-                StatusLabel.Text = "Could not create or initialize the local database.";
-                return;
-            }
+            TerminalConfigurationService.Save(config);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ResetContinueButton();
+            ShowError(ex.Message);
+            return;
+        }
+
+        var schemaResult = await new DatabaseService().EnsureProductionSchemaAsync();
+        if (!schemaResult.Success)
+        {
+            TerminalConfigurationService.SetConfigured(false);
+            ResetContinueButton();
+            ShowError(schemaResult.Message);
+            return;
         }
 
         var testResult = await TerminalConnectionTestService.TestAsync();
         if (!testResult.Success)
         {
             TerminalConfigurationService.SetConfigured(false);
-            ContinueButton.IsEnabled = true;
-            ContinueButton.Text = "Save & Continue";
-            StatusLabel.TextColor = Color.FromArgb("#DC2626");
-            StatusLabel.Text = testResult.Message;
+            ResetContinueButton();
+            ShowError(testResult.Message);
             return;
         }
 
@@ -139,10 +188,8 @@ public partial class TerminalSetupPage : ContentPage
             if (!pairingResult.Success)
             {
                 TerminalConfigurationService.SetConfigured(false);
-                ContinueButton.IsEnabled = true;
-                ContinueButton.Text = "Save & Continue";
-                StatusLabel.TextColor = Color.FromArgb("#DC2626");
-                StatusLabel.Text = pairingResult.Message;
+                ResetContinueButton();
+                ShowError(pairingResult.Message);
                 return;
             }
         }
@@ -154,7 +201,59 @@ public partial class TerminalSetupPage : ContentPage
         TerminalPowerSafetyService.Apply();
         ServiceHelper.GetService<TerminalHealthService>()?.Start();
         DatabaseChangeMonitorService.Start();
-        await Shell.Current.GoToAsync("//login", false);
+
+        var nextRoute = await StartupNavigationService.GetPostSetupRouteAsync();
+        await Shell.Current.GoToAsync(nextRoute, false);
+    }
+
+    private void OnGenerateDatabaseCredentialsClicked(object sender, EventArgs e)
+    {
+        try
+        {
+            var databaseName = string.IsNullOrWhiteSpace(DatabaseNameEntry.Text)
+                ? PosDatabaseDefaults.ProductionDatabaseName
+                : DatabaseNameEntry.Text.Trim();
+            var databaseUser = string.IsNullOrWhiteSpace(DatabaseUserEntry.Text)
+                ? PosDatabaseDefaults.ProductionDatabaseUser
+                : DatabaseUserEntry.Text.Trim();
+
+            var result = ProductionDatabaseCredentialService.GenerateAndSave(
+                databaseName: databaseName,
+                databaseUser: databaseUser);
+
+            DatabaseNameEntry.Text = result.Config.DatabaseName;
+            DatabaseUserEntry.Text = result.Config.DatabaseUser;
+            DatabasePasswordEntry.Text = result.Config.DatabasePassword;
+
+            _installerConfigApplied = true;
+            InstallerConfigLabel.IsVisible = true;
+            InstallerConfigLabel.Text = "Production credentials generated and saved.";
+            StatusLabel.TextColor = Color.FromArgb("#059669");
+            StatusLabel.Text = $"Generated database config and SQL setup script: {result.SqlSetupScriptPath}";
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.LogFatal("GenerateDatabaseCredentials", ex);
+            ShowError("Could not generate database credentials.");
+        }
+    }
+
+    private void OnToggleDatabasePasswordClicked(object sender, EventArgs e)
+    {
+        DatabasePasswordEntry.IsPassword = !DatabasePasswordEntry.IsPassword;
+        ToggleDatabasePasswordButton.Text = DatabasePasswordEntry.IsPassword ? "⌾ Show" : "⌾ Hide";
+    }
+
+    private void ResetContinueButton()
+    {
+        ContinueButton.IsEnabled = true;
+        ContinueButton.Text = "Save & Continue";
+    }
+
+    private void ShowError(string message)
+    {
+        StatusLabel.TextColor = Color.FromArgb("#DC2626");
+        StatusLabel.Text = message;
     }
 
     private static async Task EnsureStartupDataAsync()
@@ -168,12 +267,11 @@ public partial class TerminalSetupPage : ContentPage
                 return;
             }
 
-            await authService.EnsureDefaultAdminUserAsync();
-            await authService.EnsureUserExistsAsync("Admin", "0000", "0000", UserRole.Admin);
+            await authService.EnsureAuthenticationSchemaAsync();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Terminal setup startup data warning: {ex.Message}");
+            AppDiagnostics.LogFatal("TerminalSetupStartupData", ex);
         }
     }
 }

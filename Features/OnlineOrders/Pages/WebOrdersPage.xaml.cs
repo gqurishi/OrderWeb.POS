@@ -25,7 +25,11 @@ namespace POS_in_NET.Pages
         private bool _hasPendingWebOrdersRefresh;
         private DateTime _lastWebOrdersRefreshAt = DateTime.MinValue;
         private static readonly TimeSpan MinRefreshGap = TimeSpan.FromMilliseconds(400);
+#if DEBUG
+        private const bool EnableVerboseOrderDump = true;
+#else
         private const bool EnableVerboseOrderDump = false;
+#endif
         
         // Pagination
         private int _currentPage = 0;

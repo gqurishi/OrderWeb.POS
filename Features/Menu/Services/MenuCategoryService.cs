@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using MySqlConnector;
 using MyFirstMauiApp.Models.FoodMenu;
+using POS_in_NET.Services;
 
 namespace MyFirstMauiApp.Services
 {
@@ -215,8 +216,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"CreateCategoryAsync called for category: {category.Name}");
-                System.Diagnostics.Debug.WriteLine($"Connection string: {POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString()}");
+                AppDiagnostics.Log($"CreateCategoryAsync called for category: {category.Name}");
                 
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();

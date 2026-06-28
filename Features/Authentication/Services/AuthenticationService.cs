@@ -163,6 +163,52 @@ public class AuthenticationService
         }
     }
 
+    /// <summary>
+    /// Validates a staff PIN without starting a POS login session.
+    /// </summary>
+    public async Task<(bool Success, string Message, User? User)> ValidatePinAsync(string pin)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(pin) || pin.Length != 4 || !pin.All(char.IsDigit))
+            {
+                return (false, "Please enter a 4-digit PIN.", null);
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await EnsureAuthCacheAsync(forceReload: false, cts.Token);
+
+            if (!_authCache.TryGetValue(pin, out var authUser))
+            {
+                await EnsureAuthCacheAsync(forceReload: true, cts.Token);
+                _authCache.TryGetValue(pin, out authUser);
+            }
+
+            if (authUser is null)
+            {
+                return (false, "Wrong PIN. Try again.", null);
+            }
+
+            var user = new User
+            {
+                Id = authUser.Id,
+                Name = authUser.Name,
+                Username = authUser.Username,
+                PasswordHash = authUser.PasswordHash,
+                Role = authUser.Role,
+                CreatedAt = authUser.CreatedAt,
+                UpdatedAt = authUser.UpdatedAt
+            };
+
+            return (true, "PIN accepted.", user);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"ValidatePin error: {ex.Message}");
+            return (false, "Could not verify PIN. Please try again.", null);
+        }
+    }
+
     public async Task LogoutAsync()
     {
         if (_currentUser != null)
@@ -193,9 +239,15 @@ public class AuthenticationService
                 return (false, "Name, username and password are required.");
             }
 
-            if (password.Length < 3)
+            if (password.Length < 1)
             {
-                return (false, "Password must be at least 3 characters long.");
+                return (false, "Password is required.");
+            }
+
+            var schemaResult = await EnsureAuthenticationSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                return schemaResult;
             }
 
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
@@ -237,7 +289,8 @@ public class AuthenticationService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Create user error: {ex.Message}");
-            return (false, "An error occurred while creating the user.");
+            AppDiagnostics.LogFatal("CreateUser", ex);
+            return (false, $"Could not create user: {ex.Message}");
         }
     }
 
@@ -523,67 +576,100 @@ public class AuthenticationService
 
     public async Task<(bool Success, string Message)> EnsureDefaultAdminUserAsync()
     {
+        return await EnsureAuthenticationSchemaAsync();
+    }
+
+    public async Task<(bool Success, string Message)> EnsureAuthenticationSchemaAsync()
+    {
         try
         {
-            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            var databaseName = TerminalConfigurationService.GetActiveDatabaseName();
+            await using (var serverConnection = new MySqlConnection(
+                TerminalConfigurationService.GetPosConnectionString(includeDatabase: false, pooled: false)))
+            {
+                await serverConnection.OpenAsync();
+                await using var createDatabaseCommand = new MySqlCommand(
+                    $"CREATE DATABASE IF NOT EXISTS `{EscapeIdentifier(databaseName)}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+                    serverConnection);
+                await createDatabaseCommand.ExecuteNonQueryAsync();
+            }
+
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            // Create users table if it doesn't exist
-            var createTableQuery = @"
+            const string createTableQuery = @"
                 CREATE TABLE IF NOT EXISTS users (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255) NULL,
                     username VARCHAR(50) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(20) NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 )";
+
             using var createCommand = new MySqlCommand(createTableQuery, connection);
             await createCommand.ExecuteNonQueryAsync();
 
-            // Check if admin user exists
-            var checkAdminQuery = "SELECT COUNT(*) FROM users WHERE username = 'admin' AND role = 'admin'";
-            using var checkCommand = new MySqlCommand(checkAdminQuery, connection);
-            var adminCount = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+            var upgradeStatements = new[]
+            {
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL AFTER id",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+            };
 
-            if (adminCount == 0)
+            foreach (var statement in upgradeStatements)
             {
-                // Create default admin user if it doesn't exist
-                var adminPassword = BCrypt.Net.BCrypt.HashPassword("admin123");
-                var insertAdminQuery = @"
-                    INSERT INTO users (username, password_hash, role) 
-                    VALUES ('admin', @password, 'admin')";
-                using var insertCommand = new MySqlCommand(insertAdminQuery, connection);
-                insertCommand.Parameters.AddWithValue("@password", adminPassword);
-                
-                await insertCommand.ExecuteNonQueryAsync();
-                System.Diagnostics.Debug.WriteLine("Default admin user created successfully");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("Admin user already exists");
+                using var upgradeCommand = new MySqlCommand(statement, connection);
+                await upgradeCommand.ExecuteNonQueryAsync();
             }
 
-            return (true, "Database connection successful. Admin user ready.");
+            return (true, "Database connection successful.");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Database setup error: {ex.Message}");
+            AppDiagnostics.LogFatal("EnsureAuthenticationSchema", ex);
             return (false, $"Database connection failed: {ex.Message}");
         }
+    }
+
+    private static string EscapeIdentifier(string identifier) =>
+        string.IsNullOrWhiteSpace(identifier)
+            ? "orderweb_pos"
+            : identifier.Trim().Replace("`", "``", StringComparison.Ordinal);
+
+    public async Task<bool> HasAnyUserAsync()
+    {
+        try
+        {
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+
+            using var command = new MySqlCommand("SELECT COUNT(*) FROM users", connection);
+            return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public Task<(bool Success, string Message)> CreateInitialAdminUserAsync(string name, string pin)
+    {
+        return CreateUserInternalAsync(name.Trim(), pin.Trim(), pin.Trim(), UserRole.Admin, requireAuth: false);
     }
 
     public async Task<(bool Success, string Message)> TestDatabaseConnectionAsync()
     {
         try
         {
-            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
-            
-            using var command = new MySqlCommand("SELECT COUNT(*) FROM users", connection);
-            var userCount = await command.ExecuteScalarAsync();
-            
-            return (true, $"Database connected successfully. Found {userCount} users.");
+
+            using var command = new MySqlCommand("SELECT 1", connection);
+            await command.ExecuteScalarAsync();
+
+            return (true, "Database connected successfully.");
         }
         catch (Exception ex)
         {

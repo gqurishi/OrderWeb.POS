@@ -1,29 +1,22 @@
 ﻿using ObjCRuntime;
+using POS_in_NET.Services;
 using UIKit;
 
 namespace POS_in_NET;
 
 public class Program
 {
-	// This is the main entry point of the application.
 	static void Main(string[] args)
 	{
 		try
 		{
-			var logPath = "/tmp/pos-entry.log";
-			File.AppendAllText(logPath, $"=== PROGRAM MAIN {DateTime.Now} ===\n");
-			
-			// if you want to use a different Application Delegate class from "AppDelegate"
-			// you can specify it here.
+			AppDiagnostics.Log("=== PROGRAM MAIN ===");
 			UIApplication.Main(args, null, typeof(AppDelegate));
 		}
 		catch (Exception ex)
 		{
-			var logPath = "/tmp/pos-error.log";
-			File.AppendAllText(logPath, $"MAIN ERROR: {ex.Message}\n{ex.StackTrace}\n");
+			AppDiagnostics.LogFatal("ProgramMain", ex);
 			throw;
 		}
-	
 	}
 }
-

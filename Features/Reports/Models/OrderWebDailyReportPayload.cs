@@ -8,6 +8,7 @@ public sealed class OrderWebDailyReportPayload
     public int TotalOrders { get; set; }
     public decimal CashSales { get; set; }
     public decimal CardSales { get; set; }
+    public OrderWebLabourUploadPayload? Labour { get; set; }
 
     public string ReportDateValue => ReportDate.ToString("yyyy-MM-dd");
 }

@@ -85,6 +85,93 @@
                            BackgroundColor="#F8FAFC" />
                 </VerticalStackLayout>
 
+                <VerticalStackLayout x:Name="MotherDatabaseSection" Spacing="12" IsVisible="True">
+                    <Label Text="Database Connection"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="18"
+                           TextColor="#0F172A" />
+                    <Label x:Name="InstallerConfigLabel"
+                           Text=""
+                           FontFamily="OpenSansRegular"
+                           FontSize="14"
+                           TextColor="#059669"
+                           IsVisible="False" />
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Name"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabaseNameEntry"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database User"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabaseUserEntry"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Password"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Border Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 6"
+                                BackgroundColor="#F8FAFC"
+                                HeightRequest="58"
+                                Padding="10,0">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <Entry x:Name="DatabasePasswordEntry"
+                                       IsPassword="True"
+                                       Placeholder="Enter database password"
+                                       FontSize="18"
+                                       BackgroundColor="Transparent"
+                                       VerticalOptions="Center" />
+                                <Button x:Name="ToggleDatabasePasswordButton"
+                                        Grid.Column="1"
+                                        Text="⌾ Show"
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="13"
+                                        HeightRequest="38"
+                                        MinimumWidthRequest="88"
+                                        Padding="10,0"
+                                        CornerRadius="8"
+                                        BackgroundColor="#E2E8F0"
+                                        TextColor="#334155"
+                                        VerticalOptions="Center"
+                                        Clicked="OnToggleDatabasePasswordClicked" />
+                            </Grid>
+                        </Border>
+                        <Label Text="Use at least 8 characters, or generate a secure password automatically."
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#64748B" />
+                        <Button x:Name="GenerateDatabaseCredentialsButton"
+                                Text="Generate Credentials"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                HeightRequest="48"
+                                CornerRadius="12"
+                                BackgroundColor="#0F766E"
+                                TextColor="White"
+                                Clicked="OnGenerateDatabaseCredentialsClicked" />
+                        <Label Text="Inno Setup writes orderweb-database.json with these credentials before first launch."
+                               FontFamily="OpenSansRegular"
+                               FontSize="14"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
                 <VerticalStackLayout x:Name="MotherIpSection" Spacing="8" IsVisible="False">
                     <Label Text="Mother Terminal IP Address"
                            FontFamily="OpenSansSemibold"

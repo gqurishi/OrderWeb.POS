@@ -186,14 +186,16 @@ public class DatabaseCleanupService
         try
         {
             // Check if index exists
+            var schemaName = TerminalConfigurationService.GetActiveDatabaseName();
             var checkQuery = $@"
                 SELECT COUNT(*) 
                 FROM information_schema.STATISTICS 
-                WHERE TABLE_SCHEMA = 'Pos-net' 
+                WHERE TABLE_SCHEMA = @schemaName 
                 AND TABLE_NAME = '{tableName}' 
                 AND INDEX_NAME = '{indexName}'";
 
             using var checkCmd = new MySqlCommand(checkQuery, connection);
+            checkCmd.Parameters.AddWithValue("@schemaName", schemaName);
             var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
 
             if (!exists)

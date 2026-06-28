@@ -25,6 +25,7 @@ namespace POS_in_NET.Services
             try
             {
                 using var connection = await _db.GetConnectionAsync();
+                await EnsureFloorSchemaCompatibilityAsync(connection);
                 
                 // Check if BackgroundImage column exists
                 bool hasBackgroundColumn = await CheckBackgroundColumnExistsAsync(connection);
@@ -402,6 +403,8 @@ namespace POS_in_NET.Services
 
         private async Task EnsureFloorSchemaCompatibilityAsync(MySqlConnection connection)
         {
+            await EnsureFloorTablesExistAsync(connection);
+
             try
             {
                 using var dropUniqueIndexCommand = new MySqlCommand("ALTER TABLE Floors DROP INDEX Name", connection);
@@ -421,6 +424,57 @@ namespace POS_in_NET.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Floor name index compatibility warning: {ex.Message}");
             }
+        }
+
+        private static async Task EnsureFloorTablesExistAsync(MySqlConnection connection)
+        {
+            const string createFloorsSql = @"
+                CREATE TABLE IF NOT EXISTS Floors (
+                    Id INT AUTO_INCREMENT PRIMARY KEY,
+                    Name VARCHAR(100) NOT NULL,
+                    Description VARCHAR(255) NULL,
+                    BackgroundImage TEXT NULL,
+                    CreatedDate DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedDate DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    IsActive TINYINT(1) NOT NULL DEFAULT 1,
+                    INDEX idx_name (Name),
+                    INDEX idx_active (IsActive)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            const string createRestaurantTablesSql = @"
+                CREATE TABLE IF NOT EXISTS RestaurantTables (
+                    Id INT AUTO_INCREMENT PRIMARY KEY,
+                    TableNumber VARCHAR(50) NOT NULL,
+                    FloorId INT NOT NULL,
+                    Capacity INT NOT NULL,
+                    Shape VARCHAR(20) NOT NULL DEFAULT 'Square',
+                    Status VARCHAR(20) NOT NULL DEFAULT 'Available',
+                    TableDesignIcon VARCHAR(100) NULL DEFAULT 'table_1.png',
+                    PositionX INT NOT NULL DEFAULT 0,
+                    PositionY INT NOT NULL DEFAULT 0,
+                    CurrentSessionId INT NULL,
+                    LastOccupied DATETIME NULL,
+                    TotalSessionsToday INT NOT NULL DEFAULT 0,
+                    CreatedDate DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedDate DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    IsActive TINYINT(1) NOT NULL DEFAULT 1,
+                    CONSTRAINT fk_table_floor
+                        FOREIGN KEY (FloorId) REFERENCES Floors(Id)
+                        ON DELETE CASCADE
+                        ON UPDATE CASCADE,
+                    UNIQUE KEY unique_table_per_floor (FloorId, TableNumber),
+                    INDEX idx_floor_id (FloorId),
+                    INDEX idx_status (Status),
+                    INDEX idx_active (IsActive),
+                    INDEX idx_table_number (TableNumber),
+                    INDEX idx_current_session (CurrentSessionId)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            using var createFloorsCommand = new MySqlCommand(createFloorsSql, connection);
+            await createFloorsCommand.ExecuteNonQueryAsync();
+
+            using var createTablesCommand = new MySqlCommand(createRestaurantTablesSql, connection);
+            await createTablesCommand.ExecuteNonQueryAsync();
         }
 
         private static void NotifyFloorsChanged(FloorChangeAction action, Floor? floor = null)

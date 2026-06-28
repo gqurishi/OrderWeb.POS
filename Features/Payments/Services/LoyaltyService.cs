@@ -70,10 +70,10 @@ public class LoyaltyService
             _baseUrl = NormalizeApiBaseUrl(
                 config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", "")));
 
-            System.Diagnostics.Debug.WriteLine($" LoyaltyService Configuration:");
-            System.Diagnostics.Debug.WriteLine($"   API Base: {_baseUrl}");
-            System.Diagnostics.Debug.WriteLine($"   Tenant: {_tenantId}");
-            System.Diagnostics.Debug.WriteLine($"   API Key: {(_apiKey?.Length > 0 ? _apiKey.Substring(0, Math.Min(20, _apiKey.Length)) + "..." : "NOT SET")}");
+            AppDiagnostics.Log("LoyaltyService configuration loaded");
+            AppDiagnostics.Log($"  API Base: {_baseUrl}");
+            AppDiagnostics.Log($"  Tenant: {_tenantId}");
+            AppDiagnostics.Log($"  API Key configured: {!string.IsNullOrWhiteSpace(_apiKey)}");
 
             // Configure HttpClient headers - POS API uses Bearer token
             if (!string.IsNullOrWhiteSpace(_apiKey))
@@ -82,17 +82,16 @@ public class LoyaltyService
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
                 _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 
-                System.Diagnostics.Debug.WriteLine($" LoyaltyService initialized successfully");
+                AppDiagnostics.Log("LoyaltyService initialized successfully");
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($" LoyaltyService: API Key is missing! Please configure in Cloud Settings.");
+                AppDiagnostics.Log("LoyaltyService: API key is missing — configure in Cloud Settings.");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($" Failed to initialize LoyaltyService: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"   Stack: {ex.StackTrace}");
+            AppDiagnostics.LogFatal("LoyaltyServiceInit", ex);
         }
     }
 
@@ -112,14 +111,15 @@ public class LoyaltyService
 
             // Use POS API endpoint as per documentation
             var url = $"{_baseUrl}/pos/loyalty-lookup?tenant={_tenantId}&phone={phone}";
-            System.Diagnostics.Debug.WriteLine($" Searching customer (POS API): {url}");
-            System.Diagnostics.Debug.WriteLine($"   Bearer Token: {_apiKey?.Substring(0, 20)}...");
+            AppDiagnostics.Log($"Searching customer (POS API): {url}");
 
             var response = await _httpClient.GetAsync(url);
             var content = await response.Content.ReadAsStringAsync();
 
-            System.Diagnostics.Debug.WriteLine($"   Response Status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($"   Response Body: {content}");
+            AppDiagnostics.Log($"  Response Status: {response.StatusCode}");
+#if DEBUG
+            AppDiagnostics.Log($"  Response Body: {content}");
+#endif
 
             if (response.IsSuccessStatusCode)
             {
@@ -348,16 +348,19 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($" Checking gift card: {cardNumber}");
-            System.Diagnostics.Debug.WriteLine($"   URL: {url}");
-            System.Diagnostics.Debug.WriteLine($"   Request: {json}");
-            System.Diagnostics.Debug.WriteLine($"   API Key: {_apiKey?.Substring(0, Math.Min(20, _apiKey.Length))}...");
+            AppDiagnostics.Log($"Checking gift card: {cardNumber}");
+#if DEBUG
+            AppDiagnostics.Log($"  URL: {url}");
+            AppDiagnostics.Log($"  Request: {json}");
+#endif
 
             var response = await _httpClient.PostAsync(url, httpContent);
             var content = await response.Content.ReadAsStringAsync();
 
-            System.Diagnostics.Debug.WriteLine($"   Response Status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($"   Response Body: {content}");
+            AppDiagnostics.Log($"  Response Status: {response.StatusCode}");
+#if DEBUG
+            AppDiagnostics.Log($"  Response Body: {content}");
+#endif
 
             if (response.IsSuccessStatusCode)
             {

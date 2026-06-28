@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.ClockTimeModal"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#F1F5F9">
+
+    <Grid Padding="24">
+        <Border x:Name="ModalBox"
+                BackgroundColor="White"
+                Stroke="#CBD5E1"
+                StrokeThickness="2"
+                StrokeShape="Rectangle"
+                Padding="28,22"
+                WidthRequest="820"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+            <Border.Shadow>
+                <Shadow Brush="Black" Radius="8" Opacity="0.10" Offset="0,4" />
+            </Border.Shadow>
+
+            <VerticalStackLayout Spacing="18">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                        <Label x:Name="HeaderTitleLabel"
+                               Text="Staff Clock"
+                               FontSize="24"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A" />
+                        <Label x:Name="HeaderSubtitleLabel"
+                               Text="Enter your PIN"
+                               FontSize="15"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                    <Label x:Name="IdleCountdownLabel"
+                           Grid.Column="1"
+                           Text="Closing in 30s"
+                           FontSize="13"
+                           TextColor="#94A3B8"
+                           VerticalOptions="Center" />
+                    <Button Grid.Column="2"
+                            Text="X"
+                            Clicked="OnCloseClicked"
+                            BackgroundColor="#FEF2F2"
+                            TextColor="#DC2626"
+                            FontSize="20"
+                            FontAttributes="Bold"
+                            WidthRequest="44"
+                            HeightRequest="44"
+                            CornerRadius="4"
+                            BorderColor="#FCA5A5"
+                            BorderWidth="1"
+                            Padding="0" />
+                </Grid>
+
+                <!-- PIN step -->
+                <Grid x:Name="PinPanel"
+                      ColumnDefinitions="260,*"
+                      ColumnSpacing="28"
+                      MinimumHeightRequest="360">
+                    <VerticalStackLayout Spacing="18" VerticalOptions="Center">
+                        <Label Text="Enter 4-digit PIN"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="#334155"
+                               HorizontalTextAlignment="Center" />
+
+                        <HorizontalStackLayout Spacing="20" HorizontalOptions="Center">
+                            <Frame x:Name="Dot1" WidthRequest="18" HeightRequest="18" CornerRadius="2"
+                                   BackgroundColor="#E5E7EB" BorderColor="Transparent" Padding="0" HasShadow="False" />
+                            <Frame x:Name="Dot2" WidthRequest="18" HeightRequest="18" CornerRadius="2"
+                                   BackgroundColor="#E5E7EB" BorderColor="Transparent" Padding="0" HasShadow="False" />
+                            <Frame x:Name="Dot3" WidthRequest="18" HeightRequest="18" CornerRadius="2"
+                                   BackgroundColor="#E5E7EB" BorderColor="Transparent" Padding="0" HasShadow="False" />
+                            <Frame x:Name="Dot4" WidthRequest="18" HeightRequest="18" CornerRadius="2"
+                                   BackgroundColor="#E5E7EB" BorderColor="Transparent" Padding="0" HasShadow="False" />
+                        </HorizontalStackLayout>
+
+                        <Border x:Name="PinErrorFrame"
+                                IsVisible="False"
+                                BackgroundColor="#FEE2E2"
+                                Stroke="#EF4444"
+                                StrokeThickness="2"
+                                Padding="16,12"
+                                StrokeShape="Rectangle">
+                            <Label x:Name="PinErrorLabel"
+                                   Text="Wrong PIN"
+                                   TextColor="#DC2626"
+                                   FontAttributes="Bold"
+                                   FontSize="20"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
+
+                        <ActivityIndicator x:Name="PinLoadingIndicator"
+                                           IsVisible="False"
+                                           Color="#6366F1"
+                                           HeightRequest="36"
+                                           HorizontalOptions="Center" />
+                    </VerticalStackLayout>
+
+                    <Grid Grid.Column="1"
+                          ColumnDefinitions="88,88,88"
+                          RowDefinitions="88,88,88,88"
+                          ColumnSpacing="12"
+                          RowSpacing="12"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center">
+                        <Border Grid.Row="0" Grid.Column="0" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="1" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="0" Grid.Column="1" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="2" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="0" Grid.Column="2" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="3" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="1" Grid.Column="0" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="4" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="1" Grid.Column="1" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="5" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="1" Grid.Column="2" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="6" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="2" Grid.Column="0" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="7" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="2" Grid.Column="1" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="8" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="2" Grid.Column="2" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="9" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="3" Grid.Column="0" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="Clear" Clicked="OnClearClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="16" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="3" Grid.Column="1" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="0" Clicked="OnKeyClicked" BackgroundColor="Transparent" TextColor="#1A1A1A" FontSize="32" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                        <Border Grid.Row="3" Grid.Column="2" BackgroundColor="White" Stroke="#2C2C2C" StrokeThickness="2" StrokeShape="Rectangle">
+                            <Button Text="X" Clicked="OnBackspaceClicked" BackgroundColor="#FEF2F2" TextColor="#DC2626" FontSize="28" FontAttributes="Bold" CornerRadius="0" />
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- Dashboard step -->
+                <Grid x:Name="DashboardPanel"
+                      IsVisible="False"
+                      ColumnDefinitions="*,220"
+                      ColumnSpacing="20"
+                      MinimumHeightRequest="220">
+                    <Border x:Name="ShiftInfoCard"
+                            Grid.Column="0"
+                            Stroke="#D1FAE5"
+                            StrokeThickness="2"
+                            BackgroundColor="#F0FDF4"
+                            StrokeShape="Rectangle"
+                            Padding="24,20"
+                            VerticalOptions="Fill">
+                        <VerticalStackLayout Spacing="14" VerticalOptions="Center">
+                            <Label x:Name="StaffNameLabel"
+                                   Text="John Smith"
+                                   FontSize="26"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A"
+                                   LineBreakMode="WordWrap"
+                                   MaxLines="2"
+                                   HorizontalTextAlignment="Start" />
+
+                            <Grid ColumnDefinitions="*,Auto,Auto"
+                                  ColumnSpacing="20"
+                                  VerticalOptions="Center">
+                                <Label x:Name="StaffStatusLabel"
+                                       Text="Ready to clock in"
+                                       FontSize="18"
+                                       TextColor="#64748B"
+                                       VerticalOptions="Center"
+                                       LineBreakMode="WordWrap" />
+
+                                <VerticalStackLayout x:Name="ClockInTimePanel"
+                                                     Grid.Column="1"
+                                                     IsVisible="False"
+                                                     Spacing="2"
+                                                     VerticalOptions="Center"
+                                                     WidthRequest="150">
+                                    <Label Text="Clocked in at"
+                                           FontSize="14"
+                                           TextColor="#64748B"
+                                           HorizontalTextAlignment="Center" />
+                                    <Label x:Name="ClockInTimeLabel"
+                                           Text="1:21 PM"
+                                           FontSize="38"
+                                           FontAttributes="Bold"
+                                           TextColor="#16A34A"
+                                           HorizontalTextAlignment="Center" />
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="2"
+                                                     VerticalOptions="Center"
+                                                     WidthRequest="100">
+                                    <Label Text="Today"
+                                           FontSize="14"
+                                           TextColor="#64748B"
+                                           HorizontalTextAlignment="Center" />
+                                    <Label x:Name="StaffHoursLabel"
+                                           Text="0h 0m"
+                                           FontSize="28"
+                                           FontAttributes="Bold"
+                                           TextColor="#4338CA"
+                                           HorizontalTextAlignment="Center" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <VerticalStackLayout Grid.Column="1"
+                                         Spacing="12"
+                                         VerticalOptions="Center">
+                        <Border x:Name="DashboardMessageFrame"
+                                IsVisible="False"
+                                BackgroundColor="#ECFDF5"
+                                Stroke="#10B981"
+                                StrokeThickness="1"
+                                Padding="10,8"
+                                StrokeShape="Rectangle">
+                            <Label x:Name="DashboardMessageLabel"
+                                   Text=""
+                                   TextColor="#047857"
+                                   FontAttributes="Bold"
+                                   FontSize="13"
+                                   HorizontalTextAlignment="Center"
+                                   LineBreakMode="WordWrap" />
+                        </Border>
+
+                        <Button x:Name="ClockInButton"
+                                Text="Clock In"
+                                Clicked="OnClockInClicked"
+                                BackgroundColor="#6366F1"
+                                TextColor="White"
+                                FontSize="18"
+                                FontAttributes="Bold"
+                                HeightRequest="56"
+                                CornerRadius="4" />
+                        <Button x:Name="ClockOutButton"
+                                Text="Clock Out"
+                                Clicked="OnClockOutClicked"
+                                BackgroundColor="#DC2626"
+                                TextColor="White"
+                                FontSize="18"
+                                FontAttributes="Bold"
+                                HeightRequest="56"
+                                CornerRadius="4" />
+                        <Button x:Name="DoneButton"
+                                Text="Done"
+                                Clicked="OnCloseClicked"
+                                BackgroundColor="#F8FAFC"
+                                TextColor="#475569"
+                                FontSize="16"
+                                FontAttributes="Bold"
+                                HeightRequest="48"
+                                CornerRadius="4" />
+                    </VerticalStackLayout>
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

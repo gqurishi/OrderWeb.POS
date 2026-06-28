@@ -822,12 +822,14 @@ public class OrderWebDirectDatabaseService
                 using var checkCommand = connection.CreateCommand();
                 
                 // Check if column exists
+                var schemaName = TerminalConfigurationService.GetActiveDatabaseName();
                 checkCommand.CommandText = @"
                     SELECT COUNT(*) 
                     FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = 'Pos-net' 
+                    WHERE TABLE_SCHEMA = @schemaName 
                     AND TABLE_NAME = 'orders' 
                     AND COLUMN_NAME = 'payment_method'";
+                checkCommand.Parameters.AddWithValue("@schemaName", schemaName);
                 
                 var columnExists = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
                 

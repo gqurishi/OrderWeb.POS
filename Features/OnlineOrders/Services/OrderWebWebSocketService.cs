@@ -140,17 +140,18 @@ public class OrderWebWebSocketService
             System.Diagnostics.Debug.WriteLine(" WebSocket connected successfully!");
             
             // Write connection success to log file for debugging
+#if DEBUG
             try
             {
                 var logPath = Path.Combine(FileSystem.AppDataDirectory, "websocket_log.txt");
-                var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]  WebSocket CONNECTED to {wsUrl}\n";
+                var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] WebSocket CONNECTED\n";
                 await File.AppendAllTextAsync(logPath, logEntry);
-                System.Diagnostics.Debug.WriteLine($" Connection logged to: {logPath}");
             }
-            catch (Exception logEx)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"  Could not write to log file: {logEx.Message}");
+                // Ignore logging failures.
             }
+#endif
 
             // Start listening for messages
             _ = Task.Run(() => ListenForMessagesAsync(_cancellationTokenSource.Token));
@@ -286,20 +287,21 @@ public class OrderWebWebSocketService
                 }
 
                 var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                System.Diagnostics.Debug.WriteLine($" WebSocket message received (length: {message.Length})");
-                System.Diagnostics.Debug.WriteLine($" Message content: {message}");
-                
-                // Log to file
+                AppDiagnostics.Log($"WebSocket message received (length: {message.Length})");
+#if DEBUG
+                AppDiagnostics.Log($"Message content: {message}");
+
                 try
                 {
                     var logPath = Path.Combine(FileSystem.AppDataDirectory, "websocket_log.txt");
-                    var logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Message received (length: {message.Length})\n{message}\n\n";
+                    var logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Message received (length: {message.Length})\n\n";
                     await File.AppendAllTextAsync(logPath, logEntry);
                 }
-                catch (Exception logEx)
+                catch
                 {
-                    System.Diagnostics.Debug.WriteLine($"  Log write error: {logEx.Message}");
+                    // Ignore logging failures.
                 }
+#endif
 
                 // Process the message
                 await ProcessMessageAsync(message);
@@ -378,15 +380,10 @@ public class OrderWebWebSocketService
         {
             // Update last message timestamp
             LastMessageTime = DateTime.Now;
-            
-            // Write to log file for debugging
-            var logPath = Path.Combine(FileSystem.AppDataDirectory, "websocket_log.txt");
-            var logEntry = $"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Message received (length: {message.Length})\n{message}\n";
-            await File.AppendAllTextAsync(logPath, logEntry);
-            
-            System.Diagnostics.Debug.WriteLine($" WebSocket message received (length: {message.Length})");
-            System.Diagnostics.Debug.WriteLine($" FULL MESSAGE: {message}");
-            System.Diagnostics.Debug.WriteLine($" Log written to: {logPath}");
+
+#if DEBUG
+            AppDiagnostics.Log($"WebSocket message received (length: {message.Length})");
+#endif
 
             var jsonDoc = JsonDocument.Parse(message);
             var root = jsonDoc.RootElement;

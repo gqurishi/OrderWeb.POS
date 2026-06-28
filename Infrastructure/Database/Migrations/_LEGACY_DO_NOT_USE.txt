@@ -1,0 +1,12 @@
+LEGACY — DO NOT USE FOR NEW INSTALLS
+====================================
+
+This folder contains old Pos-net era SQL scripts and one-off patches.
+
+Official production schema lives ONLY in:
+  Database/Migrations/001_*.sql … 011_*.sql
+
+Fresh installs and updates must use:
+  OrderWeb.DatabaseSetup.exe install-mother | migrate | verify
+
+Do not run scripts from this folder in Inno Setup or production.

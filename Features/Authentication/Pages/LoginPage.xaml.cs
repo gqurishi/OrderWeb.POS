@@ -1,3 +1,4 @@
+using Microsoft.Maui.Storage;
 using POS_in_NET.Services;
 using POS_in_NET.Models;
 
@@ -48,9 +49,20 @@ public partial class LoginPage : ContentPage
         CurrentDateLabel.Text = now.ToString("dddd, MMM d, yyyy");
     }
 
-    private async void OnLoginClicked(object sender, EventArgs e)
+    private async void OnClockInOutClicked(object sender, EventArgs e)
     {
-        await PerformLoginAsync();
+        if (LoadingIndicator.IsVisible)
+        {
+            return;
+        }
+
+        if (!TerminalConfigurationService.IsConfigured)
+        {
+            await Shell.Current.GoToAsync("//terminalsetup", false);
+            return;
+        }
+
+        await Navigation.PushModalAsync(new ClockTimeModal(), false);
     }
 
     private void OnUsernameCompleted(object sender, EventArgs e)
@@ -92,6 +104,20 @@ public partial class LoginPage : ContentPage
             SetLoadingState(false);
             await Shell.Current.GoToAsync("//terminalsetup", false);
             return;
+        }
+
+        if (TerminalConfigurationService.IsChildTerminal)
+        {
+            var connectionResult = await TerminalConnectionTestService.TestAsync();
+            if (!connectionResult.Success)
+            {
+                SetLoadingState(false);
+                ShowChildTerminalStatus(connectionResult.Message);
+                ShowError(connectionResult.Message);
+                return;
+            }
+
+            Preferences.Default.Remove("child_schema_gate_message");
         }
 
         try
@@ -163,28 +189,38 @@ public partial class LoginPage : ContentPage
     private void SetLoadingState(bool isLoading, string? message = null)
     {
         LoadingIndicator.IsVisible = isLoading;
-        LoginButton.IsEnabled = !isLoading;
+        ClockInOutButton.IsEnabled = !isLoading;
         UsernameEntry.IsEnabled = !isLoading;
         PasswordEntry.IsEnabled = !isLoading;
         LoginStatusLabel.Text = message ?? "Checking PIN...";
         LoginStatusLabel.IsVisible = isLoading;
 
-        if (isLoading)
-        {
-            LoginButton.Text = message ?? "Signing In...";
-        }
-        else
+        if (!isLoading)
         {
             LoginStatusLabel.IsVisible = false;
-            LoginButton.Text = "Sign In";
-            // Reset button color to default
-            LoginButton.BackgroundColor = Color.FromArgb("#1E3A8A"); // Royal Blue
         }
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
+
+        if (TerminalConfigurationService.IsConfigured &&
+            TerminalConfigurationService.IsMotherTerminal &&
+            !await _authService.HasAnyUserAsync())
+        {
+            await Shell.Current.GoToAsync("//initialadminsetup", false);
+            return;
+        }
+
+        if (TerminalConfigurationService.IsChildTerminal)
+        {
+            var startupMessage = Preferences.Default.Get("child_schema_gate_message", string.Empty);
+            if (!string.IsNullOrWhiteSpace(startupMessage))
+            {
+                ShowChildTerminalStatus(startupMessage);
+            }
+        }
         
         _connectionCheckTask ??= RefreshTerminalConnectionStatusAsync();
 
@@ -244,7 +280,6 @@ public partial class LoginPage : ContentPage
 
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
-            // Only child terminals show a connection warning, and only when mother is unreachable.
             if (!TerminalConfigurationService.IsChildTerminal || result.Success)
             {
                 TerminalStatusFrame.IsVisible = false;
@@ -252,14 +287,19 @@ public partial class LoginPage : ContentPage
                 return;
             }
 
-            TerminalStatusFrame.IsVisible = true;
-            TerminalStatusFrame.BackgroundColor = Color.FromArgb("#FEF2F2");
-            TerminalStatusFrame.Stroke = Color.FromArgb("#EF4444");
-            TerminalStatusLabel.TextColor = Color.FromArgb("#B91C1C");
-            TerminalStatusLabel.Text = result.Message;
+            ShowChildTerminalStatus(result.Message);
         });
 
         return result;
+    }
+
+    private void ShowChildTerminalStatus(string message)
+    {
+        TerminalStatusFrame.IsVisible = true;
+        TerminalStatusFrame.BackgroundColor = Color.FromArgb("#FEF2F2");
+        TerminalStatusFrame.Stroke = Color.FromArgb("#EF4444");
+        TerminalStatusLabel.TextColor = Color.FromArgb("#B91C1C");
+        TerminalStatusLabel.Text = message;
     }
 
     private async Task LoadBusinessInfoOnceAsync()

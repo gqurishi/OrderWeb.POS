@@ -46,6 +46,10 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'tizen'">6.5</SupportedOSPlatformVersion>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifierOverride)' != ''">
+		<RuntimeIdentifier>$(RuntimeIdentifierOverride)</RuntimeIdentifier>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\companyappicon.png" />
@@ -68,6 +72,10 @@
 		<Compile Remove="FutureServices\**" />
 		<EmbeddedResource Remove="FutureServices\**" />
 		<None Remove="FutureServices\**" />
+		<Compile Remove="OrderWeb.DatabaseSetup\**" />
+		<Compile Remove="OrderWeb.DatabaseSetup.Tests\**" />
+		<EmbeddedResource Remove="OrderWeb.DatabaseSetup\**" />
+		<EmbeddedResource Remove="OrderWeb.DatabaseSetup.Tests\**" />
 	</ItemGroup>
 
 	<ItemGroup>

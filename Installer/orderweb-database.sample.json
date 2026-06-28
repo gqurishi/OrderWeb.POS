@@ -1,0 +1,8 @@
+{
+  "databaseHost": "localhost",
+  "databasePort": 3306,
+  "databaseName": "orderweb_pos",
+  "databaseUser": "orderweb_app",
+  "databasePassword": "REPLACE_WITH_GENERATED_PASSWORD",
+  "installedBySetup": true
+}

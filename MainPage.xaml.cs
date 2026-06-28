@@ -26,21 +26,12 @@ public partial class MainPage : ContentPage
 			if (connectionStatus.Contains("Connected"))
 			{
 				StatusLabel.Text = connectionStatus;
-				
-				// Create database and tables if they don't exist
-				await _databaseService.CreateDatabaseIfNotExistsAsync();
-				var tablesCreated = await _databaseService.CreateTablesAsync();
-				
-				if (tablesCreated)
-				{
-					StatusLabel.Text += "\n Database and tables ready!";
-					TestDbBtn.Text = "Connection Successful!";
-				}
-				else
-				{
-					StatusLabel.Text += "\n Failed to create tables";
-					TestDbBtn.Text = "Tables Creation Failed";
-				}
+
+				var schemaResult = await _databaseService.EnsureProductionSchemaAsync();
+				StatusLabel.Text += schemaResult.Success
+					? $"\n{schemaResult.Message}"
+					: $"\n{schemaResult.Message}";
+				TestDbBtn.Text = schemaResult.Success ? "Schema Ready" : "Schema Check Failed";
 			}
 			else
 			{
