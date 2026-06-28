@@ -111,9 +111,36 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private async void OnNewReservationClicked(object sender, EventArgs e)
     {
-        await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
-            "Reservation",
-            "New reservations will be created from the website and synced here.");
+        if (_reservationSyncService == null)
+        {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Reservation", "Reservation sync service is not available.");
+            return;
+        }
+
+        var dialog = new POS_in_NET.Views.NewReservationDialog(_selectedDate);
+        var request = await dialog.ShowAsync();
+        if (request == null)
+        {
+            return;
+        }
+
+        try
+        {
+            IsLoading = true;
+            _syncStatusText = "Saving booking...";
+            OnPropertyChanged(nameof(SyncStatusText));
+
+            var result = await _reservationSyncService.CreatePosReservationAsync(request);
+            await LoadReservationsAsync(showBusy: false);
+
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                result.Success ? "Reservation Saved" : "Reservation",
+                result.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     private async void OnUpdateClicked(object sender, EventArgs e)
@@ -270,12 +297,16 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     {
         var noteParts = new[]
         {
-            reservation.Reference,
+            reservation.IsPendingUpload ? "Pending cloud upload" : "",
+            string.IsNullOrWhiteSpace(reservation.Reference) ? "" : reservation.Reference,
+            FormatSourceLabel(reservation.Source),
             reservation.Notes,
             string.IsNullOrWhiteSpace(reservation.Allergies) ? "" : $"Allergies: {reservation.Allergies}"
         }.Where(part => !string.IsNullOrWhiteSpace(part));
 
         return new ReservationRow(
+            reservation.CloudId,
+            reservation.LocalId,
             reservation.ReservationDate,
             TimeOnly.FromTimeSpan(reservation.ReservationTime),
             string.IsNullOrWhiteSpace(reservation.CustomerName) ? "Guest" : reservation.CustomerName,
@@ -283,7 +314,63 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
             reservation.Covers,
             string.IsNullOrWhiteSpace(reservation.TableNumber) ? "-" : reservation.TableNumber,
             CultureInfo.InvariantCulture.TextInfo.ToTitleCase(reservation.Status.Replace("_", " ")),
-            string.Join(" | ", noteParts));
+            string.Join(" | ", noteParts),
+            reservation.Reference,
+            reservation.Source);
+    }
+
+    private static string FormatSourceLabel(string source)
+    {
+        return source.Trim().ToLowerInvariant() switch
+        {
+            "online" => "Online",
+            "walk_in" or "walkin" or "walk-in" => "Walk-in",
+            "phone" => "Phone",
+            "pos" => "POS",
+            _ => string.IsNullOrWhiteSpace(source) ? "" : source
+        };
+    }
+
+    private async void OnReservationTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
+        {
+            return;
+        }
+
+        if (_reservationSyncService == null)
+        {
+            return;
+        }
+
+        var dialog = new POS_in_NET.Views.ModernActionSheetDialog();
+        dialog.SetActionSheet(
+            $"{row.Name} — update status",
+            new List<string> { "Arrived", "Seated", "Completed", "No-show", "Cancelled" },
+            icon: "R",
+            iconBgColor: "#2563EB");
+
+        var choice = await dialog.ShowAsync();
+        if (string.IsNullOrWhiteSpace(choice))
+        {
+            return;
+        }
+
+        var status = choice.ToLowerInvariant() switch
+        {
+            "arrived" => "arrived",
+            "seated" => "seated",
+            "completed" => "completed",
+            "no-show" => "no_show",
+            "cancelled" => "cancelled",
+            _ => choice.ToLowerInvariant()
+        };
+
+        var result = await _reservationSyncService.UpdateReservationStatusAsync(row.CloudId, status, row.LocalId);
+        await LoadReservationsAsync(showBusy: false);
+        await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+            result.Success ? "Reservation Updated" : "Update Failed",
+            result.Message);
     }
 
     private void RefreshReservations()
@@ -365,8 +452,22 @@ public sealed class ReservationCalendarDay
 
 public sealed class ReservationRow
 {
-    public ReservationRow(DateTime date, TimeOnly time, string name, string phone, int guests, string table, string status, string note)
+    public ReservationRow(
+        string cloudId,
+        string? localId,
+        DateTime date,
+        TimeOnly time,
+        string name,
+        string phone,
+        int guests,
+        string table,
+        string status,
+        string note,
+        string reference,
+        string source)
     {
+        CloudId = cloudId;
+        LocalId = localId;
         Date = date.Date;
         Time = time;
         Name = name;
@@ -375,8 +476,12 @@ public sealed class ReservationRow
         Table = table;
         Status = string.IsNullOrWhiteSpace(status) ? "Booked" : status;
         Note = note;
+        Reference = reference;
+        Source = source;
     }
 
+    public string CloudId { get; }
+    public string? LocalId { get; }
     public DateTime Date { get; }
     public TimeOnly Time { get; }
     public string TimeText => Time.ToString("HH:mm", CultureInfo.InvariantCulture);
@@ -386,6 +491,8 @@ public sealed class ReservationRow
     public string Table { get; }
     public string Status { get; }
     public string Note { get; }
+    public string Reference { get; }
+    public string Source { get; }
 
     public Color StatusBackground => string.Equals(Status, "Confirmed", StringComparison.OrdinalIgnoreCase)
         ? Color.FromArgb("#ECFDF5")

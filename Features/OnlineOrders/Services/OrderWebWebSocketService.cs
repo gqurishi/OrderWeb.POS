@@ -19,6 +19,7 @@ public class OrderWebWebSocketService
     private readonly DatabaseService _databaseService;
     private readonly OrderService _orderService;
     private CloudOrderService? _cloudOrderService;
+    private ReservationSyncService? _reservationSyncService;
 
     // Events for real-time notifications
     public event EventHandler<OrderReceivedEventArgs>? NewOrderReceived;
@@ -66,6 +67,12 @@ public class OrderWebWebSocketService
     {
         _cloudOrderService = cloudOrderService;
         System.Diagnostics.Debug.WriteLine(" WebSocket linked to CloudOrderService for shared order processing");
+    }
+
+    public void SetReservationSyncService(ReservationSyncService reservationSyncService)
+    {
+        _reservationSyncService = reservationSyncService;
+        System.Diagnostics.Debug.WriteLine(" WebSocket linked to ReservationSyncService for live bookings");
     }
 
     /// <summary>
@@ -402,6 +409,12 @@ public class OrderWebWebSocketService
                     HandleNewOrder(root);
                     break;
 
+                case "new_reservation":
+                case "reservation_created":
+                case "reservation_updated":
+                    await HandleNewReservationAsync(root);
+                    break;
+
                 case "order_updated":
                     HandleOrderUpdate(root);
                     break;
@@ -438,6 +451,24 @@ public class OrderWebWebSocketService
         {
             System.Diagnostics.Debug.WriteLine($" Error processing message: {ex.Message}");
         }
+    }
+
+    private async Task HandleNewReservationAsync(JsonElement data)
+    {
+        if (_reservationSyncService == null)
+        {
+            System.Diagnostics.Debug.WriteLine(" new_reservation ignored: ReservationSyncService not linked");
+            return;
+        }
+
+        var dto = _reservationSyncService.ParseReservationFromWebSocket(data);
+        if (dto == null)
+        {
+            System.Diagnostics.Debug.WriteLine(" new_reservation message could not be parsed");
+            return;
+        }
+
+        await _reservationSyncService.ProcessInboundReservationAsync(dto, fromRealtime: true);
     }
 
     /// <summary>

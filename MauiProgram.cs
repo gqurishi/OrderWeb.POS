@@ -54,6 +54,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<RestaurantTableService>();
 		builder.Services.AddSingleton<TableSessionService>();
 		builder.Services.AddSingleton<ReservationSyncService>();
+		builder.Services.AddSingleton<OrderWebWebhookRouterService>();
+		builder.Services.AddSingleton<OrderWebWebhookListenerService>();
 		// MenuService and OrderTakingService removed - using FoodMenu system instead
 		
 		// Register Cloud Services (Lazy loaded)

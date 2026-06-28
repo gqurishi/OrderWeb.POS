@@ -6,7 +6,7 @@ using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
 
-public sealed class ReservationSyncService : IDisposable
+public sealed partial class ReservationSyncService : IDisposable
 {
     private const string SyncStateKey = "cloud_reservations";
     private readonly DatabaseService _databaseService;
@@ -40,15 +40,16 @@ public sealed class ReservationSyncService : IDisposable
 
         await EnsureSchemaAsync();
 
-        var seconds = Math.Clamp(ParseInt(config.GetValueOrDefault("polling_interval_seconds"), 60), 30, 300);
+        var seconds = Math.Clamp(ParseInt(config.GetValueOrDefault("reservation_poll_seconds"), 300), 60, 900);
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
         _timerCts = new CancellationTokenSource();
         _isStarted = true;
 
         _ = Task.Run(() => RunTimerAsync(_timerCts.Token));
         _ = Task.Run(() => SyncTodayAsync());
+        StartMaintenanceTimers();
 
-        AppDiagnostics.Log($"Reservation sync started, polling every {seconds}s.");
+        AppDiagnostics.Log($"Reservation sync started, backup polling every {seconds}s.");
     }
 
     public async Task<ReservationSyncResult> SyncTodayAsync(bool includeCancelled = false)
@@ -85,17 +86,9 @@ public sealed class ReservationSyncService : IDisposable
 
             foreach (var dto in response.Reservations)
             {
-                var upsert = await UpsertReservationAsync(dto);
-                if (upsert.IsNew)
-                {
-                    newReservations++;
-                    await AckReservationAsync(dto.Id, "seen");
-                    await MarkSeenAsync(dto.Id);
-                }
-                else if (upsert.Updated)
-                {
-                    updatedReservations++;
-                }
+                var inbound = await ProcessInboundReservationAsync(dto, fromRealtime: false);
+                newReservations += inbound.NewReservations;
+                updatedReservations += inbound.UpdatedReservations;
             }
 
             await SetLastSyncUtcAsync(DateTime.UtcNow);
@@ -135,10 +128,10 @@ public sealed class ReservationSyncService : IDisposable
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = new MySqlCommand(
             """
-            SELECT id, cloud_id, reference, reservation_date, reservation_time, covers,
+            SELECT id, cloud_id, local_id, reference, reservation_date, reservation_time, covers,
                    customer_name, customer_phone, customer_email, notes, allergies, status,
                    source, table_number, deposit_amount_pence, pos_seen_at, pos_print_status,
-                   cloud_created_at, cloud_updated_at, last_updated_at
+                   upload_status, cloud_created_at, cloud_updated_at, last_updated_at
             FROM cloud_reservations
             WHERE reservation_date BETWEEN @startDate AND @endDate
             ORDER BY reservation_date, reservation_time, customer_name
@@ -408,6 +401,43 @@ public sealed class ReservationSyncService : IDisposable
         {
             await command.ExecuteNonQueryAsync();
         }
+
+        await ApplyTwoWaySchemaAsync(connection);
+    }
+
+    private static async Task ApplyTwoWaySchemaAsync(MySqlConnection connection)
+    {
+        var alterStatements = new[]
+        {
+            "ALTER TABLE cloud_reservations ADD COLUMN IF NOT EXISTS local_id VARCHAR(64) NULL AFTER cloud_id",
+            "ALTER TABLE cloud_reservations ADD COLUMN IF NOT EXISTS upload_status VARCHAR(20) NOT NULL DEFAULT 'synced' AFTER pos_print_status",
+            "CREATE INDEX IF NOT EXISTS idx_cloud_reservations_upload_status ON cloud_reservations (upload_status)",
+            "CREATE INDEX IF NOT EXISTS idx_cloud_reservations_local_id ON cloud_reservations (local_id)"
+        };
+
+        foreach (var sql in alterStatements)
+        {
+            await using var command = new MySqlCommand(sql, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using (var command = new MySqlCommand(
+            """
+            CREATE TABLE IF NOT EXISTS reservation_pending_acks (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                cloud_reservation_id VARCHAR(64) NOT NULL,
+                ack_status VARCHAR(32) NOT NULL DEFAULT 'seen',
+                attempts INT NOT NULL DEFAULT 0,
+                last_error VARCHAR(500) NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_attempt_at DATETIME NULL,
+                UNIQUE KEY ux_reservation_pending_acks_cloud (cloud_reservation_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """,
+            connection))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
     }
 
     private static CloudReservation ReadReservation(MySqlDataReader reader)
@@ -418,6 +448,7 @@ public sealed class ReservationSyncService : IDisposable
         {
             Id = reader.GetInt32("id"),
             CloudId = reader.GetString("cloud_id"),
+            LocalId = IsNull(reader, "local_id") ? null : reader.GetString("local_id"),
             Reference = reader.GetString("reference"),
             ReservationDate = reader.GetDateTime("reservation_date"),
             ReservationTime = reader.GetTimeSpan("reservation_time"),
@@ -433,6 +464,7 @@ public sealed class ReservationSyncService : IDisposable
             DepositAmountPence = reader.GetInt32("deposit_amount_pence"),
             PosSeenAt = IsNull(reader, "pos_seen_at") ? null : reader.GetDateTime("pos_seen_at"),
             PosPrintStatus = IsNull(reader, "pos_print_status") ? null : reader.GetString("pos_print_status"),
+            UploadStatus = IsNull(reader, "upload_status") ? "synced" : reader.GetString("upload_status"),
             CloudCreatedAt = IsNull(reader, "cloud_created_at") ? null : reader.GetDateTime("cloud_created_at"),
             CloudUpdatedAt = IsNull(reader, "cloud_updated_at") ? null : reader.GetDateTime("cloud_updated_at"),
             LastUpdatedAt = reader.GetDateTime("last_updated_at")
@@ -463,6 +495,11 @@ public sealed class ReservationSyncService : IDisposable
         if (baseUrl.EndsWith("/pos/pull-reservations", StringComparison.OrdinalIgnoreCase))
         {
             baseUrl = baseUrl[..^"/pos/pull-reservations".Length];
+        }
+
+        if (baseUrl.EndsWith("/pos/reservations", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = baseUrl[..^"/pos/reservations".Length];
         }
 
         return baseUrl.TrimEnd('/');
@@ -516,6 +553,7 @@ public sealed class ReservationSyncService : IDisposable
 
     public void Dispose()
     {
+        StopMaintenanceTimers();
         _timerCts?.Cancel();
         _timer?.Dispose();
         _timerCts?.Dispose();
@@ -539,9 +577,10 @@ public sealed class ReservationSyncService : IDisposable
         public static PullReservationsResult Failed(string error) => new(false, new List<CloudReservationDto>(), error);
     }
 
-    private sealed record CloudReservationDto
+    internal sealed record CloudReservationDto
     {
         public string Id { get; init; } = string.Empty;
+        public string? LocalId { get; init; }
         public string? Reference { get; init; }
         public string? ReservationDate { get; init; }
         public string? ReservationTime { get; init; }
@@ -551,6 +590,7 @@ public sealed class ReservationSyncService : IDisposable
         public string? CustomerEmail { get; init; }
         public string? Notes { get; init; }
         public string? Allergies { get; init; }
+        public string? PromoCode { get; init; }
         public string? Status { get; init; }
         public string? Source { get; init; }
         public string? TableNumber { get; init; }

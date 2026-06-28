@@ -329,6 +329,26 @@ public class CloudOrderService
         return newOrdersCount;
     }
 
+    public async Task<(bool Success, string Message)> ProcessWebhookOrderAsync(JsonElement root)
+    {
+        if (!root.TryGetProperty("order", out var orderElement))
+        {
+            return (false, "Webhook order payload missing 'order' field.");
+        }
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var cloudOrder = JsonSerializer.Deserialize<CloudOrderResponse>(orderElement.GetRawText(), options);
+        if (cloudOrder == null || string.IsNullOrWhiteSpace(cloudOrder.Id))
+        {
+            return (false, "Invalid order payload.");
+        }
+
+        var saved = await ProcessIncomingCloudOrderAsync(cloudOrder);
+        return saved
+            ? (true, $"Order {cloudOrder.OrderNumber} received.")
+            : (true, $"Order {cloudOrder.OrderNumber} already on till.");
+    }
+
     public async Task<bool> ProcessIncomingCloudOrderAsync(CloudOrderResponse cloudOrder, bool notifyUi = true)
     {
         var config = await _databaseService.GetCloudConfigAsync();

@@ -36,6 +36,7 @@ public class OrderWebConnectionKeeperService
     private readonly OrderWebRestApiService _restApiService;
     private readonly LoyaltyService _loyaltyService;
     private readonly ReceiptService _receiptService;
+    private readonly ReservationSyncService _reservationSyncService;
 
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private Timer? _healthMonitorTimer;
@@ -56,7 +57,8 @@ public class OrderWebConnectionKeeperService
         HeartbeatService heartbeatService,
         OrderWebRestApiService restApiService,
         LoyaltyService loyaltyService,
-        ReceiptService receiptService)
+        ReceiptService receiptService,
+        ReservationSyncService reservationSyncService)
     {
         _databaseService = databaseService;
         _webSocketService = webSocketService;
@@ -65,6 +67,7 @@ public class OrderWebConnectionKeeperService
         _restApiService = restApiService;
         _loyaltyService = loyaltyService;
         _receiptService = receiptService;
+        _reservationSyncService = reservationSyncService;
     }
 
     public async Task StartAsync()
@@ -79,6 +82,7 @@ public class OrderWebConnectionKeeperService
 
         _receiptService.SetCloudOrderService(_cloudOrderService);
         _cloudOrderService.SetWebSocketService(_webSocketService);
+        _webSocketService.SetReservationSyncService(_reservationSyncService);
 
         await ApplyConfigurationAsync();
         StartHealthMonitor();

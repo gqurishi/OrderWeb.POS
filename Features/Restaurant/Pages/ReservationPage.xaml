@@ -271,6 +271,9 @@
                                       ColumnDefinitions="110,*,150,110,110,130"
                                       ColumnSpacing="12"
                                       RowDefinitions="Auto,Auto">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnReservationTapped" />
+                                    </Grid.GestureRecognizers>
                                     <Label Text="{Binding TimeText}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
                                     <VerticalStackLayout Grid.Column="1" Spacing="2">
                                         <Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" />
