@@ -25,6 +25,7 @@ namespace POS_in_NET.Views
         private decimal _cardBalance;
         private string? _cardNumber;
         private string? _orderReference;
+        private string? _paymentTransactionId;
         private GiftCard? _giftCard;
         private readonly LoyaltyService? _loyaltyService;
         private bool _isUpdatingApplyAmount;
@@ -35,10 +36,11 @@ namespace POS_in_NET.Views
             _loyaltyService = Application.Current?.Handler?.MauiContext?.Services.GetService(typeof(LoyaltyService)) as LoyaltyService;
         }
 
-        public void SetAmountDue(decimal amount, string? orderReference = null)
+        public void SetAmountDue(decimal amount, string? orderReference = null, string? paymentTransactionId = null)
         {
             _amountDue = amount;
             _orderReference = orderReference;
+            _paymentTransactionId = paymentTransactionId;
             AmountDueLabel.Text = $"£{amount:F2}";
             UpdateApplyButtonState();
         }
@@ -180,8 +182,19 @@ namespace POS_in_NET.Views
                     return;
                 }
 
-                var description = $"POS gift card payment - {_orderReference ?? DateTime.Now.ToString("yyyyMMddHHmmss")}";
-                var redeemResult = await _loyaltyService.RedeemGiftCardAsync(_cardNumber, applyAmount, description);
+                var orderReference = string.IsNullOrWhiteSpace(_orderReference)
+                    ? DateTime.Now.ToString("yyyyMMddHHmmss")
+                    : _orderReference;
+                var transactionId = !string.IsNullOrWhiteSpace(_paymentTransactionId)
+                    ? _paymentTransactionId
+                    : $"gift-card:{orderReference}:{_cardNumber}:{applyAmount:F2}";
+                var description = $"POS gift card payment - {orderReference}";
+                var redeemResult = await _loyaltyService.RedeemGiftCardAsync(
+                    _cardNumber,
+                    applyAmount,
+                    description,
+                    transactionId,
+                    orderReference);
 
                 if (!redeemResult.Success)
                 {
@@ -189,8 +202,8 @@ namespace POS_in_NET.Views
                     return;
                 }
 
-                var amountApplied = redeemResult.AmountRedeemed ?? applyAmount;
-                var newBalance = redeemResult.RemainingBalance ?? Math.Max(0, _cardBalance - amountApplied);
+                var amountApplied = redeemResult.EffectiveAmountRedeemed ?? applyAmount;
+                var newBalance = redeemResult.EffectiveRemainingBalance ?? Math.Max(0, _cardBalance - amountApplied);
                 var remaining = Math.Max(0, _amountDue - amountApplied);
 
                 var result = new GiftCardPaymentResult

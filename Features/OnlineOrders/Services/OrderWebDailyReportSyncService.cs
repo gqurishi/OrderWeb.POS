@@ -8,8 +8,8 @@ using POS_in_NET.Models;
 namespace POS_in_NET.Services;
 
 /// <summary>
-/// Uploads in-restaurant end-of-day totals to OrderWeb.net POS API.
-/// Auth and base URL match gift card redeem (Bearer token + Cloud Settings).
+/// Uploads in-restaurant end-of-day totals and labour to OrderWeb.net POS API.
+/// Scheduled 2 AM job also syncs pending customers and reservations before upload.
 /// POST https://orderweb.net/api/pos/reports/daily
 /// </summary>
 public sealed class OrderWebDailyReportSyncService
@@ -22,6 +22,9 @@ public sealed class OrderWebDailyReportSyncService
     private readonly DatabaseService _databaseService;
     private readonly ZReportService _zReportService;
     private readonly TimeClockService _timeClockService;
+    private readonly CustomerDataService? _customerDataService;
+    private readonly ReservationSyncService? _reservationSyncService;
+    private readonly OrderWebApiClient? _orderWebApiClient;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private static bool _schemaEnsured;
 
@@ -34,11 +37,17 @@ public sealed class OrderWebDailyReportSyncService
     public OrderWebDailyReportSyncService(
         DatabaseService databaseService,
         ZReportService zReportService,
-        TimeClockService timeClockService)
+        TimeClockService timeClockService,
+        CustomerDataService? customerDataService = null,
+        ReservationSyncService? reservationSyncService = null,
+        OrderWebApiClient? orderWebApiClient = null)
     {
         _databaseService = databaseService;
         _zReportService = zReportService;
         _timeClockService = timeClockService;
+        _customerDataService = customerDataService;
+        _reservationSyncService = reservationSyncService;
+        _orderWebApiClient = orderWebApiClient;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(30)
@@ -76,16 +85,61 @@ public sealed class OrderWebDailyReportSyncService
         return await WasSuccessfullyUploadedAsync(reportDate.Date);
     }
 
+    /// <summary>
+    /// Nightly end-of-day cloud sync (2 AM): pending customers, pending reservations, then daily report + labour.
+    /// </summary>
     public async Task<OrderWebDailyReportSyncResult> UploadScheduledAsync(DateTime reportDate)
     {
         MarkPendingUpload(reportDate);
-        await Task.CompletedTask;
-        return new OrderWebDailyReportSyncResult
+
+        var syncNotes = new List<string>();
+
+        if (_customerDataService != null)
         {
-            Success = true,
-            Skipped = true,
-            Message = $"Report for {reportDate:yyyy-MM-dd} is ready. Admin can upload from the Report page."
-        };
+            try
+            {
+                var customerSync = await _customerDataService.RetrySyncAsync();
+                syncNotes.Add(
+                    customerSync.Failed == 0
+                        ? $"{customerSync.Synced} customer(s) synced."
+                        : $"{customerSync.Synced} customer(s) synced, {customerSync.Failed} failed.");
+            }
+            catch (Exception ex)
+            {
+                syncNotes.Add($"Customer sync failed: {ex.Message}");
+                AppDiagnostics.Log($"Scheduled customer sync failed: {ex.Message}");
+            }
+        }
+
+        if (_reservationSyncService != null)
+        {
+            try
+            {
+                var uploadedReservations = await _reservationSyncService.UploadPendingReservationsAsync();
+                if (uploadedReservations > 0)
+                {
+                    syncNotes.Add($"{uploadedReservations} pending reservation(s) uploaded.");
+                }
+            }
+            catch (Exception ex)
+            {
+                syncNotes.Add($"Reservation upload failed: {ex.Message}");
+                AppDiagnostics.Log($"Scheduled reservation upload failed: {ex.Message}");
+            }
+        }
+
+        var result = await UploadAsync(reportDate, trigger: "scheduled", forceReupload: false);
+        if (syncNotes.Count > 0)
+        {
+            result.Message = $"{result.Message} {string.Join(" ", syncNotes)}".Trim();
+        }
+
+        AppDiagnostics.Log(
+            result.Success
+                ? $"Scheduled OrderWeb upload for {reportDate:yyyy-MM-dd}: {result.Message}"
+                : $"Scheduled OrderWeb upload failed for {reportDate:yyyy-MM-dd}: {result.Message}");
+
+        return result;
     }
 
     public async Task<OrderWebDailyReportSyncResult> UploadManualAsync(DateTime reportDate, bool forceReupload = false)
@@ -129,8 +183,14 @@ public sealed class OrderWebDailyReportSyncService
         }
 
         var businessDate = reportDate.Date;
+        var autoClosedSessions = await _timeClockService.CloseOpenSessionsForDailyUploadAsync(businessDate);
+        if (autoClosedSessions > 0)
+        {
+            System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] Auto-closed {autoClosedSessions} staff clock session(s) before daily upload.");
+        }
 
-        if (!forceReupload && await WasSuccessfullyUploadedAsync(businessDate))
+        var hasPendingLabour = await _timeClockService.HasPendingClosedSessionsAsync(businessDate);
+        if (!forceReupload && !hasPendingLabour && await WasSuccessfullyUploadedAsync(businessDate))
         {
             return new OrderWebDailyReportSyncResult
             {
@@ -163,11 +223,26 @@ public sealed class OrderWebDailyReportSyncService
 
                 var json = JsonSerializer.Serialize(requestBody, JsonOptions);
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("daily-report", payload.Tenant, payload.ReportDateValue);
 
                 System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] POST {url} attempt {attempt}/{MaxAttempts}");
                 System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] Body: {json}");
 
-                var response = await _httpClient.PostAsync(url, content);
+                _httpClient.DefaultRequestHeaders.Remove("Idempotency-Key");
+                _httpClient.DefaultRequestHeaders.Remove("X-Idempotency-Key");
+                _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+                _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
+                using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = content
+                };
+                request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+                request.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
+                _orderWebApiClient?.ApplyAuthHeaders(request, _apiKey.Trim(), idempotencyKey);
+
+                var response = _orderWebApiClient != null
+                    ? await _orderWebApiClient.SendAsync(request)
+                    : await _httpClient.SendAsync(request);
                 var responseBody = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -202,6 +277,7 @@ public sealed class OrderWebDailyReportSyncService
             }
         }
 
+        await QueueFailedReportUploadAsync(payload);
         await LogSyncAsync(businessDate, payload, trigger, false, lastError?.Message, null);
         return new OrderWebDailyReportSyncResult
         {
@@ -235,7 +311,7 @@ public sealed class OrderWebDailyReportSyncService
             var config = await _databaseService.GetCloudConfigAsync();
             _apiKey = config.GetValueOrDefault("api_key", "");
             _tenantId = config.GetValueOrDefault("tenant_slug", "");
-            _baseUrl = NormalizeApiBaseUrl(
+            _baseUrl = OrderWebApiClient.NormalizeApiBaseUrl(
                 config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", "")));
             _cloudEnabled = config.GetValueOrDefault("is_enabled", "False") == "True";
 
@@ -243,6 +319,7 @@ public sealed class OrderWebDailyReportSyncService
             if (!string.IsNullOrWhiteSpace(_apiKey))
             {
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey.Trim());
+                _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("X-API-Key", _apiKey.Trim());
                 _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             }
 
@@ -282,6 +359,34 @@ public sealed class OrderWebDailyReportSyncService
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         await command.ExecuteNonQueryAsync();
         _schemaEnsured = true;
+    }
+
+    private async Task QueueFailedReportUploadAsync(OrderWebDailyReportPayload payload)
+    {
+        if (_orderWebApiClient == null || string.IsNullOrWhiteSpace(_apiKey) || string.IsNullOrWhiteSpace(_baseUrl))
+        {
+            return;
+        }
+
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("daily-report", payload.Tenant, payload.ReportDateValue);
+        var requestBody = new OrderWebDailyReportApiRequest
+        {
+            Tenant = payload.Tenant,
+            ReportDate = payload.ReportDateValue,
+            TotalSales = payload.TotalSales,
+            TotalOrders = payload.TotalOrders,
+            CashSales = payload.CashSales,
+            CardSales = payload.CardSales,
+            Labour = payload.Labour
+        };
+
+        await _orderWebApiClient.EnqueueAsync(
+            "daily_report",
+            $"{_baseUrl}{DailyReportEndpoint}",
+            requestBody,
+            _apiKey,
+            idempotencyKey,
+            priority: 3);
     }
 
     private async Task<bool> WasSuccessfullyUploadedAsync(DateTime businessDate)
@@ -338,24 +443,6 @@ public sealed class OrderWebDailyReportSyncService
         command.Parameters.AddWithValue("@responseBody", string.IsNullOrWhiteSpace(responseBody) ? DBNull.Value : responseBody);
         command.Parameters.AddWithValue("@errorMessage", string.IsNullOrWhiteSpace(errorMessage) ? DBNull.Value : errorMessage);
         await command.ExecuteNonQueryAsync();
-    }
-
-    private static string NormalizeApiBaseUrl(string? configuredUrl)
-    {
-        var baseUrl = string.IsNullOrWhiteSpace(configuredUrl)
-            ? "https://orderweb.net/api"
-            : configuredUrl.Trim();
-
-        baseUrl = baseUrl.TrimEnd('/');
-
-        if (baseUrl.EndsWith("/pos", StringComparison.OrdinalIgnoreCase))
-        {
-            baseUrl = baseUrl[..^4];
-        }
-
-        return string.IsNullOrWhiteSpace(baseUrl)
-            ? "https://orderweb.net/api"
-            : baseUrl;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

@@ -117,11 +117,12 @@ public partial class AddEditMealDealPage : ContentPage
 
             var removeBtn = new Button
             {
-                Text = "",
-                BackgroundColor = Color.FromArgb("#FEE2E2"),
-                TextColor = Color.FromArgb("#DC2626"),
-                FontSize = 16,
-                WidthRequest = 44,
+                Text = "X",
+                BackgroundColor = Color.FromArgb("#EF4444"),
+                TextColor = Colors.White,
+                FontSize = 18,
+                FontAttributes = FontAttributes.Bold,
+                WidthRequest = 52,
                 HeightRequest = 44,
                 CornerRadius = 8,
                 Padding = 0
@@ -210,53 +211,64 @@ public partial class AddEditMealDealPage : ContentPage
                 return;
             }
 
-            if (_isEditMode && _editingDeal != null)
-            {
-                _editingDeal.Name = name;
-                _editingDeal.Description = string.IsNullOrWhiteSpace(DescriptionEntry.Text) ? null : DescriptionEntry.Text.Trim();
-                _editingDeal.Price = price;
-                _editingDeal.PickCount = pickCount;
-                _editingDeal.Choices = normalizedChoices;
-                _editingDeal.Active = ActiveSwitch.IsToggled;
-                _editingDeal.UpdatedAt = DateTime.Now;
+            SaveButton.IsEnabled = false;
+            SaveButton.Text = "Saving...";
 
-                if (!await _mealDealService.UpdateDealAsync(_editingDeal))
+            try
+            {
+                if (_isEditMode && _editingDeal != null)
                 {
-                    await AppAlertService.ShowAlertAsync("Error", "Could not update meal deal.");
-                    return;
+                    _editingDeal.Name = name;
+                    _editingDeal.Description = string.IsNullOrWhiteSpace(DescriptionEntry.Text) ? null : DescriptionEntry.Text.Trim();
+                    _editingDeal.Price = price;
+                    _editingDeal.PickCount = pickCount;
+                    _editingDeal.Choices = normalizedChoices;
+                    _editingDeal.Active = ActiveSwitch.IsToggled;
+                    _editingDeal.UpdatedAt = DateTime.Now;
+
+                    if (!await _mealDealService.UpdateDealAsync(_editingDeal))
+                    {
+                        await AppAlertService.ShowAlertAsync("Error", "Could not update meal deal.");
+                        return;
+                    }
+
+                    await AppAlertService.ShowAlertAsync("Success", "Meal deal updated.");
+                }
+                else
+                {
+                    var deal = new MealDeal
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Name = name,
+                        Description = string.IsNullOrWhiteSpace(DescriptionEntry.Text) ? null : DescriptionEntry.Text.Trim(),
+                        Price = price,
+                        PickCount = pickCount,
+                        Choices = normalizedChoices,
+                        Active = ActiveSwitch.IsToggled,
+                        Color = "#F59E0B",
+                        DisplayOrder = 0,
+                        VatCategory = "HotFood",
+                        CreatedAt = DateTime.Now,
+                        UpdatedAt = DateTime.Now
+                    };
+
+                    if (!await _mealDealService.CreateDealAsync(deal))
+                    {
+                        await AppAlertService.ShowAlertAsync("Error", "Could not create meal deal.");
+                        return;
+                    }
+
+                    await AppAlertService.ShowAlertAsync("Success", "Meal deal created.");
                 }
 
-                await AppAlertService.ShowAlertAsync("Success", "Meal deal updated.");
+                OrderPlacementPageSimple.InvalidateMenuCache();
+                await Navigation.PopAsync();
             }
-            else
+            finally
             {
-                var deal = new MealDeal
-                {
-                    Id = $"meal-{Guid.NewGuid()}",
-                    Name = name,
-                    Description = string.IsNullOrWhiteSpace(DescriptionEntry.Text) ? null : DescriptionEntry.Text.Trim(),
-                    Price = price,
-                    PickCount = pickCount,
-                    Choices = normalizedChoices,
-                    Active = ActiveSwitch.IsToggled,
-                    Color = "#F59E0B",
-                    DisplayOrder = 0,
-                    VatCategory = "HotFood",
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
-                };
-
-                if (!await _mealDealService.CreateDealAsync(deal))
-                {
-                    await AppAlertService.ShowAlertAsync("Error", "Could not create meal deal.");
-                    return;
-                }
-
-                await AppAlertService.ShowAlertAsync("Success", "Meal deal created.");
+                SaveButton.IsEnabled = true;
+                SaveButton.Text = _isEditMode ? "Update Deal" : "Save Deal";
             }
-
-            OrderPlacementPageSimple.InvalidateMenuCache();
-            await Navigation.PopAsync();
         }
         catch (Exception ex)
         {

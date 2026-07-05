@@ -11,12 +11,10 @@ namespace POS_in_NET.Services;
 public sealed class ReportGenerationService
 {
     private readonly DatabaseService _databaseService;
-    private readonly OrderService _orderService;
 
     public ReportGenerationService(DatabaseService? databaseService = null)
     {
         _databaseService = databaseService ?? new DatabaseService();
-        _orderService = new OrderService();
     }
 
     /// <summary>
@@ -116,6 +114,8 @@ public sealed class ReportGenerationService
 
         try
         {
+            await EnsureOrderItemReportColumnsAsync(connection);
+
             // Check if report already exists
             var existing = await GetExistingReportAsync(connection, reportType, startDate, endDate);
             if (existing != null)
@@ -132,26 +132,20 @@ public sealed class ReportGenerationService
                 GeneratedAt = DateTime.Now
             };
 
-            // Load all orders in period
+            // Saved report snapshots are intentionally permanent until manually removed.
+            // Rebuild each snapshot from the current production tables, not the old TableOrders table.
             var orders = await LoadOrdersForPeriodAsync(connection, startDate, endDate);
-            
-            if (orders.Count == 0)
-            {
-                System.Diagnostics.Debug.WriteLine($" [ReportGen] No orders found for period {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
-                // Still create empty report
-                return await SaveReportAsync(connection, snapshot);
-            }
+            var saleOrders = orders.Where(o => o.IsSale).ToList();
 
-            // Calculate all metrics
-            await PopulateSummaryMetricsAsync(snapshot, orders);
-            await PopulateOrderBreakdownAsync(snapshot, orders);
-            await PopulatePaymentMethodsAsync(snapshot, orders);
-            await PopulateDiscountAuditAsync(snapshot, orders);
-            await PopulateVoidAnalysisAsync(snapshot, orders);
-            await PopulateTopItemsAsync(snapshot, orders);
-            await PopulateStaffPerformanceAsync(snapshot, orders);
-            await PopulateVatBreakdownAsync(snapshot, orders);
-            await PopulateOrderTypeAnalysisAsync(snapshot, orders);
+            PopulateSummaryMetrics(snapshot, saleOrders);
+            PopulateOrderBreakdown(snapshot, saleOrders);
+            await PopulatePaymentMethodsAsync(connection, snapshot, startDate, endDate, saleOrders);
+            await PopulateDiscountAuditAsync(connection, snapshot, startDate, endDate);
+            PopulateVoidAnalysis(snapshot, orders);
+            await PopulateTopItemsAsync(connection, snapshot, startDate, endDate);
+            PopulateStaffPerformance(snapshot, saleOrders);
+            await PopulateVatBreakdownAsync(connection, snapshot, startDate, endDate);
+            await PopulateOrderTypeAnalysisAsync(connection, snapshot, startDate, endDate);
 
             // Save to database
             var savedSnapshot = await SaveReportAsync(connection, snapshot);
@@ -165,6 +159,16 @@ public sealed class ReportGenerationService
             System.Diagnostics.Debug.WriteLine($" [ReportGen] Error generating report: {ex.Message}\n{ex.StackTrace}");
             throw;
         }
+    }
+
+    private static async Task EnsureOrderItemReportColumnsAsync(MySqlConnection connection)
+    {
+        await using var command = new MySqlCommand(@"
+            ALTER TABLE order_items
+            ADD COLUMN IF NOT EXISTS variant_id VARCHAR(100) NULL,
+            ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100) NULL,
+            ADD COLUMN IF NOT EXISTS display_name VARCHAR(180) NULL", connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -202,22 +206,42 @@ public sealed class ReportGenerationService
     }
 
     /// <summary>
-    /// Load all orders in the period
+    /// Load all current-schema orders in the period.
     /// </summary>
-    private async Task<List<TableOrder>> LoadOrdersForPeriodAsync(MySqlConnection connection, DateTime startDate, DateTime endDate)
+    private async Task<List<SnapshotOrderRow>> LoadOrdersForPeriodAsync(MySqlConnection connection, DateTime startDate, DateTime endDate)
     {
-        var query = @"
-            SELECT 
-                o.Id, o.OrderNumber, o.Status, o.CreatedAt,
-                o.Subtotal, o.Discount, o.ServiceCharge, o.VAT, o.Total,
-                o.StaffId
-            FROM TableOrders o
-            WHERE o.CreatedAt >= @Start 
-            AND o.CreatedAt < @End
-            AND IsArchived = 0
-            ORDER BY o.CreatedAt";
+        const string query = @"
+            SELECT
+                id,
+                order_id,
+                order_number,
+                created_at,
+                status,
+                COALESCE(local_lifecycle_state, '') AS local_lifecycle_state,
+                COALESCE(source_channel, '') AS source_channel,
+                COALESCE(order_type, '') AS order_type,
+                COALESCE(payment_method, '') AS payment_method,
+                COALESCE(subtotal_amount, 0.00) AS subtotal_amount,
+                COALESCE(discount_amount, 0.00) AS discount_amount,
+                COALESCE(delivery_fee, 0.00) AS delivery_fee,
+                COALESCE(tax_amount, 0.00) AS tax_amount,
+                COALESCE(total_amount, 0.00) AS total_amount,
+                void_reason,
+                voided_at,
+                voided_by,
+                paid_at,
+                EXISTS (
+                    SELECT 1
+                    FROM order_payments op
+                    WHERE op.order_id = orders.id
+                      AND LOWER(COALESCE(op.status, '')) = 'approved'
+                ) AS has_approved_payment
+            FROM orders
+            WHERE created_at >= @Start
+              AND created_at < @End
+            ORDER BY created_at";
 
-        var orders = new List<TableOrder>();
+        var orders = new List<SnapshotOrderRow>();
 
         using var command = new MySqlCommand(query, connection);
         command.Parameters.AddWithValue("@Start", startDate);
@@ -226,244 +250,549 @@ public sealed class ReportGenerationService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            orders.Add(new TableOrder
+            orders.Add(new SnapshotOrderRow
             {
-                Id = reader.GetString(0),
-                OrderNumber = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
-                Status = reader.IsDBNull(2) ? TableOrderStatus.Active : (TableOrderStatus)Enum.Parse(typeof(TableOrderStatus), reader.GetString(2)),
-                CreatedAt = reader.GetDateTime(3),
-                Subtotal = reader.GetDecimal(4),
-                Discount = reader.GetDecimal(5),
-                ServiceCharge = reader.GetDecimal(6),
-                VAT = reader.GetDecimal(7),
-                Total = reader.GetDecimal(8),
-                StaffId = reader.GetInt32(9)
+                Id = ReadInt32(reader, "id"),
+                OrderId = ReadString(reader, "order_id"),
+                OrderNumber = ReadString(reader, "order_number"),
+                CreatedAt = ReadDateTime(reader, "created_at"),
+                Status = ReadString(reader, "status"),
+                LifecycleState = ReadString(reader, "local_lifecycle_state"),
+                SourceChannel = ReadString(reader, "source_channel"),
+                OrderType = ReadString(reader, "order_type"),
+                PaymentMethod = ReadString(reader, "payment_method"),
+                SubtotalAmount = ReadDecimal(reader, "subtotal_amount"),
+                DiscountAmount = ReadDecimal(reader, "discount_amount"),
+                DeliveryFee = ReadDecimal(reader, "delivery_fee"),
+                TaxAmount = ReadDecimal(reader, "tax_amount"),
+                TotalAmount = ReadDecimal(reader, "total_amount"),
+                VoidReason = ReadString(reader, "void_reason"),
+                VoidedAt = ReadNullableDateTime(reader, "voided_at"),
+                VoidedBy = ReadString(reader, "voided_by"),
+                PaidAt = ReadNullableDateTime(reader, "paid_at"),
+                HasApprovedPayment = ReadInt32(reader, "has_approved_payment") > 0
             });
         }
 
         return orders;
     }
 
-    /// <summary>
-    /// Populate summary metrics
-    /// </summary>
-    private async Task PopulateSummaryMetricsAsync(ReportSnapshot snapshot, List<TableOrder> orders)
+    private static void PopulateSummaryMetrics(ReportSnapshot snapshot, IReadOnlyCollection<SnapshotOrderRow> saleOrders)
     {
-        snapshot.OrderCount = orders.Count;
-        snapshot.GrossSales = orders.Sum(o => o.Total);
-        snapshot.NetSales = orders.Sum(o => o.Total - o.VAT);
-        snapshot.VatTotal = orders.Sum(o => o.VAT);
-        
-        if (snapshot.OrderCount > 0)
-        {
-            snapshot.AverageOrderValue = snapshot.GrossSales / snapshot.OrderCount;
-        }
+        snapshot.OrderCount = saleOrders.Count;
+        snapshot.GrossSales = saleOrders.Sum(o => o.TotalAmount);
+        snapshot.NetSales = saleOrders.Sum(o => Math.Max(0m, o.TotalAmount - o.TaxAmount));
+        snapshot.VatTotal = saleOrders.Sum(o => o.TaxAmount);
+        snapshot.AverageOrderValue = snapshot.OrderCount > 0 ? snapshot.GrossSales / snapshot.OrderCount : 0m;
 
-        // Estimate margin (assuming COGS is ~30-40% of net sales)
         snapshot.EstimatedCogs = snapshot.NetSales * 0.35m;
         snapshot.EstimatedMargin = snapshot.NetSales - snapshot.EstimatedCogs;
         snapshot.MarginPercent = snapshot.NetSales > 0 ? (snapshot.EstimatedMargin / snapshot.NetSales) * 100 : 0;
-
-        await Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Populate order type breakdown
-    /// </summary>
-    private async Task PopulateOrderBreakdownAsync(ReportSnapshot snapshot, List<TableOrder> orders)
+    private static void PopulateOrderBreakdown(ReportSnapshot snapshot, IReadOnlyCollection<SnapshotOrderRow> saleOrders)
     {
-        snapshot.DineInOrders = orders.Count(o => o.OrderMode == "dine_in");
-        snapshot.DeliveryOrders = orders.Count(o => o.OrderMode == "delivery");
-        snapshot.PickupOrders = orders.Count(o => o.OrderMode == "pickup");
-        snapshot.OnlineOrders = orders.Count(o => o.OrderMode == "online");
-
-        await Task.CompletedTask;
+        snapshot.DineInOrders = saleOrders.Count(o => IsOrderType(o, "table") || IsOrderType(o, "dine_in"));
+        snapshot.DeliveryOrders = saleOrders.Count(o => IsOrderType(o, "delivery"));
+        snapshot.PickupOrders = saleOrders.Count(o => IsOrderType(o, "pickup") || IsOrderType(o, "collection"));
+        snapshot.OnlineOrders = saleOrders.Count(o => string.Equals(o.SourceChannel, "web", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Populate payment method breakdown
-    /// </summary>
-    private async Task PopulatePaymentMethodsAsync(ReportSnapshot snapshot, List<TableOrder> orders)
+    private async Task PopulatePaymentMethodsAsync(
+        MySqlConnection connection,
+        ReportSnapshot snapshot,
+        DateTime startDate,
+        DateTime endDate,
+        IReadOnlyCollection<SnapshotOrderRow> saleOrders)
     {
-        snapshot.CashTotal = 0;
-        snapshot.CardTotal = 0;
-        snapshot.MobilePayTotal = 0;
+        const string paymentQuery = @"
+            SELECT
+                COALESCE(op.payment_method, 'unknown') AS payment_method,
+                SUM(CASE WHEN op.status = 'approved' THEN 1 ELSE 0 END) AS approved_count,
+                SUM(CASE WHEN op.status = 'approved' THEN COALESCE(op.amount, 0.00) ELSE 0.00 END) AS approved_amount,
+                SUM(CASE WHEN op.status = 'failed' THEN 1 ELSE 0 END) AS failed_count
+            FROM order_payments op
+            INNER JOIN orders o ON o.id = op.order_id
+            WHERE op.created_at >= @Start
+              AND op.created_at < @End
+              AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+              AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+                  OR o.paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments approved_op
+                      WHERE approved_op.order_id = o.id
+                        AND LOWER(COALESCE(approved_op.status, '')) = 'approved'
+                  )
+              )
+            GROUP BY COALESCE(op.payment_method, 'unknown')
+            ORDER BY approved_amount DESC";
 
-        // Create payment method detail records
-        var paymentMethods = new Dictionary<string, (int count, decimal amount)>();
-        
-        foreach (var order in orders)
+        using var command = new MySqlCommand(paymentQuery, connection);
+        command.Parameters.AddWithValue("@Start", startDate);
+        command.Parameters.AddWithValue("@End", endDate);
+
+        using (var reader = await command.ExecuteReaderAsync())
         {
-            var method = "Unknown";
-            if (!paymentMethods.ContainsKey(method))
+            while (await reader.ReadAsync())
             {
-                paymentMethods[method] = (0, 0);
-            }
-            var (count, amount) = paymentMethods[method];
-            paymentMethods[method] = (count + 1, amount + order.Total);
-        }
+                var approvedCount = ReadInt32(reader, "approved_count");
+                var failedCount = ReadInt32(reader, "failed_count");
+                var totalAttempts = approvedCount + failedCount;
+                var method = NormalizePaymentMethod(ReadString(reader, "payment_method"));
+                var amount = ReadDecimal(reader, "approved_amount");
 
-        foreach (var (method, (count, amount)) in paymentMethods)
-        {
-            snapshot.PaymentMethods.Add(new ReportPaymentMethod
-            {
-                PaymentMethod = method,
-                TransactionCount = count,
-                TotalAmount = amount,
-                SuccessRate = 100 // TODO: Track payment failures
-            });
-        }
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Populate discount audit
-    /// </summary>
-    private async Task PopulateDiscountAuditAsync(ReportSnapshot snapshot, List<TableOrder> orders)
-    {
-        var discountedOrders = orders.Where(o => o.Discount > 0).ToList();
-        
-        snapshot.DiscountTotal = discountedOrders.Sum(o => o.Discount);
-        snapshot.DiscountCount = discountedOrders.Count;
-
-        if (discountedOrders.Count > 0)
-        {
-            snapshot.DiscountAudits.Add(new ReportDiscountAudit
-            {
-                DiscountReason = "Manual Discount",
-                DiscountCount = snapshot.DiscountCount,
-                TotalDiscountAmount = snapshot.DiscountTotal,
-                AverageDiscountPercent = discountedOrders.Average(o => (o.Discount / o.Total) * 100)
-            });
-        }
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Populate void analysis
-    /// </summary>
-    private async Task PopulateVoidAnalysisAsync(ReportSnapshot snapshot, List<TableOrder> orders)
-    {
-        var voidedOrders = orders.Where(o => o.Status == TableOrderStatus.Voided).ToList();
-        var cancelledOrders = new List<TableOrder>();
-
-        snapshot.VoidCount = voidedOrders.Count;
-        snapshot.VoidTotal = voidedOrders.Sum(o => o.Total);
-        snapshot.CancelledOrderCount = cancelledOrders.Count;
-
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Populate VAT breakdown by rate
-    /// </summary>
-    private async Task PopulateVatBreakdownAsync(ReportSnapshot snapshot, List<TableOrder> orders)
-    {
-        // Group by VAT rate (assuming 0%, 5%, 20%)
-        var vatRates = new Dictionary<decimal, (decimal taxable, decimal vat, int items)>
-        {
-            { 0m, (0, 0, 0) },
-            { 5m, (0, 0, 0) },
-            { 20m, (0, 0, 0) }
-        };
-
-        foreach (var order in orders)
-        {
-            // Simplified: assume all items at 20% unless zero-rated
-            var rate = 20m;
-            var taxable = order.Total - order.VAT;
-            var (tax, vat, items) = vatRates[rate];
-            vatRates[rate] = (tax + taxable, vat + order.VAT, items + 1);
-        }
-
-        foreach (var (rate, (taxable, vat, itemCount)) in vatRates)
-        {
-            if (itemCount > 0)
-            {
-                snapshot.VatBreakdowns.Add(new ReportVatBreakdown
+                if (approvedCount <= 0 && amount <= 0)
                 {
-                    VatRate = rate,
-                    TaxableAmount = taxable,
-                    VatAmount = vat,
-                    ItemCount = itemCount,
-                    VatCategoryName = rate switch
-                    {
-                        0m => "Zero-rated",
-                        5m => "Reduced (5%)",
-                        20m => "Standard (20%)",
-                        _ => $"Custom ({rate}%)"
-                    }
+                    continue;
+                }
+
+                snapshot.PaymentMethods.Add(new ReportPaymentMethod
+                {
+                    PaymentMethod = method,
+                    TransactionCount = approvedCount,
+                    TotalAmount = amount,
+                    FailureCount = failedCount,
+                    SuccessRate = totalAttempts > 0 ? approvedCount * 100m / totalAttempts : 100m
                 });
             }
         }
 
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Populate top items (placeholder - needs item detail query)
-    /// </summary>
-    private async Task PopulateTopItemsAsync(ReportSnapshot snapshot, List<TableOrder> orders)
-    {
-        // TODO: Query OrderItems table and aggregate quantities/sales
-        // For now, this is a placeholder
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Populate staff performance
-    /// </summary>
-    private async Task PopulateStaffPerformanceAsync(ReportSnapshot snapshot, List<TableOrder> orders)
-    {
-        var staffOrders = orders.GroupBy(o => o.StaffId).ToList();
-
-        foreach (var staffGroup in staffOrders)
+        if (snapshot.PaymentMethods.Count == 0 && saleOrders.Count > 0)
         {
-            var voids = staffGroup.Count(o => o.Status == TableOrderStatus.Voided);
-            var totalOrders = staffGroup.Count();
-            
-            snapshot.StaffMetrics.Add(new ReportStaffPerformance
+            foreach (var group in saleOrders.GroupBy(o => NormalizePaymentMethod(o.PaymentMethod)))
             {
-                StaffId = staffGroup.Key,
-                StaffName = $"Staff {staffGroup.Key}", // TODO: Load actual name
-                OrdersProcessed = totalOrders,
-                TotalSales = staffGroup.Sum(o => o.Total),
-                DiscountsApplied = staffGroup.Sum(o => o.Discount),
-                VoidsInitiated = voids,
-                AverageOrderValue = staffGroup.Average(o => o.Total),
-                ErrorRate = totalOrders > 0 ? (voids * 100m) / totalOrders : 0
+                snapshot.PaymentMethods.Add(new ReportPaymentMethod
+                {
+                    PaymentMethod = group.Key,
+                    TransactionCount = group.Count(),
+                    TotalAmount = group.Sum(o => o.TotalAmount),
+                    SuccessRate = 100m
+                });
+            }
+        }
+
+        snapshot.CashTotal = snapshot.PaymentMethods
+            .Where(m => m.PaymentMethod.Contains("cash", StringComparison.OrdinalIgnoreCase))
+            .Sum(m => m.TotalAmount);
+        snapshot.CardTotal = snapshot.PaymentMethods
+            .Where(m => m.PaymentMethod.Contains("card", StringComparison.OrdinalIgnoreCase))
+            .Sum(m => m.TotalAmount);
+        snapshot.MobilePayTotal = snapshot.PaymentMethods
+            .Where(m => !m.PaymentMethod.Contains("cash", StringComparison.OrdinalIgnoreCase)
+                     && !m.PaymentMethod.Contains("card", StringComparison.OrdinalIgnoreCase))
+            .Sum(m => m.TotalAmount);
+        snapshot.PaymentSuccessRate = snapshot.PaymentMethods.Count > 0
+            ? snapshot.PaymentMethods.Average(m => m.SuccessRate)
+            : 100m;
+    }
+
+    private async Task PopulateDiscountAuditAsync(MySqlConnection connection, ReportSnapshot snapshot, DateTime startDate, DateTime endDate)
+    {
+        const string query = @"
+            SELECT
+                COALESCE(NULLIF(reason, ''), 'Unspecified') AS discount_reason,
+                COUNT(*) AS discount_count,
+                SUM(CASE WHEN event_action <> 'removed' THEN COALESCE(discount_amount, 0.00) ELSE 0.00 END) AS discount_total,
+                AVG(CASE WHEN event_action <> 'removed' AND COALESCE(discount_percent, 0.00) > 0 THEN discount_percent ELSE NULL END) AS average_percent
+            FROM discount_events
+            WHERE event_at >= @Start
+              AND event_at < @End
+            GROUP BY COALESCE(NULLIF(reason, ''), 'Unspecified')
+            ORDER BY discount_total DESC";
+
+        using var command = new MySqlCommand(query, connection);
+        command.Parameters.AddWithValue("@Start", startDate);
+        command.Parameters.AddWithValue("@End", endDate);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var amount = ReadDecimal(reader, "discount_total");
+            var count = ReadInt32(reader, "discount_count");
+            if (count <= 0 || amount <= 0)
+            {
+                continue;
+            }
+
+            snapshot.DiscountAudits.Add(new ReportDiscountAudit
+            {
+                DiscountReason = ReadString(reader, "discount_reason"),
+                DiscountCount = count,
+                TotalDiscountAmount = amount,
+                AverageDiscountPercent = ReadDecimal(reader, "average_percent")
             });
         }
 
-        await Task.CompletedTask;
+        snapshot.DiscountTotal = snapshot.DiscountAudits.Sum(a => a.TotalDiscountAmount);
+        snapshot.DiscountCount = snapshot.DiscountAudits.Sum(a => a.DiscountCount);
     }
 
-    /// <summary>
-    /// Populate order type analysis
-    /// </summary>
-    private async Task PopulateOrderTypeAnalysisAsync(ReportSnapshot snapshot, List<TableOrder> orders)
+    private static void PopulateVoidAnalysis(ReportSnapshot snapshot, IReadOnlyCollection<SnapshotOrderRow> orders)
     {
-        var orderTypes = orders.GroupBy(o => o.OrderMode ?? "dine_in").ToList();
+        var voidedOrders = orders.Where(o => o.IsVoided).ToList();
+        var cancelledOrders = orders.Where(o => o.IsCancelled).ToList();
 
-        foreach (var typeGroup in orderTypes)
+        snapshot.VoidCount = voidedOrders.Count;
+        snapshot.VoidTotal = voidedOrders.Sum(o => o.TotalAmount);
+        snapshot.CancelledOrderCount = cancelledOrders.Count;
+    }
+
+    private async Task PopulateVatBreakdownAsync(MySqlConnection connection, ReportSnapshot snapshot, DateTime startDate, DateTime endDate)
+    {
+        const string query = @"
+            SELECT
+                CASE
+                    WHEN SUM(line_net) > 0 THEN ROUND((SUM(line_vat) / SUM(line_net)) * 100, 2)
+                    ELSE 0.00
+                END AS vat_rate,
+                SUM(line_net) AS taxable_amount,
+                SUM(line_vat) AS vat_amount,
+                SUM(quantity) AS item_count
+            FROM (
+                SELECT
+                    oi.quantity,
+                    CASE
+                        WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+                            THEN ROUND(((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) / COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00), 4)
+                        ELSE 0.0000
+                    END AS line_vat,
+                    CASE
+                        WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+                            THEN ROUND(((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) - (((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) / COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00)), 4)
+                        ELSE ROUND((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0), 4)
+                    END AS line_net
+                FROM orders o
+                INNER JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN (
+                    SELECT order_item_id, SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+                    FROM order_item_addons
+                    GROUP BY order_item_id
+                ) addons ON addons.order_item_id = oi.id
+                WHERE o.created_at >= @Start
+                  AND o.created_at < @End
+                  AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+                  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+                  AND (
+                      LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+                      OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+                      OR o.paid_at IS NOT NULL
+                      OR EXISTS (
+                          SELECT 1
+                          FROM order_payments op
+                          WHERE op.order_id = o.id
+                            AND LOWER(COALESCE(op.status, '')) = 'approved'
+                      )
+                  )
+            ) lines
+            GROUP BY CASE
+                WHEN line_net > 0 THEN ROUND((line_vat / line_net) * 100, 2)
+                ELSE 0.00
+            END
+            ORDER BY vat_rate";
+
+        using var command = new MySqlCommand(query, connection);
+        command.Parameters.AddWithValue("@Start", startDate);
+        command.Parameters.AddWithValue("@End", endDate);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            var orderType = typeGroup.Key ?? "dine_in";
-            var totalOrders = typeGroup.Count();
+            var itemCount = ReadInt32(reader, "item_count");
+            if (itemCount <= 0)
+            {
+                continue;
+            }
+
+            var rate = ReadDecimal(reader, "vat_rate");
+            snapshot.VatBreakdowns.Add(new ReportVatBreakdown
+            {
+                VatRate = rate,
+                TaxableAmount = ReadDecimal(reader, "taxable_amount"),
+                VatAmount = ReadDecimal(reader, "vat_amount"),
+                ItemCount = itemCount,
+                VatCategoryName = GetVatCategoryName(rate)
+            });
+        }
+    }
+
+    private async Task PopulateTopItemsAsync(MySqlConnection connection, ReportSnapshot snapshot, DateTime startDate, DateTime endDate)
+    {
+        const string query = @"
+            SELECT
+                oi.menu_item_id,
+                oi.variant_id,
+                COALESCE(NULLIF(oi.display_name, ''), NULLIF(CONCAT(oi.item_name, CASE WHEN COALESCE(oi.variant_name, '') <> '' THEN CONCAT(' (', oi.variant_name, ')') ELSE '' END), ''), oi.item_name) AS item_name,
+                CASE
+                    WHEN oi.menu_item_id LIKE 'tasting:%' THEN 'Tasting Menus'
+                    ELSE COALESCE(fmc.Name, 'Uncategorized')
+                END AS category_name,
+                SUM(oi.quantity) AS total_quantity,
+                SUM((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) AS gross_sales,
+                SUM(CASE
+                    WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+                        THEN ROUND(((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) / COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00), 4)
+                    ELSE 0.0000
+                END) AS vat_amount
+            FROM orders o
+            INNER JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN (
+                SELECT order_item_id, SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+                FROM order_item_addons
+                GROUP BY order_item_id
+            ) addons ON addons.order_item_id = oi.id
+            LEFT JOIN FoodMenuItems fmi ON CONVERT(fmi.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(oi.menu_item_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            LEFT JOIN FoodMenuCategories fmc ON CONVERT(fmc.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(fmi.CategoryId USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            WHERE o.created_at >= @Start
+              AND o.created_at < @End
+              AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+              AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+                  OR o.paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = o.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                  )
+              )
+            GROUP BY oi.menu_item_id, oi.variant_id, item_name, category_name
+            HAVING total_quantity > 0
+            ORDER BY total_quantity DESC, gross_sales DESC
+            LIMIT 20";
+
+        using var command = new MySqlCommand(query, connection);
+        command.Parameters.AddWithValue("@Start", startDate);
+        command.Parameters.AddWithValue("@End", endDate);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var gross = ReadDecimal(reader, "gross_sales");
+            var vat = ReadDecimal(reader, "vat_amount");
+            var net = Math.Max(0m, gross - vat);
+            var cogs = net * 0.35m;
+            var margin = net - cogs;
+
+            snapshot.TopItems.Add(new ReportTopItem
+            {
+                ItemName = ReadString(reader, "item_name"),
+                CategoryName = ReadString(reader, "category_name"),
+                TotalQuantity = ReadInt32(reader, "total_quantity"),
+                GrossSales = gross,
+                NetSales = net,
+                VatAmount = vat,
+                VatRate = net > 0 ? vat / net * 100 : 0m,
+                EstimatedCogs = cogs,
+                Margin = margin,
+                MarginPercent = net > 0 ? margin / net * 100 : 0m
+            });
+        }
+    }
+
+    private static void PopulateStaffPerformance(ReportSnapshot snapshot, IReadOnlyCollection<SnapshotOrderRow> saleOrders)
+    {
+        if (saleOrders.Count == 0 && snapshot.VoidCount == 0 && snapshot.DiscountCount == 0)
+        {
+            return;
+        }
+
+        snapshot.StaffMetrics.Add(new ReportStaffPerformance
+        {
+            StaffName = "POS",
+            OrdersProcessed = saleOrders.Count,
+            TotalSales = saleOrders.Sum(o => o.TotalAmount),
+            DiscountsApplied = snapshot.DiscountTotal,
+            VoidsInitiated = snapshot.VoidCount,
+            AverageOrderValue = saleOrders.Count > 0 ? saleOrders.Average(o => o.TotalAmount) : 0m,
+            ErrorRate = saleOrders.Count + snapshot.VoidCount > 0
+                ? snapshot.VoidCount * 100m / (saleOrders.Count + snapshot.VoidCount)
+                : 0m
+        });
+    }
+
+    private async Task PopulateOrderTypeAnalysisAsync(MySqlConnection connection, ReportSnapshot snapshot, DateTime startDate, DateTime endDate)
+    {
+        const string query = @"
+            SELECT
+                COALESCE(order_type, 'pickup') AS order_type,
+                SUM(CASE
+                    WHEN LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'voided')
+                     AND COALESCE(LOWER(local_lifecycle_state), '') <> 'voided'
+                     AND (
+                         LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                         OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                         OR paid_at IS NOT NULL
+                         OR EXISTS (
+                             SELECT 1
+                             FROM order_payments op
+                             WHERE op.order_id = orders.id
+                               AND LOWER(COALESCE(op.status, '')) = 'approved'
+                         )
+                     )
+                    THEN 1 ELSE 0
+                END) AS sale_count,
+                SUM(CASE
+                    WHEN LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'voided')
+                     AND COALESCE(LOWER(local_lifecycle_state), '') <> 'voided'
+                     AND (
+                         LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                         OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                         OR paid_at IS NOT NULL
+                         OR EXISTS (
+                             SELECT 1
+                             FROM order_payments op
+                             WHERE op.order_id = orders.id
+                               AND LOWER(COALESCE(op.status, '')) = 'approved'
+                         )
+                     )
+                    THEN COALESCE(total_amount, 0.00) ELSE 0.00
+                END) AS sale_total,
+                COUNT(*) AS total_count,
+                SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count
+            FROM orders
+            WHERE created_at >= @Start
+              AND created_at < @End
+            GROUP BY COALESCE(order_type, 'pickup')
+            ORDER BY sale_total DESC";
+
+        using var command = new MySqlCommand(query, connection);
+        command.Parameters.AddWithValue("@Start", startDate);
+        command.Parameters.AddWithValue("@End", endDate);
+
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var saleCount = ReadInt32(reader, "sale_count");
+            var totalCount = ReadInt32(reader, "total_count");
+            var cancelledCount = ReadInt32(reader, "cancelled_count");
+            var saleTotal = ReadDecimal(reader, "sale_total");
 
             snapshot.OrderTypeAnalysis.Add(new ReportOrderTypeAnalysis
             {
-                OrderType = orderType,
-                OrderCount = totalOrders,
-                TotalSales = typeGroup.Sum(o => o.Total),
-                AverageOrderValue = typeGroup.Average(o => o.Total),
-                AveragePrepTime = 900, // TODO: Track actual prep times
-                CancellationRate = 0 // TODO: Track cancellations
+                OrderType = NormalizeOrderType(ReadString(reader, "order_type")),
+                OrderCount = saleCount,
+                TotalSales = saleTotal,
+                AverageOrderValue = saleCount > 0 ? saleTotal / saleCount : 0m,
+                AveragePrepTime = 0,
+                CancellationRate = totalCount > 0 ? cancelledCount * 100m / totalCount : 0m
             });
         }
+    }
 
-        await Task.CompletedTask;
+    private static bool IsOrderType(SnapshotOrderRow order, string type)
+    {
+        return string.Equals(order.OrderType, type, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeOrderType(string value)
+    {
+        return value.ToLowerInvariant() switch
+        {
+            "table" => "Table",
+            "dine_in" => "Table",
+            "delivery" => "Delivery",
+            "collection" => "Collection",
+            "pickup" => "Collection",
+            "" => "Collection",
+            _ => value
+        };
+    }
+
+    private static string NormalizePaymentMethod(string value)
+    {
+        return value.ToLowerInvariant() switch
+        {
+            "cash" => "Cash",
+            "card" => "Card",
+            "gift_card" => "Gift Card",
+            "mobile" => "Mobile Pay",
+            "apple_pay" => "Mobile Pay",
+            "google_pay" => "Mobile Pay",
+            "" => "Unknown",
+            _ => value
+        };
+    }
+
+    private static string GetVatCategoryName(decimal rate)
+    {
+        return rate switch
+        {
+            0m => "Zero-rated",
+            5m => "Reduced (5%)",
+            20m => "Standard (20%)",
+            _ => $"Custom ({rate:0.##}%)"
+        };
+    }
+
+    private static int ReadInt32(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
+    }
+
+    private static decimal ReadDecimal(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? 0m : Convert.ToDecimal(reader.GetValue(ordinal));
+    }
+
+    private static string ReadString(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? string.Empty : Convert.ToString(reader.GetValue(ordinal)) ?? string.Empty;
+    }
+
+    private static DateTime ReadDateTime(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? DateTime.MinValue : Convert.ToDateTime(reader.GetValue(ordinal));
+    }
+
+    private static DateTime? ReadNullableDateTime(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : Convert.ToDateTime(reader.GetValue(ordinal));
+    }
+
+    private sealed class SnapshotOrderRow
+    {
+        public int Id { get; set; }
+        public string OrderId { get; set; } = string.Empty;
+        public string OrderNumber { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string LifecycleState { get; set; } = string.Empty;
+        public string SourceChannel { get; set; } = string.Empty;
+        public string OrderType { get; set; } = string.Empty;
+        public string PaymentMethod { get; set; } = string.Empty;
+        public decimal SubtotalAmount { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal DeliveryFee { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string VoidReason { get; set; } = string.Empty;
+        public DateTime? VoidedAt { get; set; }
+        public string VoidedBy { get; set; } = string.Empty;
+        public DateTime? PaidAt { get; set; }
+        public bool HasApprovedPayment { get; set; }
+
+        public bool IsCancelled => string.Equals(Status, "cancelled", StringComparison.OrdinalIgnoreCase);
+        public bool IsVoided => !IsCancelled
+            && (string.Equals(Status, "voided", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(LifecycleState, "voided", StringComparison.OrdinalIgnoreCase));
+        public bool IsPaid => string.Equals(LifecycleState, "paid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Status, "completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Status, "paid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Status, "closed", StringComparison.OrdinalIgnoreCase)
+            || PaidAt.HasValue
+            || HasApprovedPayment;
+        public bool IsSale => IsPaid && !IsCancelled && !IsVoided;
     }
 
     /// <summary>

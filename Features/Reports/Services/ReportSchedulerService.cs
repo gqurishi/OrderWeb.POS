@@ -5,7 +5,7 @@ namespace POS_in_NET.Services;
 /// <summary>
 /// Background service that automatically generates daily, weekly, and monthly reports
 /// Runs on schedule:
-/// - Daily: Every day at 2:00 AM (generates previous day report, marks OrderWeb upload as pending)
+/// - Daily: Every day at 2:00 AM (generates previous day report, uploads to OrderWeb with labour + customer sync)
 /// - Weekly: Every Sunday at 2:00 AM
 /// - Monthly: 1st of month at 2:00 AM
 /// Reports are stored in database for historical access (1+ years)
@@ -138,11 +138,14 @@ public class ReportSchedulerService
             try
             {
                 var uploadResult = await _orderWebDailyReportSyncService.UploadScheduledAsync(yesterday);
-                Debug.WriteLine($" OrderWeb daily report pending: {uploadResult.Message}");
+                Debug.WriteLine(
+                    uploadResult.Success
+                        ? $" OrderWeb end-of-day upload: {uploadResult.Message}"
+                        : $" OrderWeb end-of-day upload failed: {uploadResult.Message}");
             }
             catch (Exception uploadEx)
             {
-                Debug.WriteLine($" OrderWeb daily report pending flag failed: {uploadEx.Message}");
+                Debug.WriteLine($" OrderWeb end-of-day upload error: {uploadEx.Message}");
             }
 
             // Generate WEEKLY report if today is Sunday (weekly reports are Mon-Sun)

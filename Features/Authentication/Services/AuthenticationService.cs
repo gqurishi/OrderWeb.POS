@@ -41,6 +41,7 @@ public class AuthenticationService
         public UserRole Role { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
+        public bool IsActive { get; init; } = true;
     }
 
     // Default constructor for singleton pattern (backward compatibility)
@@ -107,6 +108,12 @@ public class AuthenticationService
                 return (false, "Invalid username or password.", null);
             }
 
+            if (!authUser.IsActive)
+            {
+                _ = LogUserActivityAsync(authUser.Id, "login_failed", $"Inactive user login attempt: {username}");
+                return (false, "This user is inactive. Please contact an administrator.", null);
+            }
+
             var isPinLogin = username == password && username.Length == 4 && username.All(char.IsDigit);
             if (!isPinLogin)
             {
@@ -136,7 +143,8 @@ public class AuthenticationService
                 PasswordHash = authUser.PasswordHash,
                 Role = authUser.Role,
                 CreatedAt = authUser.CreatedAt,
-                UpdatedAt = authUser.UpdatedAt
+                UpdatedAt = authUser.UpdatedAt,
+                IsActive = authUser.IsActive
             };
 
             _currentUser = user;
@@ -189,6 +197,11 @@ public class AuthenticationService
                 return (false, "Wrong PIN. Try again.", null);
             }
 
+            if (!authUser.IsActive)
+            {
+                return (false, "This staff member is inactive.", null);
+            }
+
             var user = new User
             {
                 Id = authUser.Id,
@@ -197,7 +210,8 @@ public class AuthenticationService
                 PasswordHash = authUser.PasswordHash,
                 Role = authUser.Role,
                 CreatedAt = authUser.CreatedAt,
-                UpdatedAt = authUser.UpdatedAt
+                UpdatedAt = authUser.UpdatedAt,
+                IsActive = authUser.IsActive
             };
 
             return (true, "PIN accepted.", user);
@@ -239,9 +253,12 @@ public class AuthenticationService
                 return (false, "Name, username and password are required.");
             }
 
-            if (password.Length < 1)
+            username = username.Trim();
+            password = password.Trim();
+
+            if (!IsFourDigitPin(username) || !IsFourDigitPin(password) || !string.Equals(username, password, StringComparison.Ordinal))
             {
-                return (false, "Password is required.");
+                return (false, "PIN must be exactly 4 digits.");
             }
 
             var schemaResult = await EnsureAuthenticationSchemaAsync();
@@ -268,8 +285,8 @@ public class AuthenticationService
             var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
 
             // Insert new user
-            var insertQuery = @"INSERT INTO users (name, username, password_hash, role) 
-                               VALUES (@name, @username, @password, @role)";
+            var insertQuery = @"INSERT INTO users (name, username, password_hash, role, is_active) 
+                               VALUES (@name, @username, @password, @role, TRUE)";
             using var insertCommand = new MySqlCommand(insertQuery, connection);
             insertCommand.Parameters.AddWithValue("@name", name);
             insertCommand.Parameters.AddWithValue("@username", username);
@@ -306,6 +323,12 @@ public class AuthenticationService
         
         try
         {
+            var schemaResult = await EnsureAuthenticationSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                return users;
+            }
+
             // Only admins and managers can view all users
             if (_currentUser?.Role != UserRole.Admin && _currentUser?.Role != UserRole.Manager)
             {
@@ -315,7 +338,7 @@ public class AuthenticationService
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            var query = "SELECT id, name, username, role, created_at, updated_at FROM users ORDER BY created_at DESC";
+            var query = "SELECT id, name, username, role, is_active, created_at, updated_at FROM users ORDER BY is_active DESC, created_at DESC";
             using var command = new MySqlCommand(query, connection);
             using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
 
@@ -327,6 +350,7 @@ public class AuthenticationService
                     Name = reader["name"].ToString() ?? "",
                     Username = reader["username"].ToString() ?? "",
                     Role = Enum.Parse<UserRole>(reader["role"].ToString() ?? "User", true),
+                    IsActive = Convert.ToBoolean(reader["is_active"]),
                     CreatedAt = Convert.ToDateTime(reader["created_at"]),
                     UpdatedAt = Convert.ToDateTime(reader["updated_at"])
                 });
@@ -423,13 +447,17 @@ public class AuthenticationService
     {
         try
         {
-            // Only admins can delete users
+            var schemaResult = await EnsureAuthenticationSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                return (false, schemaResult.Message);
+            }
+
             if (_currentUser?.Role != UserRole.Admin)
             {
                 return (false, "Access denied. Only administrators can delete users.");
             }
 
-            // Cannot delete yourself
             if (_currentUser.Id == userId)
             {
                 return (false, "You cannot delete your own account.");
@@ -438,19 +466,110 @@ public class AuthenticationService
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
+            string? username = null;
+            var role = string.Empty;
+            const string checkQuery = "SELECT username, role FROM users WHERE id = @userId";
+            using (var checkCommand = new MySqlCommand(checkQuery, connection))
+            {
+                checkCommand.Parameters.AddWithValue("@userId", userId);
+                using var reader = await checkCommand.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    username = reader["username"].ToString();
+                    role = reader["role"].ToString() ?? string.Empty;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return (false, "User not found.");
+            }
+
+            if (string.Equals(role, UserRole.Admin.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                const string adminCountQuery = "SELECT COUNT(*) FROM users WHERE LOWER(role) = 'admin' AND is_active = TRUE";
+                using var adminCountCommand = new MySqlCommand(adminCountQuery, connection);
+                var activeAdminCount = Convert.ToInt32(await adminCountCommand.ExecuteScalarAsync());
+                if (activeAdminCount <= 1)
+                {
+                    return (false, "You cannot delete the last active administrator.");
+                }
+            }
+
+            await LogUserActivityAsync(_currentUser.Id, "user_deleted", $"Deleted user: {username} (ID: {userId})");
+
+            const string deleteQuery = "DELETE FROM users WHERE id = @userId";
+            using var deleteCommand = new MySqlCommand(deleteQuery, connection);
+            deleteCommand.Parameters.AddWithValue("@userId", userId);
+            var rowsAffected = await deleteCommand.ExecuteNonQueryAsync();
+
+            if (rowsAffected > 0)
+            {
+                await EnsureAuthCacheAsync(forceReload: true);
+                return (true, "User deleted successfully.");
+            }
+
+            return (false, "Failed to delete user.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Delete user error: {ex.Message}");
+            return (false, "An error occurred while deleting the user.");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> DeactivateUserAsync(int userId)
+    {
+        try
+        {
+            var schemaResult = await EnsureAuthenticationSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                return (false, schemaResult.Message);
+            }
+
+            // Only admins can deactivate users
+            if (_currentUser?.Role != UserRole.Admin)
+            {
+                return (false, "Access denied. Only administrators can deactivate users.");
+            }
+
+            // Cannot deactivate yourself
+            if (_currentUser.Id == userId)
+            {
+                return (false, "You cannot deactivate your own account.");
+            }
+
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+
             // Check if user exists
-            var checkQuery = "SELECT username FROM users WHERE id = @userId";
+            var checkQuery = "SELECT username, is_active FROM users WHERE id = @userId";
             using var checkCommand = new MySqlCommand(checkQuery, connection);
             checkCommand.Parameters.AddWithValue("@userId", userId);
-            var username = await checkCommand.ExecuteScalarAsync() as string;
+            string? username = null;
+            var isActive = false;
+            using (var reader = await checkCommand.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    username = reader["username"].ToString();
+                    isActive = Convert.ToBoolean(reader["is_active"]);
+                }
+            }
 
             if (string.IsNullOrEmpty(username))
             {
                 return (false, "User not found.");
             }
 
-            // Delete user
-            var deleteQuery = "DELETE FROM users WHERE id = @userId";
+            if (!isActive)
+            {
+                return (true, "User is already inactive.");
+            }
+
+            // Soft deactivate user to preserve time clock and report history.
+            var deleteQuery = "UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = @userId";
             using var deleteCommand = new MySqlCommand(deleteQuery, connection);
             deleteCommand.Parameters.AddWithValue("@userId", userId);
             
@@ -458,19 +577,19 @@ public class AuthenticationService
             
             if (rowsAffected > 0)
             {
-                await LogUserActivityAsync(_currentUser.Id, "user_deleted", $"Deleted user: {username} (ID: {userId})");
+                await LogUserActivityAsync(_currentUser.Id, "user_deactivated", $"Deactivated user: {username} (ID: {userId})");
                 await EnsureAuthCacheAsync(forceReload: true);
-                return (true, "User deleted successfully.");
+                return (true, "User deactivated successfully.");
             }
             else
             {
-                return (false, "Failed to delete user.");
+                return (false, "Failed to deactivate user.");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Delete user error: {ex.Message}");
-            return (false, "An error occurred while deleting the user.");
+            System.Diagnostics.Debug.WriteLine($"Deactivate user error: {ex.Message}");
+            return (false, "An error occurred while deactivating the user.");
         }
     }
 
@@ -483,6 +602,17 @@ public class AuthenticationService
             {
                 return (false, "Access denied. You can only update your own account or need admin privileges.");
             }
+
+            var effectivePin = string.IsNullOrWhiteSpace(newPin)
+                ? updatedUser.Username?.Trim() ?? string.Empty
+                : newPin.Trim();
+
+            if (!IsFourDigitPin(effectivePin))
+            {
+                return (false, "PIN must be exactly 4 digits.");
+            }
+
+            updatedUser.Username = effectivePin;
 
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
@@ -604,6 +734,7 @@ public class AuthenticationService
                     username VARCHAR(50) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(20) NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 )";
@@ -614,6 +745,7 @@ public class AuthenticationService
             var upgradeStatements = new[]
             {
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL AFTER id",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE AFTER role",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             };
@@ -696,10 +828,16 @@ public class AuthenticationService
                 return;
             }
 
+            var schemaResult = await EnsureAuthenticationSchemaAsync();
+            if (!schemaResult.Success)
+            {
+                throw new InvalidOperationException(schemaResult.Message);
+            }
+
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync(cancellationToken);
 
-            var query = "SELECT id, name, username, password_hash, role, created_at, updated_at FROM users";
+            var query = "SELECT id, name, username, password_hash, role, is_active, created_at, updated_at FROM users";
             using var command = new MySqlCommand(query, connection);
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -719,6 +857,7 @@ public class AuthenticationService
                     Username = username,
                     PasswordHash = reader["password_hash"].ToString() ?? string.Empty,
                     Role = Enum.Parse<UserRole>(reader["role"].ToString() ?? "User", true),
+                    IsActive = Convert.ToBoolean(reader["is_active"]),
                     CreatedAt = Convert.ToDateTime(reader["created_at"]),
                     UpdatedAt = Convert.ToDateTime(reader["updated_at"])
                 };
@@ -735,5 +874,12 @@ public class AuthenticationService
         {
             _authCacheLock.Release();
         }
+    }
+
+    private static bool IsFourDigitPin(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value.Length == 4
+            && value.All(char.IsDigit);
     }
 }

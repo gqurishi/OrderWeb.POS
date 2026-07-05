@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Views.QuickNoteSelectionDialog"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
+             VerticalOptions="Fill"
+             HorizontalOptions="Fill">
+
+    <Grid VerticalOptions="Center"
+          HorizontalOptions="Center"
+          Padding="36">
+        <Border BackgroundColor="White"
+                Stroke="#DCE3EE"
+                StrokeThickness="1"
+                Padding="0"
+                WidthRequest="520"
+                VerticalOptions="Center"
+                HorizontalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="22"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
+            </Border.Shadow>
+
+            <VerticalStackLayout Spacing="0">
+                <Grid BackgroundColor="#6366F1"
+                      Padding="28,24"
+                      RowDefinitions="Auto,Auto,Auto">
+                    <Border Grid.Row="0"
+                            BackgroundColor="White"
+                            Stroke="#E0E7FF"
+                            StrokeThickness="1"
+                            WidthRequest="74"
+                            HeightRequest="74"
+                            Padding="8"
+                            HorizontalOptions="Center"
+                            Margin="0,0,0,16">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="18"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="#0F172A" Opacity="0.12" Radius="12" Offset="0,4"/>
+                        </Border.Shadow>
+                        <Image Source="companylogo.png"
+                               Aspect="AspectFit"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center"/>
+                    </Border>
+
+                    <Label Grid.Row="1"
+                           Text="Choose Quick Note"
+                           FontSize="24"
+                           FontAttributes="Bold"
+                           TextColor="White"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"/>
+
+                    <Label Grid.Row="2"
+                           x:Name="ItemNameLabel"
+                           Text="Menu item"
+                           FontSize="15"
+                           TextColor="#E0E7FF"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           Margin="0,6,0,0"/>
+                </Grid>
+
+                <VerticalStackLayout Padding="28"
+                                     Spacing="18">
+                    <Label Text="Select a saved note, add a custom note, or continue without one."
+                           FontSize="14"
+                           TextColor="#64748B"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"/>
+
+                    <Border BackgroundColor="#F8FAFC"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="10">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="16"/>
+                        </Border.StrokeShape>
+
+                        <VerticalStackLayout x:Name="NotesContainer"
+                                             Spacing="10"/>
+                    </Border>
+
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="14">
+                        <Button Grid.Column="0"
+                                Text="Cancel"
+                                BackgroundColor="#E2E8F0"
+                                TextColor="#334155"
+                                FontAttributes="Bold"
+                                CornerRadius="14"
+                                HeightRequest="52"
+                                FontSize="16"
+                                Clicked="OnCancelClicked"/>
+
+                        <Button Grid.Column="1"
+                                Text="No Note"
+                                BackgroundColor="#2563EB"
+                                TextColor="White"
+                                FontAttributes="Bold"
+                                CornerRadius="14"
+                                HeightRequest="52"
+                                FontSize="16"
+                                Clicked="OnNoNoteClicked"/>
+                    </Grid>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentView>

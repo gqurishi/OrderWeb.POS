@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using MySqlConnector;
 using POS_in_NET.Models;
@@ -24,6 +25,10 @@ public sealed partial class ReservationSyncService
                 {
                     eventType = eventElement.GetString();
                 }
+                else if (root.TryGetProperty("type", out var typeElement))
+                {
+                    eventType = typeElement.GetString();
+                }
             }
 
             if (string.IsNullOrWhiteSpace(eventType))
@@ -31,13 +36,18 @@ public sealed partial class ReservationSyncService
                 return (false, "Missing event type.");
             }
 
-            if (eventType.Equals("reservation_created", StringComparison.OrdinalIgnoreCase)
-                || eventType.Equals("reservation_updated", StringComparison.OrdinalIgnoreCase))
+            if (IsReservationEvent(eventType))
             {
                 var dto = ParseReservationPayload(root);
                 if (dto == null)
                 {
                     return (false, "Invalid reservation payload.");
+                }
+
+                if (eventType.Equals("reservation_cancelled", StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrWhiteSpace(dto.Status))
+                {
+                    dto = dto with { Status = "cancelled" };
                 }
 
                 var result = await ProcessInboundReservationAsync(dto, fromRealtime: true);
@@ -72,13 +82,7 @@ public sealed partial class ReservationSyncService
                     dto.Id,
                     dto.Reference ?? ownUpload.Value.Reference,
                     dto.LocalId);
-                return new ReservationSyncResult(true, 0, 1, "POS booking confirmed on cloud.");
             }
-        }
-
-        if (IsPosOriginatedSource(dto.Source) && await ReservationExistsAsync(dto.Id))
-        {
-            return new ReservationSyncResult(true, 0, 0, "Ignored echo of POS booking.");
         }
 
         var existsById = await ReservationExistsAsync(dto.Id);
@@ -90,10 +94,11 @@ public sealed partial class ReservationSyncService
                 if (existingCloudId.StartsWith("local:", StringComparison.Ordinal))
                 {
                     await ApplyCloudUploadResultAsync(existingCloudId, dto.Id, dto.Reference, dto.LocalId);
-                    return new ReservationSyncResult(true, 0, 1, "Linked cloud id to local booking.");
+                    existsById = true;
                 }
 
-                if (!existingCloudId.Equals(dto.Id, StringComparison.Ordinal))
+                if (!existingCloudId.StartsWith("local:", StringComparison.Ordinal)
+                    && !existingCloudId.Equals(dto.Id, StringComparison.Ordinal))
                 {
                     dto = dto with { Id = existingCloudId };
                     existsById = true;
@@ -136,6 +141,7 @@ public sealed partial class ReservationSyncService
 
     private static CloudReservationDto? ParseReservationPayload(JsonElement root)
     {
+        var eventType = GetRootString(root, "event") ?? GetRootString(root, "type");
         JsonElement data = root;
         if (root.TryGetProperty("reservation", out var reservationElement))
         {
@@ -146,13 +152,48 @@ public sealed partial class ReservationSyncService
             data = dataElement;
         }
 
-        string? GetString(string name) =>
-            data.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String
-                ? element.GetString()
-                : null;
+        string? GetString(string name)
+        {
+            if (!data.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
 
-        int GetInt(string name, int fallback = 0) =>
-            data.TryGetProperty(name, out var element) && element.TryGetInt32(out var value) ? value : fallback;
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.ToString(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => null
+            };
+        }
+
+        int GetInt(string name, int fallback = 0)
+        {
+            if (!data.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+            {
+                return fallback;
+            }
+
+            if (element.TryGetInt32(out var value))
+            {
+                return value;
+            }
+
+            if (element.TryGetDecimal(out var decimalValue))
+            {
+                return (int)Math.Round(decimalValue, MidpointRounding.AwayFromZero);
+            }
+
+            if (element.ValueKind == JsonValueKind.String &&
+                int.TryParse(element.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+
+            return fallback;
+        }
 
         var id = GetString("id") ?? GetString("reservation_id") ?? GetString("reservationId");
         if (string.IsNullOrWhiteSpace(id))
@@ -173,14 +214,40 @@ public sealed partial class ReservationSyncService
             CustomerEmail = GetString("email") ?? GetString("customerEmail"),
             Notes = GetString("notes"),
             Allergies = GetString("allergies"),
-            PromoCode = GetString("promoCode"),
-            Status = GetString("status"),
+            PromoCode = GetString("promoCode")
+                ?? GetString("promo_code")
+                ?? GetString("promocode")
+                ?? GetString("promotionCode")
+                ?? GetString("promotion_code")
+                ?? GetString("discountCode")
+                ?? GetString("discount_code"),
+            Status = GetString("status")
+                ?? (eventType?.Equals("reservation_cancelled", StringComparison.OrdinalIgnoreCase) == true ? "cancelled" : null),
             Source = GetString("source") ?? GetString("channel"),
-            TableNumber = GetString("tableNumber") ?? GetString("table"),
+            TableNumber = GetString("tableNumber")
+                ?? GetString("table_number")
+                ?? GetString("tableNo")
+                ?? GetString("table_no")
+                ?? GetString("table"),
             DepositAmountPence = GetInt("depositAmountPence"),
             CreatedAt = GetString("createdAt"),
             UpdatedAt = GetString("updatedAt")
         };
+    }
+
+    private static bool IsReservationEvent(string eventType)
+    {
+        return eventType.Equals("new_reservation", StringComparison.OrdinalIgnoreCase)
+               || eventType.Equals("reservation_created", StringComparison.OrdinalIgnoreCase)
+               || eventType.Equals("reservation_updated", StringComparison.OrdinalIgnoreCase)
+               || eventType.Equals("reservation_cancelled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetRootString(JsonElement root, string name)
+    {
+        return root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
     }
 
     private static bool IsPosOriginatedSource(string? source)

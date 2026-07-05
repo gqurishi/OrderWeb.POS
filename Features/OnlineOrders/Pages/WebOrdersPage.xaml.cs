@@ -77,7 +77,7 @@ namespace POS_in_NET.Pages
             if (wsService != null)
             {
                 wsService.NewOrderReceived += (sender, args) => {
-                    System.Diagnostics.Debug.WriteLine($" WEBSOCKET ORDER RECEIVED: {args.OrderNumber} - {args.CustomerName} - ${args.TotalAmount}");
+                    System.Diagnostics.Debug.WriteLine($" WEBSOCKET ORDER RECEIVED: {args.OrderNumber} - {args.CustomerName} - £{args.TotalAmount}");
                     RefreshWebOrders();
                 };
                 System.Diagnostics.Debug.WriteLine(" WebSocket event subscription active!");
@@ -420,13 +420,15 @@ namespace POS_in_NET.Pages
                             SelectedDateLabel.Text = $"Showing: {_selectedDate:MMM dd, yyyy}";
                         }
 
-                        // Update Orders collection for UI binding - PAGINATED
-                        Orders.Clear();
-                        foreach (var order in ordersToDisplay)
-                        {
-                            printStatuses.TryGetValue(order.Id, out var printStatus);
-                            Orders.Add(new WebOrderRow(order, printStatus ?? WebOrderPrintStatus.NotQueued()));
-                        }
+                        // Update Orders collection for UI binding - PAGINATED.
+                        // Replace the collection in one reset so MAUI's CollectionView does not process
+                        // multiple insert notifications while measuring virtualized rows.
+                        Orders = new ObservableCollection<WebOrderRow>(
+                            ordersToDisplay.Select(order =>
+                            {
+                                printStatuses.TryGetValue(order.Id, out var printStatus);
+                                return new WebOrderRow(order, printStatus ?? WebOrderPrintStatus.NotQueued());
+                            }));
                         
                         System.Diagnostics.Debug.WriteLine($" Orders collection updated with {Orders.Count} items");
                         

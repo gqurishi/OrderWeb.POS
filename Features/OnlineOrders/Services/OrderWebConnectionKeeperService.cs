@@ -36,6 +36,7 @@ public class OrderWebConnectionKeeperService
     private readonly OrderWebRestApiService _restApiService;
     private readonly LoyaltyService _loyaltyService;
     private readonly ReceiptService _receiptService;
+    private readonly OnlineOrderAutoPrintService _autoPrintService;
     private readonly ReservationSyncService _reservationSyncService;
 
     private readonly SemaphoreSlim _connectLock = new(1, 1);
@@ -58,6 +59,7 @@ public class OrderWebConnectionKeeperService
         OrderWebRestApiService restApiService,
         LoyaltyService loyaltyService,
         ReceiptService receiptService,
+        OnlineOrderAutoPrintService autoPrintService,
         ReservationSyncService reservationSyncService)
     {
         _databaseService = databaseService;
@@ -67,6 +69,7 @@ public class OrderWebConnectionKeeperService
         _restApiService = restApiService;
         _loyaltyService = loyaltyService;
         _receiptService = receiptService;
+        _autoPrintService = autoPrintService;
         _reservationSyncService = reservationSyncService;
     }
 
@@ -81,6 +84,7 @@ public class OrderWebConnectionKeeperService
         AttachWebSocketHandlers();
 
         _receiptService.SetCloudOrderService(_cloudOrderService);
+        _cloudOrderService.SetAutoPrintService(_autoPrintService);
         _cloudOrderService.SetWebSocketService(_webSocketService);
         _webSocketService.SetReservationSyncService(_reservationSyncService);
 
@@ -206,7 +210,16 @@ public class OrderWebConnectionKeeperService
             var config = await _databaseService.GetCloudConfigurationAsync();
             if (config == null || !config.IsConfigured() || !config.IsEnabled)
             {
-                RefreshStatus(apiHealthy: false, detail: "OrderWeb not configured or disabled");
+                UpdateStatus(new OrderWebConnectionStatus
+                {
+                    IsConfigured = config?.IsConfigured() ?? false,
+                    IsEnabled = config?.IsEnabled ?? false,
+                    IsApiHealthy = false,
+                    LastHealthCheckUtc = DateTime.UtcNow,
+                    StatusMessage = config == null || !config.IsConfigured()
+                        ? "OrderWeb settings are not configured"
+                        : "OrderWeb sync is disabled — click Save Settings to enable"
+                });
                 return;
             }
 

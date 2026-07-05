@@ -102,6 +102,13 @@ namespace POS_in_NET.Services
         /// </summary>
         public async Task<(int Sent, int Failed)> ProcessQueueAsync()
         {
+            var roleCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_db);
+            if (!roleCheck.Allowed)
+            {
+                System.Diagnostics.Debug.WriteLine($"Offline queue processing skipped: {roleCheck.Reason}");
+                return (0, 0);
+            }
+
             // Prevent concurrent processing
             if (!await _processingLock.WaitAsync(0))
             {

@@ -240,6 +240,7 @@ public class DatabaseService
             if (await reader.ReadAsync())
             {
                 config["tenant_slug"] = reader.GetString(reader.GetOrdinal("tenant_slug"));
+                config["restaurant_slug"] = TryGetOptionalString(reader, "restaurant_slug") ?? "";
                 config["api_key"] = reader.GetString(reader.GetOrdinal("api_key"));
                 var cloudUrl = reader.GetString(reader.GetOrdinal("cloud_url"));
                 config["cloud_url"] = cloudUrl;
@@ -303,31 +304,24 @@ public class DatabaseService
             using var checkCommand = new MySqlCommand("SELECT COUNT(*) FROM cloud_config", connection);
             var count = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
             
+            var apiBaseUrl = OrderWebApiClient.NormalizeApiBaseUrl(cloudUrl);
             var sql = count > 0 
                 ? @"UPDATE cloud_config SET tenant_slug = @tenantSlug, api_key = @apiKey, 
-                    cloud_url = @cloudUrl, is_enabled = @isEnabled, polling_interval_seconds = @pollingInterval,
-                    auto_print_enabled = @autoPrint, db_host = @dbHost, db_name = @dbName, 
-                    db_username = @dbUsername, db_password = @dbPassword, db_port = @dbPort,
-                    connection_type = @connectionType, updated_at = CURRENT_TIMESTAMP"
-                : @"INSERT INTO cloud_config (tenant_slug, api_key, cloud_url, is_enabled, 
-                    polling_interval_seconds, auto_print_enabled, db_host, db_name, db_username, 
-                    db_password, db_port, connection_type) 
-                    VALUES (@tenantSlug, @apiKey, @cloudUrl, @isEnabled, @pollingInterval, @autoPrint,
-                    @dbHost, @dbName, @dbUsername, @dbPassword, @dbPort, @connectionType)";
+                    api_base_url = @apiBaseUrl, cloud_url = @cloudUrl, is_enabled = @isEnabled,
+                    polling_interval_seconds = @pollingInterval, auto_print_enabled = @autoPrint,
+                    updated_at = CURRENT_TIMESTAMP"
+                : @"INSERT INTO cloud_config (tenant_slug, api_key, api_base_url, cloud_url, is_enabled, 
+                    polling_interval_seconds, auto_print_enabled) 
+                    VALUES (@tenantSlug, @apiKey, @apiBaseUrl, @cloudUrl, @isEnabled, @pollingInterval, @autoPrint)";
             
             using var command = new MySqlCommand(sql, connection);
             command.Parameters.AddWithValue("@tenantSlug", tenantSlug);
             command.Parameters.AddWithValue("@apiKey", apiKey);
+            command.Parameters.AddWithValue("@apiBaseUrl", apiBaseUrl);
             command.Parameters.AddWithValue("@cloudUrl", cloudUrl);
             command.Parameters.AddWithValue("@isEnabled", isEnabled);
             command.Parameters.AddWithValue("@pollingInterval", pollingInterval);
             command.Parameters.AddWithValue("@autoPrint", autoPrint);
-            command.Parameters.AddWithValue("@dbHost", dbHost ?? "");
-            command.Parameters.AddWithValue("@dbName", dbName ?? "");
-            command.Parameters.AddWithValue("@dbUsername", dbUsername ?? "");
-            command.Parameters.AddWithValue("@dbPassword", dbPassword ?? "");
-            command.Parameters.AddWithValue("@dbPort", dbPort);
-            command.Parameters.AddWithValue("@connectionType", connectionType ?? "api_polling");
             
             await command.ExecuteNonQueryAsync();
             return true;

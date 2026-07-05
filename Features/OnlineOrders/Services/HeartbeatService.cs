@@ -11,17 +11,19 @@ public class HeartbeatService
 {
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
+    private readonly OrderWebApiClient _orderWebApiClient;
     private Timer? _heartbeatTimer;
     private string? _deviceId;
     private bool _isRunning = false;
 
     public bool IsRunning => _isRunning;
     
-    public HeartbeatService(DatabaseService databaseService)
+    public HeartbeatService(DatabaseService databaseService, OrderWebApiClient orderWebApiClient)
     {
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(10);
         _databaseService = databaseService;
+        _orderWebApiClient = orderWebApiClient;
         
         System.Diagnostics.Debug.WriteLine(" HeartbeatService initialized");
     }
@@ -37,7 +39,7 @@ public class HeartbeatService
             return;
         }
         
-        _deviceId = await GetDeviceIdAsync();
+        _deviceId = await _orderWebApiClient.GetDeviceIdAsync();
         _isRunning = true;
         
         System.Diagnostics.Debug.WriteLine(" Starting heartbeat service (30s interval)");
@@ -72,33 +74,26 @@ public class HeartbeatService
     {
         try
         {
-            var config = await _databaseService.GetCloudConfigAsync();
-            var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-            var apiKey = config.GetValueOrDefault("api_key", "");
-            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
-            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
-                ? apiBaseUrl
-                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
-            
-            if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
+            var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
+            if (!roleCheck.Allowed)
+            {
+                return;
+            }
+
+            var config = await _orderWebApiClient.GetConfigAsync();
+            if (config == null)
             {
                 return; // Silently skip if not configured
             }
 
-            cloudUrl = cloudUrl.Trim().TrimEnd('/');
-            if (cloudUrl.EndsWith($"/{tenantSlug}", StringComparison.OrdinalIgnoreCase))
-            {
-                cloudUrl = cloudUrl[..^(tenantSlug.Length + 1)];
-            }
-
-            var url = $"{cloudUrl}/pos/heartbeat";
+            var url = OrderWebApiClient.BuildUrl(config, "/pos/heartbeat");
             
             // Get current stats
             var stats = await GetHeartbeatStatsAsync();
             
             var payload = new
             {
-                tenant = tenantSlug,
+                tenant = config.TenantSlug,
                 device_id = _deviceId,
                 status = "online",
                 pending_acks_count = stats.PendingAcks,
@@ -115,7 +110,7 @@ public class HeartbeatService
                 )
             };
             
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            _orderWebApiClient.ApplyAuthHeaders(request, config.ApiKey);
 
             var response = await _httpClient.SendAsync(request);
             
@@ -134,44 +129,6 @@ public class HeartbeatService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($" Heartbeat error: {ex.Message}");
-        }
-    }
-    
-    /// <summary>
-    /// Get device ID from database or generate new one
-    /// </summary>
-    private async Task<string> GetDeviceIdAsync()
-    {
-        if (!string.IsNullOrEmpty(_deviceId))
-            return _deviceId;
-            
-        try
-        {
-            using var connection = await _databaseService.GetConnectionAsync();
-            using var command = connection.CreateCommand();
-            
-            command.CommandText = "SELECT value FROM cloud_config WHERE `key` = 'device_id'";
-            var result = await command.ExecuteScalarAsync();
-            
-            if (result != null && !string.IsNullOrEmpty(result.ToString()))
-            {
-                _deviceId = result.ToString();
-            }
-            else
-            {
-                _deviceId = $"POS_{Environment.MachineName}_{Guid.NewGuid().ToString().Substring(0, 8)}";
-                
-                command.CommandText = @"INSERT INTO cloud_config (`key`, value) VALUES ('device_id', @deviceId)
-                                       ON DUPLICATE KEY UPDATE value = @deviceId";
-                command.Parameters.AddWithValue("@deviceId", _deviceId);
-                await command.ExecuteNonQueryAsync();
-            }
-            
-            return _deviceId!;
-        }
-        catch
-        {
-            return $"POS_{Environment.MachineName}";
         }
     }
     
@@ -212,23 +169,31 @@ public class HeartbeatService
                 stats.PendingAcks = 0;
             }
             
-            // Get pending orders count
-            using (var cmd = connection.CreateCommand())
+            try
             {
-                cmd.CommandText = "SELECT COUNT(*) FROM print_queue WHERE status IN ('pending', 'printing')";
+                await using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM network_print_queue WHERE status IN ('pending', 'processing', 'printing')";
                 var result = await cmd.ExecuteScalarAsync();
                 stats.PendingOrders = result != null ? Convert.ToInt32(result) : 0;
             }
-            
-            // Get last print time
-            using (var cmd = connection.CreateCommand())
+            catch
             {
-                cmd.CommandText = "SELECT MAX(completed_at) FROM print_queue WHERE status = 'success'";
+                stats.PendingOrders = 0;
+            }
+
+            try
+            {
+                await using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT MAX(COALESCE(completed_at, printed_at)) FROM network_print_queue WHERE status = 'completed'";
                 var result = await cmd.ExecuteScalarAsync();
                 if (result != null && result != DBNull.Value)
                 {
                     stats.LastPrintAt = Convert.ToDateTime(result);
                 }
+            }
+            catch
+            {
+                // Ignore missing print queue table on older databases.
             }
         }
         catch (Exception ex)

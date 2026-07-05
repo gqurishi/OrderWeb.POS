@@ -1,11 +1,13 @@
 using MySqlConnector;
 using POS_in_NET.Models;
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace POS_in_NET.Services;
 
 public class BusinessSettingsService
 {
+    private const string LogoCacheFolderName = "business-logos";
     private readonly string _connectionString;
 
     public BusinessSettingsService()
@@ -85,6 +87,10 @@ public class BusinessSettingsService
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS website VARCHAR(255) DEFAULT ''",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS vat_number VARCHAR(100) DEFAULT ''",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_path VARCHAR(500) DEFAULT ''",
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_file_name VARCHAR(255) DEFAULT NULL",
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_mime_type VARCHAR(100) DEFAULT NULL",
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_content_hash CHAR(64) DEFAULT NULL",
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_data MEDIUMBLOB NULL",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_ip VARCHAR(15) DEFAULT NULL COMMENT 'Brother QL-820NWB IP address'",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_port INT(11) DEFAULT 9100 COMMENT 'Label printer network port'",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_enabled TINYINT(1) DEFAULT 0 COMMENT 'Enable automatic label printing'"
@@ -112,6 +118,7 @@ public class BusinessSettingsService
             var query = @"
                   SELECT id, restaurant_name, address, city, county, country, postcode,
                       phone_number, email, website, vat_number, tax_code, description, logo_path,
+                       logo_file_name, logo_mime_type, logo_content_hash, logo_data,
                        label_printer_ip, label_printer_port, label_printer_enabled,
                        updated_at, updated_by
                 FROM business_info
@@ -127,6 +134,13 @@ public class BusinessSettingsService
 
             if (await reader.ReadAsync())
             {
+                var logoPath = reader["logo_path"]?.ToString();
+                var logoFileName = reader["logo_file_name"]?.ToString();
+                if (!reader.IsDBNull(reader.GetOrdinal("logo_data")) && !string.IsNullOrWhiteSpace(logoFileName))
+                {
+                    logoPath = await WriteLogoCacheAsync(logoFileName, (byte[])reader["logo_data"]);
+                }
+
                 return new BusinessInfo
                 {
                     Id = Convert.ToInt32(reader["id"]),
@@ -142,7 +156,7 @@ public class BusinessSettingsService
                     VATNumber = reader["vat_number"]?.ToString() ?? "",
                     TaxCode = reader["tax_code"]?.ToString() ?? "",
                     Description = reader["description"]?.ToString() ?? "",
-                    LogoPath = reader["logo_path"]?.ToString(),
+                    LogoPath = logoPath,
                     LabelPrinterIp = reader["label_printer_ip"]?.ToString(),
                     LabelPrinterPort = reader.IsDBNull(reader.GetOrdinal("label_printer_port")) ? 9100 : Convert.ToInt32(reader["label_printer_port"]),
                     LabelPrinterEnabled = reader.IsDBNull(reader.GetOrdinal("label_printer_enabled")) ? false : Convert.ToBoolean(reader["label_printer_enabled"]),
@@ -211,6 +225,11 @@ public class BusinessSettingsService
             command.Parameters.AddWithValue("@id", businessInfo.Id);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
+            if (rowsAffected > 0)
+            {
+                businessInfo.Id = (int)command.LastInsertedId;
+            }
+
             return rowsAffected > 0;
         }
         catch (Exception ex)
@@ -266,5 +285,124 @@ public class BusinessSettingsService
             Debug.WriteLine($"Error creating business info: {ex.Message}");
             return false;
         }
+    }
+
+    public async Task<string?> SaveBusinessLogoAsync(int businessInfoId, string sourceFileName, string? mimeType, byte[] imageBytes)
+    {
+        if (businessInfoId <= 0 || imageBytes.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var contentHash = ComputeSha256(imageBytes);
+            var fileName = BuildCachedLogoFileName(businessInfoId, contentHash, sourceFileName);
+            var localPath = await WriteLogoCacheAsync(fileName, imageBytes);
+
+            const string query = @"
+                UPDATE business_info
+                SET logo_path = @logoPath,
+                    logo_file_name = @fileName,
+                    logo_mime_type = @mimeType,
+                    logo_content_hash = @contentHash,
+                    logo_data = @logoData,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = @id";
+
+            using var command = new MySqlCommand(query, connection);
+            command.Parameters.AddWithValue("@id", businessInfoId);
+            command.Parameters.AddWithValue("@logoPath", localPath);
+            command.Parameters.AddWithValue("@fileName", fileName);
+            command.Parameters.AddWithValue("@mimeType", string.IsNullOrWhiteSpace(mimeType) ? "application/octet-stream" : mimeType);
+            command.Parameters.AddWithValue("@contentHash", contentHash);
+            command.Parameters.Add("@logoData", MySqlDbType.MediumBlob).Value = imageBytes;
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0 ? localPath : null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error saving business logo: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<bool> RemoveBusinessLogoAsync(int businessInfoId)
+    {
+        if (businessInfoId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string query = @"
+                UPDATE business_info
+                SET logo_path = NULL,
+                    logo_file_name = NULL,
+                    logo_mime_type = NULL,
+                    logo_content_hash = NULL,
+                    logo_data = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = @id";
+
+            using var command = new MySqlCommand(query, connection);
+            command.Parameters.AddWithValue("@id", businessInfoId);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error removing business logo: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string ComputeSha256(byte[] bytes)
+    {
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string BuildCachedLogoFileName(int businessInfoId, string contentHash, string originalFileName)
+    {
+        var extension = Path.GetExtension(originalFileName);
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            extension = ".img";
+        }
+
+        return $"business_logo_{businessInfoId}_{contentHash}{extension.ToLowerInvariant()}";
+    }
+
+    private static string GetLogoCacheDirectory()
+    {
+        var directory = Path.Combine(FileSystem.AppDataDirectory, LogoCacheFolderName);
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static string GetLogoCachePath(string fileName)
+    {
+        return Path.Combine(GetLogoCacheDirectory(), Path.GetFileName(fileName));
+    }
+
+    private static async Task<string> WriteLogoCacheAsync(string fileName, byte[] imageBytes)
+    {
+        var localPath = GetLogoCachePath(fileName);
+        if (!File.Exists(localPath))
+        {
+            await File.WriteAllBytesAsync(localPath, imageBytes);
+        }
+
+        return localPath;
     }
 }

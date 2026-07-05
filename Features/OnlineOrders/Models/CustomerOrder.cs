@@ -64,13 +64,13 @@ namespace POS_in_NET.Models
         // Display properties
         public string DisplayOrderNumber => $"#{OrderNumber}";
         
-        public string FormattedTotal => $"${TotalAmount:F2}";
+        public string FormattedTotal => $"£{TotalAmount:F2}";
         
-        public string FormattedSubtotal => $"${Subtotal:F2}";
+        public string FormattedSubtotal => $"£{Subtotal:F2}";
         
-        public string FormattedTax => $"${TaxAmount:F2}";
+        public string FormattedTax => $"£{TaxAmount:F2}";
         
-        public string FormattedDiscount => DiscountAmount > 0 ? $"-${DiscountAmount:F2}" : "";
+        public string FormattedDiscount => DiscountAmount > 0 ? $"-£{DiscountAmount:F2}" : "";
         
         public string TableDisplay => TableSession != null ? $"Table {TableSession.TableId}" : "Takeout";
         

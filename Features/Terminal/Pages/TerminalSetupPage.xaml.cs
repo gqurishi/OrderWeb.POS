@@ -28,6 +28,7 @@ public partial class TerminalSetupPage : ContentPage
         PairingCodeEntry.Text = string.Empty;
 
         DatabaseNameEntry.Text = config.DatabaseName;
+        DatabasePortEntry.Text = config.DatabasePort <= 0 ? "3306" : config.DatabasePort.ToString();
         DatabaseUserEntry.Text = config.DatabaseUser;
         DatabasePasswordEntry.Text = config.DatabasePassword;
 
@@ -70,12 +71,12 @@ public partial class TerminalSetupPage : ContentPage
         ChildCard.Stroke = Color.FromArgb(isMother ? "#CBD5E1" : "#2563EB");
         ChildCard.StrokeThickness = isMother ? 2 : 3;
 
-        MotherDatabaseSection.IsVisible = isMother;
+        MotherDatabaseSection.IsVisible = true;
         MotherIpSection.IsVisible = !isMother;
         PairingCodeSection.IsVisible = !isMother;
         StatusLabel.Text = isMother
             ? "This terminal will use its own local database."
-            : "Uses database credentials from orderweb-database.json and connects to the mother terminal IP.";
+            : "Enter the mother terminal IP, database connection, and pairing code.";
     }
 
     private async void OnContinueClicked(object sender, EventArgs e)
@@ -101,6 +102,15 @@ public partial class TerminalSetupPage : ContentPage
         var databaseName = string.IsNullOrWhiteSpace(DatabaseNameEntry.Text)
             ? PosDatabaseDefaults.ProductionDatabaseName
             : DatabaseNameEntry.Text.Trim();
+        var databasePortText = string.IsNullOrWhiteSpace(DatabasePortEntry.Text)
+            ? "3306"
+            : DatabasePortEntry.Text.Trim();
+        if (!int.TryParse(databasePortText, out var databasePort) || databasePort <= 0 || databasePort > 65535)
+        {
+            ShowError("Database port must be between 1 and 65535.");
+            return;
+        }
+
         var databaseUser = string.IsNullOrWhiteSpace(DatabaseUserEntry.Text)
             ? PosDatabaseDefaults.ProductionDatabaseUser
             : DatabaseUserEntry.Text.Trim();
@@ -144,7 +154,7 @@ public partial class TerminalSetupPage : ContentPage
             Mode = _selectedMode,
             TerminalName = TerminalNameEntry.Text.Trim(),
             DatabaseHost = _selectedMode == TerminalMode.Mother ? "localhost" : MotherIpEntry.Text.Trim(),
-            DatabasePort = existing.DatabasePort > 0 ? existing.DatabasePort : 3306,
+            DatabasePort = databasePort,
             DatabaseName = databaseName,
             DatabaseUser = databaseUser,
             DatabasePassword = databasePassword

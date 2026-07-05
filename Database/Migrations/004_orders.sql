@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     client_item_id VARCHAR(100) NULL,
     cloud_item_id INT NULL,
     menu_item_id VARCHAR(100) NULL,
+    variant_id VARCHAR(100) NULL,
+    variant_name VARCHAR(100) NULL,
+    display_name VARCHAR(180) NULL,
     print_group_id VARCHAR(36) NULL,
     order_id INT,
     item_name VARCHAR(100) NOT NULL,
@@ -69,7 +72,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     item_price DECIMAL(10,2) NULL,
     special_instructions TEXT,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-    INDEX idx_order_items_report_order_menu (order_id, menu_item_id)
+    INDEX idx_order_items_report_order_menu (order_id, menu_item_id),
+    INDEX idx_order_items_variant (variant_id),
+    INDEX idx_order_items_menu_variant (menu_item_id, variant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS order_item_addons (
@@ -192,4 +197,3 @@ INSERT INTO order_number_settings (order_prefix, daily_counter, counter_date)
 SELECT 'KIT', 0, CURDATE()
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM order_number_settings LIMIT 1);
-

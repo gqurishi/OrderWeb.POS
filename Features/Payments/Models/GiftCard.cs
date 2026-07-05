@@ -113,6 +113,12 @@ public class GiftCard
     
     [JsonPropertyName("expiry_date")]
     public DateTime? ExpiryDate { get; set; }
+
+    [JsonPropertyName("can_use")]
+    public bool? CanUse { get; set; }
+
+    [JsonPropertyName("is_expired")]
+    public bool? IsExpiredFlag { get; set; }
     
     // UI Helper Properties
     [JsonIgnore]
@@ -128,10 +134,17 @@ public class GiftCard
     };
     
     [JsonIgnore]
-    public bool IsActive => Status?.ToLower() == "active" && Balance > 0;
+    public bool IsActive => IsUsable;
     
     [JsonIgnore]
-    public bool IsExpired => ExpiryDate.HasValue && ExpiryDate.Value < DateTime.Now;
+    public bool IsExpired => IsExpiredFlag == true || (ExpiryDate.HasValue && ExpiryDate.Value < DateTime.Now);
+
+    [JsonIgnore]
+    public bool IsUsable =>
+        CanUse != false
+        && !IsExpired
+        && string.Equals(Status, "active", StringComparison.OrdinalIgnoreCase)
+        && Balance > 0;
     
     [JsonIgnore]
     public string ExpiryDisplay => ExpiryDate.HasValue 
@@ -154,6 +167,15 @@ public class GiftCardLookupResponse
 {
     [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("found")]
+    public bool? Found { get; set; }
+
+    [JsonPropertyName("can_use")]
+    public bool? CanUse { get; set; }
+
+    [JsonPropertyName("is_expired")]
+    public bool? IsExpired { get; set; }
     
     [JsonPropertyName("error")]
     public string? Error { get; set; }
@@ -187,6 +209,9 @@ public class GiftCardRedeemRequest
     
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    [JsonPropertyName("orderId")]
+    public string? OrderId { get; set; }
 }
 
 /// <summary>
@@ -206,16 +231,37 @@ public class GiftCardRedeemResponse
     [JsonPropertyName("remaining_balance")]
     [JsonConverter(typeof(FlexibleNullableDecimalConverter))] // Handle string or number
     public decimal? RemainingBalance { get; set; }
+
+    [JsonPropertyName("new_balance")]
+    [JsonConverter(typeof(FlexibleNullableDecimalConverter))]
+    public decimal? NewBalance { get; set; }
+
+    [JsonPropertyName("previous_balance")]
+    [JsonConverter(typeof(FlexibleNullableDecimalConverter))]
+    public decimal? PreviousBalance { get; set; }
     
     [JsonPropertyName("amount_redeemed")]
     [JsonConverter(typeof(FlexibleNullableDecimalConverter))] // Handle string or number
     public decimal? AmountRedeemed { get; set; }
+
+    [JsonPropertyName("redeemed_amount")]
+    [JsonConverter(typeof(FlexibleNullableDecimalConverter))]
+    public decimal? RedeemedAmount { get; set; }
+
+    [JsonPropertyName("is_fully_redeemed")]
+    public bool? IsFullyRedeemed { get; set; }
     
     [JsonIgnore]
-    public string RemainingBalanceDisplay => RemainingBalance.HasValue ? $"£{RemainingBalance.Value:F2}" : "N/A";
+    public decimal? EffectiveRemainingBalance => NewBalance ?? RemainingBalance;
     
     [JsonIgnore]
-    public string AmountRedeemedDisplay => AmountRedeemed.HasValue ? $"£{AmountRedeemed.Value:F2}" : "N/A";
+    public decimal? EffectiveAmountRedeemed => RedeemedAmount ?? AmountRedeemed;
+    
+    [JsonIgnore]
+    public string RemainingBalanceDisplay => EffectiveRemainingBalance.HasValue ? $"£{EffectiveRemainingBalance.Value:F2}" : "N/A";
+    
+    [JsonIgnore]
+    public string AmountRedeemedDisplay => EffectiveAmountRedeemed.HasValue ? $"£{EffectiveAmountRedeemed.Value:F2}" : "N/A";
 }
 
 /// <summary>

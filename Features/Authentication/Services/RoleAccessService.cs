@@ -43,6 +43,10 @@ public class RoleAccessService
                 "login", "userdashboard", "collection", "delivery", "liveorder", "visuallayout",
                 "reservation"
             },
+            [UserRole.Staff] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login"
+            },
             [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "login", "managerdashboard", "restaurant", "collection", "delivery", "liveorder",
@@ -66,6 +70,7 @@ public class RoleAccessService
             UserRole.User => "userdashboard",
             UserRole.Manager => "managerdashboard",
             UserRole.Admin => "dashboard",
+            UserRole.Staff => "login",
             _ => "login"
         };
     }

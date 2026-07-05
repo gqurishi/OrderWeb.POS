@@ -4,6 +4,7 @@ using Microsoft.Maui.Dispatching;
 using Microsoft.Maui.Layouts;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Maui.Storage;
@@ -414,23 +415,8 @@ namespace POS_in_NET.Pages
                 Preferences.Set(SelectedFloorPreferenceKey, floor.Id);
                 UpdateFloorTabAppearance();
                 
-                // Load floor background if exists
-                if (!string.IsNullOrEmpty(floor.BackgroundImage))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Setting background: {floor.BackgroundImage}");
-                    CanvasBackgroundImage.Source = floor.BackgroundImage;
-                    CanvasBackgroundImageBlur.Source = floor.BackgroundImage;
-                    CanvasBackgroundImage.IsVisible = true;
-                    CanvasBackgroundImageBlur.IsVisible = true;
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("No background image");
-                    CanvasBackgroundImage.Source = null;
-                    CanvasBackgroundImageBlur.Source = null;
-                    CanvasBackgroundImage.IsVisible = false;
-                    CanvasBackgroundImageBlur.IsVisible = false;
-                }
+                var backgroundPath = await _floorService.ResolveFloorBackgroundImageAsync(floor);
+                SetCanvasBackground(backgroundPath);
                 
                 // Update remove button visibility based on current floor's background
                 UpdateRemoveBackgroundButtonVisibility();
@@ -1204,29 +1190,25 @@ namespace POS_in_NET.Pages
 
                 if (result != null)
                 {
-                    // Copy file to app data folder
-                    var appDataPath = FileSystem.AppDataDirectory;
-                    var fileName = $"floor_{_currentFloor.Id}_bg{System.IO.Path.GetExtension(result.FileName)}";
-                    var destPath = System.IO.Path.Combine(appDataPath, fileName);
-                    
                     using var sourceStream = await result.OpenReadAsync();
-                    using var destStream = File.Create(destPath);
-                    await sourceStream.CopyToAsync(destStream);
+                    using var memoryStream = new MemoryStream();
+                    await sourceStream.CopyToAsync(memoryStream);
 
-                    // Update database
-                    var updateSuccess = await _floorService.UpdateFloorBackgroundAsync(_currentFloor.Id, destPath);
-                    if (!updateSuccess)
+                    var localPath = await _floorService.SaveFloorBackgroundImageAsync(
+                        _currentFloor.Id,
+                        result.FileName,
+                        GetMimeType(result.FileName),
+                        memoryStream.ToArray());
+
+                    if (string.IsNullOrWhiteSpace(localPath))
                     {
                         await ToastNotification.ShowAsync("Error", "Could not save background to database", NotificationType.Error);
                         return;
                     }
                     
                     // Update UI
-                    _currentFloor.BackgroundImage = destPath;
-                    CanvasBackgroundImage.Source = destPath;
-                    CanvasBackgroundImageBlur.Source = destPath;
-                    CanvasBackgroundImage.IsVisible = true;
-                    CanvasBackgroundImageBlur.IsVisible = true;
+                    _currentFloor.BackgroundImage = localPath;
+                    SetCanvasBackground(localPath);
                     UpdateRemoveBackgroundButtonVisibility();
 
                     await ToastNotification.ShowAsync("Success", "Background image updated", NotificationType.Success);
@@ -1281,7 +1263,7 @@ namespace POS_in_NET.Pages
             try
             {
                 // Remove from database
-                var updateSuccess = await _floorService.UpdateFloorBackgroundAsync(_currentFloor.Id, string.Empty);
+                var updateSuccess = await _floorService.RemoveFloorBackgroundImageAsync(_currentFloor.Id);
                 if (!updateSuccess)
                 {
                     await ToastNotification.ShowAsync("Error", "Could not remove background from database", NotificationType.Error);
@@ -1290,10 +1272,7 @@ namespace POS_in_NET.Pages
                 
                 // Update UI
                 _currentFloor.BackgroundImage = string.Empty;
-                CanvasBackgroundImage.Source = null;
-                CanvasBackgroundImageBlur.Source = null;
-                CanvasBackgroundImage.IsVisible = false;
-                CanvasBackgroundImageBlur.IsVisible = false;
+                SetCanvasBackground(null);
                 UpdateRemoveBackgroundButtonVisibility();
 
                 await ToastNotification.ShowAsync("Success", "Background image removed", NotificationType.Success);
@@ -1314,6 +1293,38 @@ namespace POS_in_NET.Pages
             }
 
             await Shell.Current.GoToAsync("//table");
+        }
+
+        private void SetCanvasBackground(string? imagePath)
+        {
+            if (!string.IsNullOrWhiteSpace(imagePath))
+            {
+                System.Diagnostics.Debug.WriteLine($"Setting background: {imagePath}");
+                CanvasBackgroundImage.Source = imagePath;
+                CanvasBackgroundImageBlur.Source = imagePath;
+                CanvasBackgroundImage.IsVisible = true;
+                CanvasBackgroundImageBlur.IsVisible = true;
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine("No background image");
+            CanvasBackgroundImage.Source = null;
+            CanvasBackgroundImageBlur.Source = null;
+            CanvasBackgroundImage.IsVisible = false;
+            CanvasBackgroundImageBlur.IsVisible = false;
+        }
+
+        private static string GetMimeType(string fileName)
+        {
+            return System.IO.Path.GetExtension(fileName).ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                ".webp" => "image/webp",
+                _ => "application/octet-stream"
+            };
         }
 
         private async void OnGoToFloorManagementClicked(object sender, EventArgs e)

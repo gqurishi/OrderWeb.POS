@@ -90,7 +90,7 @@ public partial class LoginPage : ContentPage
         LoginStatusLabel.IsVisible = false;
 
         // Validate PIN (4 digits)
-        if (string.IsNullOrWhiteSpace(PasswordEntry.Text) || PasswordEntry.Text.Length != 4)
+        if (string.IsNullOrWhiteSpace(PasswordEntry.Text) || PasswordEntry.Text.Length != 4 || !PasswordEntry.Text.All(char.IsDigit))
         {
             ShowError("Please enter a 4-digit PIN.");
             return;
@@ -128,6 +128,13 @@ public partial class LoginPage : ContentPage
 
             if (result.Success && result.User != null)
             {
+                if (result.User.Role == UserRole.Staff)
+                {
+                    ShowError("Staff PIN is for Clock In/Out only.");
+                    ClearPIN();
+                    return;
+                }
+
                 SetLoadingState(true, "Logging in...");
 
                 // Role-based navigation
@@ -483,6 +490,7 @@ public partial class LoginPage : ContentPage
             UserRole.User => "//userdashboard",      // Simple 3-button dashboard
             UserRole.Manager => "//managerdashboard", // Manager operations dashboard
             UserRole.Admin => "//dashboard",         // Full admin dashboard
+            UserRole.Staff => "//login",             // Clock-only staff do not enter POS screens
             _ => "//dashboard"                       // Default to admin dashboard
         };
     }

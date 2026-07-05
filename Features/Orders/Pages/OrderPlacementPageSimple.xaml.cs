@@ -22,6 +22,7 @@ namespace POS_in_NET.Pages
         private MenuItemService _menuItemService;
         private MenuCategoryService _categoryService;
         private MealDealService _mealDealService;
+        private TastingMenuService _tastingMenuService;
         private OrderService _orderService;
         private TableSessionService _tableSessionService;
         private OrderRoutingPrintService _orderRoutingPrintService;
@@ -44,6 +45,7 @@ namespace POS_in_NET.Pages
         private List<FoodMenuItem> _allMenuItems = new();
         private List<FoodMenuItem> _filteredItems = new();
         private List<MealDeal> _activeMealDeals = new();
+        private List<TastingMenu> _activeTastingMenus = new();
 
         // UI State
         private MenuCategory? _selectedCategory;
@@ -87,6 +89,7 @@ namespace POS_in_NET.Pages
         private static List<MenuCategory>? _cachedCategories;
         private static List<FoodMenuItem>? _cachedMenuItems;
         private static List<MealDeal>? _cachedMealDeals;
+        private static List<TastingMenu>? _cachedTastingMenus;
         private static DateTime _menuCacheUpdatedAt = DateTime.MinValue;
         private static readonly TimeSpan MenuCacheTtl = TimeSpan.FromMinutes(30);
         private readonly Dictionary<string, List<MenuItemQuickNote>> _quickNotesCache = new();
@@ -130,6 +133,7 @@ namespace POS_in_NET.Pages
             _menuItemService = new MenuItemService();
             _categoryService = new MenuCategoryService();
             _mealDealService = new MealDealService();
+            _tastingMenuService = new TastingMenuService();
             _orderService = new OrderService();
             _tableSessionService = new TableSessionService();
             _orderRoutingPrintService = new OrderRoutingPrintService();
@@ -160,7 +164,7 @@ namespace POS_in_NET.Pages
                 EnsureCurrentOrderIdentity();
                 await LoadDataAsync();
                 await LoadExistingOrderIfNeededAsync();
-                await EnsureCustomerOrderDraftSavedAsync();
+                await EnsureLocalOrderDraftSavedAsync();
             }
             catch (Exception ex)
             {
@@ -168,16 +172,16 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task EnsureCustomerOrderDraftSavedAsync()
+        private async Task EnsureLocalOrderDraftSavedAsync()
         {
-            if (!_isDeliveryOrder && !_isCollectionOrder)
+            if (!string.IsNullOrWhiteSpace(_pendingOrderId) || _isLoadingPersistentOrder || _isFinalizingOrder)
             {
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(_pendingOrderId) || _isLoadingPersistentOrder || _isFinalizingOrder)
+            if (string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase))
             {
-                return;
+                await EnsureTableSessionContextAsync();
             }
 
             await QueueDraftAutosaveAsync(immediate: true);
@@ -225,6 +229,7 @@ namespace POS_in_NET.Pages
             _tableSessionId = sessionId;
             _pendingOrderId = existingOrderId;
             EnsureCurrentOrderIdentity();
+            UpdateDisplay();
         }
 
         public void SetCollectionOrderInfo(int customerId, string customerName, string customerPhone)
@@ -235,6 +240,7 @@ namespace POS_in_NET.Pages
             _collectionCustomerName = customerName;
             _collectionCustomerPhone = customerPhone;
             _draftDirty = true;
+            UpdateDisplay();
         }
 
         public void SetDeliveryOrderInfo(int customerId, string customerName, string customerPhone, string customerAddress)
@@ -252,6 +258,7 @@ namespace POS_in_NET.Pages
             _deliveryCustomerAddress = customerAddress;
             _currentOrder.FixedServiceCharge = Math.Max(0, deliveryFee);
             _draftDirty = true;
+            UpdateDisplay();
         }
 
         private async Task RefreshRolloutConfigAsync(bool forceRefresh = false)
@@ -426,6 +433,7 @@ namespace POS_in_NET.Pages
                 var useCache = _cachedCategories != null
                     && _cachedMenuItems != null
                     && _cachedMealDeals != null
+                    && _cachedTastingMenus != null
                     && (DateTime.Now - _menuCacheUpdatedAt) < MenuCacheTtl;
 
                 if (useCache)
@@ -433,22 +441,26 @@ namespace POS_in_NET.Pages
                     _allCategories = _cachedCategories!;
                     _allMenuItems = _cachedMenuItems!;
                     _activeMealDeals = _cachedMealDeals!;
+                    _activeTastingMenus = _cachedTastingMenus!;
                 }
                 else
                 {
                     var categoriesTask = _categoryService.GetAllCategoriesAsync();
                     var itemsTask = _menuItemService.GetAllItemsAsync();
                     var dealsTask = _mealDealService.GetActiveDealsAsync();
+                    var tastingMenusTask = _tastingMenuService.GetActiveAsync();
 
-                    await Task.WhenAll(categoriesTask, itemsTask, dealsTask);
+                    await Task.WhenAll(categoriesTask, itemsTask, dealsTask, tastingMenusTask);
 
                     _allCategories = await categoriesTask;
                     _allMenuItems = await itemsTask;
                     _activeMealDeals = await dealsTask;
+                    _activeTastingMenus = await tastingMenusTask;
 
                     _cachedCategories = _allCategories;
                     _cachedMenuItems = _allMenuItems;
                     _cachedMealDeals = _activeMealDeals;
+                    _cachedTastingMenus = _activeTastingMenus;
                     _menuCacheUpdatedAt = DateTime.Now;
                 }
                 
@@ -468,6 +480,7 @@ namespace POS_in_NET.Pages
             _cachedCategories = null;
             _cachedMenuItems = null;
             _cachedMealDeals = null;
+            _cachedTastingMenus = null;
             _menuCacheUpdatedAt = DateTime.MinValue;
         }
 
@@ -481,6 +494,11 @@ namespace POS_in_NET.Pages
             if (_activeMealDeals.Count > 0)
             {
                 topCategories.Insert(0, CreateMealDealsCategory());
+            }
+
+            if (_activeTastingMenus.Count > 0)
+            {
+                topCategories.Insert(0, CreateTastingMenusCategory());
             }
             
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {topCategories.Count} category buttons");
@@ -549,6 +567,15 @@ namespace POS_in_NET.Pages
             DisplayOrder = -1
         };
 
+        private static MenuCategory CreateTastingMenusCategory() => new()
+        {
+            Id = TastingMenu.PosCategoryId,
+            Name = "Tasting Menus",
+            Color = "#0EA5E9",
+            Active = true,
+            DisplayOrder = -2
+        };
+
         private void SelectCategory(MenuCategory category)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Category selected: {category.Name}");
@@ -565,6 +592,13 @@ namespace POS_in_NET.Pages
                 LoadMealDealsForOrder();
                 return;
             }
+
+            if (string.Equals(category.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal))
+            {
+                SubCategorySection.IsVisible = false;
+                LoadTastingMenusForOrder();
+                return;
+            }
             
             // Check if this category has sub-categories
             var subCategories = _allCategories
@@ -577,9 +611,16 @@ namespace POS_in_NET.Pages
                 // Show sub-categories
                 BuildSubCategories(subCategories);
                 SubCategorySection.IsVisible = true;
-                
-                // Auto-select first sub-category
-                SelectSubCategory(subCategories.First());
+
+                if (CategoryHasVisibleItems(category.Id))
+                {
+                    LoadItemsForCategory(category.Id);
+                }
+                else
+                {
+                    // Auto-select first sub-category when the main category has no direct items.
+                    SelectSubCategory(subCategories.First());
+                }
             }
             else
             {
@@ -596,40 +637,46 @@ namespace POS_in_NET.Pages
             // Use lighter shade of parent category color
             var lightColor = LightenColor(_selectedCategory?.Color ?? "#3B82F6");
             var buttonColor = Color.FromArgb(lightColor);
+            var categoryButtons = subCategories
+                .Select(subCat => new CategoryButtonModel
+                {
+                    Id = subCat.Id,
+                    Name = subCat.Name,
+                    Color = buttonColor,
+                    Category = subCat
+                })
+                .ToList();
+
+            if (_selectedCategory != null && CategoryHasVisibleItems(_selectedCategory.Id))
+            {
+                categoryButtons.Insert(0, new CategoryButtonModel
+                {
+                    Id = _selectedCategory.Id,
+                    Name = "Main",
+                    Color = Color.FromArgb(_selectedCategory.Color ?? "#3B82F6"),
+                    Category = _selectedCategory
+                });
+            }
             
             // Group sub-categories into pages of 10 (2 rows x 5 columns)
             var subCategoryPages = new ObservableCollection<CategoryPage>();
             const int BUTTONS_PER_PAGE = 10;
             
-            for (int i = 0; i < subCategories.Count; i += BUTTONS_PER_PAGE)
+            for (int i = 0; i < categoryButtons.Count; i += BUTTONS_PER_PAGE)
             {
                 var page = new CategoryPage();
-                var pageSubCategories = subCategories.Skip(i).Take(BUTTONS_PER_PAGE).ToList();
+                var pageSubCategories = categoryButtons.Skip(i).Take(BUTTONS_PER_PAGE).ToList();
                 
                 // First 5 go to Row 1
                 for (int j = 0; j < Math.Min(5, pageSubCategories.Count); j++)
                 {
-                    var subCat = pageSubCategories[j];
-                    page.Row1.Add(new CategoryButtonModel
-                    {
-                        Id = subCat.Id,
-                        Name = subCat.Name,
-                        Color = buttonColor,
-                        Category = subCat
-                    });
+                    page.Row1.Add(pageSubCategories[j]);
                 }
                 
                 // Next 5 go to Row 2
                 for (int j = 5; j < pageSubCategories.Count; j++)
                 {
-                    var subCat = pageSubCategories[j];
-                    page.Row2.Add(new CategoryButtonModel
-                    {
-                        Id = subCat.Id,
-                        Name = subCat.Name,
-                        Color = buttonColor,
-                        Category = subCat
-                    });
+                    page.Row2.Add(pageSubCategories[j]);
                 }
                 
                 subCategoryPages.Add(page);
@@ -687,6 +734,7 @@ namespace POS_in_NET.Pages
             
             var items = _allMenuItems
                 .Where(i => i.CategoryId == categoryId)
+                .Where(IsItemVisibleForCurrentOrderMode)
                 .OrderBy(i => i.DisplayOrder)
                 .ToList();
             
@@ -768,6 +816,180 @@ namespace POS_in_NET.Pages
             return border;
         }
 
+        private void LoadTastingMenusForOrder()
+        {
+            ItemsContainer.Children.Clear();
+
+            var menus = _activeTastingMenus
+                .OrderBy(menu => menu.DisplayOrder)
+                .ThenBy(menu => menu.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var menu in menus)
+            {
+                ItemsContainer.Children.Add(CreateTastingMenuButton(menu));
+            }
+        }
+
+        private Border CreateTastingMenuButton(TastingMenu menu)
+        {
+            var border = new Border
+            {
+                BackgroundColor = Colors.White,
+                Stroke = Color.FromArgb("#0EA5E9"),
+                StrokeThickness = 2,
+                Padding = 12,
+                Margin = new Thickness(0, 0, 12, 12),
+                WidthRequest = 190,
+                HeightRequest = 140,
+                StrokeShape = new RoundRectangle { CornerRadius = 10 }
+            };
+
+            var gesture = new TapGestureRecognizer();
+            gesture.Tapped += async (_, _) => await OnTastingMenuTappedAsync(menu);
+            border.GestureRecognizers.Add(gesture);
+
+            border.Content = new VerticalStackLayout
+            {
+                Spacing = 6,
+                VerticalOptions = LayoutOptions.Fill,
+                Children =
+                {
+                    new Label
+                    {
+                        Text = menu.Name,
+                        FontSize = 14,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#1E293B"),
+                        LineBreakMode = LineBreakMode.WordWrap,
+                        MaxLines = 2
+                    },
+                    new Label
+                    {
+                        Text = menu.CoursesDisplay,
+                        FontSize = 12,
+                        TextColor = Color.FromArgb("#64748B")
+                    },
+                    new Label
+                    {
+                        Text = menu.Options.Count == 0 ? "No prices" : menu.OptionsDisplay,
+                        FontSize = 13,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#0EA5E9"),
+                        LineBreakMode = LineBreakMode.TailTruncation,
+                        VerticalOptions = LayoutOptions.EndAndExpand
+                    }
+                }
+            };
+
+            return border;
+        }
+
+        private async Task OnTastingMenuTappedAsync(TastingMenu menu)
+        {
+            if (menu.Options.Count == 0 || menu.Courses.Count == 0)
+            {
+                await AppAlertService.ShowAlertAsync("Tasting Menu", "This tasting menu has no price options or courses configured.");
+                return;
+            }
+
+            var option = await PromptTastingMenuOptionAsync(menu);
+            if (option == null)
+            {
+                return;
+            }
+
+            var selections = new List<(TastingMenuCourse Course, TastingMenuChoice Choice)>();
+            foreach (var course in menu.Courses.OrderBy(course => course.CourseNumber))
+            {
+                if (option.CourseCount > 0 && course.CourseNumber > option.CourseCount)
+                {
+                    continue;
+                }
+
+                if (course.Choices.Count == 0)
+                {
+                    continue;
+                }
+
+                var choice = await PromptTastingMenuCourseChoiceAsync(menu, course);
+                if (choice == null)
+                {
+                    return;
+                }
+
+                selections.Add((course, choice));
+            }
+
+            await AddTastingMenuToOrderAsync(menu, option, selections);
+        }
+
+        private async Task<TastingMenuOption?> PromptTastingMenuOptionAsync(TastingMenu menu)
+        {
+            var options = menu.Options
+                .OrderBy(option => option.SortOrder)
+                .Select(option => $"{option.DisplayName} - £{option.Price:F2}")
+                .ToArray();
+
+            var selected = await DisplayActionSheet($"Select package for {menu.Name}", "Cancel", null, options);
+            if (string.IsNullOrWhiteSpace(selected) || selected.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var index = Array.IndexOf(options, selected);
+            return index >= 0 ? menu.Options.OrderBy(option => option.SortOrder).ElementAt(index) : null;
+        }
+
+        private async Task<TastingMenuChoice?> PromptTastingMenuCourseChoiceAsync(TastingMenu menu, TastingMenuCourse course)
+        {
+            var choices = course.Choices
+                .OrderBy(choice => choice.SortOrder)
+                .Select(choice => choice.Name)
+                .ToArray();
+
+            var selected = await DisplayActionSheet($"{menu.Name} - {course.Name}", "Cancel", null, choices);
+            if (string.IsNullOrWhiteSpace(selected) || selected.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return course.Choices.FirstOrDefault(choice => string.Equals(choice.Name, selected, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private async Task AddTastingMenuToOrderAsync(TastingMenu menu, TastingMenuOption option, List<(TastingMenuCourse Course, TastingMenuChoice Choice)> selections)
+        {
+            SyncCurrentOrderMode();
+            var menuItemId = TastingMenuNotesHelper.BuildOrderMenuItemId(menu.Id, option.Id);
+            var notes = TastingMenuNotesHelper.FormatSelections(option, selections);
+            var wasEmpty = _currentOrder.Items.Count == 0;
+
+            _currentOrder.Items.Add(new TableOrderItem
+            {
+                Id = Guid.NewGuid().ToString(),
+                MenuItemId = menuItemId,
+                Name = menu.Name,
+                VariantId = option.Id,
+                VariantName = option.DisplayName,
+                DisplayName = $"{menu.Name} ({option.DisplayName})",
+                Quantity = 1,
+                UnitPrice = option.Price,
+                VatCategory = string.IsNullOrWhiteSpace(menu.VatCategory) ? "HotFood" : menu.VatCategory,
+                Notes = notes,
+                SendStatus = ItemSendStatus.NotSent,
+                CreatedAt = DateTime.Now
+            });
+
+            _currentOrder.RecalculateAll();
+            RefreshOrderItems();
+            await MarkCurrentOrderChangedAsync();
+
+            if (wasEmpty && _currentOrder.Items.Count > 0)
+            {
+                await PersistDraftAsync(force: true);
+            }
+        }
+
         private async Task OnMealDealTappedAsync(MealDeal deal)
         {
             if (deal.Choices.Count == 0)
@@ -831,6 +1053,9 @@ namespace POS_in_NET.Pages
         private static bool IsMealDealOrderItem(TableOrderItem item) =>
             item.MenuItemId.StartsWith(MealDeal.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase);
 
+        private static bool IsTastingMenuOrderItem(TableOrderItem item) =>
+            item.MenuItemId.StartsWith(TastingMenu.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase);
+
         private Border CreateItemButton(FoodMenuItem item)
         {
             var displayPrice = GetSafeEffectivePrice(item);
@@ -882,13 +1107,43 @@ namespace POS_in_NET.Pages
 
         private async Task OnMenuItemTappedAsync(FoodMenuItem item)
         {
+            var (variantSelected, selectedVariant) = await PromptVariantSelectionAsync(item);
+            if (!variantSelected)
+            {
+                return;
+            }
+
             var (shouldAdd, selectedNote) = await PromptQuickNoteSelectionAsync(item);
             if (!shouldAdd)
             {
                 return;
             }
 
-            await AddItemToOrderAsync(item, selectedNote);
+            var selectedAddons = await PromptAddonSelectionAsync(item);
+            if (selectedAddons == null)
+            {
+                return;
+            }
+
+            await AddItemToOrderAsync(item, selectedNote, selectedAddons, selectedVariant);
+        }
+
+        private async Task<(bool ShouldAdd, MenuItemVariant? Variant)> PromptVariantSelectionAsync(FoodMenuItem item)
+        {
+            var activeVariants = item.Variants?
+                .Where(variant => variant.Active)
+                .OrderBy(variant => variant.DisplayOrder)
+                .ThenBy(variant => variant.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<MenuItemVariant>();
+
+            if (activeVariants.Count == 0)
+            {
+                return (true, null);
+            }
+
+            var dialog = new VariantSelectionDialog();
+            var selectedVariant = await dialog.ShowAsync(item.Name, activeVariants);
+            return selectedVariant != null ? (true, selectedVariant) : (false, null);
         }
 
         private async Task<(bool ShouldAdd, string? SelectedNote)> PromptQuickNoteSelectionAsync(FoodMenuItem item)
@@ -904,24 +1159,19 @@ namespace POS_in_NET.Pages
                 return (true, null);
             }
 
-            const string noNoteOption = "No note";
-            const string customNoteOption = "Custom note...";
-            var options = new List<string> { noNoteOption };
-            options.AddRange(quickNotes.Select(n => n.NoteText));
-            options.Add(customNoteOption);
-
-            var selected = await DisplayActionSheet($"Note for {item.Name}", "Cancel", null, options.ToArray());
-            if (string.IsNullOrWhiteSpace(selected) || string.Equals(selected, "Cancel", StringComparison.OrdinalIgnoreCase))
+            var noteDialog = new QuickNoteSelectionDialog();
+            var selected = await noteDialog.ShowAsync(item.Name, quickNotes);
+            if (selected.Kind == QuickNoteSelectionKind.Cancelled)
             {
                 return (false, null);
             }
 
-            if (string.Equals(selected, noNoteOption, StringComparison.OrdinalIgnoreCase))
+            if (selected.Kind == QuickNoteSelectionKind.NoNote)
             {
                 return (true, null);
             }
 
-            if (string.Equals(selected, customNoteOption, StringComparison.OrdinalIgnoreCase))
+            if (selected.Kind == QuickNoteSelectionKind.CustomNote)
             {
                 var dialog = new StyledPromptDialog();
                 dialog.SetDialog(
@@ -942,7 +1192,53 @@ namespace POS_in_NET.Pages
                 return (true, normalizedCustomNote);
             }
 
-            return (true, NormalizeOrderItemNote(selected));
+            return (true, NormalizeOrderItemNote(selected.NoteText));
+        }
+
+        private async Task<List<SelectedAddon>?> PromptAddonSelectionAsync(FoodMenuItem item)
+        {
+            if (item.Addons == null || item.Addons.Count == 0)
+            {
+                return new List<SelectedAddon>();
+            }
+
+            var dialog = new AddonSelectionDialog();
+            return await dialog.ShowAsync(item.Name, item.Addons);
+        }
+
+        private static bool SelectedAddonsMatch(IEnumerable<SelectedAddon> first, IEnumerable<SelectedAddon> second)
+        {
+            var firstList = first
+                .Select(addon => new { Id = addon.Id?.Trim() ?? string.Empty, Name = addon.Name.Trim(), addon.Price })
+                .OrderBy(addon => string.IsNullOrWhiteSpace(addon.Id) ? addon.Name : addon.Id, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(addon => addon.Price)
+                .ToList();
+
+            var secondList = second
+                .Select(addon => new { Id = addon.Id?.Trim() ?? string.Empty, Name = addon.Name.Trim(), addon.Price })
+                .OrderBy(addon => string.IsNullOrWhiteSpace(addon.Id) ? addon.Name : addon.Id, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(addon => addon.Price)
+                .ToList();
+
+            if (firstList.Count != secondList.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < firstList.Count; i++)
+            {
+                var firstAddon = firstList[i];
+                var secondAddon = secondList[i];
+
+                if (!string.Equals(firstAddon.Id, secondAddon.Id, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(firstAddon.Name, secondAddon.Name, StringComparison.OrdinalIgnoreCase) ||
+                    firstAddon.Price != secondAddon.Price)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private async Task<List<MenuItemQuickNote>> GetQuickNotesForItemAsync(string menuItemId)
@@ -1116,6 +1412,9 @@ namespace POS_in_NET.Pages
                         : $"db-{item.Id}",
                     OrderId = _currentOrder.Id,
                     MenuItemId = item.MenuItemId ?? string.Empty,
+                    VariantId = item.VariantId,
+                    VariantName = item.VariantName,
+                    DisplayName = item.DisplayName,
                     Name = item.ItemName,
                     Quantity = item.Quantity,
                     UnitPrice = item.ItemPrice ?? 0m,
@@ -1130,7 +1429,14 @@ namespace POS_in_NET.Pages
                     },
                     FailureReason = itemTracking?.FailureReason,
                     SentAt = itemTracking?.PrintedAt ?? itemTracking?.SentAt,
-                    CreatedAt = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt
+                    CreatedAt = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt,
+                    SelectedAddons = new ObservableCollection<SelectedAddon>(
+                        item.Addons.Select(addon => new SelectedAddon
+                        {
+                            Id = addon.AddonId,
+                            Name = addon.AddonName,
+                            Price = addon.AddonPrice ?? 0m
+                        }))
                 });
             }
 
@@ -1146,9 +1452,9 @@ namespace POS_in_NET.Pages
             _currentOrder.RecalculateAll();
             SyncCurrentOrderMode();
             RefreshOrderItems();
-            UpdateDisplay();
             UpdateSavedStatusLabel();
             ApplyLoadedOrderContext(loadedOrder);
+            UpdateDisplay();
         }
 
         private async Task EnsureTableSessionContextAsync(bool skipOrderLink = false, bool allowSessionOpen = true)
@@ -1212,40 +1518,29 @@ namespace POS_in_NET.Pages
         {
             var orderType = (loadedOrder.OrderType ?? string.Empty).Trim().ToLowerInvariant();
 
-            if (orderType == "delivery")
+            if (orderType is "delivery" or "del")
             {
                 _isCollectionOrder = false;
                 _isDeliveryOrder = true;
                 _deliveryCustomerName = loadedOrder.CustomerName;
                 _deliveryCustomerPhone = loadedOrder.CustomerPhone ?? string.Empty;
                 _deliveryCustomerAddress = loadedOrder.CustomerAddress ?? string.Empty;
-                if (TopBar != null)
-                {
-                    TopBar.SetPageTitle($"Delivery Order - {loadedOrder.CustomerName}");
-                }
             }
-            else if (orderType == "pickup")
+            else if (orderType is "pickup" or "collection" or "col" or "takeaway")
             {
                 _isCollectionOrder = true;
                 _isDeliveryOrder = false;
                 _collectionCustomerName = loadedOrder.CustomerName;
                 _collectionCustomerPhone = loadedOrder.CustomerPhone ?? string.Empty;
-                if (TopBar != null)
-                {
-                    TopBar.SetPageTitle($"Collection Order - {loadedOrder.CustomerName}");
-                }
             }
             else
             {
                 _isCollectionOrder = false;
                 _isDeliveryOrder = false;
-                if (TopBar != null)
-                {
-                    TopBar.SetPageTitle($"Table {_currentOrder.TableNumber}");
-                }
             }
 
             SyncCurrentOrderMode();
+            UpdateDisplay();
         }
 
         private void UpdateSavedStatusLabel(string? overrideText = null, bool isSaving = false, bool isFailed = false)
@@ -1511,11 +1806,23 @@ namespace POS_in_NET.Pages
                 {
                     ClientItemId = string.IsNullOrWhiteSpace(item.Id) ? Guid.NewGuid().ToString() : item.Id,
                     ItemName = item.Name,
+                    VariantId = item.VariantId,
+                    VariantName = item.VariantName,
+                    DisplayName = item.DisplayName,
                     Quantity = item.Quantity,
                     ItemPrice = item.UnitPrice,
                     SpecialInstructions = item.Notes,
                     MenuItemId = item.MenuItemId,
-                    PrintGroupId = item.PrintGroupId
+                    PrintGroupId = item.PrintGroupId,
+                    Addons = item.SelectedAddons
+                        .Select(addon => new OrderItemAddon
+                        {
+                            AddonId = addon.Id,
+                            AddonName = addon.Name,
+                            AddonPrice = addon.Price,
+                            Quantity = 1
+                        })
+                        .ToList()
                 })
                 .ToList();
 
@@ -1594,19 +1901,23 @@ namespace POS_in_NET.Pages
             await QueueDraftAutosaveAsync();
         }
 
-        private async Task AddItemToOrderAsync(FoodMenuItem item, string? selectedNote = null)
+        private async Task AddItemToOrderAsync(FoodMenuItem item, string? selectedNote = null, List<SelectedAddon>? selectedAddons = null, MenuItemVariant? selectedVariant = null)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Adding item: {item.Name}");
 
             SyncCurrentOrderMode();
-            var effectivePrice = GetSafeEffectivePrice(item);
+            var effectivePrice = selectedVariant?.Price ?? GetSafeEffectivePrice(item);
             var normalizedNote = NormalizeOrderItemNote(selectedNote);
+            var normalizedAddons = selectedAddons ?? new List<SelectedAddon>();
+            var variantId = selectedVariant?.Id;
             var wasEmpty = _currentOrder.Items.Count == 0;
             
             // Check if item already exists in order
             var existingItem = _currentOrder.Items.FirstOrDefault(i => 
                 i.MenuItemId == item.Id && 
+                string.Equals(i.VariantId ?? string.Empty, variantId ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(NormalizeOrderItemNote(i.Notes), normalizedNote, StringComparison.OrdinalIgnoreCase) &&
+                SelectedAddonsMatch(i.SelectedAddons, normalizedAddons) &&
                 i.SendStatus == ItemSendStatus.NotSent);
             
             if (existingItem != null)
@@ -1622,6 +1933,9 @@ namespace POS_in_NET.Pages
                 {
                     Id = Guid.NewGuid().ToString(),
                     MenuItemId = item.Id ?? "",
+                    VariantId = selectedVariant?.Id,
+                    VariantName = selectedVariant?.Name,
+                    DisplayName = BuildOrderItemDisplayName(item.Name, selectedVariant?.Name),
                     Name = item.Name,
                     Quantity = 1,
                     UnitPrice = effectivePrice,
@@ -1631,6 +1945,16 @@ namespace POS_in_NET.Pages
                     SendStatus = ItemSendStatus.NotSent,
                     CreatedAt = DateTime.Now
                 };
+
+                foreach (var addon in normalizedAddons)
+                {
+                    orderItem.SelectedAddons.Add(new SelectedAddon
+                    {
+                        Id = addon.Id,
+                        Name = addon.Name,
+                        Price = addon.Price
+                    });
+                }
                 
                 _currentOrder.Items.Add(orderItem);
             }
@@ -1644,6 +1968,12 @@ namespace POS_in_NET.Pages
             {
                 await PersistDraftAsync(force: true);
             }
+        }
+
+        private static string BuildOrderItemDisplayName(string itemName, string? variantName)
+        {
+            var baseName = string.IsNullOrWhiteSpace(itemName) ? "Item" : itemName.Trim();
+            return string.IsNullOrWhiteSpace(variantName) ? baseName : $"{baseName} ({variantName.Trim()})";
         }
 
         private decimal GetSafeEffectivePrice(FoodMenuItem item)
@@ -1661,6 +1991,28 @@ namespace POS_in_NET.Pages
             return item.GetEffectivePrice(GetPricingOrderType());
         }
 
+        private bool IsItemVisibleForCurrentOrderMode(FoodMenuItem item)
+        {
+            if (!IsTakeawayStyleOrder())
+            {
+                return true;
+            }
+
+            if (item.PriceTakeaway.HasValue)
+            {
+                return item.PriceTakeaway.Value > 0m;
+            }
+
+            return GetSafeEffectivePrice(item) > 0m;
+        }
+
+        private bool CategoryHasVisibleItems(string categoryId)
+        {
+            return _allMenuItems.Any(item =>
+                item.CategoryId == categoryId &&
+                IsItemVisibleForCurrentOrderMode(item));
+        }
+
         private void RefreshOrderItems()
         {
             OrderItemsContainer.Children.Clear();
@@ -1668,7 +2020,10 @@ namespace POS_in_NET.Pages
             foreach (var item in _currentOrder.Items)
             {
                 var hasNotes = !string.IsNullOrWhiteSpace(item.Notes);
+                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
+                var hasDetails = hasNotes || hasModifiers;
                 var isMealDeal = IsMealDealOrderItem(item);
+                var isTastingMenu = IsTastingMenuOrderItem(item);
 
                 var itemView = new Border
                 {
@@ -1679,7 +2034,7 @@ namespace POS_in_NET.Pages
                     StrokeShape = new RoundRectangle { CornerRadius = 8 }
                 };
 
-                if (!hasNotes)
+                if (!hasDetails)
                 {
                     itemView.HeightRequest = 40;
                 }
@@ -1706,7 +2061,7 @@ namespace POS_in_NET.Pages
                 // Item name
                 var nameLabel = new Label
                 {
-                    Text = item.Name,
+                    Text = item.DisplayName,
                     FontSize = 15,
                     FontAttributes = FontAttributes.Bold,
                     TextColor = Color.FromArgb("#1E293B"),
@@ -1781,7 +2136,7 @@ namespace POS_in_NET.Pages
                 };
                 mainGrid.Add(plusBtn, 3, 0);
                 
-                if (!isMealDeal)
+                if (!isMealDeal && !isTastingMenu)
                 {
                     var noteBtn = new Button
                     {
@@ -1810,11 +2165,19 @@ namespace POS_in_NET.Pages
                 };
                 mainGrid.Add(priceLabel, 5, 0);
 
-                if (hasNotes)
+                if (hasDetails)
                 {
-                    var notesLabel = new Label
+                    var detailText = string.Join(
+                        Environment.NewLine,
+                        new[]
+                        {
+                            hasModifiers ? item.ModifiersDisplay : null,
+                            hasNotes ? item.Notes : null
+                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
+
+                    var detailsLabel = new Label
                     {
-                        Text = item.Notes,
+                        Text = detailText,
                         FontSize = 12,
                         TextColor = Color.FromArgb("#64748B"),
                         LineBreakMode = LineBreakMode.WordWrap,
@@ -1824,7 +2187,7 @@ namespace POS_in_NET.Pages
                     itemView.Content = new VerticalStackLayout
                     {
                         Spacing = 0,
-                        Children = { mainGrid, notesLabel }
+                        Children = { mainGrid, detailsLabel }
                     };
                 }
                 else
@@ -1838,30 +2201,66 @@ namespace POS_in_NET.Pages
         
         private async Task ShowNoteDialog(TableOrderItem item)
         {
-            var dialog = new StyledPromptDialog();
-            dialog.SetDialog(
-                "Add Note",
-                $"Enter note for {item.Name}:",
-                "e.g., No onions, extra spicy",
-                null,
-                item.Notes ?? "",
-                true
-            );
-            
-            var result = await dialog.ShowAsync();
-            
+            if (!string.IsNullOrWhiteSpace(item.MenuItemId))
+            {
+                var quickNotes = await GetQuickNotesForItemAsync(item.MenuItemId);
+                if (quickNotes.Count > 0)
+                {
+                    var noteDialog = new QuickNoteSelectionDialog();
+                    var selected = await noteDialog.ShowAsync(item.DisplayName, quickNotes);
+
+                    if (selected.Kind == QuickNoteSelectionKind.Cancelled)
+                    {
+                        return;
+                    }
+
+                    if (selected.Kind == QuickNoteSelectionKind.NoNote)
+                    {
+                        item.Notes = null;
+                        RefreshOrderItems();
+                        await MarkCurrentOrderChangedAsync();
+                        return;
+                    }
+
+                    if (selected.Kind == QuickNoteSelectionKind.SavedNote)
+                    {
+                        item.Notes = NormalizeOrderItemNote(selected.NoteText);
+                        RefreshOrderItems();
+                        await MarkCurrentOrderChangedAsync();
+                        return;
+                    }
+                }
+            }
+
+            var result = await PromptCustomOrderItemNoteAsync(item);
+
             if (result != null)
             {
-                item.Notes = string.IsNullOrWhiteSpace(result) ? null : result;
+                item.Notes = string.IsNullOrWhiteSpace(result) ? null : NormalizeOrderItemNote(result);
                 RefreshOrderItems();
                 await MarkCurrentOrderChangedAsync();
             }
         }
 
+        private async Task<string?> PromptCustomOrderItemNoteAsync(TableOrderItem item)
+        {
+            var dialog = new StyledPromptDialog();
+            dialog.SetDialog(
+                "Add Note",
+                $"Enter note for {item.DisplayName}:",
+                "e.g., No onions, extra spicy",
+                null,
+                item.Notes ?? "",
+                true
+            );
+
+            return await dialog.ShowAsync();
+        }
+
         private void UpdateDisplay()
         {
-            GuestsLabel.Text = $"Guests = {_currentOrder.CoverCount}";
-            
+            UpdateTopBarOrderTitle();
+
             var orderPart = !string.IsNullOrEmpty(_currentOrder.OrderNumber) ? $"Order #{_currentOrder.OrderNumber}" : "Order #";
             var orderNote = string.IsNullOrWhiteSpace(_currentOrder.Notes)
                 ? null
@@ -1870,10 +2269,12 @@ namespace POS_in_NET.Pages
             if (_isCollectionOrder)
             {
                 OrderIdentityLabel.Text = $"{orderPart} Collection";
+                GuestsLabel.Text = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
             }
             else if (_isDeliveryOrder)
             {
                 OrderIdentityLabel.Text = $"{orderPart} Delivery";
+                GuestsLabel.Text = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
             }
             else
             {
@@ -1881,6 +2282,7 @@ namespace POS_in_NET.Pages
                 OrderIdentityLabel.Text = string.IsNullOrEmpty(orderNote)
                     ? baseText
                     : $"{baseText} | Note: {orderNote}";
+                GuestsLabel.Text = $"Guests = {_currentOrder.CoverCount}";
             }
             
             SubtotalLabel.Text = $"£{_currentOrder.Subtotal:F2}";
@@ -1916,6 +2318,51 @@ namespace POS_in_NET.Pages
             }
             
             TotalLabel.Text = $"£{_currentOrder.Total:F2}";
+        }
+
+        private void UpdateTopBarOrderTitle()
+        {
+            if (TopBar == null)
+            {
+                return;
+            }
+
+            if (_isDeliveryOrder)
+            {
+                TopBar.SetPageTitle("Delivery Order");
+                return;
+            }
+
+            if (_isCollectionOrder)
+            {
+                TopBar.SetPageTitle("Collection Order");
+                return;
+            }
+
+            TopBar.SetPageTitle("Table Order");
+        }
+
+        private static string FormatOrderHeaderDetail(string? customerName, string? customerPhone, string fallback)
+        {
+            var name = (customerName ?? string.Empty).Trim();
+            var phone = (customerPhone ?? string.Empty).Trim();
+
+            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(phone))
+            {
+                return $"{name} · {phone}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                return phone;
+            }
+
+            return fallback;
         }
 
         private static string TruncateHeaderNote(string note, int maxChars)
@@ -2181,8 +2628,10 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
+                var activeCategoryId = _selectedSubCategory?.Id ?? _selectedCategory.Id;
                 var items = _allMenuItems
-                    .Where(i => i.CategoryId == _selectedCategory.Id)
+                    .Where(i => i.CategoryId == activeCategoryId)
+                    .Where(IsItemVisibleForCurrentOrderMode)
                     .OrderBy(i => i.DisplayOrder);
 
                 foreach (var item in items)
@@ -2207,6 +2656,7 @@ namespace POS_in_NET.Pages
 
             var matchingItems = _allMenuItems
                 .Where(i => i.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
+                .Where(IsItemVisibleForCurrentOrderMode)
                 .OrderBy(i => i.Name);
 
             foreach (var item in matchingItems)
@@ -2421,6 +2871,9 @@ namespace POS_in_NET.Pages
                     Id = item.Id,
                     OrderId = item.OrderId,
                     MenuItemId = item.MenuItemId,
+                    VariantId = item.VariantId,
+                    VariantName = item.VariantName,
+                    DisplayName = item.DisplayName,
                     Name = item.Name,
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
@@ -3173,7 +3626,8 @@ namespace POS_in_NET.Pages
                         break;
                         
                     case PaymentMethod.GiftCard:
-                        var giftResult = await ProcessGiftCardPayment(paymentAmount);
+                        var giftTransactionId = BuildPaymentTransactionId("gift-card", paymentAmount, totalPaid, splitPlan.GetPaymentTitle());
+                        var giftResult = await ProcessGiftCardPayment(paymentAmount, giftTransactionId);
                         if (giftResult.Success)
                         {
                             paidThisAttempt = giftResult.AmountApplied;
@@ -3194,7 +3648,8 @@ namespace POS_in_NET.Pages
                                     giftCardNumber = MaskGiftCardNumber(giftResult.GiftCardNumber),
                                     previousCardBalance = giftResult.PreviousCardBalance,
                                     newCardBalance = giftResult.NewCardBalance,
-                                    orderWebMessage = giftResult.OrderWebMessage
+                                    orderWebMessage = giftResult.OrderWebMessage,
+                                    transactionId = giftTransactionId
                                 });
                             }
                         }
@@ -3637,11 +4092,18 @@ namespace POS_in_NET.Pages
             return await cardDialog.ShowAsync();
         }
 
-        private async Task<GiftCardPaymentResult> ProcessGiftCardPayment(decimal amountDue)
+        private async Task<GiftCardPaymentResult> ProcessGiftCardPayment(decimal amountDue, string transactionId)
         {
             var giftDialog = new GiftCardPaymentDialog();
-            giftDialog.SetAmountDue(amountDue, _currentOrder?.Id);
+            giftDialog.SetAmountDue(amountDue, GetReceiptOrderReference(), transactionId);
             return await giftDialog.ShowAsync();
+        }
+
+        private string BuildPaymentTransactionId(string method, decimal amount, decimal alreadyPaid, string? splitTitle = null)
+        {
+            var orderReference = GetReceiptOrderReference();
+            var splitPart = string.IsNullOrWhiteSpace(splitTitle) ? "single" : splitTitle.Trim();
+            return $"{orderReference}:{method}:{amount:F2}:{alreadyPaid:F2}:{splitPart}";
         }
 
         private static string? MaskGiftCardNumber(string? cardNumber)
@@ -3972,7 +4434,7 @@ namespace POS_in_NET.Pages
             foreach (var item in _currentOrder.Items.Where(item => !item.IsVoided))
             {
                 var itemTotal = item.TotalPriceWithVat > 0 ? item.TotalPriceWithVat : item.TotalPrice;
-                builder.PrintColumns($"{item.Quantity}x {item.Name}", FormatCurrency(itemTotal));
+                builder.PrintColumns($"{item.Quantity}x {item.DisplayName}", FormatCurrency(itemTotal));
 
                 foreach (var addon in item.SelectedAddons)
                 {
@@ -3980,7 +4442,7 @@ namespace POS_in_NET.Pages
                     builder.PrintColumns($"  + {addon.Name}", addonTotal > 0 ? FormatCurrency(addonTotal) : string.Empty);
                 }
 
-                if (!string.IsNullOrWhiteSpace(item.Notes))
+                if (!string.IsNullOrWhiteSpace(item.Notes) && !IsTastingMenuOrderItem(item))
                 {
                     builder.PrintLine($"  Note: {item.Notes}");
                 }
@@ -4475,7 +4937,12 @@ namespace POS_in_NET.Pages
                 }
 
                 var reason = $"Loyalty redemption - {customer.CustomerName}";
-                var result = await _loyaltyService.RedeemPointsAsync(customer.Phone, pointsToRedeem, reason);
+                var loyaltyTransactionId = $"{GetReceiptOrderReference()}:loyalty-redeem:{customer.LoyaltyCardNumber}:{pointsToRedeem}";
+                var result = await _loyaltyService.RedeemPointsAsync(
+                    customer.Phone,
+                    pointsToRedeem,
+                    reason,
+                    loyaltyTransactionId);
 
                 if (!result.Success || result.Customer == null)
                 {

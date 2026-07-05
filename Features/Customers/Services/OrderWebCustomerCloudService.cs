@@ -14,11 +14,21 @@ public class OrderWebCustomerCloudService
 
     private readonly DatabaseService _databaseService;
     private readonly HttpClient _httpClient;
+    private readonly OrderWebApiClient? _orderWebApiClient;
 
-    public OrderWebCustomerCloudService(DatabaseService? databaseService = null, HttpClient? httpClient = null)
+    public OrderWebCustomerCloudService(DatabaseService databaseService, OrderWebApiClient orderWebApiClient)
+        : this(databaseService, null, orderWebApiClient)
+    {
+    }
+
+    public OrderWebCustomerCloudService(
+        DatabaseService? databaseService = null,
+        HttpClient? httpClient = null,
+        OrderWebApiClient? orderWebApiClient = null)
     {
         _databaseService = databaseService ?? new DatabaseService();
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        _orderWebApiClient = orderWebApiClient;
     }
 
     public static string NormalizePhone(string? phone)
@@ -39,6 +49,11 @@ public class OrderWebCustomerCloudService
 
     public async Task<CustomerDataRecord?> SearchByPhoneAsync(string phone)
     {
+        if (!await CanRunCustomerCloudAsync())
+        {
+            return null;
+        }
+
         var config = await LoadConfigAsync();
         if (config == null)
         {
@@ -51,13 +66,15 @@ public class OrderWebCustomerCloudService
             return null;
         }
 
-        var url = $"{config.BaseUrl}/api/pos/customers/search?tenant={Uri.EscapeDataString(config.TenantSlug)}&phone={Uri.EscapeDataString(normalized)}";
+        var url = $"{config.BaseUrl}/pos/customers/search?tenant={Uri.EscapeDataString(config.TenantSlug)}&phone={Uri.EscapeDataString(normalized)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuth(request, config.ApiKey);
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
+            var response = _orderWebApiClient != null
+                ? await _orderWebApiClient.SendAsync(request)
+                : await _httpClient.SendAsync(request);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 return null;
@@ -81,13 +98,18 @@ public class OrderWebCustomerCloudService
 
     public async Task<(bool Success, CustomerDataRecord? Customer, string? Error)> UpsertAsync(CustomerCloudUpsertPayload payload)
     {
+        if (!await CanRunCustomerCloudAsync())
+        {
+            return (false, null, "Customer cloud sync runs on the mother/master terminal only.");
+        }
+
         var config = await LoadConfigAsync();
         if (config == null)
         {
             return (false, null, "OrderWeb is not configured.");
         }
 
-        var url = $"{config.BaseUrl}/api/pos/customers/upsert";
+        var url = $"{config.BaseUrl}/pos/customers/upsert";
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         ApplyAuth(request, config.ApiKey);
 
@@ -105,7 +127,9 @@ public class OrderWebCustomerCloudService
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
+            var response = _orderWebApiClient != null
+                ? await _orderWebApiClient.SendAsync(request)
+                : await _httpClient.SendAsync(request);
             var json = await response.Content.ReadAsStringAsync();
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -131,6 +155,11 @@ public class OrderWebCustomerCloudService
 
     public async Task<(int Succeeded, int Failed, string? Error)> SyncBatchAsync(IReadOnlyList<CustomerCloudUpsertPayload> items)
     {
+        if (!await CanRunCustomerCloudAsync())
+        {
+            return (0, items.Count, "Customer cloud sync runs on the mother/master terminal only.");
+        }
+
         var config = await LoadConfigAsync();
         if (config == null)
         {
@@ -142,7 +171,7 @@ public class OrderWebCustomerCloudService
             return (0, 0, null);
         }
 
-        var url = $"{config.BaseUrl}/api/pos/customers/sync-batch";
+        var url = $"{config.BaseUrl}/pos/customers/sync-batch";
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         ApplyAuth(request, config.ApiKey);
 
@@ -163,7 +192,9 @@ public class OrderWebCustomerCloudService
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
+            var response = _orderWebApiClient != null
+                ? await _orderWebApiClient.SendAsync(request)
+                : await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
                 return (0, items.Count, $"Batch sync failed ({(int)response.StatusCode}).");
@@ -178,15 +209,62 @@ public class OrderWebCustomerCloudService
         }
     }
 
+    public async Task<bool> EnqueueUpsertAsync(CustomerCloudUpsertPayload payload)
+    {
+        if (_orderWebApiClient == null || !await CanRunCustomerCloudAsync())
+        {
+            return false;
+        }
+
+        var config = await LoadConfigAsync();
+        if (config == null)
+        {
+            return false;
+        }
+
+        var endpoint = $"{config.BaseUrl}/pos/customers/upsert";
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey(
+            "customer-upsert",
+            config.TenantSlug,
+            payload.LocalId,
+            payload.PhoneNormalized);
+
+        var body = new
+        {
+            tenant = config.TenantSlug,
+            phone = payload.PhoneNormalized,
+            name = payload.Name,
+            order_type = payload.OrderType,
+            address = payload.Address,
+            local_id = payload.LocalId
+        };
+
+        return await _orderWebApiClient.EnqueueAsync(
+            "customer_upsert",
+            endpoint,
+            body,
+            config.ApiKey,
+            idempotencyKey,
+            priority: 5);
+    }
+
     private async Task<CloudConfig?> LoadConfigAsync()
     {
+        var sharedConfig = _orderWebApiClient != null
+            ? await _orderWebApiClient.GetConfigAsync()
+            : null;
+
+        if (sharedConfig != null)
+        {
+            return new CloudConfig(sharedConfig.TenantSlug, sharedConfig.ApiKey, sharedConfig.ApiBaseUrl);
+        }
+
         var config = await _databaseService.GetCloudConfigAsync();
-        var tenant = config.GetValueOrDefault("tenant_slug", string.Empty);
-        var apiKey = config.GetValueOrDefault("api_key", string.Empty);
-        var enabled = config.GetValueOrDefault("is_enabled", "False") == "True";
-        var baseUrl = config.GetValueOrDefault("cloud_url", DefaultBaseUrl)
-            .Replace("/api/pos/pull-orders", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .TrimEnd('/');
+        var tenant = config.GetValueOrDefault("tenant_slug", string.Empty).Trim();
+        var apiKey = config.GetValueOrDefault("api_key", string.Empty).Trim();
+        var enabled = string.Equals(config.GetValueOrDefault("is_enabled", "False"), "True", StringComparison.OrdinalIgnoreCase);
+        var baseUrl = OrderWebApiClient.NormalizeApiBaseUrl(
+            config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", DefaultBaseUrl)));
 
         if (!enabled || string.IsNullOrWhiteSpace(tenant) || string.IsNullOrWhiteSpace(apiKey))
         {
@@ -195,10 +273,20 @@ public class OrderWebCustomerCloudService
 
         if (!baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
-            baseUrl = DefaultBaseUrl;
+            baseUrl = OrderWebApiClient.NormalizeApiBaseUrl(DefaultBaseUrl);
         }
 
         return new CloudConfig(tenant, apiKey, baseUrl);
+    }
+
+    private async Task<bool> CanRunCustomerCloudAsync()
+    {
+        if (_orderWebApiClient != null)
+        {
+            return (await _orderWebApiClient.CanRunCloudJobsAsync()).Allowed;
+        }
+
+        return TerminalRoleService.CanRunMotherJobs;
     }
 
     private static void ApplyAuth(HttpRequestMessage request, string apiKey)

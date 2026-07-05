@@ -22,6 +22,21 @@ public partial class LoyaltyPointsPage : ContentPage
             ?? throw new InvalidOperationException("LoyaltyService not found");
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+        NotificationService.Instance.NotificationRequested += OnNotificationRequested;
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        NotificationService.Instance.NotificationRequested -= OnNotificationRequested;
+    }
+
+    private void OnNotificationRequested(object? sender, NotificationEventArgs e)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            await ToastNotification.ShowAsync(e.Title, e.Message, e.Type, e.DurationMs);
+        });
     }
 
     protected override async void OnAppearing()
@@ -32,10 +47,35 @@ public partial class LoyaltyPointsPage : ContentPage
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Manager and Admin can access Loyalty Points.");
             await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            return;
+        }
+
+        try
+        {
+            await _loyaltyService.ReinitializeAsync();
+            System.Diagnostics.Debug.WriteLine(" Loyalty Points page: LoyaltyService reinitialized");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Failed to reinitialize LoyaltyService: {ex.Message}");
         }
     }
 
     #region Customer Loyalty Methods
+
+    private async void OnCloseClicked(object sender, EventArgs e)
+    {
+        try
+        {
+            var dashboardRoute = _roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role);
+            await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Loyalty close navigation failed: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Navigation Error", "Could not return to the dashboard. Please try again.");
+        }
+    }
 
     private async void OnSearchCustomerClicked(object sender, EventArgs e)
     {
@@ -64,13 +104,17 @@ public partial class LoyaltyPointsPage : ContentPage
             {
                 CustomerDetailsFrame.IsVisible = false;
                 
-                // Show detailed error with option to create customer
                 var errorMessage = result.Error ?? "Customer not found";
-                var createNew = await DisplayAlert(
-                    " Customer Not Found", 
+                var createCustomerDialog = new ModernConfirmDialog();
+                createCustomerDialog.SetConfirm(
+                    "Customer Not Found",
                     $"{errorMessage}\n\nPhone: {phone}\n\nWould you like to create a new customer account?",
                     "Create New Customer",
-                    "Cancel");
+                    "Cancel",
+                    "i",
+                    "#2563EB");
+
+                var createNew = await createCustomerDialog.ShowAsync();
                 
                 if (createNew)
                 {
@@ -84,13 +128,13 @@ public partial class LoyaltyPointsPage : ContentPage
             System.Diagnostics.Debug.WriteLine($" Exception in search: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"   Stack: {ex.StackTrace}");
             
-            await DisplayAlert(" Connection Error", 
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                "Connection Error", 
                 $"Failed to connect to OrderWeb.net:\n\n{ex.Message}\n\n" +
                 $"Please check:\n" +
                 $"• Internet connection\n" +
                 $"• Cloud Settings (API Key & Tenant ID)\n" +
-                $"• OrderWeb.net service status", 
-                "OK");
+                $"• OrderWeb.net service status");
         }
         finally
         {
@@ -113,7 +157,6 @@ public partial class LoyaltyPointsPage : ContentPage
             var config = await databaseService.GetCloudConfigAsync();
             var apiKey = config.GetValueOrDefault("api_key", "");
             var tenantId = config.GetValueOrDefault("tenant_slug", "");
-            var baseUrl = "https://orderweb.net/api";
 
             if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(tenantId))
             {
@@ -123,8 +166,14 @@ public partial class LoyaltyPointsPage : ContentPage
                 return;
             }
 
-            // Try a test call
-            var testPhone = "07306506797";
+            var testLookup = PhoneSearchEntry.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(testLookup))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Enter Test Customer",
+                    "Enter a customer phone number or loyalty card number first, then run the test.");
+                return;
+            }
 
             var testDialog = new ModernConfirmDialog();
             testDialog.SetConfirm(
@@ -139,36 +188,38 @@ public partial class LoyaltyPointsPage : ContentPage
             
             if (testResult)
             {
-                var result = await _loyaltyService.SearchCustomerAsync(testPhone);
+                await _loyaltyService.ReinitializeAsync();
+                var result = await _loyaltyService.SearchCustomerAsync(testLookup);
                 
                 if (result.Success && result.Customer != null)
                 {
-                    await DisplayAlert(" API Test SUCCESS", 
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                        "API Test Success", 
                         $"Connection working!\n\n" +
                         $"Found Customer:\n" +
                         $"Name: {result.Customer.CustomerName}\n" +
                         $"Phone: {result.Customer.Phone}\n" +
                         $"Points: {result.Customer.PointsBalance}\n" +
-                        $"Card: {result.Customer.LoyaltyCardNumber}", 
-                        "OK");
+                        $"Card: {result.Customer.LoyaltyCardNumber}");
                 }
                 else
                 {
-                    await DisplayAlert(" API Test - Not Found", 
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                        "API Test - Not Found", 
                         $"API is responding but customer not found.\n\n" +
                         $"Error: {result.Error}\n\n" +
                         $"This means:\n" +
                         $"• Connection is working \n" +
                         $"• Customer doesn't exist in database\n" +
                         $"• Try creating a new customer\n\n" +
-                        $"Check Debug Console for full API response", 
-                        "OK");
+                        $"Check Debug Console for full API response");
                 }
             }
         }
         catch (Exception ex)
         {
-            await DisplayAlert(" API Test FAILED", 
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                "API Test Failed", 
                 $"Connection Error:\n\n{ex.Message}\n\n" +
                 $"Possible causes:\n" +
                 $"• No internet connection\n" +
@@ -176,8 +227,7 @@ public partial class LoyaltyPointsPage : ContentPage
                 $"• Wrong Tenant ID\n" +
                 $"• OrderWeb.net API not responding\n" +
                 $"• Endpoint doesn't exist yet\n\n" +
-                $"Check Debug Console for details", 
-                "OK");
+                $"Check Debug Console for details");
         }
     }
 
@@ -282,117 +332,12 @@ public partial class LoyaltyPointsPage : ContentPage
 
     private async void OnAddPointsClicked(object sender, EventArgs e)
     {
-        if (_currentCustomer == null)
-            return;
-
-        var pointsStr = await DisplayPromptAsync(" Add Points", 
-            $"Current balance: {_currentCustomer.PointsBalance} pts\n\nEnter points to add:",
-            keyboard: Keyboard.Numeric);
-
-        if (string.IsNullOrWhiteSpace(pointsStr) || !int.TryParse(pointsStr, out int points) || points <= 0)
-        {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Please enter a valid number of points");
-            return;
-        }
-
-        var reason = await DisplayPromptAsync(" Add Points", 
-            "Enter reason (optional):",
-            placeholder: "e.g., POS Manual Addition - Order Value: £50.00");
-
-        if (string.IsNullOrWhiteSpace(reason))
-            reason = $"POS Manual Addition - {points} points";
-
-        try
-        {
-            var result = await _loyaltyService.AddPointsAsync(_currentCustomer.Phone, points, reason);
-
-            if (result.Success && result.Customer != null)
-            {
-                await DisplayAlert(" Success", 
-                    $"Added {points} points!\nNew balance: {result.Customer.PointsBalance} pts", 
-                    "OK");
-                
-                _currentCustomer = result.Customer;
-                DisplayCustomerDetails(result.Customer, result.Transactions);
-            }
-            else
-            {
-                await DisplayAlert(" Error", 
-                    result.Error ?? "Failed to add points", 
-                    "OK");
-            }
-        }
-        catch (Exception ex)
-        {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to add points: {ex.Message}");
-        }
+        await AdjustCustomerPointsAsync(addPoints: true, sender as Button);
     }
 
     private async void OnRedeemPointsClicked(object sender, EventArgs e)
     {
-        if (_currentCustomer == null)
-            return;
-
-        if (_currentCustomer.PointsBalance <= 0)
-        {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Customer has no points to redeem");
-            return;
-        }
-
-        var pointsStr = await DisplayPromptAsync(" Redeem Points", 
-            $"Available balance: {_currentCustomer.PointsBalance} pts\n" +
-            $"Conversion: 100 pts = £1\n\n" +
-            $"Enter points to redeem:",
-            keyboard: Keyboard.Numeric);
-
-        if (string.IsNullOrWhiteSpace(pointsStr) || !int.TryParse(pointsStr, out int points) || points <= 0)
-        {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", "Please enter a valid number of points");
-            return;
-        }
-
-        if (points > _currentCustomer.PointsBalance)
-        {
-            await DisplayAlert(" Error", 
-                $"Insufficient points. Available: {_currentCustomer.PointsBalance} pts", 
-                "OK");
-            return;
-        }
-
-        var discountAmount = points / 100.0m;
-        var confirm = await DisplayAlert(" Confirm Redemption", 
-            $"Redeem {points} points for £{discountAmount:F2} discount?", 
-            "Redeem", "Cancel");
-
-        if (!confirm)
-            return;
-
-        try
-        {
-            var reason = $"POS Point Redemption - £{discountAmount:F2} discount applied";
-            var result = await _loyaltyService.RedeemPointsAsync(_currentCustomer.Phone, points, reason);
-
-            if (result.Success && result.Customer != null)
-            {
-                await DisplayAlert(" Success", 
-                    $"Redeemed {points} points = £{discountAmount:F2}!\n" +
-                    $"New balance: {result.Customer.PointsBalance} pts", 
-                    "OK");
-                
-                _currentCustomer = result.Customer;
-                DisplayCustomerDetails(result.Customer, result.Transactions);
-            }
-            else
-            {
-                await DisplayAlert(" Error", 
-                    result.Error ?? "Failed to redeem points", 
-                    "OK");
-            }
-        }
-        catch (Exception ex)
-        {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Error", $"Failed to redeem points: {ex.Message}");
-        }
+        await AdjustCustomerPointsAsync(addPoints: false, sender as Button);
     }
 
     private async void OnRefreshCustomerClicked(object sender, EventArgs e)
@@ -422,85 +367,157 @@ public partial class LoyaltyPointsPage : ContentPage
 
     private void DisplayCustomerDetails(LoyaltyCustomer customer, List<LoyaltyTransaction> transactions)
     {
-        // Customer Info
-        CustomerNameLabel.Text = $"Name: {customer.CustomerName}";
-        CustomerPhoneLabel.Text = $"Phone: {customer.DisplayPhone}";
+        var displayName = string.IsNullOrWhiteSpace(customer.CustomerName)
+            ? "No name saved"
+            : customer.CustomerName.Trim();
+        var displayPhone = string.IsNullOrWhiteSpace(customer.DisplayPhone)
+            ? customer.Phone
+            : customer.DisplayPhone;
+
+        CustomerNameLabel.Text = displayName;
+        CustomerPhoneLabel.Text = string.IsNullOrWhiteSpace(displayPhone)
+            ? "Phone not saved"
+            : displayPhone.Trim();
         CustomerEmailLabel.Text = string.IsNullOrWhiteSpace(customer.Email) 
-            ? "Email: No email" 
-            : $"Email: {customer.Email}";
+            ? "Email not saved" 
+            : customer.Email.Trim();
         CustomerPointsLabel.Text = $"{customer.PointsBalance:N0} Points";
 
-        // Additional Info
-        CustomerTotalSpentLabel.Text = $"Total Spent: {customer.TotalSpent}";
         CustomerLastVisitLabel.Text = customer.LastOrderDate.HasValue 
             ? $"Last Visit: {customer.LastOrderDate.Value:MMM dd, yyyy}" 
             : "Last Visit: Never";
 
-        // Redemption Value
         decimal redemptionValue = customer.PointsBalance / 100m; // 100 points = £1
-        RedemptionValueLabel.Text = $"Current points worth: £{redemptionValue:F2}";
+        RedemptionValueLabel.Text = $"Worth: £{redemptionValue:F2}";
 
-        // Transaction History
         HistoryCollectionView.ItemsSource = transactions;
     }
 
     private async void OnSubtractPointsClicked(object sender, EventArgs e)
     {
+        await AdjustCustomerPointsAsync(addPoints: false, sender as Button);
+    }
+
+    private async Task AdjustCustomerPointsAsync(bool addPoints, Button? actionButton)
+    {
         if (_currentCustomer == null)
+        {
+            NotificationService.Instance.ShowWarning("Search and select a customer first");
             return;
+        }
 
         var pointsStr = PointsEntry.Text?.Trim();
         if (string.IsNullOrWhiteSpace(pointsStr) || !int.TryParse(pointsStr, out int points) || points <= 0)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter a valid points amount");
+            NotificationService.Instance.ShowWarning("Please enter a valid points amount");
             return;
         }
 
-        if (points > _currentCustomer.PointsBalance)
+        if (!addPoints && _currentCustomer.PointsBalance <= 0)
         {
-            await DisplayAlert("Error", 
-                $"Insufficient points. Customer has {_currentCustomer.PointsBalance} points", 
-                "OK");
+            NotificationService.Instance.ShowWarning("Customer has no points to redeem");
             return;
         }
 
-        var notes = NotesEntry.Text?.Trim() ?? "";
-        var confirm = await DisplayAlert("Confirm", 
-            $"Subtract {points} points from {_currentCustomer.CustomerName}?", 
-            "Subtract", "Cancel");
-
-        if (!confirm)
+        if (!addPoints && points > _currentCustomer.PointsBalance)
+        {
+            NotificationService.Instance.ShowWarning($"Insufficient points. Customer has {_currentCustomer.PointsBalance:N0} points");
             return;
+        }
+
+        var notes = NotesEntry.Text?.Trim();
+        var reason = string.IsNullOrWhiteSpace(notes)
+            ? addPoints
+                ? $"POS Manual Addition - {points} points"
+                : $"POS Point Redemption - £{points / 100m:F2} discount applied"
+            : notes;
+
+        var customerName = string.IsNullOrWhiteSpace(_currentCustomer.CustomerName)
+            ? _currentCustomer.Phone
+            : _currentCustomer.CustomerName.Trim();
+        var currentBalance = _currentCustomer.PointsBalance;
+        var newBalance = addPoints ? currentBalance + points : currentBalance - points;
+        var actionTitle = addPoints ? "Confirm Add Points" : "Confirm Redeem Points";
+        var actionVerb = addPoints ? "Add" : "Redeem";
+        var iconColor = addPoints ? "#10B981" : "#EF4444";
+        var confirmDialog = new ModernConfirmDialog();
+        confirmDialog.SetConfirm(
+            actionTitle,
+            $"{actionVerb} {points:N0} points for {customerName}?\n\n" +
+            $"Current balance: {currentBalance:N0} points\n" +
+            $"New balance: {newBalance:N0} points\n" +
+            $"Value: £{points / 100m:F2}\n\n" +
+            $"Reason: {reason}\n\n" +
+            "This will update OrderWeb.net.",
+            actionVerb,
+            "Cancel",
+            addPoints ? "+" : "-",
+            iconColor);
+
+        var confirmed = await confirmDialog.ShowAsync();
+        if (!confirmed)
+        {
+            return;
+        }
+
+        var originalButtonText = actionButton?.Text;
 
         try
         {
-            var result = await _loyaltyService.RedeemPointsAsync(
-                _currentCustomer.Phone, 
-                points, 
-                $"Manual adjustment: {notes}");
-
-            if (result.Success)
+            if (actionButton != null)
             {
-                await DisplayAlert("Success", 
-                    $"{points} points subtracted successfully!", 
-                    "OK");
+                actionButton.Text = addPoints ? "Adding..." : "Redeeming...";
+                actionButton.IsEnabled = false;
+            }
 
+            var result = addPoints
+                ? await _loyaltyService.AddPointsAsync(_currentCustomer.Phone, points, reason, expectedRemainingPoints: newBalance)
+                : await _loyaltyService.RedeemPointsAsync(_currentCustomer.Phone, points, reason, expectedRemainingPoints: newBalance);
+
+            if (result.Success && result.Customer != null)
+            {
+                _currentCustomer = result.Customer;
+                DisplayCustomerDetails(result.Customer, result.Transactions);
                 PointsEntry.Text = "";
                 NotesEntry.Text = "";
 
-                // Refresh customer details
-                OnRefreshCustomerClicked(this, EventArgs.Empty);
+                NotificationService.Instance.ShowSuccess(
+                    addPoints
+                        ? $"Added {points:N0} points. New balance: {result.Customer.PointsBalance:N0}"
+                        : $"Redeemed {points:N0} points. New balance: {result.Customer.PointsBalance:N0}",
+                    addPoints ? "Points Added" : "Points Redeemed");
+
+                var completedDialog = new ModernAlertDialog();
+                completedDialog.SetAlert(
+                    addPoints ? "Points Added" : "Points Redeemed",
+                    addPoints
+                        ? $"{points:N0} points were added successfully.\n\nNew balance: {result.Customer.PointsBalance:N0} points"
+                        : $"{points:N0} points were redeemed successfully.\n\nNew balance: {result.Customer.PointsBalance:N0} points",
+                    "OK",
+                    "#10B981",
+                    "#10B981");
+                await completedDialog.ShowAsync();
             }
             else
             {
-                await DisplayAlert("Error", 
-                    result.Error ?? "Failed to subtract points", 
-                    "OK");
+                NotificationService.Instance.ShowError(
+                    result.Error ?? (addPoints ? "Failed to add points" : "Failed to redeem points"),
+                    addPoints ? "Add Failed" : "Redeem Failed");
             }
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to subtract points: {ex.Message}");
+            NotificationService.Instance.ShowError(
+                addPoints ? $"Failed to add points: {ex.Message}" : $"Failed to redeem points: {ex.Message}",
+                "OrderWeb Error");
+        }
+        finally
+        {
+            if (actionButton != null)
+            {
+                actionButton.Text = originalButtonText;
+                actionButton.IsEnabled = true;
+            }
         }
     }
 

@@ -1,7 +1,10 @@
 using MySqlConnector;
+using Microsoft.Maui.Storage;
 using POS_in_NET.Models;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 namespace POS_in_NET.Services
@@ -11,6 +14,7 @@ namespace POS_in_NET.Services
         public static event EventHandler<FloorChangedEventArgs>? FloorsChanged;
 
         private readonly DatabaseService _db;
+        private const string BackgroundCacheFolderName = "floor-backgrounds";
 
         public FloorService()
         {
@@ -381,6 +385,146 @@ namespace POS_in_NET.Services
             return false;
         }
 
+        public async Task<string?> SaveFloorBackgroundImageAsync(
+            int floorId,
+            string sourceFileName,
+            string mimeType,
+            byte[] imageBytes)
+        {
+            if (imageBytes.Length == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                using var connection = await _db.GetConnectionAsync();
+                await EnsureFloorSchemaCompatibilityAsync(connection);
+                await EnsureFloorBackgroundImagesTableAsync(connection);
+
+                var contentHash = ComputeSha256(imageBytes);
+                var safeFileName = BuildCachedFileName(floorId, contentHash, sourceFileName);
+                var localPath = await WriteBackgroundCacheAsync(safeFileName, imageBytes);
+
+                const string upsertSql = @"
+                    INSERT INTO FloorBackgroundImages
+                        (FloorId, FileName, MimeType, ContentHash, ImageData, UpdatedAt)
+                    VALUES
+                        (@FloorId, @FileName, @MimeType, @ContentHash, @ImageData, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        FileName = VALUES(FileName),
+                        MimeType = VALUES(MimeType),
+                        ContentHash = VALUES(ContentHash),
+                        ImageData = VALUES(ImageData),
+                        UpdatedAt = NOW()";
+
+                using (var command = new MySqlCommand(upsertSql, connection))
+                {
+                    command.Parameters.AddWithValue("@FloorId", floorId);
+                    command.Parameters.AddWithValue("@FileName", safeFileName);
+                    command.Parameters.AddWithValue("@MimeType", string.IsNullOrWhiteSpace(mimeType) ? "application/octet-stream" : mimeType);
+                    command.Parameters.AddWithValue("@ContentHash", contentHash);
+                    command.Parameters.Add("@ImageData", MySqlDbType.MediumBlob).Value = imageBytes;
+                    await command.ExecuteNonQueryAsync();
+                }
+
+                await UpdateFloorBackgroundKeyAsync(connection, floorId, $"db:{contentHash}");
+
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "floor",
+                    floorId.ToString(),
+                    null,
+                    new { action = "background_image_updated", contentHash });
+
+                return localPath;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"SaveFloorBackgroundImageAsync Error: {error.Message}");
+                return null;
+            }
+        }
+
+        public async Task<string?> ResolveFloorBackgroundImageAsync(Floor floor)
+        {
+            if (floor == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                using var connection = await _db.GetConnectionAsync();
+                await EnsureFloorSchemaCompatibilityAsync(connection);
+                await EnsureFloorBackgroundImagesTableAsync(connection);
+
+                const string query = @"
+                    SELECT FileName, ImageData
+                    FROM FloorBackgroundImages
+                    WHERE FloorId = @FloorId
+                    LIMIT 1";
+
+                using var command = new MySqlCommand(query, connection);
+                command.Parameters.AddWithValue("@FloorId", floor.Id);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var fileName = reader.GetString("FileName");
+                    var imageBytes = (byte[])reader["ImageData"];
+                    var localPath = GetBackgroundCachePath(fileName);
+
+                    if (!File.Exists(localPath))
+                    {
+                        await WriteBackgroundCacheAsync(fileName, imageBytes);
+                    }
+
+                    return localPath;
+                }
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"ResolveFloorBackgroundImageAsync DB fallback: {error.Message}");
+            }
+
+            return IsUsableLocalImagePath(floor.BackgroundImage) ? floor.BackgroundImage : null;
+        }
+
+        public async Task<bool> RemoveFloorBackgroundImageAsync(int floorId)
+        {
+            try
+            {
+                using var connection = await _db.GetConnectionAsync();
+                await EnsureFloorSchemaCompatibilityAsync(connection);
+                await EnsureFloorBackgroundImagesTableAsync(connection);
+
+                using (var deleteCommand = new MySqlCommand("DELETE FROM FloorBackgroundImages WHERE FloorId = @FloorId", connection))
+                {
+                    deleteCommand.Parameters.AddWithValue("@FloorId", floorId);
+                    await deleteCommand.ExecuteNonQueryAsync();
+                }
+
+                await UpdateFloorBackgroundKeyAsync(connection, floorId, string.Empty);
+
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "floor",
+                    floorId.ToString(),
+                    null,
+                    new { action = "background_image_removed" });
+
+                return true;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"RemoveFloorBackgroundImageAsync Error: {error.Message}");
+                return false;
+            }
+        }
+
         private async Task EnsureBackgroundImageColumnExistsAsync(MySqlConnection connection)
         {
             if (await CheckBackgroundColumnExistsAsync(connection))
@@ -399,6 +543,86 @@ namespace POS_in_NET.Services
                 // If another instance already created the column, we can continue safely.
                 System.Diagnostics.Debug.WriteLine($"BackgroundImage column ensure warning: {ex.Message}");
             }
+        }
+
+        private static async Task EnsureFloorBackgroundImagesTableAsync(MySqlConnection connection)
+        {
+            const string createSql = @"
+                CREATE TABLE IF NOT EXISTS FloorBackgroundImages (
+                    FloorId INT PRIMARY KEY,
+                    FileName VARCHAR(255) NOT NULL,
+                    MimeType VARCHAR(100) NOT NULL,
+                    ContentHash CHAR(64) NOT NULL,
+                    ImageData MEDIUMBLOB NOT NULL,
+                    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_floor_background_floor
+                        FOREIGN KEY (FloorId) REFERENCES Floors(Id)
+                        ON DELETE CASCADE,
+                    INDEX idx_floor_background_hash (ContentHash),
+                    INDEX idx_floor_background_updated (UpdatedAt)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            using var command = new MySqlCommand(createSql, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private async Task UpdateFloorBackgroundKeyAsync(MySqlConnection connection, int floorId, string backgroundKey)
+        {
+            await EnsureBackgroundImageColumnExistsAsync(connection);
+
+            const string updateSql = @"
+                UPDATE Floors
+                SET BackgroundImage = @BackgroundImage,
+                    UpdatedDate = NOW()
+                WHERE Id = @FloorId AND IsActive = 1";
+
+            using var updateCommand = new MySqlCommand(updateSql, connection);
+            updateCommand.Parameters.AddWithValue("@FloorId", floorId);
+            updateCommand.Parameters.AddWithValue("@BackgroundImage", backgroundKey ?? string.Empty);
+            await updateCommand.ExecuteNonQueryAsync();
+        }
+
+        private static string ComputeSha256(byte[] bytes)
+        {
+            var hash = SHA256.HashData(bytes);
+            return Convert.ToHexString(hash).ToLowerInvariant();
+        }
+
+        private static string BuildCachedFileName(int floorId, string contentHash, string originalFileName)
+        {
+            var extension = Path.GetExtension(originalFileName);
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                extension = ".img";
+            }
+
+            return $"floor_{floorId}_{contentHash}{extension.ToLowerInvariant()}";
+        }
+
+        private static string GetBackgroundCacheDirectory()
+        {
+            var directory = Path.Combine(FileSystem.AppDataDirectory, BackgroundCacheFolderName);
+            Directory.CreateDirectory(directory);
+            return directory;
+        }
+
+        private static string GetBackgroundCachePath(string fileName)
+        {
+            return Path.Combine(GetBackgroundCacheDirectory(), Path.GetFileName(fileName));
+        }
+
+        private static async Task<string> WriteBackgroundCacheAsync(string fileName, byte[] imageBytes)
+        {
+            var localPath = GetBackgroundCachePath(fileName);
+            await File.WriteAllBytesAsync(localPath, imageBytes);
+            return localPath;
+        }
+
+        private static bool IsUsableLocalImagePath(string? path)
+        {
+            return !string.IsNullOrWhiteSpace(path)
+                && !path.StartsWith("db:", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(path);
         }
 
         private async Task EnsureFloorSchemaCompatibilityAsync(MySqlConnection connection)

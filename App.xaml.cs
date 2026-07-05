@@ -168,6 +168,9 @@ public partial class App : Application
 
 			_cloudOrderService = serviceProvider.GetService<CloudOrderService>();
 
+			var offlineQueueService = serviceProvider.GetService<OfflineQueueService>();
+			offlineQueueService?.StartAutoProcessing();
+
 			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
 			if (reservationSyncService != null)
 			{

@@ -126,17 +126,54 @@
                         <VerticalStackLayout Spacing="8"
                                            x:Name="SubCategorySection"
                                            IsVisible="True">
-                            <Label Text="Sub-Category *"
+                            <Label Text="Sub-Category (optional)"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#475569" />
                             <inputs:SfComboBox x:Name="SubCategoryComboBox"
-                                              Placeholder="Select a sub-category (required)"
+                                              Placeholder="Select a sub-category or leave blank"
                                               HeightRequest="56"
                                               TextColor="#0F172A"
                                               PlaceholderColor="#94A3B8"
                                               Stroke="#CBD5E1"
                                               SelectionChanged="OnSubCategoryChanged" />
+                        </VerticalStackLayout>
+
+                        <!-- Report Type -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Report Type *"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#475569" />
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                                <Button x:Name="FoodTypeButton"
+                                        Grid.Column="0"
+                                        Text="Food"
+                                        StyleId="Food"
+                                        FontSize="15"
+                                        FontAttributes="Bold"
+                                        CornerRadius="12"
+                                        HeightRequest="54"
+                                        Clicked="OnItemTypeClicked" />
+                                <Button x:Name="DrinkTypeButton"
+                                        Grid.Column="1"
+                                        Text="Drink"
+                                        StyleId="Drink"
+                                        FontSize="15"
+                                        FontAttributes="Bold"
+                                        CornerRadius="12"
+                                        HeightRequest="54"
+                                        Clicked="OnItemTypeClicked" />
+                                <Button x:Name="OtherTypeButton"
+                                        Grid.Column="2"
+                                        Text="Other"
+                                        StyleId="Other"
+                                        FontSize="15"
+                                        FontAttributes="Bold"
+                                        CornerRadius="12"
+                                        HeightRequest="54"
+                                        Clicked="OnItemTypeClicked" />
+                            </Grid>
                         </VerticalStackLayout>
 
                         <!-- Color Selection with Custom Chips -->
@@ -337,6 +374,10 @@
                                 FontSize="14"
                                 FontAttributes="Bold"
                                 TextColor="#475569" />
+                            <Label Text="Use 0.00 if this item is not sold for takeaway, collection, or delivery."
+                                FontSize="12"
+                                TextColor="#64748B"
+                                Margin="0,-6,0,0"/>
                             <Border BackgroundColor="#F8FAFC"
                                  StrokeThickness="2"
                                  Stroke="#E2E8F0"
@@ -566,6 +607,86 @@
                     </VerticalStackLayout>
                 </Border>
 
+                <!-- PRICE VARIANTS SECTION -->
+                <Border BackgroundColor="White"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 16"
+                        Padding="24">
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
+                    </Border.Shadow>
+
+                    <VerticalStackLayout Spacing="20">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                            <BoxView Grid.Column="0"
+                                     WidthRequest="4"
+                                     HeightRequest="20"
+                                     CornerRadius="2"
+                                     BackgroundColor="#0EA5E9"
+                                     VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                <Label Text="Price Variants"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#1E293B" />
+                                <Label Text="Sizes or portions with their own selling price"
+                                       FontSize="12"
+                                       TextColor="#94A3B8" />
+                            </VerticalStackLayout>
+                            <Border Grid.Column="2"
+                                    BackgroundColor="#E0F2FE"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 20"
+                                    Padding="12,6"
+                                    VerticalOptions="Center">
+                                <Label x:Name="VariantCountLabel"
+                                       Text="0 variants"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#0284C7" />
+                            </Border>
+                            <Button Grid.Column="3"
+                                    Text="+ Add Variant"
+                                    BackgroundColor="White"
+                                    TextColor="#1E293B"
+                                    FontSize="14"
+                                    FontAttributes="Bold"
+                                    CornerRadius="12"
+                                    BorderColor="#CBD5E1"
+                                    BorderWidth="1"
+                                    HeightRequest="44"
+                                    Padding="16,0"
+                                    VerticalOptions="Center"
+                                    Clicked="OnAddVariantClicked" />
+                        </Grid>
+
+                        <VerticalStackLayout x:Name="VariantsContainer" Spacing="12">
+                            <!-- Dynamic variant cards appear here -->
+                        </VerticalStackLayout>
+
+                        <Border x:Name="VariantsEmptyState"
+                                BackgroundColor="#F9FAFB"
+                                StrokeThickness="2"
+                                Stroke="#E5E7EB"
+                                StrokeDashArray="4,4"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="32,24">
+                            <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                                <Label Text="No price variants yet"
+                                       FontSize="15"
+                                       FontAttributes="Bold"
+                                       TextColor="#6B7280"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Items without variants use dine-in or takeaway price"
+                                       FontSize="13"
+                                       TextColor="#9CA3AF"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                    </VerticalStackLayout>
+                </Border>
+
                 <!-- ADDONS SECTION -->
                 <Border BackgroundColor="White"
                         StrokeThickness="0"
@@ -694,58 +815,8 @@
                                     Padding="12"
                                     MinimumHeightRequest="120">
                                 <VerticalStackLayout Spacing="8">
-                                    <CollectionView x:Name="QuickNotesCollectionView"
-                                                   ItemsSource="{Binding QuickNotes}">
-                                        <CollectionView.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border BackgroundColor="White"
-                                                        StrokeThickness="1"
-                                                        Stroke="#CBD5E1"
-                                                        StrokeShape="RoundRectangle 8"
-                                                        Padding="12"
-                                                        Margin="0,0,0,6">
-                                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                                        <Label Grid.Column="0"
-                                                               Text="{Binding NoteText}"
-                                                               FontSize="14"
-                                                               TextColor="#1E293B"
-                                                               VerticalOptions="Center" />
-                                                        <Button Grid.Column="1"
-                                                                Text=""
-                                                                FontSize="16"
-                                                                BackgroundColor="#F1F5F9"
-                                                                TextColor="#64748B"
-                                                                WidthRequest="36"
-                                                                HeightRequest="36"
-                                                                CornerRadius="8"
-                                                                Padding="0"
-                                                                Clicked="OnEditQuickNoteClicked"
-                                                                CommandParameter="{Binding .}" />
-                                                        <Button Grid.Column="2"
-                                                                Text="X"
-                                                                FontSize="20"
-                                                                FontAttributes="Bold"
-                                                                BackgroundColor="#FEE2E2"
-                                                                TextColor="#DC2626"
-                                                                WidthRequest="36"
-                                                                HeightRequest="36"
-                                                                CornerRadius="8"
-                                                                Padding="0"
-                                                                Clicked="OnDeleteQuickNoteClicked"
-                                                                CommandParameter="{Binding .}" />
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </CollectionView.ItemTemplate>
-                                        <CollectionView.EmptyView>
-                                            <Label Text="No quick notes yet. Click '+Add Quick Note' below."
-                                                   FontSize="13"
-                                                   TextColor="#94A3B8"
-                                                   HorizontalOptions="Center"
-                                                   VerticalOptions="Center"
-                                                   Margin="0,20" />
-                                        </CollectionView.EmptyView>
-                                    </CollectionView>
+                                    <VerticalStackLayout x:Name="QuickNotesListContainer"
+                                                         Spacing="8" />
                                     
                                     <!-- Add Quick Note Button -->
                                     <Button x:Name="AddQuickNoteButton"

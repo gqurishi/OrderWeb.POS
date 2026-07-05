@@ -12,7 +12,7 @@ using System.Collections.ObjectModel;
 
 namespace POS_in_NET.Pages
 {
-    public partial class UnifiedSettingsPage : ContentPage
+    public partial class UnifiedSettingsPage : ContentPage, IQueryAttributable
     {
         // Tab state
         private Border currentActiveTab;
@@ -37,6 +37,7 @@ namespace POS_in_NET.Pages
         private CloudConfiguration? _currentCloudConfig;
         private bool _isCloudApiKeyVisible = false;
         private bool _isCloudConnecting = false;
+        private bool _userHasPendingCloudEdits = false;
         private System.Threading.Timer? _cloudStatusUpdateTimer;
         
         // Data models
@@ -45,6 +46,7 @@ namespace POS_in_NET.Pages
         private ObservableCollection<DatabaseBackupFileInfo> _backupHistory;
         private UserRole? _selectedRole;
         private bool _hasLoadedInitialData;
+        private string _initialTab = "BusinessInfo";
 
         public UnifiedSettingsPage()
         {
@@ -88,6 +90,19 @@ namespace POS_in_NET.Pages
             _ = LoadInitialDataAsync();
         }
 
+        public void ApplyQueryAttributes(IDictionary<string, object> query)
+        {
+            if (query.TryGetValue("tab", out var tabValue) && tabValue is not null)
+            {
+                _initialTab = NormalizeSettingsTab(tabValue.ToString());
+            }
+
+            if (_hasLoadedInitialData)
+            {
+                ShowSettingsTab(_initialTab);
+            }
+        }
+
         protected override void OnDisappearing()
         {
             base.OnDisappearing();
@@ -111,7 +126,7 @@ namespace POS_in_NET.Pages
             {
                 System.Diagnostics.Debug.WriteLine("Loading initial data for Settings page");
                 
-                await MainThread.InvokeOnMainThreadAsync(() => ShowContent("BusinessInfo"));
+                await MainThread.InvokeOnMainThreadAsync(() => ShowSettingsTab(_initialTab));
                 
                 await LoadBusinessInfoAsync();
                 await LoadOrderNumberSettingsAsync();
@@ -374,6 +389,34 @@ namespace POS_in_NET.Pages
             {
                 System.Diagnostics.Debug.WriteLine($"Error in ShowContent: {ex.Message}");
             }
+        }
+
+        private void ShowSettingsTab(string tabName)
+        {
+            var normalizedTab = NormalizeSettingsTab(tabName);
+            var selectedTab = normalizedTab switch
+            {
+                "UserManagement" => UserTabBorder,
+                "OrderWeb" => OrderWebTabBorder,
+                "DeliveryZone" => DeliveryZoneTabBorder,
+                "Backup" => BackupTabBorder,
+                _ => BusinessTabBorder
+            };
+
+            UpdateTabAppearance(selectedTab);
+            ShowContent(normalizedTab);
+        }
+
+        private static string NormalizeSettingsTab(string? tabName)
+        {
+            return (tabName ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "user" or "users" or "usermanagement" => "UserManagement",
+                "orderweb" or "cloud" or "cloudsettings" => "OrderWeb",
+                "delivery" or "deliveryzone" => "DeliveryZone",
+                "backup" => "Backup",
+                _ => "BusinessInfo"
+            };
         }
         #endregion
 
@@ -1089,8 +1132,11 @@ namespace POS_in_NET.Pages
                 }
                 else
                 {
-                    // For new business info, you might need a CreateBusinessInfoAsync method
-                    success = await _businessService.UpdateBusinessInfoAsync(_currentBusinessInfo, "Current User");
+                    success = await _businessService.CreateBusinessInfoAsync(_currentBusinessInfo, "Current User");
+                    if (success)
+                    {
+                        _currentBusinessInfo = await _businessService.GetBusinessInfoAsync() ?? _currentBusinessInfo;
+                    }
                 }
 
                 LoadingIndicator.IsVisible = false;
@@ -1167,15 +1213,27 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                var logoDirectory = Path.Combine(FileSystem.AppDataDirectory, "business-logos");
-                Directory.CreateDirectory(logoDirectory);
+                if (_currentBusinessInfo == null || _currentBusinessInfo.Id <= 0)
+                {
+                    LogoStatusLabel.Text = "Save business info first";
+                    LogoStatusLabel.TextColor = Colors.Red;
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Business information must be saved before uploading a logo.");
+                    return;
+                }
 
-                var safeFileName = Path.GetFileNameWithoutExtension(file.FileName);
-                var fileExtension = Path.GetExtension(file.FileName);
-                var savedFileName = $"{safeFileName}_{DateTime.UtcNow:yyyyMMddHHmmss}{fileExtension}";
-                var savedFilePath = Path.Combine(logoDirectory, savedFileName);
+                var savedFilePath = await _businessService.SaveBusinessLogoAsync(
+                    _currentBusinessInfo.Id,
+                    file.FileName,
+                    file.ContentType,
+                    imageBytes);
 
-                await File.WriteAllBytesAsync(savedFilePath, imageBytes);
+                if (string.IsNullOrWhiteSpace(savedFilePath))
+                {
+                    LogoStatusLabel.Text = "Upload failed";
+                    LogoStatusLabel.TextColor = Colors.Red;
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Could not save logo to the shared database.");
+                    return;
+                }
 
                 // Update UI from the persisted local file path
                 LogoImage.Source = ImageSource.FromFile(savedFilePath);
@@ -1183,13 +1241,9 @@ namespace POS_in_NET.Pages
                 LogoPlaceholder.IsVisible = false;
                 RemoveLogoButton.IsVisible = true;
 
-                // Persist the saved local file path; the DB save happens when the form is saved
-                if (_currentBusinessInfo != null)
-                {
-                    _currentBusinessInfo.LogoPath = savedFilePath;
-                }
+                _currentBusinessInfo.LogoPath = savedFilePath;
 
-                LogoStatusLabel.Text = "Logo uploaded - click Save";
+                LogoStatusLabel.Text = "Logo uploaded";
                 LogoStatusLabel.TextColor = Colors.Green;
 
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Logo uploaded successfully!");
@@ -1202,7 +1256,7 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void RemoveLogo()
+        private async Task RemoveLogoAsync()
         {
             try
             {
@@ -1224,6 +1278,11 @@ namespace POS_in_NET.Pages
                     }
 
                     _currentBusinessInfo.LogoPath = null;
+
+                    if (_currentBusinessInfo.Id > 0)
+                    {
+                        await _businessService.RemoveBusinessLogoAsync(_currentBusinessInfo.Id);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1264,7 +1323,7 @@ namespace POS_in_NET.Pages
             var result = await DisplayAlert("Confirm", "Are you sure you want to remove the current logo?", "Yes", "No");
             if (result)
             {
-                RemoveLogo();
+                await RemoveLogoAsync();
             }
         }
 
@@ -1317,9 +1376,9 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                if (string.IsNullOrEmpty(pin) || pin.Length < 4)
+                if (string.IsNullOrEmpty(pin) || pin.Length != 4 || !pin.All(char.IsDigit))
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter a PIN with at least 4 digits");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter a 4-digit numeric PIN");
                     return;
                 }
 
@@ -1459,6 +1518,8 @@ namespace POS_in_NET.Pages
                     {
                         _users.Add(user);
                     }
+
+                    UserCountLabel.Text = $"{_users.Count} {(_users.Count == 1 ? "User" : "Users")}";
 
                     System.Diagnostics.Debug.WriteLine($"Loaded {_users.Count} users from database");
                 });
@@ -1601,9 +1662,9 @@ namespace POS_in_NET.Pages
                     return;
                 }
                 
-                if (string.IsNullOrWhiteSpace(PINEntry.Text) || PINEntry.Text.Length < 3)
+                if (string.IsNullOrWhiteSpace(PINEntry.Text) || PINEntry.Text.Length != 4 || !PINEntry.Text.All(char.IsDigit))
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter a PIN (at least 3 characters)");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Please enter a 4-digit numeric PIN");
                     return;
                 }
                 
@@ -1615,12 +1676,11 @@ namespace POS_in_NET.Pages
                 
                 // Get form values
                 var name = NameEntry.Text.Trim();
-                var username = name.Replace(" ", "").ToLower(); // Create username from name
                 var pin = PINEntry.Text.Trim();
                 var role = _selectedRole.Value;
                 
                 // Create user using AuthenticationService
-                var result = await _authService.CreateUserAsync(name, username, pin, role);
+                var result = await _authService.CreateUserAsync(name, pin, pin, role);
                 
                 if (result.Success)
                 {
@@ -1685,25 +1745,30 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("Delete User clicked");
+                System.Diagnostics.Debug.WriteLine("Deactivate User clicked");
                 
                 if (sender is Button button && button.CommandParameter != null)
                 {
                     // The CommandParameter is bound to the entire User object
                     if (button.CommandParameter is User userToDelete)
                     {
-                        bool confirm = await DisplayAlert("Confirm Delete", 
-                            $"Are you sure you want to delete '{userToDelete.Name}'?\n\nThis action cannot be undone.", 
-                            "Delete", "Cancel");
+                        if (!userToDelete.IsActive)
+                        {
+                            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Already Inactive", $"User '{userToDelete.Name}' is already inactive.");
+                            return;
+                        }
+
+                        bool confirm = await DisplayAlert("Confirm Deactivate",
+                            $"Deactivate '{userToDelete.Name}'?\n\nThey will no longer be able to log in or clock in, but their clock history and reports will stay saved.",
+                            "Deactivate", "Cancel");
                         
                         if (confirm)
                         {
-                            // Delete user using AuthenticationService
-                            var result = await _authService.DeleteUserAsync(userToDelete.Id);
+                            var result = await _authService.DeactivateUserAsync(userToDelete.Id);
                             
                             if (result.Success)
                             {
-                                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"User '{userToDelete.Name}' has been deleted successfully.");
+                                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"User '{userToDelete.Name}' has been deactivated. Clock history is preserved.");
                                 // Reload users
                                 await LoadUsersAsync();
                             }
@@ -1720,7 +1785,63 @@ namespace POS_in_NET.Pages
                 }
                 else
                 {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to determine which user to deactivate");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error deactivating user: {ex.Message}");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to deactivate user: {ex.Message}");
+            }
+        }
+
+        private async void OnPermanentDeleteUserClicked(object sender, EventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("Permanent Delete User clicked");
+
+                if (sender is not Button button || button.CommandParameter is not User userToDelete)
+                {
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to determine which user to delete");
+                    return;
+                }
+
+                var displayName = string.IsNullOrWhiteSpace(userToDelete.Name)
+                    ? userToDelete.Username
+                    : userToDelete.Name;
+
+                var confirm = await DisplayAlert(
+                    "Delete User",
+                    $"Permanently delete '{displayName}'?\n\nUse this only for old accounts you no longer need. This cannot be undone.",
+                    "Delete",
+                    "Cancel");
+
+                if (!confirm)
+                {
+                    return;
+                }
+
+                var finalConfirm = await DisplayAlert(
+                    "Confirm Delete",
+                    $"This will remove '{displayName}' from the user list permanently.",
+                    "Delete Now",
+                    "Cancel");
+
+                if (!finalConfirm)
+                {
+                    return;
+                }
+
+                var result = await _authService.DeleteUserAsync(userToDelete.Id);
+                if (result.Success)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Deleted", $"User '{displayName}' has been deleted.");
+                    await LoadUsersAsync();
+                }
+                else
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delete Failed", result.Message);
                 }
             }
             catch (Exception ex)
@@ -1793,6 +1914,10 @@ namespace POS_in_NET.Pages
             {
                 UpdateCloudConnectionStatus("Connected", "#10B981", status.StatusMessage);
             }
+            else if (status.IsConfigured && !status.IsEnabled)
+            {
+                UpdateCloudConnectionStatus("Disabled", "#F59E0B", status.StatusMessage);
+            }
             else if (status.IsConfigured && status.IsEnabled && status.IsApiHealthy && status.IsPollingActive)
             {
                 UpdateCloudConnectionStatus("Partially Connected", "#F59E0B", status.StatusMessage);
@@ -1804,6 +1929,10 @@ namespace POS_in_NET.Pages
             else if (!status.IsConfigured)
             {
                 UpdateCloudConnectionStatus("Not Connected", "#6C757D", status.StatusMessage);
+            }
+            else if (status.IsConfigured && status.IsEnabled && !status.IsApiHealthy)
+            {
+                UpdateCloudConnectionStatus("Not Connected", "#EF4444", status.StatusMessage);
             }
             else
             {
@@ -1838,6 +1967,7 @@ namespace POS_in_NET.Pages
                 
                 // Load cloud configuration using DatabaseService
                 _currentCloudConfig = await _databaseService.GetCloudConfigurationAsync();
+                _userHasPendingCloudEdits = false;
                 
                 if (_currentCloudConfig != null)
                 {
@@ -1854,12 +1984,37 @@ namespace POS_in_NET.Pages
                         restUrl = restUrl.Substring(0, restUrl.Length - _currentCloudConfig.TenantSlug.Length - 1);
                     }
                     CloudRestApiUrlEntry.Text = restUrl;
-                    
-                    CloudWebSocketUrlEntry.Text = _currentCloudConfig.WebSocketUrl ?? "wss://orderweb.net:9011";
+
+                    var wsUrl = string.IsNullOrWhiteSpace(_currentCloudConfig.WebSocketUrl)
+                        ? "wss://orderweb.net/ws/pos"
+                        : _currentCloudConfig.WebSocketUrl;
+                    if (!string.IsNullOrWhiteSpace(_currentCloudConfig.TenantSlug) &&
+                        wsUrl.EndsWith($"/{_currentCloudConfig.TenantSlug}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        wsUrl = wsUrl[..^(_currentCloudConfig.TenantSlug.Length + 1)];
+                    }
+                    CloudWebSocketUrlEntry.Text = wsUrl;
                     ApplyCloudOnlineMasterUi(_currentCloudConfig);
                     
-                    // Enable buttons if configuration is valid
                     EnableCloudButtonsIfReady();
+
+                    if (_currentCloudConfig.IsConfigured() && !_userHasPendingCloudEdits)
+                    {
+                        if (!_currentCloudConfig.IsEnabled)
+                        {
+                            UpdateCloudConnectionStatus(
+                                "Disabled",
+                                "#F59E0B",
+                                "OrderWeb sync is disabled. Click Save Settings to enable, then Connect.");
+                        }
+                        else if (_connectionKeeper == null || !_connectionKeeper.Status.IsFullyOperational)
+                        {
+                            UpdateCloudConnectionStatus(
+                                "Not Connected",
+                                "#6C757D",
+                                "Settings loaded. Click Connect to test and start live sync.");
+                        }
+                    }
                     
                     System.Diagnostics.Debug.WriteLine($"[Cloud] Settings loaded for tenant: {_currentCloudConfig.TenantSlug}");
                 }
@@ -1888,6 +2043,13 @@ namespace POS_in_NET.Pages
 
         private void OnCloudFieldChanged(object sender, TextChangedEventArgs e)
         {
+            _userHasPendingCloudEdits = true;
+            EnableCloudButtonsIfReady();
+        }
+
+        private void OnCloudOnlineMasterToggled(object sender, ToggledEventArgs e)
+        {
+            _userHasPendingCloudEdits = true;
             EnableCloudButtonsIfReady();
         }
 
@@ -1915,6 +2077,7 @@ namespace POS_in_NET.Pages
                                       TerminalConfigurationService.IsMotherTerminal;
             
             CloudConnectButton.IsEnabled = hasRequiredFields && canUseCloudControls && !_isCloudConnecting;
+            CloudSaveSettingsButton.IsEnabled = hasRequiredFields && canUseCloudControls;
             CloudSyncOrdersButton.IsEnabled = hasRequiredFields && canUseCloudControls;
             CloudSyncHistoricalButton.IsEnabled = hasRequiredFields && canUseCloudControls;
         }
@@ -2021,22 +2184,34 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                if (_databaseService != null)
+                if (_databaseService == null)
                 {
-                    await _databaseService.SaveCloudConfigurationAsync(config);
-                    _currentCloudConfig = config;
-                    
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Cloud settings saved successfully!");
-                    EnableCloudButtonsIfReady();
-                    UpdateCloudConnectionStatus("Saved", "#28A745", "Settings saved. Connection will stay active until you change them.");
-
-                    if (_connectionKeeper != null)
-                    {
-                        await _connectionKeeper.ApplyConfigurationAsync(config);
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine("[Cloud] Settings saved successfully");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Database is not available.");
+                    return;
                 }
+
+                var saved = await _databaseService.SaveCloudConfigurationAsync(config);
+                if (!saved)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Could not save OrderWeb settings to the database.");
+                    return;
+                }
+
+                _currentCloudConfig = config;
+                _userHasPendingCloudEdits = false;
+                EnableCloudButtonsIfReady();
+                UpdateCloudConnectionStatus(
+                    "Settings Saved",
+                    "#0F766E",
+                    "Saved and enabled. Click Connect to test the API and start live order sync.");
+
+                await ToastNotification.ShowAsync(
+                    "Saved",
+                    "OrderWeb settings saved successfully.",
+                    NotificationType.Success,
+                    2500);
+
+                System.Diagnostics.Debug.WriteLine("[Cloud] Settings saved successfully");
             }
             catch (Exception ex)
             {
@@ -2073,6 +2248,22 @@ namespace POS_in_NET.Pages
 
             try
             {
+                _isCloudConnecting = true;
+                CloudConnectButton.Text = "Connecting...";
+                CloudConnectButton.IsEnabled = false;
+                UpdateCloudConnectionStatus("Connecting...", "#007BFF", "Saving settings and testing OrderWeb connection");
+
+                if (!await SaveCloudConfigFromUiAsync())
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                        "Validation Error",
+                        "Enter Tenant Slug and API Key, then try Connect again.");
+                    UpdateCloudConnectionStatus("Not Connected", "#6C757D", "Missing tenant slug or API key.");
+                    return;
+                }
+
+                _userHasPendingCloudEdits = false;
+
                 var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
                 if (!onlineMasterCheck.Allowed)
                 {
@@ -2081,13 +2272,13 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                _isCloudConnecting = true;
-                CloudConnectButton.Text = "Connecting...";
-                CloudConnectButton.IsEnabled = false;
-                UpdateCloudConnectionStatus("Connecting...", "#007BFF", "Saving settings and testing OrderWeb.net connection");
-
                 System.Diagnostics.Debug.WriteLine("[Cloud] Connecting to OrderWeb...");
                 await ConnectCloudServicesFromUiAsync();
+
+                if (_connectionKeeper != null)
+                {
+                    ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
+                }
 
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
                     "Success",
@@ -2105,7 +2296,7 @@ namespace POS_in_NET.Pages
             finally
             {
                 _isCloudConnecting = false;
-                CloudConnectButton.Text = "Connect to OrderWeb.net";
+                CloudConnectButton.Text = "Connect";
                 EnableCloudButtonsIfReady();
             }
         }
@@ -2226,6 +2417,11 @@ namespace POS_in_NET.Pages
         {
             try
             {
+                if (_isCloudConnecting)
+                {
+                    return;
+                }
+
                 if (_connectionKeeper != null)
                 {
                     ApplyCloudStatusFromKeeper(_connectionKeeper.Status);

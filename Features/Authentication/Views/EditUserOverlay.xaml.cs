@@ -1,6 +1,7 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Models;
 using System;
+using System.Linq;
 
 namespace POS_in_NET.Views
 {
@@ -111,6 +112,11 @@ namespace POS_in_NET.Views
                 
                 // Only update password if new PIN is provided
                 var newPin = EditPINEntry.Text?.Trim();
+                if (!string.IsNullOrEmpty(newPin) && (newPin.Length != 4 || !newPin.All(char.IsDigit)))
+                {
+                    _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "New PIN must be exactly 4 digits");
+                    return;
+                }
                 
                 System.Diagnostics.Debug.WriteLine($"Saving user updates: {updatedUser.Name}, Role: {updatedUser.Role}, New PIN: {!string.IsNullOrEmpty(newPin)}");
                 

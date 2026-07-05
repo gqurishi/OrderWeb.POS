@@ -157,6 +157,47 @@ public sealed class ReportDailyTrendRow
 	public decimal VatAmount { get; set; }
 }
 
+public sealed class ReportVoidCancelledSummary
+{
+	public int VoidedCount { get; set; }
+	public int CancelledCount { get; set; }
+	public decimal VoidedAmount { get; set; }
+	public decimal CancelledAmount { get; set; }
+	public int TotalCount => VoidedCount + CancelledCount;
+	public decimal TotalAmount => VoidedAmount + CancelledAmount;
+}
+
+public sealed class ReportVoidCancelledRow
+{
+	public int OrderDbId { get; set; }
+	public string OrderId { get; set; } = string.Empty;
+	public string OrderNumber { get; set; } = string.Empty;
+	public DateTime CreatedAt { get; set; }
+	public DateTime AuditAt { get; set; }
+	public string SourceChannel { get; set; } = string.Empty;
+	public string OrderType { get; set; } = string.Empty;
+	public string Status { get; set; } = string.Empty;
+	public string CustomerName { get; set; } = string.Empty;
+	public string CustomerPhone { get; set; } = string.Empty;
+	public decimal OriginalAmount { get; set; }
+	public string Reason { get; set; } = string.Empty;
+	public string ActorName { get; set; } = string.Empty;
+
+	public string CreatedAtDisplay => CreatedAt.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture);
+	public string AuditAtDisplay => AuditAt == DateTime.MinValue ? CreatedAtDisplay : AuditAt.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture);
+	public string AmountDisplay => $"£{OriginalAmount:F2}";
+	public string CustomerDisplay => string.IsNullOrWhiteSpace(CustomerName) ? CustomerPhone : CustomerName;
+}
+
+public sealed class ReportVoidCancelledSnapshot
+{
+	public DateTime StartDate { get; set; }
+	public DateTime EndDate { get; set; }
+	public string SearchText { get; set; } = string.Empty;
+	public ReportVoidCancelledSummary Summary { get; set; } = new();
+	public List<ReportVoidCancelledRow> Orders { get; set; } = new();
+}
+
 public sealed class DailyReportSnapshot
 {
 	public DateTime StartDate { get; set; }
@@ -173,6 +214,8 @@ public sealed class DailyReportService
 {
 	private readonly DatabaseService _databaseService;
 	private readonly OrderService _orderService;
+	private readonly SemaphoreSlim _viewSchemaLock = new(1, 1);
+	private bool _viewSchemaReady;
 
 	public DailyReportService(DatabaseService databaseService)
 	{
@@ -180,11 +223,324 @@ public sealed class DailyReportService
 		_orderService = new OrderService();
 	}
 
+	public async Task<bool> HardDeleteOrderAsync(int orderDbId)
+	{
+		if (orderDbId <= 0)
+		{
+			return false;
+		}
+
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+
+		await using var transaction = await connection.BeginTransactionAsync();
+
+		try
+		{
+			var orderInfo = await LoadOrderIdentityForDeleteAsync(connection, transaction, orderDbId);
+			if (orderInfo == null)
+			{
+				await transaction.RollbackAsync();
+				return false;
+			}
+
+			var identityValues = new[]
+			{
+				orderInfo.OrderId,
+				orderInfo.OrderNumber,
+				orderInfo.CloudOrderId
+			}
+			.Where(value => !string.IsNullOrWhiteSpace(value))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+			await DeletePrintAndSyncRowsAsync(connection, transaction, identityValues, orderDbId);
+			await DeleteOptionalStringLinkedRowsAsync(connection, transaction, identityValues);
+			await DeleteOrderCoreRowsAsync(connection, transaction, orderDbId);
+			await CleanupTableSessionAfterOrderDeleteAsync(connection, transaction, orderInfo.TableSessionId, orderInfo.OrderId);
+
+			var deletedOrders = await ExecuteNonQueryAsync(
+				connection,
+				transaction,
+				"DELETE FROM orders WHERE id = @orderDbId",
+				command => command.Parameters.AddWithValue("@orderDbId", orderDbId));
+
+			await transaction.CommitAsync();
+			return deletedOrders > 0;
+		}
+		catch
+		{
+			await transaction.RollbackAsync();
+			throw;
+		}
+	}
+
 	public async Task<OperationalAnalyticsSnapshot> GetOperationalAnalyticsAsync(DateTime startDate, DateTime endDate)
 	{
 		var normalizedStart = startDate.Date;
 		var normalizedEndExclusive = endDate.Date.AddDays(1);
 		return await _orderService.GetOperationalAnalyticsAsync(normalizedStart, normalizedEndExclusive);
+	}
+
+	private sealed class OrderDeleteIdentity
+	{
+		public int OrderDbId { get; set; }
+		public string OrderId { get; set; } = string.Empty;
+		public string OrderNumber { get; set; } = string.Empty;
+		public string CloudOrderId { get; set; } = string.Empty;
+		public int? TableSessionId { get; set; }
+	}
+
+	private static async Task<OrderDeleteIdentity?> LoadOrderIdentityForDeleteAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		int orderDbId)
+	{
+		await using var command = new MySqlCommand(@"
+			SELECT id, order_id, order_number, cloud_order_id, table_session_id
+			FROM orders
+			WHERE id = @orderDbId
+			LIMIT 1", connection, transaction);
+		command.Parameters.AddWithValue("@orderDbId", orderDbId);
+
+		await using var reader = await command.ExecuteReaderAsync();
+		if (!await reader.ReadAsync())
+		{
+			return null;
+		}
+
+		return new OrderDeleteIdentity
+		{
+			OrderDbId = GetInt32(reader, "id"),
+			OrderId = GetString(reader, "order_id"),
+			OrderNumber = GetString(reader, "order_number"),
+			CloudOrderId = GetString(reader, "cloud_order_id"),
+			TableSessionId = reader["table_session_id"] == DBNull.Value ? null : Convert.ToInt32(reader["table_session_id"])
+		};
+	}
+
+	private static async Task DeleteOrderCoreRowsAsync(MySqlConnection connection, MySqlTransaction transaction, int orderDbId)
+	{
+		await ExecuteIfTableExistsAsync(connection, transaction, "order_item_addons", @"
+			DELETE oia FROM order_item_addons oia
+			INNER JOIN order_items oi ON oia.order_item_id = oi.id
+			WHERE oi.order_id = @orderDbId",
+			command => command.Parameters.AddWithValue("@orderDbId", orderDbId));
+
+		await ExecuteDeleteByIntOrderIdAsync(connection, transaction, "order_item_send_tracking", orderDbId);
+		await ExecuteDeleteByIntOrderIdAsync(connection, transaction, "order_payments", orderDbId);
+		await ExecuteDeleteByIntOrderIdAsync(connection, transaction, "order_events", orderDbId);
+		await ExecuteDeleteByIntOrderIdAsync(connection, transaction, "order_refunds", orderDbId);
+		await ExecuteDeleteByIntOrderIdAsync(connection, transaction, "order_items", orderDbId);
+	}
+
+	private static async Task DeletePrintAndSyncRowsAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		IReadOnlyCollection<string> identityValues,
+		int orderDbId)
+	{
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "network_print_queue", identityValues);
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "pending_acks", identityValues);
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "order_received_log", identityValues);
+
+		if (identityValues.Count == 0)
+		{
+			return;
+		}
+
+		await ExecuteIfTableColumnExistsAsync(connection, transaction, "terminal_events", "entity_id", @"
+			DELETE FROM terminal_events
+			WHERE (entity_type = 'order' OR entity_type IS NULL)
+			  AND (entity_id IN (" + BuildIdentityPlaceholderList(identityValues.Count) + @") OR entity_id = @orderDbIdText)",
+			command =>
+			{
+				AddIdentityParameters(command, identityValues);
+				command.Parameters.AddWithValue("@orderDbIdText", orderDbId.ToString(CultureInfo.InvariantCulture));
+			});
+	}
+
+	private static async Task DeleteOptionalStringLinkedRowsAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		IReadOnlyCollection<string> identityValues)
+	{
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "discount_events", identityValues);
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "cash_drawer_events", identityValues);
+		await ExecuteDeleteByStringOrderIdAsync(connection, transaction, "till_expenses", identityValues);
+	}
+
+	private static async Task CleanupTableSessionAfterOrderDeleteAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		int? tableSessionId,
+		string orderId)
+	{
+		if (tableSessionId is null or <= 0)
+		{
+			return;
+		}
+
+		var otherOrders = Convert.ToInt32(await ExecuteScalarAsync(
+			connection,
+			transaction,
+			"SELECT COUNT(*) FROM orders WHERE table_session_id = @sessionId AND order_id <> @orderId",
+			command =>
+			{
+				command.Parameters.AddWithValue("@sessionId", tableSessionId.Value);
+				command.Parameters.AddWithValue("@orderId", orderId);
+			}) ?? 0);
+
+		if (otherOrders > 0)
+		{
+			await ExecuteIfTableColumnExistsAsync(connection, transaction, "TableSessions", "CurrentOrderId", @"
+				UPDATE TableSessions
+				SET CurrentOrderId = NULL
+				WHERE Id = @sessionId AND CurrentOrderId = @orderId",
+				command =>
+				{
+					command.Parameters.AddWithValue("@sessionId", tableSessionId.Value);
+					command.Parameters.AddWithValue("@orderId", orderId);
+				});
+			return;
+		}
+
+		await ExecuteIfTableColumnExistsAsync(connection, transaction, "TableSessionEvents", "SessionId", @"
+			DELETE FROM TableSessionEvents
+			WHERE SessionId = @sessionId",
+			command => command.Parameters.AddWithValue("@sessionId", tableSessionId.Value));
+
+		await ExecuteIfTableColumnExistsAsync(connection, transaction, "TableSessions", "Id", @"
+			DELETE FROM TableSessions
+			WHERE Id = @sessionId",
+			command => command.Parameters.AddWithValue("@sessionId", tableSessionId.Value));
+	}
+
+	private static async Task ExecuteDeleteByIntOrderIdAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string tableName,
+		int orderDbId)
+	{
+		await ExecuteIfTableColumnExistsAsync(connection, transaction, tableName, "order_id",
+			$"DELETE FROM {tableName} WHERE order_id = @orderDbId",
+			command => command.Parameters.AddWithValue("@orderDbId", orderDbId));
+	}
+
+	private static async Task ExecuteDeleteByStringOrderIdAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string tableName,
+		IReadOnlyCollection<string> identityValues)
+	{
+		if (identityValues.Count == 0)
+		{
+			return;
+		}
+
+		await ExecuteIfTableColumnExistsAsync(connection, transaction, tableName, "order_id",
+			$"DELETE FROM {tableName} WHERE order_id IN ({BuildIdentityPlaceholderList(identityValues.Count)})",
+			command => AddIdentityParameters(command, identityValues));
+	}
+
+	private static async Task<int> ExecuteIfTableExistsAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string tableName,
+		string sql,
+		Action<MySqlCommand>? configure = null)
+	{
+		if (!await TableExistsAsync(connection, transaction, tableName))
+		{
+			return 0;
+		}
+
+		return await ExecuteNonQueryAsync(connection, transaction, sql, configure);
+	}
+
+	private static async Task<int> ExecuteIfTableColumnExistsAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string tableName,
+		string columnName,
+		string sql,
+		Action<MySqlCommand>? configure = null)
+	{
+		if (!await ColumnExistsAsync(connection, transaction, tableName, columnName))
+		{
+			return 0;
+		}
+
+		return await ExecuteNonQueryAsync(connection, transaction, sql, configure);
+	}
+
+	private static async Task<int> ExecuteNonQueryAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string sql,
+		Action<MySqlCommand>? configure = null)
+	{
+		await using var command = new MySqlCommand(sql, connection, transaction);
+		configure?.Invoke(command);
+		return await command.ExecuteNonQueryAsync();
+	}
+
+	private static async Task<object?> ExecuteScalarAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string sql,
+		Action<MySqlCommand>? configure = null)
+	{
+		await using var command = new MySqlCommand(sql, connection, transaction);
+		configure?.Invoke(command);
+		return await command.ExecuteScalarAsync();
+	}
+
+	private static async Task<bool> TableExistsAsync(MySqlConnection connection, MySqlTransaction transaction, string tableName)
+	{
+		var result = await ExecuteScalarAsync(connection, transaction, @"
+			SELECT COUNT(*)
+			FROM information_schema.tables
+			WHERE table_schema = DATABASE() AND table_name = @tableName",
+			command => command.Parameters.AddWithValue("@tableName", tableName));
+
+		return Convert.ToInt32(result ?? 0) > 0;
+	}
+
+	private static async Task<bool> ColumnExistsAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		string tableName,
+		string columnName)
+	{
+		var result = await ExecuteScalarAsync(connection, transaction, @"
+			SELECT COUNT(*)
+			FROM information_schema.columns
+			WHERE table_schema = DATABASE()
+			  AND table_name = @tableName
+			  AND column_name = @columnName",
+			command =>
+			{
+				command.Parameters.AddWithValue("@tableName", tableName);
+				command.Parameters.AddWithValue("@columnName", columnName);
+			});
+
+		return Convert.ToInt32(result ?? 0) > 0;
+	}
+
+	private static void AddIdentityParameters(MySqlCommand command, IReadOnlyCollection<string> identityValues)
+	{
+		var index = 0;
+		foreach (var identity in identityValues)
+		{
+			command.Parameters.AddWithValue($"@identity{index}", identity);
+			index++;
+		}
+	}
+
+	private static string BuildIdentityPlaceholderList(int count)
+	{
+		return string.Join(",", Enumerable.Range(0, count).Select(index => $"@identity{index}"));
 	}
 
 	public async Task<List<ReportDailyTrendRow>> GetDailyTrendAsync(
@@ -217,6 +573,8 @@ public sealed class DailyReportService
 		ReportOrderTypeFilter orderTypeFilter,
 		bool groupByHour)
 	{
+		await EnsureLiveReportViewsAsync();
+
 		var normalizedStart = startDate.Date;
 		var normalizedEndExclusive = endDate.Date.AddDays(1);
 
@@ -293,6 +651,8 @@ public sealed class DailyReportService
 		ReportSourceFilter sourceFilter = ReportSourceFilter.All,
 		ReportOrderTypeFilter orderTypeFilter = ReportOrderTypeFilter.All)
 	{
+		await EnsureLiveReportViewsAsync();
+
 		var snapshot = new DailyReportSnapshot
 		{
 			StartDate = startDate.Date,
@@ -324,6 +684,8 @@ public sealed class DailyReportService
 		ReportSourceFilter sourceFilter,
 		ReportOrderTypeFilter orderTypeFilter)
 	{
+		await EnsureLiveReportViewsAsync();
+
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 		return await LoadSummaryAsync(connection, startDate, endDate, sourceFilter, orderTypeFilter);
@@ -338,13 +700,24 @@ public sealed class DailyReportService
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
-		var query = new StringBuilder(@"
-			SELECT COALESCE(SUM(delivery_fee), 0.00)
-			FROM orders
-			WHERE created_at >= @startDate
-			  AND created_at < @endDate
-			  AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-			  AND COALESCE(local_lifecycle_state, '') <> 'voided'");
+			var query = new StringBuilder(@"
+				SELECT COALESCE(SUM(delivery_fee), 0.00)
+				FROM orders
+				WHERE created_at >= @startDate
+				  AND created_at < @endDate
+				  AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
+				  AND COALESCE(local_lifecycle_state, '') <> 'voided'
+				  AND (
+					LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+					OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+					OR paid_at IS NOT NULL
+					OR EXISTS (
+						SELECT 1
+						FROM order_payments op
+						WHERE op.order_id = orders.id
+						  AND LOWER(COALESCE(op.status, '')) = 'approved'
+					)
+				  )");
 
 		AppendOptionalFilters(query, sourceFilter, orderTypeFilter);
 
@@ -374,6 +747,8 @@ public sealed class DailyReportService
 		ReportSourceFilter sourceFilter,
 		ReportOrderTypeFilter orderTypeFilter)
 	{
+		await EnsureLiveReportViewsAsync();
+
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 		return await LoadTopItemsAsync(connection, startDate, endDate, sourceFilter, orderTypeFilter);
@@ -385,6 +760,8 @@ public sealed class DailyReportService
 		TopSellSection section,
 		string? searchText = null)
 	{
+		await EnsureLiveReportViewsAsync();
+
 		var snapshot = new DailyReportSnapshot
 		{
 			StartDate = startDate.Date,
@@ -404,6 +781,136 @@ public sealed class DailyReportService
 			VatAmount = snapshot.TopItems.Sum(item => item.VatAmount),
 			AverageOrderValue = 0m
 		};
+
+		return snapshot;
+	}
+
+	public async Task<ReportVoidCancelledSnapshot> GetVoidCancelledReportAsync(
+		DateTime startDate,
+		DateTime endDate,
+		string? searchText = null)
+	{
+		var snapshot = new ReportVoidCancelledSnapshot
+		{
+			StartDate = startDate.Date,
+			EndDate = endDate.Date,
+			SearchText = searchText?.Trim() ?? string.Empty
+		};
+
+		var queryEndDate = snapshot.EndDate.AddDays(1);
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+
+		var query = new StringBuilder(@"
+			SELECT
+				o.id AS order_db_id,
+				o.order_id,
+				COALESCE(NULLIF(o.order_number, ''), o.order_id) AS order_number,
+				o.created_at,
+				COALESCE(o.voided_at, cancel_event.event_at, void_event.event_at, o.updated_at, o.created_at) AS audit_at,
+				COALESCE(o.source_channel, '') AS source_channel,
+				COALESCE(o.order_type, '') AS order_type,
+				COALESCE(o.status, '') AS status,
+				COALESCE(o.local_lifecycle_state, '') AS lifecycle_state,
+				COALESCE(o.customer_name, '') AS customer_name,
+				COALESCE(o.customer_phone, '') AS customer_phone,
+				COALESCE(o.total_amount, 0.00) AS original_amount,
+				COALESCE(
+					NULLIF(JSON_UNQUOTE(JSON_EXTRACT(void_event.payload_json, '$.reason')), ''),
+					NULLIF(JSON_UNQUOTE(JSON_EXTRACT(cancel_event.payload_json, '$.reason')), ''),
+					NULLIF(o.void_reason, ''),
+					'Unspecified'
+				) AS audit_reason,
+				COALESCE(
+					NULLIF(void_event.actor_name, ''),
+					NULLIF(cancel_event.actor_name, ''),
+					NULLIF(o.voided_by, ''),
+					'Unknown'
+				) AS actor_name
+			FROM orders o
+			LEFT JOIN order_events void_event ON void_event.id = (
+				SELECT oe.id
+				FROM order_events oe
+				WHERE oe.order_id = o.id
+				  AND oe.event_type = 'voided'
+				ORDER BY oe.event_at DESC, oe.id DESC
+				LIMIT 1
+			)
+			LEFT JOIN order_events cancel_event ON cancel_event.id = (
+				SELECT oe.id
+				FROM order_events oe
+				WHERE oe.order_id = o.id
+				  AND oe.event_type = 'state_changed'
+				  AND JSON_UNQUOTE(JSON_EXTRACT(oe.payload_json, '$.status')) IN ('cancelled', 'voided')
+				ORDER BY oe.event_at DESC, oe.id DESC
+				LIMIT 1
+			)
+			WHERE o.created_at >= @startDate
+			  AND o.created_at < @endDate
+			  AND (
+				  LOWER(COALESCE(o.status, '')) IN ('cancelled', 'voided')
+				  OR COALESCE(LOWER(o.local_lifecycle_state), '') = 'voided'
+			  )");
+
+		if (!string.IsNullOrWhiteSpace(snapshot.SearchText))
+		{
+			query.Append(@"
+				AND (
+					o.order_number LIKE @searchText
+					OR o.customer_name LIKE @searchText
+					OR o.customer_phone LIKE @searchText
+					OR o.order_id LIKE @searchText
+				)");
+		}
+
+		query.Append(" ORDER BY audit_at DESC, o.created_at DESC LIMIT 500");
+
+		await using var command = new MySqlCommand(query.ToString(), connection);
+		command.Parameters.AddWithValue("@startDate", snapshot.StartDate);
+		command.Parameters.AddWithValue("@endDate", queryEndDate);
+		if (!string.IsNullOrWhiteSpace(snapshot.SearchText))
+		{
+			command.Parameters.AddWithValue("@searchText", $"%{snapshot.SearchText}%");
+		}
+
+		await using var reader = await command.ExecuteReaderAsync();
+		while (await reader.ReadAsync())
+		{
+			var status = GetString(reader, "status");
+			var lifecycle = GetString(reader, "lifecycle_state");
+			var isCancelled = string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
+			var isVoided = !isCancelled && (string.Equals(lifecycle, "voided", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(status, "voided", StringComparison.OrdinalIgnoreCase));
+			var amount = GetDecimal(reader, "original_amount");
+
+			if (isVoided)
+			{
+				snapshot.Summary.VoidedCount++;
+				snapshot.Summary.VoidedAmount += amount;
+			}
+			else
+			{
+				snapshot.Summary.CancelledCount++;
+				snapshot.Summary.CancelledAmount += amount;
+			}
+
+			snapshot.Orders.Add(new ReportVoidCancelledRow
+			{
+				OrderDbId = GetInt32(reader, "order_db_id"),
+				OrderId = GetString(reader, "order_id"),
+				OrderNumber = GetString(reader, "order_number"),
+				CreatedAt = GetDateTime(reader, "created_at"),
+				AuditAt = GetDateTime(reader, "audit_at"),
+				SourceChannel = GetString(reader, "source_channel"),
+				OrderType = GetString(reader, "order_type"),
+				Status = isVoided ? "Voided" : "Cancelled",
+				CustomerName = GetString(reader, "customer_name"),
+				CustomerPhone = GetString(reader, "customer_phone"),
+				OriginalAmount = amount,
+				Reason = GetString(reader, "audit_reason"),
+				ActorName = GetString(reader, "actor_name")
+			});
+		}
 
 		return snapshot;
 	}
@@ -796,7 +1303,7 @@ public sealed class DailyReportService
 	{
 		var query = new StringBuilder(@"
 			SELECT
-				item_name,
+				display_name AS item_name,
 				SUM(quantity) AS total_quantity,
 				ROUND(SUM(line_gross), 2) AS gross_sales,
 				ROUND(SUM(line_net), 2) AS net_sales,
@@ -806,7 +1313,7 @@ public sealed class DailyReportService
 
 		AppendOptionalFilters(query, sourceFilter, orderTypeFilter);
 		query.Append(@"
-			GROUP BY item_name
+			GROUP BY display_name
 			ORDER BY total_quantity DESC, gross_sales DESC
 			LIMIT 20");
 
@@ -847,39 +1354,43 @@ public sealed class DailyReportService
 			"soft drink", "bottle", "bottled"
 		};
 
-		const string normalizedText = "LOWER(CONCAT(COALESCE(mc.Name, ''), ' ', COALESCE(l.item_name, ''))) COLLATE utf8mb4_unicode_ci";
+		const string categoryExpression = "CASE WHEN l.menu_item_id LIKE 'tasting:%' THEN _utf8mb4'Tasting Menus' COLLATE utf8mb4_unicode_ci ELSE COALESCE(fmc.Name, _utf8mb4'Uncategorized' COLLATE utf8mb4_unicode_ci) END";
+		const string normalizedText = "LOWER(CONCAT(COALESCE(fmc.Name, ''), ' ', COALESCE(l.display_name, l.item_name, ''))) COLLATE utf8mb4_unicode_ci";
 		var drinkFilter = string.Join(" OR ", drinkKeywords.Select(word => $"{normalizedText} LIKE '%{word}%'"));
+		const string itemTypeText = "LOWER(COALESCE(fmi.ItemType, ''))";
 
 		var query = new StringBuilder(@"
 			SELECT
-				COALESCE(mc.Name, _utf8mb4'Uncategorized' COLLATE utf8mb4_unicode_ci) AS category_name,
-				l.item_name,
+				" + categoryExpression + @" AS category_name,
+				l.display_name AS item_name,
 				SUM(l.quantity) AS total_quantity,
 				ROUND(SUM(l.line_gross), 2) AS gross_sales,
 				ROUND(SUM(l.line_net), 2) AS net_sales,
 				ROUND(SUM(l.line_vat), 2) AS vat_amount
 			FROM vw_report_order_lines_live l
-			LEFT JOIN MenuItems mi ON CONVERT(mi.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(l.menu_item_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
-			LEFT JOIN MenuCategories mc ON CONVERT(mc.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(mi.CategoryId USING utf8mb4) COLLATE utf8mb4_unicode_ci
+			LEFT JOIN FoodMenuItems fmi ON CONVERT(fmi.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(l.menu_item_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+			LEFT JOIN FoodMenuCategories fmc ON CONVERT(fmc.Id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(fmi.CategoryId USING utf8mb4) COLLATE utf8mb4_unicode_ci
 			WHERE l.created_at >= @startDate AND l.created_at < @endDate");
 
 		query.Append(section == TopSellSection.Drink
 			? $@"
-				AND ({drinkFilter})"
+				AND l.menu_item_id NOT LIKE 'tasting:%'
+				AND ({itemTypeText} = 'drink' OR ({itemTypeText} = '' AND ({drinkFilter})))"
 			: $@"
-				AND NOT ({drinkFilter})");
+				AND (l.menu_item_id LIKE 'tasting:%' OR {itemTypeText} = 'food' OR ({itemTypeText} = '' AND NOT ({drinkFilter})))");
 
 		if (!string.IsNullOrWhiteSpace(searchText))
 		{
 			query.Append(@"
 				AND (
 					l.item_name COLLATE utf8mb4_unicode_ci LIKE @searchText
-					OR mc.Name COLLATE utf8mb4_unicode_ci LIKE @searchText
+					OR l.display_name COLLATE utf8mb4_unicode_ci LIKE @searchText
+					OR fmc.Name COLLATE utf8mb4_unicode_ci LIKE @searchText
 				)");
 		}
 
 		query.Append(@"
-			GROUP BY category_name, l.menu_item_id, l.item_name
+			GROUP BY category_name, l.menu_item_id, l.variant_id, l.display_name
 			ORDER BY total_quantity DESC, gross_sales DESC
 			LIMIT 30");
 
@@ -971,7 +1482,7 @@ public sealed class DailyReportService
 		var query = @"
 			SELECT
 				oi.id AS order_item_id,
-				oi.item_name,
+				COALESCE(order_lines.display_name, oi.display_name, oi.item_name) AS item_name,
 				oi.quantity,
 				COALESCE(oi.item_price, 0.00) AS unit_price,
 				COALESCE(oi.special_instructions, '') AS special_instructions,
@@ -1041,6 +1552,148 @@ public sealed class DailyReportService
 		if (orderTypeFilter != ReportOrderTypeFilter.All)
 		{
 			command.Parameters.AddWithValue("@orderType", orderTypeFilter.ToString().ToLowerInvariant());
+		}
+	}
+
+	private async Task EnsureLiveReportViewsAsync()
+	{
+		if (_viewSchemaReady)
+		{
+			return;
+		}
+
+		await _viewSchemaLock.WaitAsync();
+		try
+		{
+			if (_viewSchemaReady)
+			{
+				return;
+			}
+
+				await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+				await connection.OpenAsync();
+
+				await using (var ensureOrderItemColumnsCommand = new MySqlCommand(@"
+					ALTER TABLE order_items
+					ADD COLUMN IF NOT EXISTS variant_id VARCHAR(100) NULL,
+					ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100) NULL,
+					ADD COLUMN IF NOT EXISTS display_name VARCHAR(180) NULL", connection))
+				{
+					await ensureOrderItemColumnsCommand.ExecuteNonQueryAsync();
+				}
+
+				await using (var command = new MySqlCommand(@"
+					CREATE OR REPLACE VIEW vw_report_order_lines_live AS
+				SELECT
+					o.id AS order_db_id,
+					o.order_id,
+					o.order_number,
+					o.cloud_order_id,
+					o.created_at,
+					DATE(o.created_at) AS business_date,
+					o.source_channel,
+					o.order_type,
+					o.status,
+					o.customer_name,
+						o.customer_phone,
+						oi.id AS order_item_id,
+						oi.menu_item_id,
+						oi.variant_id,
+						oi.variant_name,
+						COALESCE(
+							NULLIF(oi.display_name, ''),
+							NULLIF(CONCAT(oi.item_name, CASE WHEN COALESCE(oi.variant_name, '') <> '' THEN CONCAT(' (', oi.variant_name, ')') ELSE '' END), ''),
+							oi.item_name
+						) AS display_name,
+						oi.item_name,
+						oi.quantity,
+					COALESCE(oi.item_price, 0.00) AS unit_price,
+					COALESCE(addons.addon_unit_total, 0.00) AS addon_unit_total,
+					(COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) AS line_unit_gross,
+					(COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0) AS line_gross,
+					COALESCE(o.total_amount, 0.00) AS order_gross_total,
+					COALESCE(o.tax_amount, 0.00) AS order_tax_total,
+					CASE
+						WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+							THEN ROUND(((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+								 / COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00), 4)
+						ELSE 0.0000
+					END AS line_vat,
+					CASE
+						WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+							THEN ROUND(((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+								 - (((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+								 / COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00)), 4)
+						ELSE ROUND((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0), 4)
+					END AS line_net
+				FROM orders o
+				INNER JOIN order_items oi ON oi.order_id = o.id
+				LEFT JOIN (
+					SELECT
+						order_item_id,
+						SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+					FROM order_item_addons
+					GROUP BY order_item_id
+				) addons ON addons.order_item_id = oi.id
+					WHERE LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+					  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+					  AND (
+						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+						OR o.paid_at IS NOT NULL
+						OR EXISTS (
+							SELECT 1
+							FROM order_payments op
+							WHERE op.order_id = o.id
+							  AND LOWER(COALESCE(op.status, '')) = 'approved'
+						)
+					  )", connection))
+			{
+				await command.ExecuteNonQueryAsync();
+			}
+
+			await using (var command = new MySqlCommand(@"
+				CREATE OR REPLACE VIEW vw_report_orders_live AS
+				SELECT
+					o.id AS order_db_id,
+					o.order_id,
+					o.order_number,
+					o.cloud_order_id,
+					o.created_at,
+					DATE(o.created_at) AS business_date,
+					o.source_channel,
+					o.order_type,
+					o.status,
+					o.customer_name,
+					o.customer_phone,
+					COALESCE(o.subtotal_amount, 0.00) AS subtotal_amount,
+					COALESCE(o.tax_amount, 0.00) AS tax_amount,
+					COALESCE(o.delivery_fee, 0.00) AS delivery_fee,
+					COALESCE(o.total_amount, 0.00) AS total_amount,
+					COALESCE(o.payment_method, '') AS payment_method
+					FROM orders o
+					WHERE LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+					  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+					  AND (
+						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+						OR o.paid_at IS NOT NULL
+						OR EXISTS (
+							SELECT 1
+							FROM order_payments op
+							WHERE op.order_id = o.id
+							  AND LOWER(COALESCE(op.status, '')) = 'approved'
+						)
+					  )", connection))
+			{
+				await command.ExecuteNonQueryAsync();
+			}
+
+			_viewSchemaReady = true;
+		}
+		finally
+		{
+			_viewSchemaLock.Release();
 		}
 	}
 

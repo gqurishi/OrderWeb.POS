@@ -16,7 +16,24 @@ namespace MyFirstMauiApp.Services
 
         public MenuCategoryService()
         {
-            _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
+            _connectionString = TerminalConfigurationService.GetPosConnectionString();
+        }
+
+        private static MenuCategory ReadCategory(MySqlDataReader reader)
+        {
+            return new MenuCategory
+            {
+                Id = reader.GetString(reader.GetOrdinal("Id")),
+                Name = reader.GetString(reader.GetOrdinal("Name")),
+                Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
+                ParentId = reader.IsDBNull(reader.GetOrdinal("ParentId")) ? null : reader.GetString(reader.GetOrdinal("ParentId")),
+                DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
+                Active = reader.GetBoolean(reader.GetOrdinal("Active")),
+                Color = reader.IsDBNull(reader.GetOrdinal("Color")) ? "#3B82F6" : reader.GetString(reader.GetOrdinal("Color")),
+                Icon = reader.IsDBNull(reader.GetOrdinal("Icon")) ? string.Empty : reader.GetString(reader.GetOrdinal("Icon")),
+                CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
+            };
         }
 
         /// <summary>
@@ -28,11 +45,11 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    SELECT Id, Name, Description, ParentId, DisplayOrder, 
+                const string query = @"
+                    SELECT Id, Name, Description, ParentId, DisplayOrder,
                            Active, Color, Icon, CreatedAt, UpdatedAt
                     FROM FoodMenuCategories
                     ORDER BY DisplayOrder ASC, CreatedAt DESC";
@@ -42,19 +59,7 @@ namespace MyFirstMauiApp.Services
 
                 while (await reader.ReadAsync())
                 {
-                    categories.Add(new MenuCategory
-                    {
-                        Id = reader.GetString(reader.GetOrdinal("Id")),
-                        Name = reader.GetString(reader.GetOrdinal("Name")),
-                        Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
-                        ParentId = reader.IsDBNull(reader.GetOrdinal("ParentId")) ? null : reader.GetString(reader.GetOrdinal("ParentId")),
-                        DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
-                        Active = reader.GetBoolean(reader.GetOrdinal("Active")),
-                        Color = reader.GetString(reader.GetOrdinal("Color")),
-                        Icon = reader.GetString(reader.GetOrdinal("Icon")),
-                        CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
-                    });
+                    categories.Add(ReadCategory(reader));
                 }
             }
             catch (Exception ex)
@@ -75,14 +80,14 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    SELECT Id, Name, Description, ParentId, DisplayOrder, 
+                const string query = @"
+                    SELECT Id, Name, Description, ParentId, DisplayOrder,
                            Active, Color, Icon, CreatedAt, UpdatedAt
                     FROM FoodMenuCategories
-                    WHERE ParentId IS NULL
+                    WHERE ParentId IS NULL OR ParentId = ''
                     ORDER BY DisplayOrder ASC, CreatedAt DESC";
 
                 using var command = new MySqlCommand(query, connection);
@@ -90,19 +95,9 @@ namespace MyFirstMauiApp.Services
 
                 while (await reader.ReadAsync())
                 {
-                    categories.Add(new MenuCategory
-                    {
-                        Id = reader.GetString(reader.GetOrdinal("Id")),
-                        Name = reader.GetString(reader.GetOrdinal("Name")),
-                        Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
-                        ParentId = null,
-                        DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
-                        Active = reader.GetBoolean(reader.GetOrdinal("Active")),
-                        Color = reader.GetString(reader.GetOrdinal("Color")),
-                        Icon = reader.GetString(reader.GetOrdinal("Icon")),
-                        CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
-                    });
+                    var category = ReadCategory(reader);
+                    category.ParentId = null;
+                    categories.Add(category);
                 }
             }
             catch (Exception ex)
@@ -123,11 +118,11 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    SELECT Id, Name, Description, ParentId, DisplayOrder, 
+                const string query = @"
+                    SELECT Id, Name, Description, ParentId, DisplayOrder,
                            Active, Color, Icon, CreatedAt, UpdatedAt
                     FROM FoodMenuCategories
                     WHERE ParentId = @ParentId
@@ -139,19 +134,7 @@ namespace MyFirstMauiApp.Services
 
                 while (await reader.ReadAsync())
                 {
-                    categories.Add(new MenuCategory
-                    {
-                        Id = reader.GetString(reader.GetOrdinal("Id")),
-                        Name = reader.GetString(reader.GetOrdinal("Name")),
-                        Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
-                        ParentId = reader.GetString(reader.GetOrdinal("ParentId")),
-                        DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
-                        Active = reader.GetBoolean(reader.GetOrdinal("Active")),
-                        Color = reader.GetString(reader.GetOrdinal("Color")),
-                        Icon = reader.GetString(reader.GetOrdinal("Icon")),
-                        CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
-                    });
+                    categories.Add(ReadCategory(reader));
                 }
             }
             catch (Exception ex)
@@ -170,11 +153,11 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    SELECT Id, Name, Description, ParentId, DisplayOrder, 
+                const string query = @"
+                    SELECT Id, Name, Description, ParentId, DisplayOrder,
                            Active, Color, Icon, CreatedAt, UpdatedAt
                     FROM FoodMenuCategories
                     WHERE Id = @Id";
@@ -185,19 +168,7 @@ namespace MyFirstMauiApp.Services
 
                 if (await reader.ReadAsync())
                 {
-                    return new MenuCategory
-                    {
-                        Id = reader.GetString(reader.GetOrdinal("Id")),
-                        Name = reader.GetString(reader.GetOrdinal("Name")),
-                        Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
-                        ParentId = reader.IsDBNull(reader.GetOrdinal("ParentId")) ? null : reader.GetString(reader.GetOrdinal("ParentId")),
-                        DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
-                        Active = reader.GetBoolean(reader.GetOrdinal("Active")),
-                        Color = reader.GetString(reader.GetOrdinal("Color")),
-                        Icon = reader.GetString(reader.GetOrdinal("Icon")),
-                        CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        UpdatedAt = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
-                    };
+                    return ReadCategory(reader);
                 }
             }
             catch (Exception ex)
@@ -217,49 +188,53 @@ namespace MyFirstMauiApp.Services
             try
             {
                 AppDiagnostics.Log($"CreateCategoryAsync called for category: {category.Name}");
-                
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
-                await connection.OpenAsync();
-                
-                System.Diagnostics.Debug.WriteLine("Database connection opened successfully");
 
-                // Generate new ID if not provided
+                using var connection = new MySqlConnection(_connectionString);
+                await connection.OpenAsync();
+
                 if (string.IsNullOrEmpty(category.Id))
                 {
-                    category.Id = $"cat-{Guid.NewGuid()}";
+                    category.Id = Guid.NewGuid().ToString();
                 }
 
-                System.Diagnostics.Debug.WriteLine($"Category ID: {category.Id}");
+                if (!string.IsNullOrWhiteSpace(category.ParentId))
+                {
+                    await using var parentCheck = new MySqlCommand(
+                        "SELECT COUNT(*) FROM FoodMenuCategories WHERE Id = @ParentId",
+                        connection);
+                    parentCheck.Parameters.AddWithValue("@ParentId", category.ParentId);
+                    var parentExists = Convert.ToInt32(await parentCheck.ExecuteScalarAsync()) > 0;
+                    if (!parentExists)
+                    {
+                        throw new InvalidOperationException("Selected parent category was not found. Refresh the page and try again.");
+                    }
+                }
 
-                var query = @"
-                    INSERT INTO FoodMenuCategories 
+                const string query = @"
+                    INSERT INTO FoodMenuCategories
                     (Id, Name, Description, ParentId, DisplayOrder, Active, Color, Icon, CreatedAt, UpdatedAt)
-                    VALUES 
+                    VALUES
                     (@Id, @Name, @Description, @ParentId, @DisplayOrder, @Active, @Color, @Icon, @CreatedAt, @UpdatedAt)";
 
-                using var command = new MySqlCommand(query, connection);
+                await using var command = new MySqlCommand(query, connection);
                 command.Parameters.AddWithValue("@Id", category.Id);
                 command.Parameters.AddWithValue("@Name", category.Name);
                 command.Parameters.AddWithValue("@Description", (object?)category.Description ?? DBNull.Value);
                 command.Parameters.AddWithValue("@ParentId", (object?)category.ParentId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@DisplayOrder", category.DisplayOrder);
                 command.Parameters.AddWithValue("@Active", category.Active);
-                command.Parameters.AddWithValue("@Color", category.Color);
-                command.Parameters.AddWithValue("@Icon", category.Icon);
+                command.Parameters.AddWithValue("@Color", category.Color ?? "#3B82F6");
+                command.Parameters.AddWithValue("@Icon", string.IsNullOrEmpty(category.Icon) ? string.Empty : category.Icon);
                 command.Parameters.AddWithValue("@CreatedAt", DateTime.Now);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
-                System.Diagnostics.Debug.WriteLine("Executing INSERT query...");
                 var result = await command.ExecuteNonQueryAsync();
-                System.Diagnostics.Debug.WriteLine($"INSERT result: {result} rows affected");
-                
+                System.Diagnostics.Debug.WriteLine($"CreateCategoryAsync saved '{category.Name}' ({result} row(s))");
                 return result > 0;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error creating category: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                Console.WriteLine($"Error creating category: {ex.Message}");
                 throw;
             }
         }
@@ -271,11 +246,11 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    UPDATE FoodMenuCategories 
+                const string query = @"
+                    UPDATE FoodMenuCategories
                     SET Name = @Name,
                         Description = @Description,
                         ParentId = @ParentId,
@@ -293,8 +268,8 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@ParentId", (object?)category.ParentId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@DisplayOrder", category.DisplayOrder);
                 command.Parameters.AddWithValue("@Active", category.Active);
-                command.Parameters.AddWithValue("@Color", category.Color);
-                command.Parameters.AddWithValue("@Icon", category.Icon);
+                command.Parameters.AddWithValue("@Color", category.Color ?? "#3B82F6");
+                command.Parameters.AddWithValue("@Icon", string.IsNullOrEmpty(category.Icon) ? string.Empty : category.Icon);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
                 var result = await command.ExecuteNonQueryAsync();
@@ -314,10 +289,10 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = "DELETE FROM FoodMenuCategories WHERE Id = @Id";
+                const string query = "DELETE FROM FoodMenuCategories WHERE Id = @Id";
 
                 using var command = new MySqlCommand(query, connection);
                 command.Parameters.AddWithValue("@Id", id);
@@ -339,7 +314,7 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
                 using var transaction = await connection.BeginTransactionAsync();
@@ -348,7 +323,7 @@ namespace MyFirstMauiApp.Services
                 {
                     foreach (var kvp in categoryOrders)
                     {
-                        var query = "UPDATE FoodMenuCategories SET DisplayOrder = @DisplayOrder, UpdatedAt = @UpdatedAt WHERE Id = @Id";
+                        const string query = "UPDATE FoodMenuCategories SET DisplayOrder = @DisplayOrder, UpdatedAt = @UpdatedAt WHERE Id = @Id";
                         using var command = new MySqlCommand(query, connection, transaction);
                         command.Parameters.AddWithValue("@Id", kvp.Key);
                         command.Parameters.AddWithValue("@DisplayOrder", kvp.Value);
@@ -379,11 +354,11 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
-                    UPDATE FoodMenuCategories 
+                const string query = @"
+                    UPDATE FoodMenuCategories
                     SET Active = NOT Active, UpdatedAt = @UpdatedAt
                     WHERE Id = @Id";
 

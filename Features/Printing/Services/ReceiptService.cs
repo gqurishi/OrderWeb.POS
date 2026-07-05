@@ -7,11 +7,18 @@ namespace POS_in_NET.Services;
 public class ReceiptService
 {
     private readonly BusinessSettingsService _businessSettingsService;
+    private readonly NetworkPrinterDatabaseService _printerDatabaseService;
+    private readonly NetworkPrintQueueService _printQueueService;
     private CloudOrderService? _cloudOrderService;
 
-    public ReceiptService(BusinessSettingsService businessSettingsService)
+    public ReceiptService(
+        BusinessSettingsService businessSettingsService,
+        NetworkPrinterDatabaseService printerDatabaseService,
+        NetworkPrintQueueService printQueueService)
     {
         _businessSettingsService = businessSettingsService;
+        _printerDatabaseService = printerDatabaseService;
+        _printQueueService = printQueueService;
     }
     
     /// <summary>
@@ -149,7 +156,7 @@ public class ReceiptService
         // Items
         foreach (var item in order.Items)
         {
-            receipt.AppendLine($"{item.Quantity}x {item.Name}");
+            receipt.AppendLine($"{item.Quantity}x {(!string.IsNullOrWhiteSpace(item.DisplayName) ? item.DisplayName : item.Name)}");
             
             // Show price if available
             if (item.Price.HasValue)
@@ -230,7 +237,7 @@ public class ReceiptService
             var receiptText = await GenerateReceiptTextAsync(order);
             
             // Print to system
-            await PrintToSystemAsync(receiptText);
+            await PrintToSystemAsync(receiptText, order.OrderId);
             
             // Print successful - update status
             order.PrintStatus = "printed";
@@ -277,7 +284,7 @@ public class ReceiptService
             var receiptText = await GenerateReceiptTextAsync(order);
             
             // Print to system
-            await PrintToSystemAsync(receiptText);
+            await PrintToSystemAsync(receiptText, order.Id);
             
             System.Diagnostics.Debug.WriteLine($" Print successful: {order.OrderNumber}");
             
@@ -306,11 +313,11 @@ public class ReceiptService
     /// <summary>
     /// Print to system default printer
     /// </summary>
-    private async Task PrintToSystemAsync(string receiptText)
+    private async Task PrintToSystemAsync(string receiptText, string? orderId = null)
     {
         try
         {
-            if (await TryPrintToSharedReceiptPrinterAsync(receiptText))
+            if (await TryQueueReceiptPrinterAsync(receiptText, orderId))
             {
                 return;
             }
@@ -338,17 +345,17 @@ public class ReceiptService
         }
     }
 
-    private async Task<bool> TryPrintToSharedReceiptPrinterAsync(string receiptText)
+    private async Task<bool> TryQueueReceiptPrinterAsync(string receiptText, string? orderId)
     {
         try
         {
-            var printerDb = new NetworkPrinterDatabaseService(new DatabaseService());
-            var printerService = new NetworkPrinterService();
+            await _printerDatabaseService.EnsureTablesExistAsync();
+            await _printQueueService.EnsureTableExistsAsync();
 
-            var receiptPrinter = (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Receipt))
+            var receiptPrinter = (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt))
                 .FirstOrDefault(printer => printer.IsEnabled);
 
-            receiptPrinter ??= (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Online))
+            receiptPrinter ??= (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Online))
                 .FirstOrDefault(printer => printer.IsEnabled);
 
             if (receiptPrinter == null)
@@ -371,15 +378,18 @@ public class ReceiptService
                 builder.Cut(true);
             }
 
-            var sent = await printerService.SendToPrinterAsync(receiptPrinter, builder.Build());
-            System.Diagnostics.Debug.WriteLine(sent
-                ? $" Receipt printed to shared printer {receiptPrinter.Name}"
-                : $" Shared receipt printer failed: {receiptPrinter.Name}");
-            return sent;
+            var jobId = await _printQueueService.EnqueueAsync(
+                receiptPrinter.Id,
+                builder.Build(),
+                "receipt",
+                orderId);
+
+            System.Diagnostics.Debug.WriteLine($" Receipt queued to {receiptPrinter.Name} as print job #{jobId}");
+            return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Shared receipt printer unavailable: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Shared receipt queue unavailable: {ex.Message}");
             return false;
         }
     }

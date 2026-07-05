@@ -64,7 +64,7 @@ public sealed class TimeClockService
 
         var businessDate = TradingDayHelper.GetBusinessDate();
         await using var connection = await _databaseService.GetConnectionAsync();
-        await CloseStaleOpenSessionsAsync(connection, user.Id, businessDate);
+        await CloseStaleOpenSessionsAsync(connection, businessDate);
         var openSession = await GetOpenSessionAsync(connection, user.Id, businessDate);
         var todayMinutes = await GetClosedMinutesForBusinessDateAsync(connection, user.Id, businessDate);
 
@@ -87,7 +87,7 @@ public sealed class TimeClockService
 
         await using var connection = await _databaseService.GetConnectionAsync();
         var businessDate = TradingDayHelper.GetBusinessDate();
-        await CloseStaleOpenSessionsAsync(connection, user.Id, businessDate);
+        await CloseStaleOpenSessionsAsync(connection, businessDate);
         var existing = await GetOpenSessionAsync(connection, user.Id, businessDate);
         if (existing != null)
         {
@@ -172,6 +172,7 @@ public sealed class TimeClockService
         }
 
         await using var connection = await _databaseService.GetConnectionAsync();
+        await CloseStaleOpenSessionsAsync(connection, TradingDayHelper.GetBusinessDate());
         const string sql = """
             SELECT s.id, s.user_id, u.name, u.username, s.business_date, s.clock_in_at, s.clock_out_at,
                    s.terminal_in, s.terminal_out, s.worked_minutes, s.status, s.synced_at
@@ -202,14 +203,17 @@ public sealed class TimeClockService
                 workedMinutes = (int)Math.Max(0, (DateTime.Now - clockInAt).TotalMinutes);
             }
 
+            var username = reader.GetString(reader.GetOrdinal("username"));
+            var name = reader.IsDBNull(reader.GetOrdinal("name"))
+                ? string.Empty
+                : reader.GetString(reader.GetOrdinal("name"));
+
             rows.Add(new LabourReportRow
             {
                 SessionId = reader.GetInt32(reader.GetOrdinal("id")),
                 UserId = reader.GetInt32(reader.GetOrdinal("user_id")),
-                StaffName = reader.IsDBNull(reader.GetOrdinal("name"))
-                    ? reader.GetString(reader.GetOrdinal("username"))
-                    : reader.GetString(reader.GetOrdinal("name")),
-                Username = reader.GetString(reader.GetOrdinal("username")),
+                StaffName = string.IsNullOrWhiteSpace(name) ? username : name,
+                Username = username,
                 BusinessDate = reader.GetDateTime(reader.GetOrdinal("business_date")),
                 ClockInAt = clockInAt,
                 ClockOutAt = clockOutAt,
@@ -261,6 +265,75 @@ public sealed class TimeClockService
         };
     }
 
+    public async Task<int> CloseOpenSessionsForDailyUploadAsync(DateTime businessDate)
+    {
+        var schema = await EnsureSchemaAsync();
+        if (!schema.Success)
+        {
+            return 0;
+        }
+
+        await using var connection = await _databaseService.GetConnectionAsync();
+        const string sql = """
+            UPDATE time_clock_sessions
+            SET clock_out_at = CASE
+                    WHEN business_date < @currentBusinessDate
+                        THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00')
+                    ELSE NOW()
+                END,
+                worked_minutes = GREATEST(
+                    1,
+                    TIMESTAMPDIFF(
+                        MINUTE,
+                        clock_in_at,
+                        CASE
+                            WHEN business_date < @currentBusinessDate
+                                THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00')
+                            ELSE NOW()
+                        END)),
+                status = 'closed',
+                terminal_out = COALESCE(NULLIF(terminal_out, ''), terminal_in),
+                adjustment_note = COALESCE(
+                    adjustment_note,
+                    CASE
+                        WHEN business_date < @currentBusinessDate
+                            THEN 'Auto-closed before daily OrderWeb upload at trading day rollover'
+                        ELSE 'Auto-closed before daily OrderWeb upload'
+                    END),
+                updated_at = NOW()
+            WHERE status = 'open'
+              AND business_date <= @businessDate
+            """;
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@businessDate", businessDate.Date);
+        command.Parameters.AddWithValue("@currentBusinessDate", TradingDayHelper.GetBusinessDate().Date);
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<bool> HasPendingClosedSessionsAsync(DateTime businessDate)
+    {
+        var schema = await EnsureSchemaAsync();
+        if (!schema.Success)
+        {
+            return false;
+        }
+
+        await using var connection = await _databaseService.GetConnectionAsync();
+        const string sql = """
+            SELECT COUNT(*)
+            FROM time_clock_sessions
+            WHERE business_date = @businessDate
+              AND status = 'closed'
+              AND synced_at IS NULL
+            """;
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@businessDate", businessDate.Date);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0);
+        return count > 0;
+    }
+
     public async Task MarkSessionsSyncedForBusinessDateAsync(DateTime businessDate)
     {
         await using var connection = await _databaseService.GetConnectionAsync();
@@ -310,7 +383,6 @@ public sealed class TimeClockService
 
     private static async Task CloseStaleOpenSessionsAsync(
         MySqlConnection connection,
-        int userId,
         DateTime currentBusinessDate)
     {
         const string sql = """
@@ -326,13 +398,11 @@ public sealed class TimeClockService
                 terminal_out = COALESCE(NULLIF(terminal_out, ''), terminal_in),
                 adjustment_note = COALESCE(adjustment_note, 'Auto-closed at 1:00 AM trading day rollover'),
                 updated_at = NOW()
-            WHERE user_id = @userId
-              AND status = 'open'
+            WHERE status = 'open'
               AND business_date < @currentBusinessDate
             """;
 
         await using var command = new MySqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@userId", userId);
         command.Parameters.AddWithValue("@currentBusinessDate", currentBusinessDate.Date);
         await command.ExecuteNonQueryAsync();
     }

@@ -63,7 +63,7 @@ namespace POS_in_NET.Models
             }
         }
         
-        public string FormattedPrice => $"${Price:F2}";
+        public string FormattedPrice => $"£{Price:F2}";
         
         public string PrepTimeDisplay => PrepTime == 1 ? "1 min" : $"{PrepTime} mins";
         

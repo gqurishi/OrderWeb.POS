@@ -129,7 +129,7 @@ namespace MyFirstMauiApp.Services
 
                 if (string.IsNullOrEmpty(deal.Id))
                 {
-                    deal.Id = $"meal-{Guid.NewGuid()}";
+                    deal.Id = Guid.NewGuid().ToString();
                 }
 
                 const string query = @"
@@ -336,7 +336,7 @@ namespace MyFirstMauiApp.Services
                 Name = reader.GetString(reader.GetOrdinal("Name")),
                 Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
                 Price = reader.GetDecimal(reader.GetOrdinal("Price")),
-                Color = reader.GetString(reader.GetOrdinal("Color")),
+                Color = reader.IsDBNull(reader.GetOrdinal("Color")) ? "#F59E0B" : reader.GetString(reader.GetOrdinal("Color")),
                 Active = reader.GetBoolean(reader.GetOrdinal("Active")),
                 DisplayOrder = reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
                 CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),

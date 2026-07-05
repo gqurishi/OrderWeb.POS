@@ -35,15 +35,13 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Today's Orders -->
-                <Border Grid.Column="0" 
-                        BackgroundColor="{StaticResource Blue50}"
-                        Stroke="{StaticResource Blue200}"
-                        StrokeThickness="1"
-                        Padding="18,14"
-                        MinimumHeightRequest="150">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="10" />
-                    </Border.StrokeShape>
+                <Frame Grid.Column="0" 
+                       BackgroundColor="{StaticResource Blue50}"
+                       BorderColor="{StaticResource Blue200}"
+                       HasShadow="False"
+                       CornerRadius="10"
+                       Padding="18,14"
+                       MinimumHeightRequest="150">
                     <StackLayout Spacing="6" VerticalOptions="CenterAndExpand">
                         <Label Text="TODAY’S ORDERS"
                                FontFamily="AlegreyaBold"
@@ -59,18 +57,16 @@
                                FontSize="12"
                                TextColor="{StaticResource Blue600}" />
                     </StackLayout>
-                </Border>
+                </Frame>
 
                 <!-- Date Filter -->
-                <Border Grid.Column="1" 
-                        BackgroundColor="{StaticResource Green50}"
-                        Stroke="{StaticResource Green200}"
-                        StrokeThickness="1"
-                        Padding="18,14"
-                        MinimumHeightRequest="150">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="10" />
-                    </Border.StrokeShape>
+                <Frame Grid.Column="1" 
+                       BackgroundColor="{StaticResource Green50}"
+                       BorderColor="{StaticResource Green200}"
+                       HasShadow="False"
+                       CornerRadius="10"
+                       Padding="18,14"
+                       MinimumHeightRequest="150">
                     <StackLayout Spacing="8" VerticalOptions="CenterAndExpand">
                         <Label Text="FILTER BY DATE"
                                FontFamily="AlegreyaBold"
@@ -83,16 +79,14 @@
                                TextColor="{StaticResource Green700}" />
 
                         <!-- Date Picker Container -->
-                        <Border BackgroundColor="White"
-                                StrokeThickness="1"
-                                Stroke="{StaticResource Green300}"
-                                Padding="12,7">
-                            <Border.GestureRecognizers>
+                        <Frame BackgroundColor="White"
+                               BorderColor="{StaticResource Green300}"
+                               HasShadow="False"
+                               CornerRadius="6"
+                               Padding="12,7">
+                            <Frame.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnOpenCalendarClicked" />
-                            </Border.GestureRecognizers>
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="6" />
-                            </Border.StrokeShape>
+                            </Frame.GestureRecognizers>
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -106,7 +100,7 @@
                                        TextColor="{StaticResource Green900}"
                                        VerticalOptions="Center" />
                             </Grid>
-                        </Border>
+                        </Frame>
                         
                         <Label x:Name="SelectedDateLabel" 
                                Text="Showing: Today" 
@@ -125,21 +119,19 @@
                                 TextColor="White"
                                 Clicked="OnShowAllClicked" />
                     </StackLayout>
-                </Border>
+                </Frame>
 
                 <!-- Search Orders -->
-                <Border Grid.Column="2" 
-                        BackgroundColor="{StaticResource Purple50}"
-                        Stroke="{StaticResource Purple200}"
-                        StrokeThickness="1"
-                        Padding="18,14"
-                        MinimumHeightRequest="150">
-                    <Border.GestureRecognizers>
+                <Frame Grid.Column="2" 
+                       BackgroundColor="{StaticResource Purple50}"
+                       BorderColor="{StaticResource Purple200}"
+                       HasShadow="False"
+                       CornerRadius="10"
+                       Padding="18,14"
+                       MinimumHeightRequest="150">
+                    <Frame.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnSearchSectionTapped" />
-                    </Border.GestureRecognizers>
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="10" />
-                    </Border.StrokeShape>
+                    </Frame.GestureRecognizers>
                     <StackLayout Spacing="8" VerticalOptions="CenterAndExpand">
                         <Label Text="SEARCH ORDERS"
                                FontFamily="AlegreyaBold"
@@ -162,7 +154,7 @@
                                FontSize="11"
                                TextColor="{StaticResource Purple600}" />
                     </StackLayout>
-                </Border>
+                </Frame>
             </Grid>
         </StackLayout>
 
@@ -201,18 +193,23 @@
                            Margin="0,0,0,15" />
                     
                     <!-- Table Header -->
-                    <Grid BackgroundColor="{StaticResource Muted}" Padding="15,12" Margin="0,0,0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="130" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="110" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="150" />
-                        </Grid.ColumnDefinitions>
+                    <Frame BackgroundColor="{StaticResource Muted}"
+                           Padding="15,12"
+                           Margin="0,0,0,2"
+                           HasShadow="False"
+                           CornerRadius="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="130" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="150" />
+                            </Grid.ColumnDefinitions>
                         
                         <Label Grid.Column="0" 
                                Text="Order ID" 
@@ -274,25 +271,27 @@
                                TextColor="{StaticResource Foreground}" 
                                HorizontalTextAlignment="Center" 
                                VerticalOptions="Center" />
-                    </Grid>
+                        </Grid>
+                    </Frame>
                     
                     <!-- Orders CollectionView -->
                     <CollectionView x:Name="OrdersCollectionView" ItemsSource="{Binding Orders}">
                         <CollectionView.ItemTemplate>
                             <DataTemplate>
                                 <!-- Table Row with Alegreya Font -->
-                                <Grid Padding="15,16" BackgroundColor="{StaticResource Card}" Margin="0,0,0,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="100" />
-                                        <ColumnDefinition Width="120" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="100" />
-                                        <ColumnDefinition Width="130" />
-                                        <ColumnDefinition Width="100" />
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="120" />
-                                        <ColumnDefinition Width="150" />
-                                    </Grid.ColumnDefinitions>
+                                <Grid Padding="15,16"
+                                      Margin="0,0,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="110" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="200" />
+                                        </Grid.ColumnDefinitions>
                                     
                                     <!-- Order ID -->
                                     <Label Grid.Column="0" 
@@ -327,77 +326,51 @@
                                     </StackLayout>
                                     
                                     <!-- Type (Order Type) -->
-                                    <Frame Grid.Column="3" 
-                                           BackgroundColor="#3b82f6" 
-                                           Padding="10,6" 
-                                           CornerRadius="6" 
-                                           HasShadow="False"
+                                    <Label Grid.Column="3"
+                                           Text="{Binding OrderTypeDisplay}"
+                                           FontFamily="AlegreyaBold"
+                                           FontSize="13"
+                                           TextColor="#2563EB"
+                                           HorizontalTextAlignment="Center"
                                            VerticalOptions="Center"
-                                           HorizontalOptions="Center"
-                                           Margin="5,0">
-                                        <Label Text="{Binding OrderTypeDisplay}" 
-                                               FontFamily="AlegreyaBold"
-                                               FontSize="13" 
-                                               TextColor="White"
-                                               HorizontalTextAlignment="Center" />
-                                    </Frame>
+                                           Margin="5,0" />
                                     
                                     <!-- Payment Method -->
-                                    <Frame Grid.Column="4" 
-                                           BackgroundColor="#6b7280"
-                                           Padding="10,6" 
-                                           CornerRadius="6" 
-                                           HasShadow="False"
+                                    <Label Grid.Column="4"
+                                           Text="{Binding PaymentMethod, TargetNullValue='N/A', FallbackValue='N/A'}"
+                                           FontFamily="AlegreyaBold"
+                                           FontSize="13"
+                                           TextColor="#4B5563"
+                                           HorizontalTextAlignment="Center"
                                            VerticalOptions="Center"
-                                           HorizontalOptions="Center"
                                            Margin="5,0">
-                                        <Frame.Triggers>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="cash">
-                                                <Setter Property="BackgroundColor" Value="#10b981" />
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="cash">
+                                                <Setter Property="Text" Value="Cash" />
+                                                <Setter Property="TextColor" Value="#059669" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="Cash">
-                                                <Setter Property="BackgroundColor" Value="#10b981" />
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Cash">
+                                                <Setter Property="Text" Value="Cash" />
+                                                <Setter Property="TextColor" Value="#059669" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="card">
-                                                <Setter Property="BackgroundColor" Value="#3b82f6" />
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="card">
+                                                <Setter Property="Text" Value="Card" />
+                                                <Setter Property="TextColor" Value="#2563EB" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="Card">
-                                                <Setter Property="BackgroundColor" Value="#3b82f6" />
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Card">
+                                                <Setter Property="Text" Value="Card" />
+                                                <Setter Property="TextColor" Value="#2563EB" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="voucher">
-                                                <Setter Property="BackgroundColor" Value="#a855f7" />
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="voucher">
+                                                <Setter Property="Text" Value="Gift Card" />
+                                                <Setter Property="TextColor" Value="#7C3AED" />
                                             </DataTrigger>
-                                            <DataTrigger TargetType="Frame" Binding="{Binding PaymentMethod}" Value="gift_card">
-                                                <Setter Property="BackgroundColor" Value="#a855f7" />
+                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="gift_card">
+                                                <Setter Property="Text" Value="Gift Card" />
+                                                <Setter Property="TextColor" Value="#7C3AED" />
                                             </DataTrigger>
-                                        </Frame.Triggers>
-                                        <Label Text="{Binding PaymentMethod, TargetNullValue='N/A', FallbackValue='N/A'}"
-                                               FontFamily="AlegreyaBold"
-                                               FontSize="13" 
-                                               TextColor="White"
-                                               HorizontalTextAlignment="Center">
-                                            <Label.Triggers>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="cash">
-                                                    <Setter Property="Text" Value="Cash" />
-                                                </DataTrigger>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Cash">
-                                                    <Setter Property="Text" Value="Cash" />
-                                                </DataTrigger>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="card">
-                                                    <Setter Property="Text" Value="Card" />
-                                                </DataTrigger>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Card">
-                                                    <Setter Property="Text" Value="Card" />
-                                                </DataTrigger>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="voucher">
-                                                    <Setter Property="Text" Value="Gift Card" />
-                                                </DataTrigger>
-                                                <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="gift_card">
-                                                    <Setter Property="Text" Value="Gift Card" />
-                                                </DataTrigger>
-                                            </Label.Triggers>
-                                        </Label>
-                                    </Frame>
+                                        </Label.Triggers>
+                                    </Label>
                                     
                                     <!-- Total Amount -->
                                     <Label Grid.Column="5" 
@@ -409,78 +382,70 @@
                                            Margin="10,0,0,0" />
                                     
                                     <!-- Status -->
-                                    <Frame Grid.Column="6" 
-                                           BackgroundColor="#3b82f6" 
-                                           Padding="10,6" 
-                                           CornerRadius="6" 
-                                           HasShadow="False"
+                                    <Label Grid.Column="6"
+                                           Text="{Binding OrderStatusDisplay}"
+                                           FontFamily="AlegreyaBold"
+                                           FontSize="13"
+                                           TextColor="#2563EB"
+                                           HorizontalTextAlignment="Center"
                                            VerticalOptions="Center"
-                                           HorizontalOptions="Center"
-                                           Margin="5,0">
-                                        <Label Text="{Binding OrderStatusDisplay}" 
-                                               FontFamily="AlegreyaBold"
-                                               FontSize="13" 
-                                               TextColor="White"
-                                               HorizontalTextAlignment="Center" />
-                                    </Frame>
+                                           Margin="5,0" />
                                     
                                     <!-- Print Status -->
-                                    <Frame Grid.Column="7"
-                                           BackgroundColor="{Binding PrintStatusColor}"
-                                           Padding="10,6"
-                                           CornerRadius="6"
-                                           HasShadow="False"
+                                    <Label Grid.Column="7"
+                                           Text="{Binding PrintStatusText}"
+                                           FontFamily="AlegreyaBold"
+                                           FontSize="13"
+                                           TextColor="{Binding PrintStatusColor}"
+                                           HorizontalTextAlignment="Center"
                                            VerticalOptions="Center"
-                                           HorizontalOptions="Center"
-                                           Margin="5,0">
-                                        <Label Text="{Binding PrintStatusText}"
-                                               FontFamily="AlegreyaBold"
-                                               FontSize="13"
-                                               TextColor="White"
-                                               HorizontalTextAlignment="Center" />
-                                    </Frame>
+                                           Margin="5,0" />
                                     
                                     <!-- Action Buttons -->
-                                    <StackLayout Grid.Column="8" 
-                                                 Orientation="Horizontal" 
-                                                 Spacing="6"
+                                    <StackLayout Grid.Column="8"
+                                                 Orientation="Horizontal"
+                                                 Spacing="10"
                                                  HorizontalOptions="Center"
                                                  VerticalOptions="Center">
-                                        <Button Text="View" 
-                                                BackgroundColor="{StaticResource Muted}" 
-                                                TextColor="White"
+                                        <Button Text="View"
+                                                BackgroundColor="#EFF6FF"
+                                                BorderColor="#93C5FD"
+                                                BorderWidth="1"
+                                                TextColor="#1D4ED8"
                                                 FontFamily="AlegreyaBold"
-                                                FontSize="14"
-                                                Padding="10,6"
-                                                CornerRadius="6"
+                                                FontSize="15"
+                                                WidthRequest="82"
+                                                HeightRequest="42"
+                                                Padding="0"
+                                                CornerRadius="8"
                                                 Clicked="OnViewDetailsClicked"
                                                 CommandParameter="{Binding Order}" />
-                                        <Button Text="Print" 
-                                                BackgroundColor="{StaticResource Primary}" 
+                                        <Button Text="Print"
+                                                BackgroundColor="#4F46E5"
                                                 TextColor="White"
                                                 FontFamily="AlegreyaBold"
-                                                FontSize="14"
-                                                Padding="10,6"
-                                                CornerRadius="6"
+                                                FontSize="15"
+                                                WidthRequest="82"
+                                                HeightRequest="42"
+                                                Padding="0"
+                                                CornerRadius="8"
                                                 Clicked="OnPrintReceiptClicked"
                                                 CommandParameter="{Binding Order}" />
-                                    </StackLayout>
+                                        </StackLayout>
                                 </Grid>
                             </DataTemplate>
                         </CollectionView.ItemTemplate>
                     </CollectionView>
 
                     <!-- No Orders Message - Elegant Design -->
-                    <Border x:Name="NoOrdersFrame" 
-                            BackgroundColor="{StaticResource Blue50}"
-                            StrokeThickness="1"
-                            Stroke="{StaticResource Blue200}"
-                            Padding="60,50"
-                            Margin="0,20,0,20"
-                            IsVisible="False">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="12" />
-                        </Border.StrokeShape>
+                    <Frame x:Name="NoOrdersFrame" 
+                           BackgroundColor="{StaticResource Blue50}"
+                           BorderColor="{StaticResource Blue200}"
+                           HasShadow="False"
+                           CornerRadius="12"
+                           Padding="60,50"
+                           Margin="0,20,0,20"
+                           IsVisible="False">
                         <StackLayout HorizontalOptions="Center" Spacing="12">
                             <Label Text="No Web Orders Found" 
                                    FontFamily="AlegreyaBold"
@@ -493,7 +458,7 @@
                                    TextColor="{StaticResource Blue600}" 
                                    HorizontalOptions="Center" />
                         </StackLayout>
-                    </Border>
+                    </Frame>
                 </StackLayout>
 
                 <!-- Loading Indicator -->

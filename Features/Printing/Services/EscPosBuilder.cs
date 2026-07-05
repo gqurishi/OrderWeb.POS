@@ -165,7 +165,7 @@ public class EscPosBuilder
     }
 
     /// <summary>
-    /// Print a line with left and right text (e.g., "Item    $10.00")
+    /// Print a line with left and right text (e.g., "Item    £10.00")
     /// </summary>
     public EscPosBuilder PrintColumns(string left, string right)
     {

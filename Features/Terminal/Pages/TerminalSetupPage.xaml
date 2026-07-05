@@ -109,6 +109,19 @@
                     </VerticalStackLayout>
 
                     <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Port"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabasePortEntry"
+                               Text="3306"
+                               Keyboard="Numeric"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
                         <Label Text="Database User"
                                FontFamily="OpenSansSemibold"
                                FontSize="16"

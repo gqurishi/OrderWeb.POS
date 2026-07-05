@@ -22,6 +22,26 @@
                HasShadow="False"
                BorderColor="#E5E7EB">
             <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" Padding="24,16">
+                <Border x:Name="AllTabBorder"
+                        BackgroundColor="#10B981"
+                        StrokeThickness="0"
+                        Padding="32,14"
+                        HeightRequest="50">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnAllTabClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label x:Name="AllTabLabel"
+                           Text="All"
+                           TextColor="White"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center"
+                           HorizontalOptions="Center"/>
+                </Border>
+
                 <Border x:Name="CollectionTabBorder"
                         BackgroundColor="#F5F5F5"
                         StrokeThickness="0"
@@ -63,7 +83,7 @@
                 </Border>
 
                 <Border x:Name="TableTabBorder"
-                        BackgroundColor="#10B981"
+                        BackgroundColor="#F5F5F5"
                         StrokeThickness="0"
                         Padding="32,14"
                         HeightRequest="50">
@@ -75,7 +95,7 @@
                     </Border.GestureRecognizers>
                     <Label x:Name="TableTabLabel"
                            Text="Table"
-                           TextColor="White"
+                           TextColor="#6B7280"
                            FontSize="15"
                            FontAttributes="Bold"
                            VerticalOptions="Center"
@@ -86,6 +106,20 @@
 
         <ScrollView Grid.Row="2">
             <VerticalStackLayout Padding="24" Spacing="16">
+                <VerticalStackLayout x:Name="AllOrdersLayout" IsVisible="True" Spacing="12">
+                    <FlexLayout x:Name="AllOrdersGrid"
+                                Direction="Row"
+                                Wrap="Wrap"
+                                AlignItems="Start"
+                                JustifyContent="Start"/>
+                    <Label x:Name="AllEmptyLabel"
+                           Text="No open local orders"
+                           FontSize="16"
+                           TextColor="#9CA3AF"
+                           HorizontalOptions="Center"
+                           Margin="0,40,0,0"/>
+                </VerticalStackLayout>
+
                 <VerticalStackLayout x:Name="CollectionOrdersLayout" IsVisible="False" Spacing="12">
                     <FlexLayout x:Name="CollectionOrdersGrid"
                                 Direction="Row"
@@ -114,7 +148,7 @@
                            Margin="0,40,0,0"/>
                 </VerticalStackLayout>
 
-                <VerticalStackLayout x:Name="TableOrdersLayout" IsVisible="True" Spacing="12">
+                <VerticalStackLayout x:Name="TableOrdersLayout" IsVisible="False" Spacing="12">
                     <FlexLayout x:Name="TableOrdersGrid"
                                 Direction="Row"
                                 Wrap="Wrap"

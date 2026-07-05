@@ -18,6 +18,7 @@ public partial class AddEditItemPage : ContentPage
     private ObservableCollection<MenuCategory> _allCategories = new();
     private List<MenuCategory> _topLevelCategories = new();
     private List<MenuCategory> _currentSubCategories = new();
+    private ObservableCollection<MenuItemVariant> _variants = new();
     private ObservableCollection<Addon> _addons = new();
     private ObservableCollection<MenuItemComponent> _components = new();
     private ObservableCollection<MenuItemQuickNote> _quickNotes = new();
@@ -28,6 +29,7 @@ public partial class AddEditItemPage : ContentPage
     private string? _selectedSubCategoryId;
     private FoodMenuItem? _editingItem;
     private bool _isEditMode = false;
+    private string _selectedItemType = "Food";
     private string _selectedVatCategory = "HotFood";
     private bool _isMixedVatSelected = false;
 
@@ -117,6 +119,8 @@ public partial class AddEditItemPage : ContentPage
             }
             
             // Initialize VAT UI defaults
+            _selectedItemType = "Food";
+            UpdateItemTypeSelection();
             _selectedVatCategory = "HotFood";
             _isMixedVatSelected = false;
             UpdateVatRateCardSelection(_selectedVatCategory);
@@ -152,6 +156,8 @@ public partial class AddEditItemPage : ContentPage
             var takeawayPrice = _editingItem.PriceTakeaway ?? _editingItem.Price;
             DineInPriceEntry.Text = dineInPrice.ToString("F2");
             TakeawayPriceEntry.Text = takeawayPrice.ToString("F2");
+            _selectedItemType = NormalizeItemType(_editingItem.ItemType);
+            UpdateItemTypeSelection();
             _selectedColor = _editingItem.Color ?? "#3B82F6";
             CustomColorEntry.Text = _selectedColor;
             
@@ -184,6 +190,32 @@ public partial class AddEditItemPage : ContentPage
                 }
             }
             
+            // Load addons quickly
+            _variants.Clear();
+            VariantsContainer.Children.Clear();
+            if (_editingItem.Variants != null && _editingItem.Variants.Count > 0)
+            {
+                foreach (var variant in _editingItem.Variants.OrderBy(v => v.DisplayOrder))
+                {
+                    var loadedVariant = new MenuItemVariant
+                    {
+                        Id = variant.Id,
+                        MenuItemId = variant.MenuItemId,
+                        Name = variant.Name,
+                        Description = variant.Description,
+                        Price = variant.Price,
+                        DisplayOrder = variant.DisplayOrder,
+                        Active = variant.Active,
+                        CreatedAt = variant.CreatedAt,
+                        UpdatedAt = variant.UpdatedAt
+                    };
+
+                    _variants.Add(loadedVariant);
+                    AddVariantCard(loadedVariant);
+                }
+            }
+            UpdateVariantsEmptyState();
+
             // Load addons quickly
             if (_editingItem.Addons != null && _editingItem.Addons.Count > 0)
             {
@@ -266,6 +298,40 @@ public partial class AddEditItemPage : ContentPage
     private void OnItemNameChanged(object sender, TextChangedEventArgs e)
     {
         // Character counter removed for cleaner UI
+    }
+
+    private void OnItemTypeClicked(object sender, EventArgs e)
+    {
+        if (sender is Button button)
+        {
+            _selectedItemType = NormalizeItemType(button.StyleId);
+            UpdateItemTypeSelection();
+        }
+    }
+
+    private void UpdateItemTypeSelection()
+    {
+        SetItemTypeButtonState(FoodTypeButton, _selectedItemType == "Food");
+        SetItemTypeButtonState(DrinkTypeButton, _selectedItemType == "Drink");
+        SetItemTypeButtonState(OtherTypeButton, _selectedItemType == "Other");
+    }
+
+    private static void SetItemTypeButtonState(Button button, bool isSelected)
+    {
+        button.BackgroundColor = Color.FromArgb(isSelected ? "#DBEAFE" : "#F8FAFC");
+        button.TextColor = Color.FromArgb(isSelected ? "#1D4ED8" : "#475569");
+        button.BorderColor = Color.FromArgb(isSelected ? "#3B82F6" : "#CBD5E1");
+        button.BorderWidth = isSelected ? 2 : 1;
+    }
+
+    private static string NormalizeItemType(string? itemType)
+    {
+        return itemType?.Trim().ToLowerInvariant() switch
+        {
+            "drink" => "Drink",
+            "other" => "Other",
+            _ => "Food"
+        };
     }
 
     private void OnCategoryChanged(object sender, Syncfusion.Maui.Inputs.SelectionChangedEventArgs e)
@@ -456,6 +522,231 @@ public partial class AddEditItemPage : ContentPage
         _addons.Add(addon);
         AddAddonCard(addon);
         UpdateAddonsEmptyState();
+    }
+
+    private void OnAddVariantClicked(object sender, EventArgs e)
+    {
+        var variant = new MenuItemVariant
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = string.Empty,
+            Description = null,
+            Price = 0m,
+            DisplayOrder = _variants.Count,
+            Active = true
+        };
+
+        _variants.Add(variant);
+        AddVariantCard(variant);
+        UpdateVariantsEmptyState();
+    }
+
+    private void AddVariantCard(MenuItemVariant variant)
+    {
+        var card = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 14 },
+            Padding = new Thickness(16, 14),
+            Margin = new Thickness(0, 6, 0, 10)
+        };
+
+        var contentStack = new VerticalStackLayout { Spacing = 14 };
+        var headerGrid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 12
+        };
+
+        var titleLabel = new Label
+        {
+            StyleId = "VariantCardTitle",
+            Text = "Variant",
+            FontSize = 16,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#0F172A"),
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        var activeSwitch = new Switch
+        {
+            IsToggled = variant.Active,
+            VerticalOptions = LayoutOptions.Center
+        };
+        activeSwitch.Toggled += (_, e) => variant.Active = e.Value;
+
+        var deleteButton = new Button
+        {
+            Text = "",
+            FontSize = 24,
+            BackgroundColor = Colors.Transparent,
+            TextColor = Color.FromArgb("#0F172A"),
+            WidthRequest = 40,
+            HeightRequest = 40,
+            CornerRadius = 20,
+            Padding = 0
+        };
+        deleteButton.Clicked += (_, _) =>
+        {
+            _variants.Remove(variant);
+            VariantsContainer.Children.Remove(card);
+            RefreshVariantCardTitles();
+            UpdateVariantsEmptyState();
+        };
+
+        headerGrid.Add(titleLabel, 0, 0);
+        headerGrid.Add(activeSwitch, 1, 0);
+        headerGrid.Add(deleteButton, 2, 0);
+        contentStack.Add(headerGrid);
+
+        var detailsGrid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+            },
+            ColumnSpacing = 12
+        };
+
+        var nameEntry = CreateVariantEntry("Variant Name", "e.g., Large", variant.Name);
+        nameEntry.TextChanged += (_, e) => variant.Name = e.NewTextValue?.Trim() ?? string.Empty;
+        detailsGrid.Add(WrapVariantField("Variant Name", nameEntry), 0, 0);
+
+        var priceEntry = CreateVariantEntry("Price", "0.00", variant.Price == 0m ? string.Empty : variant.Price.ToString("F2"));
+        priceEntry.Keyboard = Keyboard.Numeric;
+        priceEntry.TextChanged += (_, e) =>
+        {
+            if (string.IsNullOrWhiteSpace(e.NewTextValue))
+            {
+                variant.Price = 0m;
+                return;
+            }
+
+            if (decimal.TryParse(e.NewTextValue, out var parsedPrice))
+            {
+                variant.Price = Math.Max(0m, parsedPrice);
+            }
+        };
+        detailsGrid.Add(WrapVariantField("Price (£)", priceEntry), 1, 0);
+
+        var descriptionEntry = CreateVariantEntry("Description", "Optional", variant.Description ?? string.Empty);
+        descriptionEntry.TextChanged += (_, e) => variant.Description = string.IsNullOrWhiteSpace(e.NewTextValue) ? null : e.NewTextValue.Trim();
+        detailsGrid.Add(WrapVariantField("Description", descriptionEntry), 2, 0);
+
+        contentStack.Add(detailsGrid);
+        card.Content = contentStack;
+
+        VariantsContainer.Children.Add(card);
+        RefreshVariantCardTitles();
+    }
+
+    private static Entry CreateVariantEntry(string automationId, string placeholder, string text) => new()
+    {
+        AutomationId = automationId,
+        Placeholder = placeholder,
+        Text = text,
+        FontSize = 14,
+        TextColor = Color.FromArgb("#1E293B"),
+        PlaceholderColor = Color.FromArgb("#94A3B8"),
+        BackgroundColor = Colors.Transparent,
+        HeightRequest = 44
+    };
+
+    private static View WrapVariantField(string label, Entry entry)
+    {
+        var stack = new VerticalStackLayout { Spacing = 6 };
+        stack.Add(new Label
+        {
+            Text = label,
+            FontSize = 13,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#475569")
+        });
+        stack.Add(new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#CBD5E1"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Padding = new Thickness(12, 0),
+            Content = entry
+        });
+        return stack;
+    }
+
+    private void RefreshVariantCardTitles()
+    {
+        for (int i = 0; i < VariantsContainer.Children.Count; i++)
+        {
+            if (VariantsContainer.Children[i] is Border card &&
+                card.Content is VerticalStackLayout stack &&
+                stack.Children.FirstOrDefault() is Grid header &&
+                header.Children.FirstOrDefault() is Label titleLabel &&
+                titleLabel.StyleId == "VariantCardTitle")
+            {
+                titleLabel.Text = $"Variant {i + 1}";
+            }
+        }
+    }
+
+    private void UpdateVariantsEmptyState()
+    {
+        VariantsEmptyState.IsVisible = !_variants.Any();
+        VariantCountLabel.Text = $"{_variants.Count} variant{(_variants.Count == 1 ? string.Empty : "s")}";
+    }
+
+    private bool TryBuildValidatedVariants(out List<MenuItemVariant> validatedVariants, out string validationError)
+    {
+        validatedVariants = new List<MenuItemVariant>();
+        validationError = string.Empty;
+
+        for (int i = 0; i < _variants.Count; i++)
+        {
+            var variant = _variants[i];
+            var name = variant.Name?.Trim() ?? string.Empty;
+            var description = variant.Description?.Trim();
+            var price = Math.Round(variant.Price, 2);
+
+            if (string.IsNullOrEmpty(name))
+            {
+                if (price > 0m || !string.IsNullOrWhiteSpace(description))
+                {
+                    validationError = $"Variant {i + 1} has details but no name. Please enter a name.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (price <= 0m)
+            {
+                validationError = $"Variant {i + 1} needs a price greater than 0.";
+                return false;
+            }
+
+            validatedVariants.Add(new MenuItemVariant
+            {
+                Id = string.IsNullOrWhiteSpace(variant.Id) ? Guid.NewGuid().ToString() : variant.Id,
+                Name = name,
+                Description = string.IsNullOrWhiteSpace(description) ? null : description,
+                Price = price,
+                DisplayOrder = validatedVariants.Count,
+                Active = variant.Active,
+                CreatedAt = variant.CreatedAt == default ? DateTime.Now : variant.CreatedAt,
+                UpdatedAt = DateTime.Now
+            });
+        }
+
+        return true;
     }
 
     private void AddAddonCard(Addon addon)
@@ -699,22 +990,23 @@ public partial class AddEditItemPage : ContentPage
                 return;
             }
 
-            // Check if sub-category is required (i.e., category has sub-categories) and validate it's selected
-            if (_currentSubCategories.Count > 0 && string.IsNullOrEmpty(_selectedSubCategoryId))
-            {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", "Please select a sub-category.");
-                return;
-            }
-
             if (string.IsNullOrWhiteSpace(DineInPriceEntry.Text) || !decimal.TryParse(DineInPriceEntry.Text, out decimal dineInPrice) || dineInPrice <= 0)
             {
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", "Please enter a valid dine-in/table price.");
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(TakeawayPriceEntry.Text) || !decimal.TryParse(TakeawayPriceEntry.Text, out decimal takeawayPrice) || takeawayPrice <= 0)
+            if (string.IsNullOrWhiteSpace(TakeawayPriceEntry.Text) || !decimal.TryParse(TakeawayPriceEntry.Text, out decimal takeawayPrice) || takeawayPrice < 0)
             {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", "Please enter a valid takeaway/collection/delivery price.");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Validation Error",
+                    "Please enter a valid takeaway/collection/delivery price. Use 0 if this item is dine-in/table only.");
+                return;
+            }
+
+            if (!TryBuildValidatedVariants(out var validatedVariants, out var variantValidationError))
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", variantValidationError);
                 return;
             }
 
@@ -724,11 +1016,14 @@ public partial class AddEditItemPage : ContentPage
                 return;
             }
 
+            _variants = new ObservableCollection<MenuItemVariant>(validatedVariants);
+            UpdateVariantsEmptyState();
+
             _addons = new ObservableCollection<Addon>(validatedAddons);
             UpdateAddonsEmptyState();
 
             bool isStandard = IsSimpleVatTypeSelected();
-            if (!isStandard)
+            if (!isStandard && takeawayPrice > 0)
             {
                 if (!ValidateMixedItemComponents(takeawayPrice, out var mixedValidationError))
                 {
@@ -758,7 +1053,9 @@ public partial class AddEditItemPage : ContentPage
                 _editingItem.Price = dineInPrice; // Legacy fallback field
                 _editingItem.PriceDineIn = dineInPrice;
                 _editingItem.PriceTakeaway = takeawayPrice;
+                _editingItem.ItemType = _selectedItemType;
                 _editingItem.Color = _selectedColor;
+                _editingItem.Variants = _variants.ToList();
                 _editingItem.Addons = _addons.ToList();
                 _editingItem.UpdatedAt = DateTime.Now;
                 
@@ -817,7 +1114,14 @@ public partial class AddEditItemPage : ContentPage
                 }
                 
                 // Save quick notes
-                await _menuItemService.SaveQuickNotesAsync(_editingItem.Id, _quickNotes.ToList());
+                var quickNotesSaved = await _menuItemService.SaveQuickNotesAsync(
+                    _editingItem.Id,
+                    PrepareQuickNotesForSave(_editingItem.Id));
+                if (!quickNotesSaved)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Save Failed", "Quick notes were not saved. Please try again.");
+                    return;
+                }
 
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Item updated successfully!");
             }
@@ -855,7 +1159,9 @@ public partial class AddEditItemPage : ContentPage
                     Price = dineInPrice, // Legacy fallback field
                     PriceDineIn = dineInPrice,
                     PriceTakeaway = takeawayPrice,
+                    ItemType = _selectedItemType,
                     Color = _selectedColor,
+                    Variants = _variants.ToList(),
                     Addons = _addons.ToList(),
                     CreatedAt = DateTime.Now,
                     UpdatedAt = DateTime.Now,
@@ -906,13 +1212,21 @@ public partial class AddEditItemPage : ContentPage
                 if (_quickNotes.Any())
                 {
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] Saving {_quickNotes.Count} quick notes...");
-                    await _menuItemService.SaveQuickNotesAsync(newItem.Id, _quickNotes.ToList());
+                    var quickNotesSaved = await _menuItemService.SaveQuickNotesAsync(
+                        newItem.Id,
+                        PrepareQuickNotesForSave(newItem.Id));
+                    if (!quickNotesSaved)
+                    {
+                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Save Failed", "Item was created but quick notes were not saved. Please edit item and retry.");
+                        return;
+                    }
                 }
 
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Item created successfully!");
             }
 
             // Go back
+            OrderPlacementPageSimple.InvalidateMenuCache();
             await Navigation.PopAsync();
         }
         catch (MySqlConnector.MySqlException mysqlEx)
@@ -1501,7 +1815,7 @@ public partial class AddEditItemPage : ContentPage
     
     private void UpdateQuickNotesUI()
     {
-        QuickNotesCollectionView.ItemsSource = _quickNotes;
+        QuickNotesListContainer.Children.Clear();
         QuickNotesCountLabel.Text = $"{_quickNotes.Count}/6";
         AddQuickNoteButton.IsEnabled = _quickNotes.Count < 6;
         AddQuickNoteButton.Opacity = _quickNotes.Count < 6 ? 1.0 : 0.5;
@@ -1511,6 +1825,111 @@ public partial class AddEditItemPage : ContentPage
         {
             _quickNotes[i].DisplayOrder = i + 1;
         }
+
+        if (_quickNotes.Count == 0)
+        {
+            QuickNotesListContainer.Children.Add(new Label
+            {
+                Text = "No quick notes yet. Click '+ Add Quick Note' below.",
+                FontSize = 13,
+                TextColor = Color.FromArgb("#94A3B8"),
+                HorizontalOptions = LayoutOptions.Center,
+                HorizontalTextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 20)
+            });
+            return;
+        }
+
+        foreach (var note in _quickNotes.OrderBy(note => note.DisplayOrder))
+        {
+            QuickNotesListContainer.Children.Add(CreateQuickNoteRow(note));
+        }
+    }
+
+    private Border CreateQuickNoteRow(MenuItemQuickNote note)
+    {
+        var border = new Border
+        {
+            BackgroundColor = Colors.White,
+            StrokeThickness = 1,
+            Stroke = Color.FromArgb("#CBD5E1"),
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 8
+        };
+
+        grid.Add(new Label
+        {
+            Text = note.NoteText,
+            FontSize = 14,
+            TextColor = Color.FromArgb("#1E293B"),
+            VerticalOptions = LayoutOptions.Center,
+            LineBreakMode = LineBreakMode.WordWrap
+        }, 0, 0);
+
+        var editButton = new Button
+        {
+            Text = "Edit",
+            FontSize = 12,
+            FontAttributes = FontAttributes.Bold,
+            BackgroundColor = Color.FromArgb("#F1F5F9"),
+            TextColor = Color.FromArgb("#64748B"),
+            WidthRequest = 54,
+            HeightRequest = 36,
+            CornerRadius = 8,
+            Padding = 0,
+            CommandParameter = note
+        };
+        editButton.Clicked += OnEditQuickNoteClicked;
+        grid.Add(editButton, 1, 0);
+
+        var deleteButton = new Button
+        {
+            Text = "X",
+            FontSize = 20,
+            FontAttributes = FontAttributes.Bold,
+            BackgroundColor = Color.FromArgb("#FEE2E2"),
+            TextColor = Color.FromArgb("#DC2626"),
+            WidthRequest = 36,
+            HeightRequest = 36,
+            CornerRadius = 8,
+            Padding = 0,
+            CommandParameter = note
+        };
+        deleteButton.Clicked += OnDeleteQuickNoteClicked;
+        grid.Add(deleteButton, 2, 0);
+
+        border.Content = grid;
+        return border;
+    }
+
+    private List<MenuItemQuickNote> PrepareQuickNotesForSave(string menuItemId)
+    {
+        return _quickNotes
+            .Where(note => !string.IsNullOrWhiteSpace(note.NoteText))
+            .Select((note, index) =>
+            {
+                note.Id = string.IsNullOrWhiteSpace(note.Id) ? Guid.NewGuid().ToString() : note.Id.Trim();
+                note.MenuItemId = menuItemId;
+                note.NoteText = note.NoteText.Trim();
+                note.DisplayOrder = index + 1;
+                note.Active = true;
+                note.CreatedAt = note.CreatedAt == default ? DateTime.Now : note.CreatedAt;
+                note.UpdatedAt = DateTime.Now;
+                return note;
+            })
+            .ToList();
     }
 
     private async void OnAddQuickNoteClicked(object sender, EventArgs e)
@@ -1681,4 +2100,3 @@ public partial class AddEditItemPage : ContentPage
         return System.Text.Json.JsonSerializer.Serialize(_componentLabels.ToList());
     }
 }
-

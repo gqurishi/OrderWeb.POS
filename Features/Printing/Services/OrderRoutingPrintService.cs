@@ -390,7 +390,19 @@ public sealed class OrderRoutingPrintService
             return result;
         }
 
-        var resolvedItems = itemsToPrint
+        var expandedItems = itemsToPrint
+            .SelectMany(item => ExpandTastingMenuPrintItems(item, activeGroups, result))
+            .ToList();
+        var splitPrintItemIds = expandedItems
+            .Where(item => TryGetTastingMenuSourceItemId(item.Id, out _))
+            .GroupBy(item =>
+            {
+                TryGetTastingMenuSourceItemId(item.Id, out var sourceItemId);
+                return sourceItemId;
+            }, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Id).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var resolvedItems = expandedItems
             .Select(item => new
             {
                 Item = item,
@@ -448,7 +460,173 @@ public sealed class OrderRoutingPrintService
             }
         }
 
+        ConsolidateSplitPrintResults(result, splitPrintItemIds);
         return result;
+    }
+
+    private static IEnumerable<TableOrderItem> ExpandTastingMenuPrintItems(
+        TableOrderItem item,
+        List<PrintGroup> activeGroups,
+        OrderRoutingPrintResult result)
+    {
+        if (!IsTastingMenuOrderItem(item))
+        {
+            yield return item;
+            yield break;
+        }
+
+        var kitchenGroup = FindFirstGroupByType(activeGroups, "kitchen");
+        if (kitchenGroup == null)
+        {
+            result.FailedRoutes.Add($"{item.DisplayName}: kitchen print group not configured");
+            result.FailedRouteDetails.Add(new PrintRouteFailure
+            {
+                RouteTarget = string.Empty,
+                RouteName = item.DisplayName ?? item.Name,
+                Reason = "kitchen print group not configured"
+            });
+            yield return CreateTastingMenuStationItem(item, "__missing_kitchen__", item.DisplayName ?? item.Name, BuildTastingKitchenNotes(item));
+        }
+        else
+        {
+            yield return CreateTastingMenuStationItem(item, kitchenGroup.Id, item.DisplayName ?? item.Name, BuildTastingKitchenNotes(item));
+        }
+
+        if (TastingMenuIncludesWine(item))
+        {
+            var barGroup = FindFirstGroupByType(activeGroups, "bar");
+            if (barGroup == null)
+            {
+                result.FailedRoutes.Add($"{item.DisplayName}: bar print group not configured");
+                result.FailedRouteDetails.Add(new PrintRouteFailure
+                {
+                    RouteTarget = string.Empty,
+                    RouteName = item.DisplayName ?? item.Name,
+                    Reason = "bar print group not configured"
+                });
+                yield return CreateTastingMenuStationItem(item, "__missing_bar__", "Wine Pairing", BuildTastingBarNotes(item));
+            }
+            else
+            {
+                yield return CreateTastingMenuStationItem(item, barGroup.Id, "Wine Pairing", BuildTastingBarNotes(item));
+            }
+        }
+    }
+
+    private static TableOrderItem CreateTastingMenuStationItem(TableOrderItem source, string printGroupId, string displayName, string? notes)
+    {
+        return new TableOrderItem
+        {
+            Id = $"{source.Id}::{NormalizePrintGroupSuffix(printGroupId)}",
+            OrderId = source.OrderId,
+            MenuItemId = source.MenuItemId,
+            VariantId = source.VariantId,
+            VariantName = source.VariantName,
+            Name = displayName,
+            DisplayName = displayName,
+            Quantity = source.Quantity,
+            UnitPrice = 0m,
+            VatCategory = source.VatCategory,
+            PrintGroupId = printGroupId,
+            Notes = notes,
+            SendStatus = source.SendStatus,
+            SentAt = source.SentAt,
+            FailureReason = source.FailureReason,
+            CreatedAt = source.CreatedAt
+        };
+    }
+
+    private static string NormalizePrintGroupSuffix(string printGroupId)
+    {
+        var safe = new string(printGroupId.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "route" : safe;
+    }
+
+    private static bool TryGetTastingMenuSourceItemId(string itemId, out string sourceItemId)
+    {
+        const string marker = "::";
+        var markerIndex = itemId.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex > 0)
+        {
+            sourceItemId = itemId[..markerIndex];
+            return true;
+        }
+
+        sourceItemId = string.Empty;
+        return false;
+    }
+
+    private static void ConsolidateSplitPrintResults(OrderRoutingPrintResult result, Dictionary<string, List<string>> splitPrintItemIds)
+    {
+        if (splitPrintItemIds.Count == 0)
+        {
+            return;
+        }
+
+        var printedSnapshot = result.PrintedItemIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var splitItemId in splitPrintItemIds.Values.SelectMany(ids => ids))
+        {
+            result.PrintedItemIds.Remove(splitItemId);
+        }
+
+        foreach (var entry in splitPrintItemIds)
+        {
+            if (entry.Value.Count > 0 && entry.Value.All(printedSnapshot.Contains))
+            {
+                result.PrintedItemIds.Add(entry.Key);
+            }
+        }
+    }
+
+    private static bool IsTastingMenuOrderItem(TableOrderItem item) =>
+        item.MenuItemId.StartsWith("tasting:", StringComparison.OrdinalIgnoreCase);
+
+    private static PrintGroup? FindFirstGroupByType(IEnumerable<PrintGroup> groups, string printerType) =>
+        groups
+            .Where(group => group.IsActive)
+            .OrderBy(group => group.DisplayOrder)
+            .FirstOrDefault(group => string.Equals(group.PrinterType, printerType, StringComparison.OrdinalIgnoreCase));
+
+    private static bool TastingMenuIncludesWine(TableOrderItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.VariantName)
+            && item.VariantName.Contains("wine", StringComparison.OrdinalIgnoreCase)
+            && !item.VariantName.Contains("without wine", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return (item.Notes ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Any(line => line.Trim().Equals("Wine pairing: Yes", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildTastingKitchenNotes(TableOrderItem item)
+    {
+        var lines = (item.Notes ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("Course ", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return lines.Count == 0 ? "Tasting menu food courses" : string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildTastingBarNotes(TableOrderItem item)
+    {
+        var packageLine = (item.Notes ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.StartsWith("Package:", StringComparison.OrdinalIgnoreCase));
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(packageLine))
+        {
+            parts.Add(packageLine);
+        }
+
+        parts.Add("Wine pairing required");
+        return string.Join(Environment.NewLine, parts);
     }
 
     /// <summary>
@@ -518,7 +696,7 @@ public sealed class OrderRoutingPrintService
         foreach (var item in items)
         {
             builder.SetBold(true)
-                   .PrintLine($"{item.Quantity}x {item.Name}")
+                   .PrintLine($"{item.Quantity}x {item.DisplayName}")
                    .SetBold(false);
 
             foreach (var addon in item.SelectedAddons)
@@ -581,7 +759,7 @@ public sealed class OrderRoutingPrintService
         {
             builder.SetFontSize(2, 1)
                    .SetBold(true)
-                   .PrintLine($"{item.Quantity}x {item.Name}")
+                   .PrintLine($"{item.Quantity}x {item.DisplayName}")
                    .SetNormalSize()
                    .SetBold(false);
 

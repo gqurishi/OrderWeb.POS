@@ -107,7 +107,7 @@ public sealed class PdfPrintService
 
         foreach (var item in items)
         {
-            sb.AppendLine($"{item.Quantity}x {item.Name}");
+            sb.AppendLine($"{item.Quantity}x {item.DisplayName}");
 
             foreach (var addon in item.SelectedAddons)
             {

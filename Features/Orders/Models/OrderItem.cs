@@ -35,9 +35,9 @@ namespace POS_in_NET.Models
         // Display properties
         public string ItemName => MenuItem?.Name ?? "Unknown Item";
         
-        public string FormattedUnitPrice => $"${UnitPrice:F2}";
+        public string FormattedUnitPrice => $"£{UnitPrice:F2}";
         
-        public string FormattedTotalPrice => $"${TotalPrice:F2}";
+        public string FormattedTotalPrice => $"£{TotalPrice:F2}";
         
         public string QuantityDisplay => Quantity == 1 ? "" : $"{Quantity}x ";
         
@@ -142,9 +142,9 @@ namespace POS_in_NET.Models
             get
             {
                 if (PriceAdjustment > 0)
-                    return $"{ModifierName} (+${PriceAdjustment:F2})";
+                    return $"{ModifierName} (+£{PriceAdjustment:F2})";
                 else if (PriceAdjustment < 0)
-                    return $"{ModifierName} (-${Math.Abs(PriceAdjustment):F2})";
+                    return $"{ModifierName} (-£{Math.Abs(PriceAdjustment):F2})";
                 else
                     return ModifierName;
             }
@@ -155,9 +155,9 @@ namespace POS_in_NET.Models
             get
             {
                 if (PriceAdjustment > 0)
-                    return $"+${PriceAdjustment:F2}";
+                    return $"+£{PriceAdjustment:F2}";
                 else if (PriceAdjustment < 0)
-                    return $"-${Math.Abs(PriceAdjustment):F2}";
+                    return $"-£{Math.Abs(PriceAdjustment):F2}";
                 else
                     return "";
             }
@@ -202,9 +202,9 @@ namespace POS_in_NET.Models
         public CustomerOrder? Order { get; set; }
 
         // Display properties
-        public string FormattedAmount => $"${Amount:F2}";
+        public string FormattedAmount => $"£{Amount:F2}";
         
-        public string FormattedTip => TipAmount > 0 ? $"${TipAmount:F2}" : "";
+        public string FormattedTip => TipAmount > 0 ? $"£{TipAmount:F2}" : "";
         
         public string TransactionTypeDisplay => TransactionType.ToString();
         
@@ -216,9 +216,9 @@ namespace POS_in_NET.Models
         
         public bool IsCashTransaction => PaymentMethod == RestaurantPaymentMethod.Cash;
         
-        public string ChangeDisplay => ChangeGiven.HasValue && ChangeGiven > 0 ? $"${ChangeGiven:F2}" : "";
+        public string ChangeDisplay => ChangeGiven.HasValue && ChangeGiven > 0 ? $"£{ChangeGiven:F2}" : "";
         
-        public string ReceivedDisplay => AmountReceived.HasValue ? $"${AmountReceived:F2}" : "";
+        public string ReceivedDisplay => AmountReceived.HasValue ? $"£{AmountReceived:F2}" : "";
     }
 
     /// <summary>

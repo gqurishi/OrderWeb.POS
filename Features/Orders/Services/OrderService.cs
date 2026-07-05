@@ -217,6 +217,7 @@ public class OrderService
                     order_number = @orderNumber,
                     customer_name = @customerName,
                     customer_phone = @customerPhone,
+                    customer_email = COALESCE(NULLIF(@customerEmail, ''), customer_email),
                     customer_address = @customerAddress,
                     total_amount = @totalAmount,
                     subtotal_amount = @subtotalAmount,
@@ -257,6 +258,7 @@ public class OrderService
             command.Parameters.AddWithValue("@orderNumber", order.OrderNumber ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@customerName", order.CustomerName);
             command.Parameters.AddWithValue("@customerPhone", order.CustomerPhone ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@customerEmail", order.CustomerEmail ?? string.Empty);
             command.Parameters.AddWithValue("@customerAddress", order.CustomerAddress ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@totalAmount", order.TotalAmount);
             command.Parameters.AddWithValue("@subtotalAmount", order.SubtotalAmount);
@@ -907,8 +909,13 @@ public class OrderService
 
             var query = @"
                 UPDATE orders SET 
-                    status = 'completed',
+                    status = CASE
+                        WHEN LOWER(COALESCE(local_lifecycle_state, '')) = 'paid' THEN 'completed'
+                        WHEN LOWER(COALESCE(local_lifecycle_state, '')) IN ('sent_partial', 'sent_full', 'payment_partial') THEN 'kitchen'
+                        ELSE 'ready'
+                    END,
                     completed_time = @completedTime,
+                    is_open = 1,
                     updated_by_terminal_name = @updatedByTerminalName,
                     updated_by_terminal_at = @updatedAt,
                     updated_at = @updatedAt
@@ -928,13 +935,13 @@ public class OrderService
                     connection,
                     orderId,
                     null,
-                    "completed",
-                    new { status = OrderStatus.Completed.ToString() });
+                    "delivered",
+                    new { status = "ready", delivered = true });
 
-                // Try to sync status with online system
-                await _apiService.UpdateOrderStatusAsync(orderId, OrderStatus.Completed, "Delivered successfully");
+                // Sync delivery milestone without marking the local order paid.
+                await _apiService.UpdateOrderStatusAsync(orderId, OrderStatus.Ready, "Delivered successfully");
                 
-                return (true, "Order completed successfully");
+                return (true, "Order delivered successfully");
             }
             else
             {
@@ -1019,13 +1026,8 @@ public class OrderService
             using var setDefaultSourceCommand = new MySqlCommand(setDefaultSourceQuery, connection);
             await setDefaultSourceCommand.ExecuteNonQueryAsync();
 
-            var backfillWebSourceQuery = @"
-                UPDATE orders
-                SET source_channel = 'web'
-                WHERE cloud_order_id IS NOT NULL
-                  AND TRIM(cloud_order_id) <> ''";
-            using var backfillWebSourceCommand = new MySqlCommand(backfillWebSourceQuery, connection);
-            await backfillWebSourceCommand.ExecuteNonQueryAsync();
+            // Do not infer web/local from cloud_order_id. Local POS orders may keep a
+            // cloud id after sync, but they must remain visible in Live Order.
         }
         catch (Exception ex)
         {
@@ -1046,7 +1048,7 @@ public class OrderService
 
         try
         {
-            var ensureColumnsQuery = @"
+                var ensureColumnsQuery = @"
                 ALTER TABLE orders
                 ADD COLUMN IF NOT EXISTS local_lifecycle_state ENUM('draft', 'active', 'sent_partial', 'sent_full', 'payment_partial', 'paid', 'voided') DEFAULT 'draft',
                 ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT TRUE,
@@ -1068,7 +1070,16 @@ public class OrderService
                 ADD COLUMN IF NOT EXISTS draft_abandoned_at DATETIME NULL";
 
             using var ensureColumnsCommand = new MySqlCommand(ensureColumnsQuery, connection);
-            await ensureColumnsCommand.ExecuteNonQueryAsync();
+                await ensureColumnsCommand.ExecuteNonQueryAsync();
+
+                using var ensureItemColumnsCommand = new MySqlCommand(@"
+                    ALTER TABLE order_items
+                    ADD COLUMN IF NOT EXISTS variant_id VARCHAR(100) NULL,
+                    ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100) NULL,
+                    ADD COLUMN IF NOT EXISTS display_name VARCHAR(180) NULL,
+                    ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL,
+                    ADD COLUMN IF NOT EXISTS client_item_id VARCHAR(100) NULL", connection);
+                await ensureItemColumnsCommand.ExecuteNonQueryAsync();
 
             try
             {
@@ -1184,7 +1195,10 @@ public class OrderService
                 using var alterOrderItemsCommand = new MySqlCommand(@"
                     ALTER TABLE order_items
                     ADD COLUMN IF NOT EXISTS client_item_id VARCHAR(100) NULL,
-                    ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL", connection);
+                    ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL,
+                    ADD COLUMN IF NOT EXISTS variant_id VARCHAR(100) NULL,
+                    ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100) NULL,
+                    ADD COLUMN IF NOT EXISTS display_name VARCHAR(180) NULL", connection);
                 await alterOrderItemsCommand.ExecuteNonQueryAsync();
 
                 using var alterOrdersLiveUpdateCommand = new MySqlCommand(@"
@@ -1319,14 +1333,17 @@ public class OrderService
     {
         // Insert order item with new schema
         var itemQuery = @"
-            INSERT INTO order_items (order_id, client_item_id, cloud_item_id, menu_item_id, print_group_id, item_name, quantity, item_price, special_instructions) 
-            VALUES (@orderId, @clientItemId, @cloudItemId, @menuItemId, @printGroupId, @itemName, @quantity, @itemPrice, @specialInstructions)";
+            INSERT INTO order_items (order_id, client_item_id, cloud_item_id, menu_item_id, variant_id, variant_name, display_name, print_group_id, item_name, quantity, item_price, special_instructions) 
+            VALUES (@orderId, @clientItemId, @cloudItemId, @menuItemId, @variantId, @variantName, @displayName, @printGroupId, @itemName, @quantity, @itemPrice, @specialInstructions)";
 
         using var itemCommand = new MySqlCommand(itemQuery, connection);
     itemCommand.Parameters.AddWithValue("@orderId", orderId);
         itemCommand.Parameters.AddWithValue("@clientItemId", item.ClientItemId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@cloudItemId", item.CloudItemId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@menuItemId", item.MenuItemId ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@variantId", item.VariantId ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@variantName", item.VariantName ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@displayName", item.DisplayName ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@printGroupId", item.PrintGroupId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@itemName", item.ItemName);
         itemCommand.Parameters.AddWithValue("@quantity", item.Quantity);
@@ -1375,6 +1392,9 @@ public class OrderService
                 oi.id,
                 oi.client_item_id,
                 oi.menu_item_id,
+                oi.variant_id,
+                oi.variant_name,
+                oi.display_name,
                 oi.print_group_id,
                 oi.item_name,
                 oi.quantity,
@@ -1398,6 +1418,9 @@ public class OrderService
                     Id = Convert.ToInt32(reader["id"]),
                     ClientItemId = reader["client_item_id"]?.ToString(),
                     MenuItemId = reader["menu_item_id"]?.ToString(),
+                    VariantId = reader["variant_id"]?.ToString(),
+                    VariantName = reader["variant_name"]?.ToString(),
+                    DisplayName = reader["display_name"]?.ToString(),
                     PrintGroupId = reader["print_group_id"]?.ToString(),
                     ItemName = reader["item_name"]?.ToString() ?? string.Empty,
                     Quantity = Convert.ToInt32(reader["quantity"]),
@@ -1429,6 +1452,7 @@ public class OrderService
                     && string.Equals(row.ItemName, incomingItem.ItemName, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(NormalizeText(row.SpecialInstructions), NormalizeText(incomingItem.SpecialInstructions), StringComparison.OrdinalIgnoreCase)
                     && string.Equals(NormalizeText(row.MenuItemId), NormalizeText(incomingItem.MenuItemId), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(NormalizeText(row.VariantId), NormalizeText(incomingItem.VariantId), StringComparison.OrdinalIgnoreCase)
                     && Nullable.Equals(row.ItemPrice, incomingItem.ItemPrice));
             }
 
@@ -1439,6 +1463,9 @@ public class OrderService
                     UPDATE order_items
                     SET client_item_id = @clientItemId,
                         menu_item_id = @menuItemId,
+                        variant_id = @variantId,
+                        variant_name = @variantName,
+                        display_name = @displayName,
                         print_group_id = @printGroupId,
                         item_name = @itemName,
                         quantity = @quantity,
@@ -1450,6 +1477,9 @@ public class OrderService
                 {
                     updateCommand.Parameters.AddWithValue("@clientItemId", incomingItem.ClientItemId);
                     updateCommand.Parameters.AddWithValue("@menuItemId", incomingItem.MenuItemId ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@variantId", incomingItem.VariantId ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@variantName", incomingItem.VariantName ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@displayName", incomingItem.DisplayName ?? (object)DBNull.Value);
                     updateCommand.Parameters.AddWithValue("@printGroupId", incomingItem.PrintGroupId ?? (object)DBNull.Value);
                     updateCommand.Parameters.AddWithValue("@itemName", incomingItem.ItemName);
                     updateCommand.Parameters.AddWithValue("@quantity", incomingItem.Quantity);
@@ -1517,6 +1547,9 @@ public class OrderService
         public int Id { get; set; }
         public string? ClientItemId { get; set; }
         public string? MenuItemId { get; set; }
+        public string? VariantId { get; set; }
+        public string? VariantName { get; set; }
+        public string? DisplayName { get; set; }
         public string? PrintGroupId { get; set; }
         public string ItemName { get; set; } = string.Empty;
         public int Quantity { get; set; }
@@ -1541,19 +1574,58 @@ public class OrderService
                 Id = Convert.ToInt32(reader["id"]),
                 OrderId = reader["order_id"].ToString() ?? "",
                 ClientItemId = reader["client_item_id"]?.ToString(),
-                CloudItemId = reader["cloud_item_id"] as int?,
+                CloudItemId = reader["cloud_item_id"] == DBNull.Value ? null : Convert.ToInt32(reader["cloud_item_id"]),
                 MenuItemId = reader["menu_item_id"]?.ToString(),
+                VariantId = reader["variant_id"]?.ToString(),
+                VariantName = reader["variant_name"]?.ToString(),
+                DisplayName = reader["display_name"]?.ToString(),
                 PrintGroupId = reader["print_group_id"]?.ToString(),
                 ItemName = reader["item_name"].ToString() ?? "",
                 Quantity = Convert.ToInt32(reader["quantity"]),
-                ItemPrice = reader["item_price"] as decimal?,
+                ItemPrice = reader["item_price"] == DBNull.Value ? null : Convert.ToDecimal(reader["item_price"]),
                 SpecialInstructions = reader["special_instructions"]?.ToString(),
-                Addons = new List<OrderItemAddon>() // Will be loaded separately
+                Addons = new List<OrderItemAddon>()
             };
             items.Add(item);
         }
 
+        await reader.CloseAsync();
+        foreach (var item in items)
+        {
+            item.Addons = await GetOrderItemAddonsAsync(connection, item.Id);
+        }
+
         return items;
+    }
+
+    private async Task<List<OrderItemAddon>> GetOrderItemAddonsAsync(MySqlConnection connection, int orderItemId)
+    {
+        var addons = new List<OrderItemAddon>();
+
+        const string query = @"
+            SELECT id, order_item_id, addon_id, addon_name, addon_price, quantity
+            FROM order_item_addons
+            WHERE order_item_id = @orderItemId
+            ORDER BY id";
+
+        using var command = new MySqlCommand(query, connection);
+        command.Parameters.AddWithValue("@orderItemId", orderItemId);
+        using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            addons.Add(new OrderItemAddon
+            {
+                Id = Convert.ToInt32(reader["id"]),
+                OrderItemId = Convert.ToInt32(reader["order_item_id"]),
+                AddonId = reader["addon_id"]?.ToString(),
+                AddonName = reader["addon_name"]?.ToString() ?? string.Empty,
+                AddonPrice = reader["addon_price"] == DBNull.Value ? null : Convert.ToDecimal(reader["addon_price"]),
+                Quantity = reader["quantity"] == DBNull.Value ? 1 : Convert.ToInt32(reader["quantity"])
+            });
+        }
+
+        return addons;
     }
 
     public async Task<bool> LogOrderEventAsync(

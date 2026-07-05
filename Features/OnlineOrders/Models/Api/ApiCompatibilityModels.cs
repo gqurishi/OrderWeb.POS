@@ -198,6 +198,15 @@ public class CloudOrderItem
 {
     public int Id { get; set; }
     public string? MenuItemId { get; set; }
+    public string? VariantId { get; set; }
+    public string? VariantName { get; set; }
+    public string? DisplayName { get; set; }
+    [JsonPropertyName("variant_id")]
+    public string? VariantIdSnake { get => VariantId; set => VariantId = value; }
+    [JsonPropertyName("variant_name")]
+    public string? VariantNameSnake { get => VariantName; set => VariantName = value; }
+    [JsonPropertyName("display_name")]
+    public string? DisplayNameSnake { get => DisplayName; set => DisplayName = value; }
     public string? Name { get; set; }
     public int Quantity { get; set; } = 1;
     public decimal? Price { get; set; }

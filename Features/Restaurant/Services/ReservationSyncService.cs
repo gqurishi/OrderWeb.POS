@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MySqlConnector;
+using POS_in_NET.Converters;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -10,6 +12,7 @@ public sealed partial class ReservationSyncService : IDisposable
 {
     private const string SyncStateKey = "cloud_reservations";
     private readonly DatabaseService _databaseService;
+    private readonly OrderWebApiClient? _orderWebApiClient;
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private PeriodicTimer? _timer;
@@ -18,9 +21,10 @@ public sealed partial class ReservationSyncService : IDisposable
 
     public event EventHandler<ReservationSyncCompletedEventArgs>? SyncCompleted;
 
-    public ReservationSyncService(DatabaseService databaseService)
+    public ReservationSyncService(DatabaseService databaseService, OrderWebApiClient? orderWebApiClient = null)
     {
         _databaseService = databaseService;
+        _orderWebApiClient = orderWebApiClient;
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
     }
 
@@ -28,6 +32,13 @@ public sealed partial class ReservationSyncService : IDisposable
     {
         if (_isStarted)
         {
+            return;
+        }
+
+        var roleCheck = await CanRunReservationCloudAsync();
+        if (!roleCheck.Allowed)
+        {
+            AppDiagnostics.Log($"Reservation sync skipped: {roleCheck.Reason}");
             return;
         }
 
@@ -40,25 +51,31 @@ public sealed partial class ReservationSyncService : IDisposable
 
         await EnsureSchemaAsync();
 
-        var seconds = Math.Clamp(ParseInt(config.GetValueOrDefault("reservation_poll_seconds"), 300), 60, 900);
+        var seconds = Math.Clamp(ParseInt(config.GetValueOrDefault("reservation_poll_seconds"), 5), 5, 900);
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
         _timerCts = new CancellationTokenSource();
         _isStarted = true;
 
         _ = Task.Run(() => RunTimerAsync(_timerCts.Token));
-        _ = Task.Run(() => SyncTodayAsync());
+        _ = Task.Run(() => SyncTodayAsync(includeCancelled: true));
         StartMaintenanceTimers();
 
         AppDiagnostics.Log($"Reservation sync started, backup polling every {seconds}s.");
     }
 
-    public async Task<ReservationSyncResult> SyncTodayAsync(bool includeCancelled = false)
+    public async Task<ReservationSyncResult> SyncTodayAsync(bool includeCancelled = true)
     {
         return await SyncDateAsync(DateTime.Today, useSince: true, includeCancelled);
     }
 
     public async Task<ReservationSyncResult> SyncDateAsync(DateTime date, bool useSince = false, bool includeCancelled = false)
     {
+        var roleCheck = await CanRunReservationCloudAsync();
+        if (!roleCheck.Allowed)
+        {
+            return new ReservationSyncResult(false, 0, 0, roleCheck.Reason);
+        }
+
         if (!await _syncLock.WaitAsync(0))
         {
             return new ReservationSyncResult(false, 0, 0, "Reservation sync already running.");
@@ -129,7 +146,7 @@ public sealed partial class ReservationSyncService : IDisposable
         await using var command = new MySqlCommand(
             """
             SELECT id, cloud_id, local_id, reference, reservation_date, reservation_time, covers,
-                   customer_name, customer_phone, customer_email, notes, allergies, status,
+                   customer_name, customer_phone, customer_email, promo_code, notes, allergies, status,
                    source, table_number, deposit_amount_pence, pos_seen_at, pos_print_status,
                    upload_status, cloud_created_at, cloud_updated_at, last_updated_at
             FROM cloud_reservations
@@ -154,6 +171,12 @@ public sealed partial class ReservationSyncService : IDisposable
     {
         try
         {
+            var roleCheck = await CanRunReservationCloudAsync();
+            if (!roleCheck.Allowed)
+            {
+                return false;
+            }
+
             var config = await _databaseService.GetCloudConfigAsync();
             if (!IsConfigured(config) || string.IsNullOrWhiteSpace(cloudReservationId))
             {
@@ -172,7 +195,9 @@ public sealed partial class ReservationSyncService : IDisposable
             };
 
             AddAuthHeaders(request, config.GetValueOrDefault("api_key", ""));
-            using var response = await _httpClient.SendAsync(request);
+            using var response = _orderWebApiClient != null
+                ? await _orderWebApiClient.SendAsync(request)
+                : await _httpClient.SendAsync(request);
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -193,7 +218,7 @@ public sealed partial class ReservationSyncService : IDisposable
         {
             while (await _timer.WaitForNextTickAsync(cancellationToken))
             {
-                await SyncTodayAsync();
+                await SyncTodayAsync(includeCancelled: true);
             }
         }
         catch (OperationCanceledException)
@@ -225,7 +250,9 @@ public sealed partial class ReservationSyncService : IDisposable
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
         AddAuthHeaders(request, config.GetValueOrDefault("api_key", ""));
 
-        using var response = await _httpClient.SendAsync(request);
+        using var response = _orderWebApiClient != null
+            ? await _orderWebApiClient.SendAsync(request)
+            : await _httpClient.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
@@ -252,6 +279,26 @@ public sealed partial class ReservationSyncService : IDisposable
     private async Task<(bool IsNew, bool Updated)> UpsertReservationAsync(CloudReservationDto dto)
     {
         await using var connection = await _databaseService.GetConnectionAsync();
+        var localId = ResolveDtoString(dto.LocalId, dto.Extra, "localId", "local_id");
+        var reference = ResolveDtoString(dto.Reference, dto.Extra, "reference");
+        var promoCode = ResolveDtoString(
+            dto.PromoCode,
+            dto.Extra,
+            "promoCode",
+            "promo_code",
+            "promocode",
+            "promotionCode",
+            "promotion_code",
+            "discountCode",
+            "discount_code");
+        var tableNumber = ResolveDtoString(
+            dto.TableNumber,
+            dto.Extra,
+            "tableNumber",
+            "table_number",
+            "tableNo",
+            "table_no",
+            "table");
 
         await using var existsCommand = new MySqlCommand(
             "SELECT COUNT(*) FROM cloud_reservations WHERE cloud_id = @cloudId",
@@ -259,53 +306,70 @@ public sealed partial class ReservationSyncService : IDisposable
         existsCommand.Parameters.AddWithValue("@cloudId", dto.Id);
         var exists = Convert.ToInt32(await existsCommand.ExecuteScalarAsync()) > 0;
 
+        if (exists)
+        {
+            await using var updateCommand = new MySqlCommand(
+                """
+                UPDATE cloud_reservations
+                SET local_id = COALESCE(@localId, local_id),
+                    reference = COALESCE(@reference, reference),
+                    reservation_date = COALESCE(@reservationDate, reservation_date),
+                    reservation_time = COALESCE(@reservationTime, reservation_time),
+                    covers = COALESCE(@covers, covers),
+                    customer_name = COALESCE(@customerName, customer_name),
+                    customer_phone = COALESCE(@customerPhone, customer_phone),
+                    customer_email = COALESCE(@customerEmail, customer_email),
+                    promo_code = COALESCE(@promoCode, promo_code),
+                    notes = COALESCE(@notes, notes),
+                    allergies = COALESCE(@allergies, allergies),
+                    status = COALESCE(@status, status),
+                    source = COALESCE(@source, source),
+                    table_number = COALESCE(@tableNumber, table_number),
+                    deposit_amount_pence = COALESCE(@depositAmountPence, deposit_amount_pence),
+                    pos_print_status = COALESCE(@posPrintStatus, pos_print_status),
+                    cloud_created_at = COALESCE(@cloudCreatedAt, cloud_created_at),
+                    cloud_updated_at = COALESCE(@cloudUpdatedAt, cloud_updated_at),
+                    last_updated_at = UTC_TIMESTAMP()
+                WHERE cloud_id = @cloudId
+                """,
+                connection);
+
+            AddUpdateParameters(updateCommand, dto, localId, reference, promoCode, tableNumber);
+            var updated = await updateCommand.ExecuteNonQueryAsync();
+            return (false, updated > 0);
+        }
+
         await using var command = new MySqlCommand(
             """
             INSERT INTO cloud_reservations (
-                cloud_id, reference, reservation_date, reservation_time, covers,
-                customer_name, customer_phone, customer_email, notes, allergies, status,
+                cloud_id, local_id, reference, reservation_date, reservation_time, covers,
+                customer_name, customer_phone, customer_email, promo_code, notes, allergies, status,
                 source, table_number, deposit_amount_pence, pos_seen_at, pos_print_status,
                 cloud_created_at, cloud_updated_at, last_updated_at
             ) VALUES (
-                @cloudId, @reference, @reservationDate, @reservationTime, @covers,
-                @customerName, @customerPhone, @customerEmail, @notes, @allergies, @status,
+                @cloudId, @localId, @reference, @reservationDate, @reservationTime, @covers,
+                @customerName, @customerPhone, @customerEmail, @promoCode, @notes, @allergies, @status,
                 @source, @tableNumber, @depositAmountPence, @posSeenAt, @posPrintStatus,
                 @cloudCreatedAt, @cloudUpdatedAt, UTC_TIMESTAMP()
             )
-            ON DUPLICATE KEY UPDATE
-                reference = VALUES(reference),
-                reservation_date = VALUES(reservation_date),
-                reservation_time = VALUES(reservation_time),
-                covers = VALUES(covers),
-                customer_name = VALUES(customer_name),
-                customer_phone = VALUES(customer_phone),
-                customer_email = VALUES(customer_email),
-                notes = VALUES(notes),
-                allergies = VALUES(allergies),
-                status = VALUES(status),
-                source = VALUES(source),
-                table_number = VALUES(table_number),
-                deposit_amount_pence = VALUES(deposit_amount_pence),
-                pos_print_status = VALUES(pos_print_status),
-                cloud_created_at = VALUES(cloud_created_at),
-                cloud_updated_at = VALUES(cloud_updated_at),
-                last_updated_at = UTC_TIMESTAMP()
             """,
             connection);
 
         command.Parameters.AddWithValue("@cloudId", dto.Id);
-        command.Parameters.AddWithValue("@reference", dto.Reference ?? "");
+        command.Parameters.AddWithValue("@localId", DbText(localId));
+        command.Parameters.AddWithValue("@reference", reference ?? "");
         command.Parameters.AddWithValue("@reservationDate", ParseDate(dto.ReservationDate));
         command.Parameters.AddWithValue("@reservationTime", ParseTime(dto.ReservationTime));
-        command.Parameters.AddWithValue("@covers", dto.Covers);
+        command.Parameters.AddWithValue("@covers", dto.Covers > 0 ? dto.Covers : 1);
         command.Parameters.AddWithValue("@customerName", dto.CustomerName ?? "");
         command.Parameters.AddWithValue("@customerPhone", dto.CustomerPhone ?? "");
         command.Parameters.AddWithValue("@customerEmail", dto.CustomerEmail ?? "");
+        command.Parameters.AddWithValue("@promoCode", promoCode ?? "");
         command.Parameters.AddWithValue("@notes", dto.Notes ?? "");
         command.Parameters.AddWithValue("@allergies", dto.Allergies ?? "");
         command.Parameters.AddWithValue("@status", string.IsNullOrWhiteSpace(dto.Status) ? "confirmed" : dto.Status);
         command.Parameters.AddWithValue("@source", dto.Source ?? "");
-        command.Parameters.AddWithValue("@tableNumber", dto.TableNumber ?? "");
+        command.Parameters.AddWithValue("@tableNumber", tableNumber ?? "");
         command.Parameters.AddWithValue("@depositAmountPence", dto.DepositAmountPence);
         command.Parameters.AddWithValue("@posSeenAt", ToDbDate(dto.PosSeenAt));
         command.Parameters.AddWithValue("@posPrintStatus", (object?)dto.PosPrintStatus ?? DBNull.Value);
@@ -313,7 +377,95 @@ public sealed partial class ReservationSyncService : IDisposable
         command.Parameters.AddWithValue("@cloudUpdatedAt", ToDbDate(dto.UpdatedAt));
 
         var affected = await command.ExecuteNonQueryAsync();
-        return (!exists, affected > 0);
+        return (true, affected > 0);
+    }
+
+    private static void AddUpdateParameters(
+        MySqlCommand command,
+        CloudReservationDto dto,
+        string? localId,
+        string? reference,
+        string? promoCode,
+        string? tableNumber)
+    {
+        command.Parameters.AddWithValue("@cloudId", dto.Id);
+        command.Parameters.AddWithValue("@localId", DbText(localId));
+        command.Parameters.AddWithValue("@reference", DbText(reference));
+        command.Parameters.AddWithValue("@reservationDate", DbDate(dto.ReservationDate));
+        command.Parameters.AddWithValue("@reservationTime", DbTime(dto.ReservationTime));
+        command.Parameters.AddWithValue("@covers", dto.Covers > 0 ? dto.Covers : DBNull.Value);
+        command.Parameters.AddWithValue("@customerName", DbText(dto.CustomerName));
+        command.Parameters.AddWithValue("@customerPhone", DbText(dto.CustomerPhone));
+        command.Parameters.AddWithValue("@customerEmail", DbText(dto.CustomerEmail));
+        command.Parameters.AddWithValue("@promoCode", DbText(promoCode));
+        command.Parameters.AddWithValue("@notes", DbText(dto.Notes));
+        command.Parameters.AddWithValue("@allergies", DbText(dto.Allergies));
+        command.Parameters.AddWithValue("@status", DbText(dto.Status));
+        command.Parameters.AddWithValue("@source", DbText(dto.Source));
+        command.Parameters.AddWithValue("@tableNumber", DbText(tableNumber));
+        command.Parameters.AddWithValue("@depositAmountPence", dto.DepositAmountPence > 0 ? dto.DepositAmountPence : DBNull.Value);
+        command.Parameters.AddWithValue("@posPrintStatus", DbText(dto.PosPrintStatus));
+        command.Parameters.AddWithValue("@cloudCreatedAt", ToDbDate(dto.CreatedAt));
+        command.Parameters.AddWithValue("@cloudUpdatedAt", ToDbDate(dto.UpdatedAt));
+    }
+
+    private static object DbText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    }
+
+    private static object DbDate(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : ParseDate(value);
+    }
+
+    private static object DbTime(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? DBNull.Value : ParseTime(value);
+    }
+
+    private static string? ResolveDtoString(
+        string? primary,
+        IReadOnlyDictionary<string, JsonElement>? extra,
+        params string[] aliases)
+    {
+        if (!string.IsNullOrWhiteSpace(primary))
+        {
+            return primary.Trim();
+        }
+
+        if (extra == null)
+        {
+            return null;
+        }
+
+        foreach (var alias in aliases)
+        {
+            if (!extra.TryGetValue(alias, out var element))
+            {
+                continue;
+            }
+
+            var value = JsonElementToString(element);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? JsonElementToString(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
     }
 
     private async Task MarkSeenAsync(string cloudReservationId)
@@ -368,6 +520,7 @@ public sealed partial class ReservationSyncService : IDisposable
                 customer_name VARCHAR(255) NOT NULL DEFAULT '',
                 customer_phone VARCHAR(64) NOT NULL DEFAULT '',
                 customer_email VARCHAR(255) NOT NULL DEFAULT '',
+                promo_code VARCHAR(64) NOT NULL DEFAULT '',
                 notes TEXT NULL,
                 allergies TEXT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'confirmed',
@@ -410,6 +563,7 @@ public sealed partial class ReservationSyncService : IDisposable
         var alterStatements = new[]
         {
             "ALTER TABLE cloud_reservations ADD COLUMN IF NOT EXISTS local_id VARCHAR(64) NULL AFTER cloud_id",
+            "ALTER TABLE cloud_reservations ADD COLUMN IF NOT EXISTS promo_code VARCHAR(64) NOT NULL DEFAULT '' AFTER customer_email",
             "ALTER TABLE cloud_reservations ADD COLUMN IF NOT EXISTS upload_status VARCHAR(20) NOT NULL DEFAULT 'synced' AFTER pos_print_status",
             "CREATE INDEX IF NOT EXISTS idx_cloud_reservations_upload_status ON cloud_reservations (upload_status)",
             "CREATE INDEX IF NOT EXISTS idx_cloud_reservations_local_id ON cloud_reservations (local_id)"
@@ -456,6 +610,7 @@ public sealed partial class ReservationSyncService : IDisposable
             CustomerName = reader.GetString("customer_name"),
             CustomerPhone = reader.GetString("customer_phone"),
             CustomerEmail = reader.GetString("customer_email"),
+            PromoCode = IsNull(reader, "promo_code") ? "" : reader.GetString("promo_code"),
             Notes = IsNull(reader, "notes") ? "" : reader.GetString("notes"),
             Allergies = IsNull(reader, "allergies") ? "" : reader.GetString("allergies"),
             Status = reader.GetString("status"),
@@ -502,6 +657,17 @@ public sealed partial class ReservationSyncService : IDisposable
             baseUrl = baseUrl[..^"/pos/reservations".Length];
         }
 
+        if (baseUrl.EndsWith("/pos/reservations/ack", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = baseUrl[..^"/pos/reservations/ack".Length];
+        }
+
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+            && string.IsNullOrWhiteSpace(uri.AbsolutePath.Trim('/')))
+        {
+            baseUrl = $"{baseUrl}/api";
+        }
+
         return baseUrl.TrimEnd('/');
     }
 
@@ -509,6 +675,13 @@ public sealed partial class ReservationSyncService : IDisposable
     {
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
         request.Headers.TryAddWithoutValidation("X-API-Key", apiKey);
+    }
+
+    private async Task<TerminalRoleCheck> CanRunReservationCloudAsync()
+    {
+        return _orderWebApiClient != null
+            ? await _orderWebApiClient.CanRunCloudJobsAsync()
+            : await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
     }
 
     private static int ParseInt(string? value, int fallback)
@@ -543,11 +716,11 @@ public sealed partial class ReservationSyncService : IDisposable
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            _ = AppAlertService.ShowAlertAsync(
-                "New Reservation",
+            NotificationService.Instance.ShowInfo(
                 count == 1
                     ? "A new online reservation has arrived."
-                    : $"{count} new online reservations have arrived.");
+                    : $"{count} new online reservations have arrived.",
+                "New Reservation");
         });
     }
 
@@ -584,6 +757,7 @@ public sealed partial class ReservationSyncService : IDisposable
         public string? Reference { get; init; }
         public string? ReservationDate { get; init; }
         public string? ReservationTime { get; init; }
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int Covers { get; init; }
         public string? CustomerName { get; init; }
         public string? CustomerPhone { get; init; }
@@ -594,11 +768,14 @@ public sealed partial class ReservationSyncService : IDisposable
         public string? Status { get; init; }
         public string? Source { get; init; }
         public string? TableNumber { get; init; }
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int DepositAmountPence { get; init; }
         public string? PosSeenAt { get; init; }
         public string? PosPrintStatus { get; init; }
         public string? CreatedAt { get; init; }
         public string? UpdatedAt { get; init; }
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? Extra { get; init; }
     }
 }
 

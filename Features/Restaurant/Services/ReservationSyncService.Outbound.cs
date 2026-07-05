@@ -13,6 +13,12 @@ public sealed partial class ReservationSyncService
     public async Task<(bool Success, string Message, CloudReservation? Reservation)> CreatePosReservationAsync(
         CreatePosReservationRequest request)
     {
+        var roleCheck = await CanRunReservationCloudAsync();
+        if (!roleCheck.Allowed)
+        {
+            return (false, roleCheck.Reason, null);
+        }
+
         if (string.IsNullOrWhiteSpace(request.CustomerName))
         {
             return (false, "Customer name is required.", null);
@@ -38,11 +44,13 @@ public sealed partial class ReservationSyncService
             Covers = request.Covers,
             CustomerName = request.CustomerName.Trim(),
             CustomerPhone = request.CustomerPhone.Trim(),
+            CustomerEmail = request.CustomerEmail.Trim(),
+            PromoCode = request.PromoCode.Trim(),
             Notes = request.Notes.Trim(),
             Allergies = request.Allergies.Trim(),
             TableNumber = request.TableNumber.Trim(),
             Status = "confirmed",
-            Source = string.IsNullOrWhiteSpace(request.Channel) ? "pos" : request.Channel.Trim(),
+            Source = "pos",
             UploadStatus = "pending",
             LastUpdatedAt = DateTime.UtcNow
         };
@@ -58,12 +66,17 @@ public sealed partial class ReservationSyncService
         }
 
         SyncCompleted?.Invoke(this, new ReservationSyncCompletedEventArgs(
-            new ReservationSyncResult(true, 1, 0, "Booking saved on till. Will upload when online.")));
-        return (true, upload.Message ?? "Saved locally. Upload pending.", reservation);
+            new ReservationSyncResult(false, 1, 0, "Booking saved on till, but cloud upload failed.")));
+        return (false, upload.Message ?? "Saved locally. Upload pending.", reservation);
     }
 
     public async Task<int> UploadPendingReservationsAsync()
     {
+        if (!(await CanRunReservationCloudAsync()).Allowed)
+        {
+            return 0;
+        }
+
         await EnsureSchemaAsync();
         var uploaded = 0;
 
@@ -71,7 +84,7 @@ public sealed partial class ReservationSyncService
         await using var command = new MySqlCommand(
             """
             SELECT id, cloud_id, local_id, reference, reservation_date, reservation_time, covers,
-                   customer_name, customer_phone, customer_email, notes, allergies, status,
+                   customer_name, customer_phone, customer_email, promo_code, notes, allergies, status,
                    source, table_number, deposit_amount_pence, upload_status
             FROM cloud_reservations
             WHERE upload_status IN ('pending', 'failed')
@@ -103,6 +116,11 @@ public sealed partial class ReservationSyncService
 
     public async Task<int> ProcessPendingAcksAsync()
     {
+        if (!(await CanRunReservationCloudAsync()).Allowed)
+        {
+            return 0;
+        }
+
         await EnsureSchemaAsync();
         var sent = 0;
 
@@ -164,28 +182,40 @@ public sealed partial class ReservationSyncService
                 tenant = config.GetValueOrDefault("tenant_slug", ""),
                 local_id = reservation.LocalId ?? reservation.CloudId,
                 channel,
+                source = "pos",
                 reservationDate = reservation.ReservationDate.ToString("yyyy-MM-dd"),
-                reservationTime = reservation.ReservationTime.ToString(@"HH\:mm"),
+                reservationTime = FormatReservationTime(reservation.ReservationTime),
                 covers = reservation.Covers,
                 customerName = reservation.CustomerName,
                 customerPhone = phone,
-                notes = reservation.Notes,
-                allergies = reservation.Allergies
+                customerEmail = reservation.CustomerEmail,
+                email = reservation.CustomerEmail,
+                promoCode = reservation.PromoCode,
+                notes = StripUploadDiagnostics(reservation.Notes),
+                allergies = reservation.Allergies,
+                tableNumber = reservation.TableNumber,
+                status = reservation.Status
             };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
                 Content = JsonContent.Create(payload)
             };
-            AddAuthHeaders(request, config.GetValueOrDefault("api_key", ""));
+            var apiKey = config.GetValueOrDefault("api_key", "");
+            AddAuthHeaders(request, apiKey);
 
-            using var response = await _httpClient.SendAsync(request);
+            using var response = _orderWebApiClient != null
+                ? await _orderWebApiClient.SendAsync(request)
+                : await _httpClient.SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
             {
-                await MarkUploadFailedAsync(reservation.CloudId, $"HTTP {(int)response.StatusCode}");
-                return (false, $"Cloud upload failed: HTTP {(int)response.StatusCode}", reservation);
+                var error = FormatCloudError(response.StatusCode, body);
+                AppDiagnostics.Log($"Reservation upload failed: {endpoint} {error}");
+                await QueueReservationUploadAsync(endpoint, payload, apiKey, reservation.LocalId ?? reservation.CloudId);
+                await MarkUploadFailedAsync(reservation.CloudId, error);
+                return (false, $"Cloud upload failed: {error}", reservation);
             }
 
             var parsed = JsonSerializer.Deserialize<CreateReservationResponse>(
@@ -216,6 +246,11 @@ public sealed partial class ReservationSyncService
         catch (Exception ex)
         {
             await MarkUploadFailedAsync(reservation.CloudId, ex.Message);
+            await QueueReservationUploadAsync(
+                string.Empty,
+                new { reservation.LocalId, reservation.CloudId },
+                string.Empty,
+                reservation.LocalId ?? reservation.CloudId);
             AppDiagnostics.Log($"Reservation upload failed: {ex.Message}");
             return (false, "Saved on till. Upload will retry automatically.", reservation);
         }
@@ -228,11 +263,11 @@ public sealed partial class ReservationSyncService
             """
             INSERT INTO cloud_reservations (
                 cloud_id, local_id, reference, reservation_date, reservation_time, covers,
-                customer_name, customer_phone, customer_email, notes, allergies, status,
+                customer_name, customer_phone, customer_email, promo_code, notes, allergies, status,
                 source, table_number, deposit_amount_pence, upload_status, last_updated_at
             ) VALUES (
                 @cloudId, @localId, @reference, @reservationDate, @reservationTime, @covers,
-                @customerName, @customerPhone, @customerEmail, @notes, @allergies, @status,
+                @customerName, @customerPhone, @customerEmail, @promoCode, @notes, @allergies, @status,
                 @source, @tableNumber, 0, @uploadStatus, UTC_TIMESTAMP()
             )
             """,
@@ -247,6 +282,7 @@ public sealed partial class ReservationSyncService
         command.Parameters.AddWithValue("@customerName", reservation.CustomerName);
         command.Parameters.AddWithValue("@customerPhone", reservation.CustomerPhone);
         command.Parameters.AddWithValue("@customerEmail", reservation.CustomerEmail);
+        command.Parameters.AddWithValue("@promoCode", reservation.PromoCode);
         command.Parameters.AddWithValue("@notes", reservation.Notes);
         command.Parameters.AddWithValue("@allergies", reservation.Allergies);
         command.Parameters.AddWithValue("@status", reservation.Status);
@@ -258,6 +294,8 @@ public sealed partial class ReservationSyncService
 
     private async Task ApplyCloudUploadResultAsync(string oldCloudId, string newCloudId, string reference, string? localId = null)
     {
+        var normalizedLocalId = NormalizeReservationId(localId);
+
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = new MySqlCommand(
             """
@@ -274,7 +312,7 @@ public sealed partial class ReservationSyncService
         command.Parameters.AddWithValue("@newCloudId", newCloudId);
         command.Parameters.AddWithValue("@reference", reference);
         command.Parameters.AddWithValue("@oldCloudId", oldCloudId);
-        command.Parameters.AddWithValue("@localId", (object?)localId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@localId", (object?)normalizedLocalId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -284,7 +322,8 @@ public sealed partial class ReservationSyncService
         return value switch
         {
             "phone" => "phone",
-            "walk_in" or "walkin" or "walk-in" or "pos" => "walk_in",
+            "walk_in" or "walkin" or "walk-in" => "walk_in",
+            "pos" => "walk_in",
             _ => "walk_in"
         };
     }
@@ -294,19 +333,37 @@ public sealed partial class ReservationSyncService
         string status,
         string? localId = null)
     {
-        if (string.IsNullOrWhiteSpace(cloudId) && string.IsNullOrWhiteSpace(localId))
+        var roleCheck = await CanRunReservationCloudAsync();
+        if (!roleCheck.Allowed)
+        {
+            return (false, roleCheck.Reason);
+        }
+
+        var normalizedCloudId = NormalizeReservationId(cloudId);
+        var normalizedLocalId = NormalizeReservationId(localId);
+
+        if (normalizedCloudId == null && normalizedLocalId == null)
         {
             return (false, "Reservation id missing.");
         }
 
         await EnsureSchemaAsync();
 
-        if (!string.IsNullOrWhiteSpace(cloudId) && !cloudId.StartsWith("local:", StringComparison.Ordinal))
+        var cloudUpdateFailed = false;
+        if (normalizedCloudId != null && !normalizedCloudId.StartsWith("local:", StringComparison.Ordinal))
         {
-            var ackOk = await AckReservationAsync(cloudId, status);
-            if (!ackOk)
+            var isCancel = string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
+            var cloudOk = isCancel
+                ? (await PatchReservationAsync(normalizedCloudId, status: status, localId: normalizedLocalId)).Success
+                : await AckReservationAsync(normalizedCloudId, status);
+            if (!cloudOk)
             {
-                await QueueAckRetryAsync(cloudId, status);
+                if (!isCancel)
+                {
+                    await QueueAckRetryAsync(normalizedCloudId, status);
+                }
+
+                cloudUpdateFailed = true;
             }
         }
 
@@ -315,19 +372,21 @@ public sealed partial class ReservationSyncService
             """
             UPDATE cloud_reservations
             SET status = @status, last_updated_at = UTC_TIMESTAMP()
-            WHERE cloud_id = @cloudId
+            WHERE (@cloudId IS NOT NULL AND cloud_id = @cloudId)
                OR (@localId IS NOT NULL AND local_id = @localId)
             """,
             connection);
         command.Parameters.AddWithValue("@status", status);
-        command.Parameters.AddWithValue("@cloudId", cloudId);
-        command.Parameters.AddWithValue("@localId", (object?)localId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@cloudId", (object?)normalizedCloudId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@localId", (object?)normalizedLocalId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync();
 
         SyncCompleted?.Invoke(this, new ReservationSyncCompletedEventArgs(
-            new ReservationSyncResult(true, 0, 1, $"Status updated to {status}.")));
+            new ReservationSyncResult(!cloudUpdateFailed, 0, 1, $"Status updated to {status}.")));
 
-        return (true, $"Status updated to {status}.");
+        return cloudUpdateFailed
+            ? (false, $"Status saved on till. Cloud update will retry for {status}.")
+            : (true, $"Status updated to {status}.");
     }
 
     public async Task<(bool Success, string Message)> PatchReservationAsync(
@@ -338,6 +397,12 @@ public sealed partial class ReservationSyncService
         string? status = null,
         string? localId = null)
     {
+        var roleCheck = await CanRunReservationCloudAsync();
+        if (!roleCheck.Allowed)
+        {
+            return (false, roleCheck.Reason);
+        }
+
         var config = await _databaseService.GetCloudConfigAsync();
         if (!IsConfigured(config))
         {
@@ -369,7 +434,7 @@ public sealed partial class ReservationSyncService
 
         if (reservationTime.HasValue)
         {
-            payload["reservationTime"] = reservationTime.Value.ToString(@"HH\:mm");
+            payload["reservationTime"] = FormatReservationTime(reservationTime.Value);
         }
 
         if (covers.HasValue)
@@ -389,29 +454,58 @@ public sealed partial class ReservationSyncService
         };
         AddAuthHeaders(request, config.GetValueOrDefault("api_key", ""));
 
-        using var response = await _httpClient.SendAsync(request);
+        using var response = _orderWebApiClient != null
+            ? await _orderWebApiClient.SendAsync(request)
+            : await _httpClient.SendAsync(request);
         if (!response.IsSuccessStatusCode)
         {
-            return (false, $"Cloud update failed: HTTP {(int)response.StatusCode}");
+            var body = await response.Content.ReadAsStringAsync();
+            var error = FormatCloudError(response.StatusCode, body);
+            await QueueReservationPatchAsync(endpoint, payload, config.GetValueOrDefault("api_key", ""));
+            return (false, $"Cloud update failed: {error}");
         }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
+            var normalizedCloudId = NormalizeReservationId(cloudId);
+            var normalizedLocalId = NormalizeReservationId(localId);
+
             await using var connection = await _databaseService.GetConnectionAsync();
             await using var command = new MySqlCommand(
                 """
                 UPDATE cloud_reservations
                 SET status = @status, last_updated_at = UTC_TIMESTAMP()
-                WHERE cloud_id = @cloudId OR (@localId IS NOT NULL AND local_id = @localId)
+                WHERE (@cloudId IS NOT NULL AND cloud_id = @cloudId)
+                   OR (@localId IS NOT NULL AND local_id = @localId)
                 """,
                 connection);
             command.Parameters.AddWithValue("@status", status);
-            command.Parameters.AddWithValue("@cloudId", cloudId);
-            command.Parameters.AddWithValue("@localId", (object?)localId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@cloudId", (object?)normalizedCloudId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@localId", (object?)normalizedLocalId ?? DBNull.Value);
             await command.ExecuteNonQueryAsync();
         }
 
         return (true, "Reservation updated on OrderWeb.");
+    }
+
+    private async Task QueueReservationPatchAsync(string endpoint, object payload, string apiKey)
+    {
+        if (_orderWebApiClient == null || string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return;
+        }
+
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey(
+            "reservation-patch",
+            JsonSerializer.Serialize(payload));
+        await _orderWebApiClient.EnqueueAsync(
+            "reservation_patch",
+            endpoint,
+            payload,
+            apiKey,
+            idempotencyKey,
+            httpMethod: "PATCH",
+            priority: 3);
     }
 
     private async Task MarkUploadFailedAsync(string cloudId, string error)
@@ -421,17 +515,64 @@ public sealed partial class ReservationSyncService
             """
             UPDATE cloud_reservations
             SET upload_status = 'failed',
-                notes = CASE
-                    WHEN notes IS NULL OR notes = '' THEN @error
-                    ELSE CONCAT(notes, ' | Upload: ', @error)
-                END,
                 last_updated_at = UTC_TIMESTAMP()
             WHERE cloud_id = @cloudId
             """,
             connection);
         command.Parameters.AddWithValue("@cloudId", cloudId);
-        command.Parameters.AddWithValue("@error", error.Length > 200 ? error[..200] : error);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static string FormatReservationTime(TimeSpan time)
+    {
+        return DateTime.Today.Add(time).ToString("HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private static string? NormalizeReservationId(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string StripUploadDiagnostics(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = notes.Trim();
+        if (IsUploadDiagnostic(trimmed))
+        {
+            return string.Empty;
+        }
+
+        var uploadMarkerIndex = trimmed.IndexOf(" | Upload:", StringComparison.OrdinalIgnoreCase);
+        return uploadMarkerIndex < 0
+            ? trimmed
+            : trimmed[..uploadMarkerIndex].Trim();
+    }
+
+    private static bool IsUploadDiagnostic(string notes)
+    {
+        return notes.StartsWith("Input string was not in a correct format", StringComparison.OrdinalIgnoreCase)
+               || notes.StartsWith("HTTP ", StringComparison.OrdinalIgnoreCase)
+               || notes.StartsWith("Cloud upload failed", StringComparison.OrdinalIgnoreCase)
+               || notes.StartsWith("Invalid cloud response", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatCloudError(System.Net.HttpStatusCode statusCode, string body)
+    {
+        var cleanBody = string.IsNullOrWhiteSpace(body)
+            ? ""
+            : body.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
+        if (cleanBody.Length > 300)
+        {
+            cleanBody = cleanBody[..300];
+        }
+
+        return string.IsNullOrWhiteSpace(cleanBody)
+            ? $"HTTP {(int)statusCode} {statusCode}"
+            : $"HTTP {(int)statusCode} {statusCode}: {cleanBody}";
     }
 
     private async Task QueueAckRetryAsync(string cloudReservationId, string status)
@@ -447,6 +588,46 @@ public sealed partial class ReservationSyncService
         command.Parameters.AddWithValue("@cloudId", cloudReservationId);
         command.Parameters.AddWithValue("@status", status);
         await command.ExecuteNonQueryAsync();
+
+        if (_orderWebApiClient != null)
+        {
+            var config = await _databaseService.GetCloudConfigAsync();
+            if (IsConfigured(config))
+            {
+                var endpoint = $"{NormalizeApiBaseUrl(config)}/pos/reservations/ack";
+                var apiKey = config.GetValueOrDefault("api_key", "");
+                var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("reservation-ack", cloudReservationId, status);
+                await _orderWebApiClient.EnqueueAsync(
+                    "reservation_ack",
+                    endpoint,
+                    new
+                    {
+                        tenant = config.GetValueOrDefault("tenant_slug", ""),
+                        reservation_id = cloudReservationId,
+                        status
+                    },
+                    apiKey,
+                    idempotencyKey,
+                    priority: 4);
+            }
+        }
+    }
+
+    private async Task QueueReservationUploadAsync(string endpoint, object payload, string apiKey, string localId)
+    {
+        if (_orderWebApiClient == null || string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return;
+        }
+
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("reservation-upload", localId);
+        await _orderWebApiClient.EnqueueAsync(
+            "reservation_upload",
+            endpoint,
+            payload,
+            apiKey,
+            idempotencyKey,
+            priority: 4);
     }
 
     private async Task DeletePendingAckAsync(string cloudReservationId)
@@ -526,6 +707,7 @@ public sealed partial class ReservationSyncService
             CustomerName = reader.GetString("customer_name"),
             CustomerPhone = reader.GetString("customer_phone"),
             CustomerEmail = IsNull(reader, "customer_email") ? "" : reader.GetString("customer_email"),
+            PromoCode = IsNull(reader, "promo_code") ? "" : reader.GetString("promo_code"),
             Notes = IsNull(reader, "notes") ? "" : reader.GetString("notes"),
             Allergies = IsNull(reader, "allergies") ? "" : reader.GetString("allergies"),
             Status = reader.GetString("status"),

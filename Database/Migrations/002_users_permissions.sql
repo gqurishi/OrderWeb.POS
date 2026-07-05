@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -61,7 +62,7 @@ VALUES
     ('report.view', 'View Reports', 'reports', 'Access reports module'),
     ('inventory.view', 'View Inventory', 'reports', 'Access inventory module'),
     ('settings.manage_business', 'Manage Business Settings', 'settings', 'Edit business settings'),
-    ('users.manage', 'Manage Users', 'settings', 'Create, edit, and delete users'),
+    ('users.manage', 'Manage Users', 'settings', 'Create, edit, and deactivate users'),
     ('ordernumber.manage', 'Manage Order Prefix', 'settings', 'Edit order numbering settings'),
     ('printers.manage', 'Manage Printers', 'printing', 'Configure printer setup and groups'),
     ('foodmenu.manage', 'Manage Food Menu', 'menu', 'Create/edit menu items and categories')
@@ -81,4 +82,3 @@ VALUES
     ('manager', 'loyalty.manage'),
     ('manager', 'reservation.manage')
 ON DUPLICATE KEY UPDATE permission_key = VALUES(permission_key);
-

@@ -77,6 +77,8 @@
                                    <Button x:Name="CashDrawerButton" Grid.Row="0" Grid.Column="5" Text="Cash Drawer" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="DiscountAuditButton" Grid.Row="0" Grid.Column="6" Text="Discount Audit" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="StaffHoursButton" Grid.Row="1" Grid.ColumnSpan="2" Text="Staff Hours" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="VoidCancelledButton" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Text="Void / Cancelled" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="HistoricalReportsButton" Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="2" Text="Historical Reports" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                             </Grid>
 
                             <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12" IsVisible="{Binding IsCustomRangeVisible, FallbackValue=False}" RowSpacing="8">
@@ -179,11 +181,11 @@
                             Padding="16">
                      <VerticalStackLayout Spacing="14">
                             <VerticalStackLayout Spacing="4">
-                                   <Label Text="Operational Analytics"
+                                   <Label Text="Sales Summary"
                                           FontFamily="AlegreyaBold"
                                           FontSize="28"
                                           TextColor="#0F172A" />
-                                   <Label Text="Send latency, payment completion, void auditing, and draft abandonment from the event log."
+                                   <Label Text="Order totals for the selected report period."
                                           FontFamily="OpenSansRegular"
                                           FontSize="12"
                                           TextColor="#64748B" />
@@ -228,33 +230,6 @@
                                    </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
-                                   <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
-                                          <VerticalStackLayout Spacing="4">
-                                                 <Label Text="Send latency" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
-                                                 <Label Text="{Binding OperationalSendLatencyText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalSendLatencyColor}" />
-                                          </VerticalStackLayout>
-                                   </Border>
-                                   <Border Grid.Column="1" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
-                                          <VerticalStackLayout Spacing="4">
-                                                 <Label Text="Payment completion" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
-                                                 <Label Text="{Binding OperationalPaymentCompletionText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalPaymentCompletionColor}" />
-                                          </VerticalStackLayout>
-                                   </Border>
-                                   <Border Grid.Column="2" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
-                                          <VerticalStackLayout Spacing="4">
-                                                 <Label Text="Draft abandonment" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
-                                                 <Label Text="{Binding OperationalDraftAbandonmentText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalDraftAbandonmentColor}" />
-                                          </VerticalStackLayout>
-                                   </Border>
-                                   <Border Grid.Column="3" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
-                                          <VerticalStackLayout Spacing="4">
-                                                 <Label Text="Void audit" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
-                                                 <Label Text="{Binding OperationalVoidAuditText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="{Binding OperationalVoidAuditColor}" />
-                                          </VerticalStackLayout>
-                                   </Border>
-                            </Grid>
-
                             <Border Stroke="#E2E8F0"
                                     StrokeThickness="1"
                                     BackgroundColor="#F8FAFC"
@@ -293,52 +268,11 @@
                                           </chart:SfCartesianChart>
                                    </VerticalStackLayout>
                             </Border>
-
-                            <Grid ColumnDefinitions="*,1.2*" ColumnSpacing="12">
-                                   <VerticalStackLayout Spacing="8">
-                                          <Label Text="Recent voids" FontFamily="OpenSansSemibold" FontSize="14" TextColor="#0F172A" />
-                                          <CollectionView ItemsSource="{Binding VoidAudits}"
-                                                          SelectionMode="None"
-                                                          HeightRequest="150">
-                                                 <CollectionView.EmptyView>
-                                                        <Label Text="No void audits in the selected date range."
-                                                               FontFamily="OpenSansRegular"
-                                                               FontSize="12"
-                                                               TextColor="#64748B" />
-                                                 </CollectionView.EmptyView>
-                                                 <CollectionView.ItemTemplate>
-                                                        <DataTemplate>
-                                                               <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 12" Padding="12" Margin="0,0,0,8">
-                                                                      <VerticalStackLayout Spacing="4">
-                                                                             <Grid ColumnDefinitions="*,Auto">
-                                                                                    <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" />
-                                                                                    <Label Grid.Column="1" Text="{Binding EventAt, StringFormat='{0:dd/MM HH:mm}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
-                                                                             </Grid>
-                                                                             <Label Text="{Binding Reason}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="WordWrap" />
-                                                                             <Label Text="{Binding ActorName, StringFormat='Actor: {0}'}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
-                                                                      </VerticalStackLayout>
-                                                               </Border>
-                                                        </DataTemplate>
-                                                 </CollectionView.ItemTemplate>
-                                          </CollectionView>
-                                   </VerticalStackLayout>
-
-                                   <Border Grid.Column="1" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
-                                          <VerticalStackLayout Spacing="8">
-                                                 <Label Text="Audit focus" FontFamily="OpenSansSemibold" FontSize="14" TextColor="#0F172A" />
-                                                 <Label Text="Event log entries drive send latency, payment timing, void reasons, and stale draft cleanup. Summary fields stay on orders for fast dashboards."
-                                                        FontFamily="OpenSansRegular"
-                                                        FontSize="12"
-                                                        TextColor="#475569"
-                                                        LineBreakMode="WordWrap" />
-                                          </VerticalStackLayout>
-                                   </Border>
-                            </Grid>
                      </VerticalStackLayout>
               </Border>
 
               <Border Grid.Row="3"
-                            IsVisible="{Binding IsOrdersReportVisible}"
+                            IsVisible="{Binding IsHistoricalReportsVisible}"
                             Margin="20,14,20,0"
                             Stroke="#E2E8F0"
                             StrokeThickness="1"
@@ -552,7 +486,7 @@
                             </Grid>
 
                             <Grid Grid.Row="2"
-                                  ColumnDefinitions="1.2*,1.2*,0.9*,1.1*,1.0*,1.0*,1.0*"
+                                  ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.9*,0.9*,0.9*,0.7*"
                                   ColumnSpacing="10"
                                   Padding="8,0,8,8">
                                    <Label Text="Order Number" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
@@ -562,6 +496,13 @@
                                    <Label Grid.Column="4" Text="Net Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
                                    <Label Grid.Column="5" Text="VAT Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
                                    <Label Grid.Column="6" Text="Gross Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="7"
+                                          Text="Action"
+                                          FontFamily="OpenSansSemibold"
+                                          FontSize="13"
+                                          TextColor="#64748B"
+                                          HorizontalTextAlignment="Center"
+                                          IsVisible="{Binding CanUseFullReportTools}" />
                             </Grid>
 
                             <CollectionView x:Name="OrdersCollection"
@@ -586,7 +527,7 @@
                                                         StrokeShape="RoundRectangle 10"
                                                         Padding="8,10"
                                                         Margin="0,0,0,8">
-                                                        <Grid ColumnDefinitions="1.2*,1.2*,0.9*,1.1*,1.0*,1.0*,1.0*" ColumnSpacing="10">
+                                                        <Grid ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.9*,0.9*,0.9*,0.7*" ColumnSpacing="10">
                                                                <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0F172A" />
                                                                <Label Grid.Column="1" Text="{Binding CreatedAtDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
                                                                <Label Grid.Column="2" Text="{Binding SourceChannel}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
@@ -594,6 +535,131 @@
                                                                <Label Grid.Column="4" Text="{Binding NetSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
                                                                <Label Grid.Column="5" Text="{Binding VatAmount, StringFormat='£{0:F2}'}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" HorizontalTextAlignment="End" />
                                                                <Label Grid.Column="6" Text="{Binding GrossSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                               <Button Grid.Column="7"
+                                                                       Text="Void"
+                                                                       Clicked="OnHardDeleteOrderClicked"
+                                                                       CommandParameter="{Binding .}"
+                                                                       IsVisible="{Binding Source={x:Reference OrdersCollection}, Path=BindingContext.CanUseFullReportTools}"
+                                                                       BackgroundColor="#FEE2E2"
+                                                                       BorderColor="#FCA5A5"
+                                                                       BorderWidth="1"
+                                                                       TextColor="#B91C1C"
+                                                                       FontFamily="OpenSansSemibold"
+                                                                       FontSize="12"
+                                                                       CornerRadius="8"
+                                                                       Padding="10,5"
+                                                                       HorizontalOptions="Center"
+                                                                       VerticalOptions="Center" />
+                                                        </Grid>
+                                                 </Border>
+                                          </DataTemplate>
+                                   </CollectionView.ItemTemplate>
+                            </CollectionView>
+                     </Grid>
+              </Border>
+
+
+              <Border Grid.Row="4"
+                      IsVisible="{Binding IsVoidCancelledReportVisible}"
+                      Margin="20,14,20,0"
+                      Stroke="#FECACA"
+                      StrokeThickness="1"
+                      BackgroundColor="#FFFFFF"
+                      StrokeShape="RoundRectangle 20"
+                      Padding="16">
+                     <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                   <VerticalStackLayout Spacing="6">
+                                          <Label Text="Void / Cancelled Audit"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="40"
+                                                 TextColor="#0F172A" />
+                                          <Label Text="Voided and cancelled orders are excluded from sales totals, VAT, top sellers, and sales trend. Their original amounts stay here for audit only."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="12"
+                                                 TextColor="#64748B"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+
+                                   <Label Grid.Column="1"
+                                          Text="{Binding VoidCancelledLastEventText}"
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#64748B"
+                                          HorizontalTextAlignment="End"
+                                          VerticalTextAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                                   <Border Stroke="#FECACA" StrokeThickness="1" BackgroundColor="#FEF2F2" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Audit Orders" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#991B1B" />
+                                                 <Label Text="{Binding VoidCancelledTotalText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="#991B1B" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#FECACA" StrokeThickness="1" BackgroundColor="#FEF2F2" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Original Amount" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#991B1B" />
+                                                 <Label Text="{Binding VoidCancelledAmountText}" FontFamily="AlegreyaBold" FontSize="20" TextColor="#991B1B" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#FED7AA" StrokeThickness="1" BackgroundColor="#FFF7ED" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Voided" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#9A3412" />
+                                                 <Label Text="{Binding VoidCancelledVoidedText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#9A3412" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="3" Stroke="#CBD5E1" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Cancelled" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#475569" />
+                                                 <Label Text="{Binding VoidCancelledCancelledText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#475569" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+
+                            <Grid Grid.Row="2"
+                                  ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.8*,0.8*,1.4*,1.0*"
+                                  ColumnSpacing="10"
+                                  Padding="8,0,8,8">
+                                   <Label Text="Order Number" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="1" Text="Event Time" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="2" Text="Status" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="3" Text="Customer" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="4" Text="Type" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="5" Text="Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="6" Text="Reason" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="7" Text="Actor" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                            </Grid>
+
+                            <CollectionView Grid.Row="3"
+                                            ItemsSource="{Binding VoidCancelledOrders}"
+                                            HeightRequest="560"
+                                            SelectionMode="None">
+                                   <CollectionView.EmptyView>
+                                          <VerticalStackLayout Padding="24" HorizontalOptions="Center" VerticalOptions="Center">
+                                                 <Label Text="No voided or cancelled orders found for the selected period."
+                                                        TextColor="#64748B"
+                                                        FontFamily="OpenSansRegular"
+                                                        FontSize="14" />
+                                          </VerticalStackLayout>
+                                   </CollectionView.EmptyView>
+                                   <CollectionView.ItemTemplate>
+                                          <DataTemplate>
+                                                 <Border Stroke="#F1F5F9"
+                                                        StrokeThickness="1"
+                                                        BackgroundColor="#FFFFFF"
+                                                        StrokeShape="RoundRectangle 10"
+                                                        Padding="8,10"
+                                                        Margin="0,0,0,8">
+                                                        <Grid ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.8*,0.8*,1.4*,1.0*" ColumnSpacing="10">
+                                                               <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0F172A" />
+                                                               <Label Grid.Column="1" Text="{Binding AuditAtDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
+                                                               <Label Grid.Column="2" Text="{Binding Status}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#B91C1C" />
+                                                               <Label Grid.Column="3" Text="{Binding CustomerDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
+                                                               <Label Grid.Column="4" Text="{Binding OrderType}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
+                                                               <Label Grid.Column="5" Text="{Binding AmountDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#B91C1C" HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="6" Text="{Binding Reason}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
+                                                               <Label Grid.Column="7" Text="{Binding ActorName}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
                                                         </Grid>
                                                  </Border>
                                           </DataTemplate>

@@ -13,6 +13,7 @@ public class CloudSyncService
 {
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
+    private readonly OrderWebApiClient? _orderWebApiClient;
     private readonly Timer? _heartbeatTimer;
     private string _cloudApiUrl = "";
     private string _tenantSlug = "";
@@ -23,9 +24,10 @@ public class CloudSyncService
     public event EventHandler<string>? HeartbeatStatusChanged;
     public event EventHandler<string>? SyncStatusChanged;
 
-    public CloudSyncService(DatabaseService databaseService)
+    public CloudSyncService(DatabaseService databaseService, OrderWebApiClient? orderWebApiClient = null)
     {
         _databaseService = databaseService;
+        _orderWebApiClient = orderWebApiClient;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(30)
@@ -42,7 +44,8 @@ public class CloudSyncService
         try
         {
             var config = await _databaseService.GetCloudConfigAsync();
-            _cloudApiUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            _cloudApiUrl = OrderWebApiClient.NormalizeApiBaseUrl(
+                config.GetValueOrDefault("api_base_url", config.GetValueOrDefault("cloud_url", "https://orderweb.net/api")));
             _tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             _restaurantSlug = config.GetValueOrDefault("restaurant_slug", "");
             _apiKey = config.GetValueOrDefault("api_key", "");
@@ -67,6 +70,9 @@ public class CloudSyncService
     /// </summary>
     private async void SendHeartbeatAsync(object? state)
     {
+        if (!await CanRunCloudSyncAsync())
+            return;
+
         if (!_isEnabled || string.IsNullOrEmpty(_tenantSlug) || string.IsNullOrEmpty(_restaurantSlug))
             return;
 
@@ -74,10 +80,9 @@ public class CloudSyncService
         {
             var url = $"{_cloudApiUrl}/pos/{_tenantSlug}/{_restaurantSlug}/heartbeat";
             
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            
-            var response = await _httpClient.GetAsync(url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyAuthHeaders(request);
+            var response = await SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
@@ -105,12 +110,16 @@ public class CloudSyncService
     {
         try
         {
+            var roleCheck = await CanRunCloudSyncCheckAsync();
+            if (!roleCheck.Allowed)
+            {
+                return (false, roleCheck.Reason);
+            }
+
             var url = $"{_cloudApiUrl}/pos/{_tenantSlug}/{_restaurantSlug}/heartbeat";
-            
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            
-            var response = await _httpClient.GetAsync(url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyAuthHeaders(request);
+            var response = await SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
@@ -140,6 +149,12 @@ public class CloudSyncService
     {
         try
         {
+            var roleCheck = await CanRunCloudSyncCheckAsync();
+            if (!roleCheck.Allowed)
+            {
+                return (false, roleCheck.Reason);
+            }
+
             System.Diagnostics.Debug.WriteLine($" Generating daily report for {reportDate:yyyy-MM-dd}...");
 
             // Generate report from local database
@@ -153,10 +168,12 @@ public class CloudSyncService
             // Upload to cloud
             var url = $"{_cloudApiUrl}/pos/{_tenantSlug}/{_restaurantSlug}/daily-report";
             
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            
-            var response = await _httpClient.PostAsJsonAsync(url, report);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(report)
+            };
+            ApplyAuthHeaders(request);
+            var response = await SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
@@ -272,6 +289,12 @@ public class CloudSyncService
     {
         try
         {
+            var roleCheck = await CanRunCloudSyncCheckAsync();
+            if (!roleCheck.Allowed)
+            {
+                return (false, roleCheck.Reason);
+            }
+
             System.Diagnostics.Debug.WriteLine($" Recording gift card transaction: {cardNumber}, Amount: £{amountUsed:F2}");
 
             var transaction = new GiftCardTransactionModel
@@ -287,10 +310,12 @@ public class CloudSyncService
 
             var url = $"{_cloudApiUrl}/pos/{_tenantSlug}/{_restaurantSlug}/gift-card-transaction";
             
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            
-            var response = await _httpClient.PostAsJsonAsync(url, transaction);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(transaction)
+            };
+            ApplyAuthHeaders(request);
+            var response = await SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
@@ -331,6 +356,12 @@ public class CloudSyncService
     {
         try
         {
+            var roleCheck = await CanRunCloudSyncCheckAsync();
+            if (!roleCheck.Allowed)
+            {
+                return (false, roleCheck.Reason);
+            }
+
             System.Diagnostics.Debug.WriteLine($"⭐ Recording loyalty transaction: {customerPhone}, Used: {pointsUsed}, Earned: {pointsEarned}");
 
             var transaction = new LoyaltyTransactionModel
@@ -347,10 +378,12 @@ public class CloudSyncService
 
             var url = $"{_cloudApiUrl}/pos/{_tenantSlug}/{_restaurantSlug}/loyalty-transaction";
             
-            _httpClient.DefaultRequestHeaders.Clear();
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            
-            var response = await _httpClient.PostAsJsonAsync(url, transaction);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(transaction)
+            };
+            ApplyAuthHeaders(request);
+            var response = await SendAsync(request);
             
             if (response.IsSuccessStatusCode)
             {
@@ -404,6 +437,38 @@ public class CloudSyncService
     }
 
     #endregion
+
+    private async Task<TerminalRoleCheck> CanRunCloudSyncCheckAsync()
+    {
+        return _orderWebApiClient != null
+            ? await _orderWebApiClient.CanRunCloudJobsAsync()
+            : await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+    }
+
+    private async Task<bool> CanRunCloudSyncAsync()
+    {
+        return (await CanRunCloudSyncCheckAsync()).Allowed;
+    }
+
+    private void ApplyAuthHeaders(HttpRequestMessage request)
+    {
+        if (_orderWebApiClient != null)
+        {
+            _orderWebApiClient.ApplyAuthHeaders(request, _apiKey);
+            return;
+        }
+
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+        request.Headers.TryAddWithoutValidation("X-API-Key", _apiKey);
+        request.Headers.TryAddWithoutValidation("Accept", "application/json");
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
+    {
+        return _orderWebApiClient != null
+            ? await _orderWebApiClient.SendAsync(request)
+            : await _httpClient.SendAsync(request);
+    }
 
     public void Dispose()
     {

@@ -19,8 +19,11 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     private string _searchText = string.Empty;
     private string _syncStatusText = "Website sync ready";
     private CancellationTokenSource? _searchDebounceCts;
+    private CancellationTokenSource? _syncRefreshCts;
     private bool _isBusy;
     private bool _hasLoadedOnce;
+    private bool _syncHandlerAttached;
+    private ReservationRow? _selectedReservation;
 
     public ObservableCollection<ReservationCalendarDay> CalendarDays { get; } = new();
     public ObservableCollection<ReservationRow> Reservations { get; } = new();
@@ -32,6 +35,23 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     public string NextReservationText => TodayReservations.OrderBy(row => row.Time).FirstOrDefault()?.TimeText ?? "--";
     public string SyncStatusText => _syncStatusText;
     public string LastUpdatedText => $"Updated {_lastUpdatedAt:HH:mm}";
+    public ReservationRow? SelectedReservation
+    {
+        get => _selectedReservation;
+        private set
+        {
+            if (_selectedReservation == value)
+            {
+                return;
+            }
+
+            _selectedReservation = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsDetailsVisible));
+        }
+    }
+
+    public bool IsDetailsVisible => SelectedReservation != null;
     public bool IsLoading
     {
         get => _isBusy;
@@ -56,10 +76,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         _reservationSyncService = ServiceHelper.GetService<ReservationSyncService>();
-        if (_reservationSyncService != null)
-        {
-            _reservationSyncService.SyncCompleted += OnReservationSyncCompleted;
-        }
+        AttachReservationSyncHandler();
         BindingContext = this;
         RefreshView();
     }
@@ -67,6 +84,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        AttachReservationSyncHandler();
 
         if (!_roleAccessService.CanAccessFeature(_authService.CurrentUser?.Role, "reservation"))
         {
@@ -79,6 +97,14 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         {
             await LoadReservationsAsync();
         }
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        DetachReservationSyncHandler();
+        _searchDebounceCts?.Cancel();
+        _syncRefreshCts?.Cancel();
     }
 
     public void SetReservations(IEnumerable<ReservationRow> websiteReservations)
@@ -133,9 +159,18 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
             var result = await _reservationSyncService.CreatePosReservationAsync(request);
             await LoadReservationsAsync(showBusy: false);
 
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
-                result.Success ? "Reservation Saved" : "Reservation",
-                result.Message);
+            if (result.Success)
+            {
+                NotificationService.Instance.ShowSuccess(
+                    result.Message,
+                    "Booking Confirmed");
+            }
+            else
+            {
+                NotificationService.Instance.ShowWarning(
+                    result.Message,
+                    "Reservation");
+            }
         }
         finally
         {
@@ -286,22 +321,75 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private void OnReservationSyncCompleted(object? sender, ReservationSyncCompletedEventArgs e)
     {
-        MainThread.BeginInvokeOnMainThread(async () =>
+        if (e.Result.Success && e.Result.NewReservations == 0 && e.Result.UpdatedReservations == 0)
         {
-            _syncStatusText = e.Result.Success ? "Website sync ready" : "Website sync error";
-            await LoadReservationsAsync();
+            return;
+        }
+
+        _syncRefreshCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _syncRefreshCts = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(500, cts.Token);
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    if (cts.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    _syncStatusText = e.Result.Success ? "Website sync ready" : "Website sync error";
+                    if (e.Result.Success)
+                    {
+                        await LoadReservationsAsync(showBusy: false);
+                    }
+                    else
+                    {
+                        OnPropertyChanged(nameof(SyncStatusText));
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
         });
+    }
+
+    private void AttachReservationSyncHandler()
+    {
+        if (_reservationSyncService == null || _syncHandlerAttached)
+        {
+            return;
+        }
+
+        _reservationSyncService.SyncCompleted += OnReservationSyncCompleted;
+        _syncHandlerAttached = true;
+    }
+
+    private void DetachReservationSyncHandler()
+    {
+        if (_reservationSyncService == null || !_syncHandlerAttached)
+        {
+            return;
+        }
+
+        _reservationSyncService.SyncCompleted -= OnReservationSyncCompleted;
+        _syncHandlerAttached = false;
     }
 
     private static ReservationRow ToReservationRow(CloudReservation reservation)
     {
+        var specialRequests = CleanSpecialRequests(reservation.Notes);
         var noteParts = new[]
         {
             reservation.IsPendingUpload ? "Pending cloud upload" : "",
-            string.IsNullOrWhiteSpace(reservation.Reference) ? "" : reservation.Reference,
-            FormatSourceLabel(reservation.Source),
-            reservation.Notes,
-            string.IsNullOrWhiteSpace(reservation.Allergies) ? "" : $"Allergies: {reservation.Allergies}"
+            string.IsNullOrWhiteSpace(reservation.CustomerEmail) ? "" : $"Email: {reservation.CustomerEmail}",
+            string.IsNullOrWhiteSpace(reservation.Allergies) ? "" : $"Allergies: {reservation.Allergies}",
+            string.IsNullOrWhiteSpace(specialRequests) ? "" : $"Requests: {specialRequests}"
         }.Where(part => !string.IsNullOrWhiteSpace(part));
 
         return new ReservationRow(
@@ -316,7 +404,31 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
             CultureInfo.InvariantCulture.TextInfo.ToTitleCase(reservation.Status.Replace("_", " ")),
             string.Join(" | ", noteParts),
             reservation.Reference,
-            reservation.Source);
+            reservation.Source,
+            reservation.CustomerEmail,
+            reservation.PromoCode,
+            reservation.Allergies,
+            specialRequests);
+    }
+
+    private static string CleanSpecialRequests(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return string.Empty;
+        }
+
+        var text = notes.Trim();
+        return IsUploadDiagnostic(text) ? string.Empty : text;
+    }
+
+    private static bool IsUploadDiagnostic(string value)
+    {
+        var text = value.Trim();
+        return text.StartsWith("Input string was not in a correct format", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("HTTP ", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("Cloud upload failed", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("Invalid cloud response", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatSourceLabel(string source)
@@ -331,46 +443,87 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         };
     }
 
-    private async void OnReservationTapped(object? sender, TappedEventArgs e)
+    private async void OnReservationShowClicked(object sender, EventArgs e)
     {
         if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
         {
             return;
         }
 
+        await UpdateReservationAttendanceAsync(row, "arrived");
+    }
+
+    private void OnReservationRowTapped(object sender, TappedEventArgs e)
+    {
+        if (sender is BindableObject bindable && bindable.BindingContext is ReservationRow row)
+        {
+            SelectedReservation = row;
+        }
+    }
+
+    private void OnReservationDetailsClicked(object sender, EventArgs e)
+    {
+        if (sender is BindableObject bindable && bindable.BindingContext is ReservationRow row)
+        {
+            SelectedReservation = row;
+        }
+    }
+
+    private void OnCloseDetailsClicked(object sender, EventArgs e)
+    {
+        SelectedReservation = null;
+    }
+
+    private async void OnReservationNoShowClicked(object sender, EventArgs e)
+    {
+        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
+        {
+            return;
+        }
+
+        await UpdateReservationAttendanceAsync(row, "no_show");
+    }
+
+    private async void OnReservationCancelClicked(object sender, EventArgs e)
+    {
+        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
+        {
+            return;
+        }
+
+        await UpdateReservationAttendanceAsync(row, "cancelled");
+    }
+
+    private async Task UpdateReservationAttendanceAsync(ReservationRow row, string status)
+    {
         if (_reservationSyncService == null)
         {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Reservation", "Reservation sync service is not available.");
             return;
         }
 
-        var dialog = new POS_in_NET.Views.ModernActionSheetDialog();
-        dialog.SetActionSheet(
-            $"{row.Name} — update status",
-            new List<string> { "Arrived", "Seated", "Completed", "No-show", "Cancelled" },
-            icon: "R",
-            iconBgColor: "#2563EB");
-
-        var choice = await dialog.ShowAsync();
-        if (string.IsNullOrWhiteSpace(choice))
+        try
         {
-            return;
+            IsLoading = true;
+            _syncStatusText = "Updating reservation...";
+            OnPropertyChanged(nameof(SyncStatusText));
+
+            var result = await _reservationSyncService.UpdateReservationStatusAsync(row.CloudId, status, row.LocalId);
+            await LoadReservationsAsync(showBusy: false);
+
+            if (!result.Success)
+            {
+                NotificationService.Instance.ShowWarning(result.Message, "Reservation");
+            }
+            else
+            {
+                NotificationService.Instance.ShowSuccess(result.Message, "Reservation");
+            }
         }
-
-        var status = choice.ToLowerInvariant() switch
+        finally
         {
-            "arrived" => "arrived",
-            "seated" => "seated",
-            "completed" => "completed",
-            "no-show" => "no_show",
-            "cancelled" => "cancelled",
-            _ => choice.ToLowerInvariant()
-        };
-
-        var result = await _reservationSyncService.UpdateReservationStatusAsync(row.CloudId, status, row.LocalId);
-        await LoadReservationsAsync(showBusy: false);
-        await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
-            result.Success ? "Reservation Updated" : "Update Failed",
-            result.Message);
+            IsLoading = false;
+        }
     }
 
     private void RefreshReservations()
@@ -443,10 +596,21 @@ public sealed class ReservationCalendarDay
     public int ReservationCount { get; }
 
     public string DayText => Date.Day.ToString(CultureInfo.InvariantCulture);
-    public string CountText => ReservationCount > 0 ? $"{ReservationCount} booking" : string.Empty;
-    public Color BackgroundColor => IsSelected ? Color.FromArgb("#2563EB") : ReservationCount > 0 ? Color.FromArgb("#EFF6FF") : Colors.White;
-    public Color BorderColor => IsSelected ? Color.FromArgb("#2563EB") : ReservationCount > 0 ? Color.FromArgb("#BFDBFE") : Color.FromArgb("#E2E8F0");
-    public Color TextColor => IsSelected ? Colors.White : IsCurrentMonth ? Color.FromArgb("#0F172A") : Color.FromArgb("#CBD5E1");
+    public Color BackgroundColor => IsSelected
+        ? Color.FromArgb("#2563EB")
+        : ReservationCount > 0
+            ? Color.FromArgb("#DBEAFE")
+            : Colors.White;
+    public Color BorderColor => IsSelected
+        ? Color.FromArgb("#2563EB")
+        : ReservationCount > 0
+            ? Color.FromArgb("#60A5FA")
+            : Color.FromArgb("#E2E8F0");
+    public Color TextColor => IsSelected
+        ? Colors.White
+        : ReservationCount > 0
+            ? Color.FromArgb("#1D4ED8")
+            : IsCurrentMonth ? Color.FromArgb("#0F172A") : Color.FromArgb("#CBD5E1");
     public Color CountColor => IsSelected ? Colors.White : Color.FromArgb("#2563EB");
 }
 
@@ -464,7 +628,11 @@ public sealed class ReservationRow
         string status,
         string note,
         string reference,
-        string source)
+        string source,
+        string email,
+        string promoCode,
+        string allergies,
+        string specialRequests)
     {
         CloudId = cloudId;
         LocalId = localId;
@@ -478,6 +646,10 @@ public sealed class ReservationRow
         Note = note;
         Reference = reference;
         Source = source;
+        Email = email;
+        PromoCode = promoCode;
+        Allergies = allergies;
+        SpecialRequests = specialRequests;
     }
 
     public string CloudId { get; }
@@ -493,16 +665,66 @@ public sealed class ReservationRow
     public string Note { get; }
     public string Reference { get; }
     public string Source { get; }
+    public string Email { get; }
+    public string PromoCode { get; }
+    public string Allergies { get; }
+    public string SpecialRequests { get; }
 
-    public Color StatusBackground => string.Equals(Status, "Confirmed", StringComparison.OrdinalIgnoreCase)
-        ? Color.FromArgb("#ECFDF5")
-        : Color.FromArgb("#EFF6FF");
+    public string DateTimeText => $"{Date:dddd, dd MMMM yyyy} at {TimeText}";
+    public string PhoneDisplay => string.IsNullOrWhiteSpace(Phone) ? "No phone saved" : Phone;
+    public string EmailDisplay => string.IsNullOrWhiteSpace(Email) ? "No email saved" : Email;
+    public string GuestsText => Guests == 1 ? "1 guest" : $"{Guests} guests";
+    public string TableDisplay => Table == "-" ? "Table not assigned" : $"Table {Table}";
+    public string StatusDisplay => $"Status: {Status}";
+    public string ReferenceDisplay => string.IsNullOrWhiteSpace(Reference) ? "No reference" : Reference;
+    public string PromoCodeDisplay => string.IsNullOrWhiteSpace(PromoCode) ? "No promocode" : PromoCode;
+    public string AllergiesDisplay => string.IsNullOrWhiteSpace(Allergies) ? "No allergies or dietary notes" : Allergies;
+    public string SpecialRequestsDisplay => HasSpecialRequests ? SpecialRequests.Trim() : string.Empty;
+    public bool HasPromoCode => !string.IsNullOrWhiteSpace(PromoCode);
+    public bool HasAllergies => !string.IsNullOrWhiteSpace(Allergies);
+    public bool HasSpecialRequests => !string.IsNullOrWhiteSpace(SpecialRequests)
+                                      && !IsUploadDiagnostic(SpecialRequests);
+    public bool HasAnySpecialInfo => HasAllergies || HasSpecialRequests;
+    public string PromoBadgeText => HasPromoCode ? $"Promo: {PromoCode}" : string.Empty;
+    public string PromoColumnText => HasPromoCode ? PromoCode : "-";
+    public Color PromoColumnTextColor => HasPromoCode ? Color.FromArgb("#1D4ED8") : Color.FromArgb("#94A3B8");
 
-    public Color StatusBorder => string.Equals(Status, "Confirmed", StringComparison.OrdinalIgnoreCase)
-        ? Color.FromArgb("#A7F3D0")
-        : Color.FromArgb("#BFDBFE");
+    private static bool IsUploadDiagnostic(string value)
+    {
+        var text = value.Trim();
+        return text.StartsWith("Input string was not in a correct format", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("HTTP ", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("Cloud upload failed", StringComparison.OrdinalIgnoreCase)
+               || text.StartsWith("Invalid cloud response", StringComparison.OrdinalIgnoreCase);
+    }
 
-    public Color StatusTextColor => string.Equals(Status, "Confirmed", StringComparison.OrdinalIgnoreCase)
-        ? Color.FromArgb("#047857")
-        : Color.FromArgb("#1D4ED8");
+    public bool IsArrived => NormalizedStatus is "arrived" or "show" or "shown" or "seated";
+    public bool IsNoShow => string.Equals(Status, "No Show", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(Status, "No-show", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(NormalizedStatus, "no_show", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(NormalizedStatus, "noshow", StringComparison.OrdinalIgnoreCase);
+    public bool IsCancelled => string.Equals(Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(Status, "Canceled", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(NormalizedStatus, "cancelled", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(NormalizedStatus, "canceled", StringComparison.OrdinalIgnoreCase);
+    public bool IsFinalAttendance => IsArrived || IsNoShow || IsCancelled;
+    public bool IsShowButtonVisible => !IsNoShow && !IsCancelled;
+    public bool IsNoShowButtonVisible => !IsArrived && !IsCancelled;
+    public bool IsCancelButtonVisible => !IsArrived && !IsNoShow;
+    public bool IsShowButtonEnabled => !IsFinalAttendance;
+    public bool IsNoShowButtonEnabled => !IsFinalAttendance;
+    public bool IsCancelButtonEnabled => !IsFinalAttendance;
+    public string ShowButtonText => IsArrived ? "Shown" : "Show";
+    public string NoShowButtonText => IsNoShow ? "No Show" : "No Show";
+    public string CancelButtonText => IsCancelled ? "Cancelled" : "Cancel";
+    public Color ShowButtonBackground => IsArrived ? Color.FromArgb("#064E3B") : Color.FromArgb("#DCFCE7");
+    public Color ShowButtonBorderColor => IsArrived ? Color.FromArgb("#064E3B") : Color.FromArgb("#86EFAC");
+    public Color ShowButtonTextColor => IsArrived ? Colors.White : Color.FromArgb("#047857");
+    public Color NoShowButtonBackground => IsNoShow ? Color.FromArgb("#7F1D1D") : Color.FromArgb("#FFF1F2");
+    public Color NoShowButtonBorderColor => IsNoShow ? Color.FromArgb("#FCA5A5") : Color.FromArgb("#FECDD3");
+    public Color NoShowButtonTextColor => IsNoShow ? Colors.White : Color.FromArgb("#E11D48");
+    public Color CancelButtonBackground => IsCancelled ? Color.FromArgb("#334155") : Color.FromArgb("#FEF2F2");
+    public Color CancelButtonBorderColor => IsCancelled ? Color.FromArgb("#334155") : Color.FromArgb("#FECACA");
+    public Color CancelButtonTextColor => IsCancelled ? Colors.White : Color.FromArgb("#DC2626");
+    private string NormalizedStatus => Status.Trim().Replace("-", "_").Replace(" ", "_").ToLowerInvariant();
 }

@@ -148,7 +148,7 @@ public partial class PostcodeLookupPage : ContentPage
 
     private async void OnUserTabClicked(object? sender, EventArgs e)
     {
-        try { await Shell.Current.GoToAsync("//usermanagement"); }
+        try { await Shell.Current.GoToAsync("//settings?tab=UserManagement"); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}"); }
     }
 

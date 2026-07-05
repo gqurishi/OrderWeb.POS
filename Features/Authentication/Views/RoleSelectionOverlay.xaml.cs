@@ -25,6 +25,13 @@ namespace POS_in_NET.Views
             IsVisible = false;
             System.Diagnostics.Debug.WriteLine("Role selection overlay hidden");
         }
+
+        private void OnStaffSelected(object sender, EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("Staff role selected");
+            RoleSelected?.Invoke(this, UserRole.Staff);
+            HideOverlay();
+        }
         
         private void OnUserSelected(object sender, EventArgs e)
         {

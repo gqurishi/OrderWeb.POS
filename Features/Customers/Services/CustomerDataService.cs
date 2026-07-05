@@ -14,7 +14,17 @@ public class CustomerDataService
     public const int CacheRetentionDays = 7;
     public const string CsvTemplateHeader = "order_types,name,phone_number,full_address,city,county,postcode";
 
-    private readonly OrderWebCustomerCloudService _cloudService = new();
+    private readonly OrderWebCustomerCloudService _cloudService;
+
+    public CustomerDataService(OrderWebCustomerCloudService cloudService)
+    {
+        _cloudService = cloudService;
+    }
+
+    public CustomerDataService()
+        : this(ServiceHelper.GetService<OrderWebCustomerCloudService>() ?? new OrderWebCustomerCloudService())
+    {
+    }
 
     public async Task EnsureTableAsync()
     {
@@ -178,6 +188,11 @@ public class CustomerDataService
 
     public async Task<(int Synced, int Failed, string? Message)> RetrySyncAsync()
     {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            return (0, 0, "Customer cloud sync runs on the mother/master terminal only.");
+        }
+
         await EnsureTableAsync();
         await ProcessSyncQueueAsync();
 
@@ -1113,6 +1128,7 @@ public class CustomerDataService
 
         await MarkSyncFailedAsync(connection, localId, result.Error ?? "Cloud sync failed.");
         await EnqueueSyncAsync(connection, localId, payload, result.Error);
+        await _cloudService.EnqueueUpsertAsync(payload);
         return false;
     }
 
@@ -1165,7 +1181,10 @@ public class CustomerDataService
         CustomerCloudUpsertPayload payload,
         string? error)
     {
-        const string deleteSql = "DELETE FROM pos_customer_sync_queue WHERE local_customer_cache_id = @id AND status = 'pending'";
+        const string deleteSql = @"
+            DELETE FROM pos_customer_sync_queue
+            WHERE local_customer_cache_id = @id
+              AND status IN ('pending', 'failed')";
         using (var deleteCommand = new MySqlCommand(deleteSql, connection))
         {
             deleteCommand.Parameters.AddWithValue("@id", localId);
@@ -1253,6 +1272,7 @@ public class CustomerDataService
                 await failCommand.ExecuteNonQueryAsync();
 
                 await MarkSyncFailedAsync(connection, localId, result.Error ?? "Sync failed");
+                await _cloudService.EnqueueUpsertAsync(payload);
             }
         }
     }

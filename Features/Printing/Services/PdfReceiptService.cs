@@ -93,10 +93,10 @@ public class PdfReceiptService
                 {
                     foreach (var item in order.Items)
                     {
-                        graphics.DrawString(item.Name ?? "Item", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
+                        graphics.DrawString(!string.IsNullOrWhiteSpace(item.DisplayName) ? item.DisplayName : item.Name ?? "Item", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
                         graphics.DrawString(item.Quantity.ToString(), normalFont, PdfBrushes.Black, new PointF(300, yPosition));
-                        graphics.DrawString($"${item.Price:F2}", normalFont, PdfBrushes.Black, new PointF(400, yPosition));
-                        graphics.DrawString($"${item.Quantity * item.Price:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
+                        graphics.DrawString($"£{item.Price:F2}", normalFont, PdfBrushes.Black, new PointF(400, yPosition));
+                        graphics.DrawString($"£{item.Quantity * item.Price:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
                         yPosition += 20;
                     }
                 }
@@ -112,11 +112,11 @@ public class PdfReceiptService
                 decimal total = order.Total ?? 0;
                 
                 graphics.DrawString("Subtotal:", boldFont, PdfBrushes.Black, new PointF(350, yPosition));
-                graphics.DrawString($"${subtotal:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
+                graphics.DrawString($"£{subtotal:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
                 yPosition += 20;
                 
                 graphics.DrawString("TOTAL:", titleFont, PdfBrushes.Black, new PointF(350, yPosition));
-                graphics.DrawString($"${total:F2}", titleFont, PdfBrushes.Black, new PointF(480, yPosition));
+                graphics.DrawString($"£{total:F2}", titleFont, PdfBrushes.Black, new PointF(480, yPosition));
                 yPosition += 30;
 
                 graphics.DrawString("(VAT included in item prices)", normalFont, PdfBrushes.Gray, new PointF(350, yPosition));
@@ -242,10 +242,10 @@ public class PdfReceiptService
                 graphics.DrawString($"Total Orders: {totalOrders}", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
                 yPosition += 20;
                 
-                graphics.DrawString($"Total Revenue: ${totalRevenue:F2}", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
+                graphics.DrawString($"Total Revenue: £{totalRevenue:F2}", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
                 yPosition += 20;
                 
-                graphics.DrawString($"Average Order: ${avgOrderValue:F2}", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
+                graphics.DrawString($"Average Order: £{avgOrderValue:F2}", normalFont, PdfBrushes.Black, new PointF(20, yPosition));
                 yPosition += 30;
                 
                 // Save

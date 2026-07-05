@@ -13,6 +13,8 @@ namespace MyFirstMauiApp.Services
     public class MenuItemService
     {
         private readonly string _connectionString;
+        private static bool _foodMenuItemSchemaReady;
+        private static bool _quickNotesSchemaReady;
 
         public MenuItemService()
         {
@@ -30,12 +32,13 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                     SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
                            IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
                            Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                           vat_config_type, vat_category, calculated_vat_rate,
+                           vat_config_type, vat_category, calculated_vat_rate, ItemType,
                            label_text, print_component_labels, component_labels_json, print_group_id
                     FROM FoodMenuItems
                     ORDER BY IsFeatured DESC, DisplayOrder ASC, CreatedAt DESC";
@@ -47,6 +50,9 @@ namespace MyFirstMauiApp.Services
                 {
                     items.Add(ParseFoodMenuItem(reader));
                 }
+
+                await reader.CloseAsync();
+                await LoadVariantsForItemsAsync(connection, items);
             }
             catch (Exception ex)
             {
@@ -68,12 +74,13 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                       SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
                            IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
                           Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate,
+                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
                           label_text, print_component_labels, component_labels_json, print_group_id
                     FROM FoodMenuItems
                     WHERE CategoryId = @CategoryId
@@ -87,6 +94,9 @@ namespace MyFirstMauiApp.Services
                 {
                     items.Add(ParseFoodMenuItem(reader));
                 }
+
+                await reader.CloseAsync();
+                await LoadVariantsForItemsAsync(connection, items);
             }
             catch (Exception ex)
             {
@@ -106,12 +116,13 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                       SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
                            IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
                           Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate,
+                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
                           label_text, print_component_labels, component_labels_json, print_group_id
                     FROM FoodMenuItems
                     WHERE Id = @Id";
@@ -122,7 +133,10 @@ namespace MyFirstMauiApp.Services
 
                 if (await reader.ReadAsync())
                 {
-                    return ParseFoodMenuItem(reader);
+                    var item = ParseFoodMenuItem(reader);
+                    await reader.CloseAsync();
+                    await LoadVariantsForItemsAsync(connection, new List<FoodMenuItem> { item });
+                    return item;
                 }
             }
             catch (Exception ex)
@@ -143,29 +157,35 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 // Generate new ID if not provided
                 if (string.IsNullOrEmpty(item.Id))
                 {
-                    item.Id = $"item-{Guid.NewGuid()}";
+                    item.Id = Guid.NewGuid().ToString();
                 }
 
                 var query = @"
                     INSERT INTO FoodMenuItems 
                     (Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder, IsFeatured,
                      PreparationTime, VatRate, VatType, IsVatExempt, VatNotes, Addons, Tags, print_in_red,
-                     vat_config_type, vat_category, calculated_vat_rate, label_text, print_component_labels,
+                     vat_config_type, vat_category, calculated_vat_rate, ItemType, label_text, print_component_labels,
                      component_labels_json, print_group_id, CreatedAt, UpdatedAt)
                     VALUES 
                     (@Id, @CategoryId, @Name, @Description, @Price, @PriceDineIn, @PriceTakeaway, @Color, @DisplayOrder, @IsFeatured,
                      @PreparationTime, @VatRate, @VatType, @IsVatExempt, @VatNotes, @Addons, @Tags, @PrintInRed,
-                     @VatConfigType, @VatCategory, @CalculatedVatRate, @LabelText, @PrintComponentLabels,
+                     @VatConfigType, @VatCategory, @CalculatedVatRate, @ItemType, @LabelText, @PrintComponentLabels,
                      @ComponentLabelsJson, @PrintGroupId, @CreatedAt, @UpdatedAt)";
 
                 using var command = new MySqlCommand(query, connection);
                 AddFoodMenuItemParameters(command, item);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    await SaveVariantsForItemAsync(connection, item.Id, item.Variants);
+                }
+
                 return result > 0;
             }
             catch (Exception ex)
@@ -184,6 +204,7 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                     UPDATE FoodMenuItems 
@@ -207,6 +228,7 @@ namespace MyFirstMauiApp.Services
                         vat_config_type = @VatConfigType,
                         vat_category = @VatCategory,
                         calculated_vat_rate = @CalculatedVatRate,
+                        ItemType = @ItemType,
                         label_text = @LabelText,
                         print_component_labels = @PrintComponentLabels,
                         component_labels_json = @ComponentLabelsJson,
@@ -218,6 +240,11 @@ namespace MyFirstMauiApp.Services
                 AddFoodMenuItemParameters(command, item, isUpdate: true);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    await SaveVariantsForItemAsync(connection, item.Id, item.Variants);
+                }
+
                 return result > 0;
             }
             catch (Exception ex)
@@ -236,6 +263,7 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = "DELETE FROM FoodMenuItems WHERE Id = @Id";
 
@@ -261,6 +289,7 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                     UPDATE FoodMenuItems 
@@ -292,12 +321,13 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                       SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
                            IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
                           Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate,
+                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
                           label_text, print_component_labels, component_labels_json, print_group_id
                     FROM FoodMenuItems
                     WHERE Name LIKE @SearchTerm 
@@ -313,6 +343,9 @@ namespace MyFirstMauiApp.Services
                 {
                     items.Add(ParseFoodMenuItem(reader));
                 }
+
+                await reader.CloseAsync();
+                await LoadVariantsForItemsAsync(connection, items);
             }
             catch (Exception ex)
             {
@@ -334,12 +367,13 @@ namespace MyFirstMauiApp.Services
             {
                 using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
                 await connection.OpenAsync();
+                await EnsureFoodMenuItemSchemaAsync(connection);
 
                 var query = @"
                       SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
                            IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
                           Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate,
+                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
                           label_text, print_component_labels, component_labels_json, print_group_id
                     FROM FoodMenuItems
                     WHERE IsFeatured = TRUE
@@ -352,6 +386,9 @@ namespace MyFirstMauiApp.Services
                 {
                     items.Add(ParseFoodMenuItem(reader));
                 }
+
+                await reader.CloseAsync();
+                await LoadVariantsForItemsAsync(connection, items);
             }
             catch (Exception ex)
             {
@@ -363,6 +400,292 @@ namespace MyFirstMauiApp.Services
         }
 
         // Helper methods
+
+        private static async Task EnsureFoodMenuItemSchemaAsync(MySqlConnection connection)
+        {
+            if (_foodMenuItemSchemaReady)
+            {
+                return;
+            }
+
+            const string alterSql = @"
+                ALTER TABLE FoodMenuItems
+                ADD COLUMN IF NOT EXISTS price_dine_in DECIMAL(10,2) DEFAULT NULL,
+                ADD COLUMN IF NOT EXISTS price_takeaway DECIMAL(10,2) DEFAULT NULL,
+                ADD COLUMN IF NOT EXISTS vat_config_type VARCHAR(20) DEFAULT 'standard',
+                ADD COLUMN IF NOT EXISTS vat_category VARCHAR(20) DEFAULT 'HotFood',
+                ADD COLUMN IF NOT EXISTS calculated_vat_rate DECIMAL(5,2) DEFAULT 20.00,
+                ADD COLUMN IF NOT EXISTS ItemType VARCHAR(20) NOT NULL DEFAULT 'Food',
+                ADD COLUMN IF NOT EXISTS print_in_red BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS label_text VARCHAR(100) NULL,
+                ADD COLUMN IF NOT EXISTS print_component_labels TINYINT(1) NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS component_labels_json TEXT NULL,
+                ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL";
+
+            using (var alterCommand = new MySqlCommand(alterSql, connection))
+            {
+                await alterCommand.ExecuteNonQueryAsync();
+            }
+
+            const string indexSql = @"
+                ALTER TABLE FoodMenuItems
+                ADD INDEX IF NOT EXISTS idx_foodmenu_item_type (ItemType),
+                ADD INDEX IF NOT EXISTS idx_foodmenu_print_group (print_group_id)";
+
+            try
+            {
+                using var indexCommand = new MySqlCommand(indexSql, connection);
+                await indexCommand.ExecuteNonQueryAsync();
+            }
+            catch (MySqlException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MenuItemService] Index ensure skipped: {ex.Message}");
+            }
+
+            const string variantsTableSql = @"
+                CREATE TABLE IF NOT EXISTS MenuItemVariants (
+                    Id VARCHAR(36) PRIMARY KEY,
+                    MenuItemId VARCHAR(36) NOT NULL,
+                    Name VARCHAR(100) NOT NULL,
+                    Description TEXT NULL,
+                    Price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    DisplayOrder INT NOT NULL DEFAULT 0,
+                    Active BOOLEAN NOT NULL DEFAULT TRUE,
+                    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_menu_item_variants_item (MenuItemId),
+                    INDEX idx_menu_item_variants_active_order (MenuItemId, Active, DisplayOrder),
+                    CONSTRAINT fk_menu_item_variants_item FOREIGN KEY (MenuItemId) REFERENCES FoodMenuItems(Id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            using (var variantsCommand = new MySqlCommand(variantsTableSql, connection))
+            {
+                await variantsCommand.ExecuteNonQueryAsync();
+            }
+
+            _foodMenuItemSchemaReady = true;
+        }
+
+        private static async Task EnsureQuickNotesSchemaAsync(MySqlConnection connection)
+        {
+            if (_quickNotesSchemaReady)
+            {
+                return;
+            }
+
+            const string createSql = @"
+                CREATE TABLE IF NOT EXISTS MenuItemQuickNotes (
+                    Id VARCHAR(36) PRIMARY KEY,
+                    MenuItemId VARCHAR(36) NOT NULL,
+                    NoteText VARCHAR(255) NULL,
+                    DisplayOrder INT NOT NULL DEFAULT 0,
+                    Active BOOLEAN NOT NULL DEFAULT TRUE,
+                    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_menuitem_quick_note_item (MenuItemId),
+                    INDEX idx_menuitem_quick_note_active (Active),
+                    INDEX idx_menuitem_quick_note_order (DisplayOrder),
+                    CONSTRAINT fk_menuitem_quick_note_item
+                        FOREIGN KEY (MenuItemId) REFERENCES FoodMenuItems(Id)
+                        ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            using (var createCommand = new MySqlCommand(createSql, connection))
+            {
+                await createCommand.ExecuteNonQueryAsync();
+            }
+
+            const string alterSql = @"
+                ALTER TABLE MenuItemQuickNotes
+                ADD COLUMN IF NOT EXISTS NoteText VARCHAR(255) NULL AFTER MenuItemId,
+                ADD COLUMN IF NOT EXISTS DisplayOrder INT NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS Active BOOLEAN NOT NULL DEFAULT TRUE,
+                ADD COLUMN IF NOT EXISTS CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP";
+
+            using (var alterCommand = new MySqlCommand(alterSql, connection))
+            {
+                await alterCommand.ExecuteNonQueryAsync();
+            }
+
+            if (await ColumnExistsAsync(connection, "MenuItemQuickNotes", "NoteId"))
+            {
+                try
+                {
+                    using var noteIdCommand = new MySqlCommand(
+                        "ALTER TABLE MenuItemQuickNotes MODIFY COLUMN NoteId VARCHAR(36) NULL",
+                        connection);
+                    await noteIdCommand.ExecuteNonQueryAsync();
+                }
+                catch (MySqlException ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MenuItemService] Legacy quick-note NoteId relax skipped: {ex.Message}");
+                }
+            }
+
+            _quickNotesSchemaReady = true;
+        }
+
+        private static async Task<bool> ColumnExistsAsync(MySqlConnection connection, string tableName, string columnName)
+        {
+            const string sql = @"
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = @TableName
+                  AND column_name = @ColumnName";
+
+            using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@TableName", tableName);
+            command.Parameters.AddWithValue("@ColumnName", columnName);
+            var result = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(result) > 0;
+        }
+
+        public async Task<List<MenuItemVariant>> GetVariantsByMenuItemIdAsync(string menuItemId, bool activeOnly = false)
+        {
+            if (string.IsNullOrWhiteSpace(menuItemId))
+            {
+                return new List<MenuItemVariant>();
+            }
+
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            await EnsureFoodMenuItemSchemaAsync(connection);
+
+            var query = @"
+                SELECT Id, MenuItemId, Name, Description, Price, DisplayOrder, Active, CreatedAt, UpdatedAt
+                FROM MenuItemVariants
+                WHERE MenuItemId = @MenuItemId";
+            if (activeOnly)
+            {
+                query += " AND Active = TRUE";
+            }
+            query += " ORDER BY DisplayOrder ASC, Name ASC";
+
+            using var command = new MySqlCommand(query, connection);
+            command.Parameters.AddWithValue("@MenuItemId", menuItemId);
+
+            var variants = new List<MenuItemVariant>();
+            using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                variants.Add(ParseMenuItemVariant(reader));
+            }
+
+            return variants;
+        }
+
+        public async Task<MenuItemVariant?> InferVariantByPriceAsync(string? menuItemId, decimal? price)
+        {
+            if (string.IsNullOrWhiteSpace(menuItemId) || !price.HasValue)
+            {
+                return null;
+            }
+
+            var roundedPrice = Math.Round(price.Value, 2);
+            var variants = await GetVariantsByMenuItemIdAsync(menuItemId, activeOnly: true);
+            var matches = variants
+                .Where(variant => Math.Round(variant.Price, 2) == roundedPrice)
+                .ToList();
+
+            return matches.Count == 1 ? matches[0] : null;
+        }
+
+        private async Task LoadVariantsForItemsAsync(MySqlConnection connection, List<FoodMenuItem> items)
+        {
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            var ids = items
+                .Select(item => item.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (ids.Count == 0)
+            {
+                return;
+            }
+
+            var parameterNames = ids.Select((_, index) => $"@id{index}").ToList();
+            var query = $@"
+                SELECT Id, MenuItemId, Name, Description, Price, DisplayOrder, Active, CreatedAt, UpdatedAt
+                FROM MenuItemVariants
+                WHERE MenuItemId IN ({string.Join(",", parameterNames)})
+                ORDER BY MenuItemId, DisplayOrder ASC, Name ASC";
+
+            using var command = new MySqlCommand(query, connection);
+            for (var i = 0; i < ids.Count; i++)
+            {
+                command.Parameters.AddWithValue(parameterNames[i], ids[i]);
+            }
+
+            var byItemId = items.ToDictionary(item => item.Id, item => item, StringComparer.OrdinalIgnoreCase);
+            using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var variant = ParseMenuItemVariant(reader);
+                if (byItemId.TryGetValue(variant.MenuItemId, out var item))
+                {
+                    item.Variants.Add(variant);
+                }
+            }
+        }
+
+        private async Task SaveVariantsForItemAsync(MySqlConnection connection, string menuItemId, List<MenuItemVariant>? variants)
+        {
+            using (var deleteCommand = new MySqlCommand("DELETE FROM MenuItemVariants WHERE MenuItemId = @MenuItemId", connection))
+            {
+                deleteCommand.Parameters.AddWithValue("@MenuItemId", menuItemId);
+                await deleteCommand.ExecuteNonQueryAsync();
+            }
+
+            if (variants == null || variants.Count == 0)
+            {
+                return;
+            }
+
+            const string insertSql = @"
+                INSERT INTO MenuItemVariants
+                    (Id, MenuItemId, Name, Description, Price, DisplayOrder, Active, CreatedAt, UpdatedAt)
+                VALUES
+                    (@Id, @MenuItemId, @Name, @Description, @Price, @DisplayOrder, @Active, @CreatedAt, @UpdatedAt)";
+
+            var displayOrder = 0;
+            foreach (var variant in variants.Where(v => !string.IsNullOrWhiteSpace(v.Name)))
+            {
+                using var command = new MySqlCommand(insertSql, connection);
+                command.Parameters.AddWithValue("@Id", string.IsNullOrWhiteSpace(variant.Id) ? Guid.NewGuid().ToString() : variant.Id);
+                command.Parameters.AddWithValue("@MenuItemId", menuItemId);
+                command.Parameters.AddWithValue("@Name", variant.Name.Trim());
+                command.Parameters.AddWithValue("@Description", string.IsNullOrWhiteSpace(variant.Description) ? DBNull.Value : variant.Description.Trim());
+                command.Parameters.AddWithValue("@Price", Math.Round(Math.Max(0m, variant.Price), 2));
+                command.Parameters.AddWithValue("@DisplayOrder", displayOrder++);
+                command.Parameters.AddWithValue("@Active", variant.Active);
+                command.Parameters.AddWithValue("@CreatedAt", variant.CreatedAt == default ? DateTime.Now : variant.CreatedAt);
+                command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        private static MenuItemVariant ParseMenuItemVariant(MySqlDataReader reader)
+        {
+            return new MenuItemVariant
+            {
+                Id = reader.IsDBNull(reader.GetOrdinal("Id")) ? Guid.NewGuid().ToString() : reader.GetString(reader.GetOrdinal("Id")),
+                MenuItemId = reader.IsDBNull(reader.GetOrdinal("MenuItemId")) ? string.Empty : reader.GetString(reader.GetOrdinal("MenuItemId")),
+                Name = reader.IsDBNull(reader.GetOrdinal("Name")) ? string.Empty : reader.GetString(reader.GetOrdinal("Name")),
+                Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
+                Price = reader.IsDBNull(reader.GetOrdinal("Price")) ? 0m : reader.GetDecimal(reader.GetOrdinal("Price")),
+                DisplayOrder = reader.IsDBNull(reader.GetOrdinal("DisplayOrder")) ? 0 : reader.GetInt32(reader.GetOrdinal("DisplayOrder")),
+                Active = reader.IsDBNull(reader.GetOrdinal("Active")) || reader.GetBoolean(reader.GetOrdinal("Active")),
+                CreatedAt = reader.IsDBNull(reader.GetOrdinal("CreatedAt")) ? DateTime.Now : reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                UpdatedAt = reader.IsDBNull(reader.GetOrdinal("UpdatedAt")) ? DateTime.Now : reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
+            };
+        }
 
         private FoodMenuItem ParseFoodMenuItem(MySqlDataReader reader)
         {
@@ -452,6 +775,16 @@ namespace MyFirstMauiApp.Services
                 }
             }
             catch { /* Column doesn't exist yet */ }
+
+            try
+            {
+                var itemTypeOrdinal = reader.GetOrdinal("ItemType");
+                if (!reader.IsDBNull(itemTypeOrdinal))
+                {
+                    item.ItemType = NormalizeItemType(reader.GetString(itemTypeOrdinal));
+                }
+            }
+            catch { /* Column doesn't exist yet */ }
             
             // Load label print settings if they exist
             try
@@ -530,6 +863,7 @@ namespace MyFirstMauiApp.Services
             command.Parameters.AddWithValue("@VatConfigType", item.VatConfigType);
             command.Parameters.AddWithValue("@VatCategory", item.VatCategory);
             command.Parameters.AddWithValue("@CalculatedVatRate", item.CalculatedVatRate);
+            command.Parameters.AddWithValue("@ItemType", NormalizeItemType(item.ItemType));
             
             // Add label print settings
             command.Parameters.AddWithValue("@LabelText", (object?)item.LabelText ?? DBNull.Value);
@@ -538,6 +872,16 @@ namespace MyFirstMauiApp.Services
             
             // Add print group
             command.Parameters.AddWithValue("@PrintGroupId", (object?)item.PrintGroupId ?? DBNull.Value);
+        }
+
+        private static string NormalizeItemType(string? itemType)
+        {
+            return itemType?.Trim().ToLowerInvariant() switch
+            {
+                "drink" => "Drink",
+                "other" => "Other",
+                _ => "Food"
+            };
         }
         
         /// <summary>
@@ -646,12 +990,15 @@ namespace MyFirstMauiApp.Services
         {
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureQuickNotesSchemaAsync(connection);
+
+                await using var transaction = await connection.BeginTransactionAsync();
                 
                 // Delete existing quick notes
                 var deleteQuery = "DELETE FROM MenuItemQuickNotes WHERE MenuItemId = @MenuItemId";
-                using (var deleteCommand = new MySqlCommand(deleteQuery, connection))
+                using (var deleteCommand = new MySqlCommand(deleteQuery, connection, transaction))
                 {
                     deleteCommand.Parameters.AddWithValue("@MenuItemId", menuItemId);
                     await deleteCommand.ExecuteNonQueryAsync();
@@ -668,24 +1015,38 @@ namespace MyFirstMauiApp.Services
                     
                     foreach (var note in notes)
                     {
-                        using var insertCommand = new MySqlCommand(insertQuery, connection);
-                        insertCommand.Parameters.AddWithValue("@Id", note.Id);
+                        var noteText = (note.NoteText ?? string.Empty).Trim();
+                        if (noteText.Length > 255)
+                        {
+                            noteText = noteText[..255];
+                        }
+
+                        if (string.IsNullOrWhiteSpace(noteText))
+                        {
+                            continue;
+                        }
+
+                        using var insertCommand = new MySqlCommand(insertQuery, connection, transaction);
+                        insertCommand.Parameters.AddWithValue("@Id", string.IsNullOrWhiteSpace(note.Id) ? Guid.NewGuid().ToString() : note.Id);
                         insertCommand.Parameters.AddWithValue("@MenuItemId", menuItemId);
-                        insertCommand.Parameters.AddWithValue("@NoteText", note.NoteText);
+                        insertCommand.Parameters.AddWithValue("@NoteText", noteText);
                         insertCommand.Parameters.AddWithValue("@DisplayOrder", note.DisplayOrder);
                         insertCommand.Parameters.AddWithValue("@Active", note.Active);
-                        insertCommand.Parameters.AddWithValue("@CreatedAt", note.CreatedAt);
+                        insertCommand.Parameters.AddWithValue("@CreatedAt", note.CreatedAt == default ? DateTime.Now : note.CreatedAt);
                         insertCommand.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
                         
                         await insertCommand.ExecuteNonQueryAsync();
                     }
                 }
+
+                await transaction.CommitAsync();
                 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error saving quick notes: {ex.Message}");
+                Console.WriteLine($"Error saving quick notes for item {menuItemId}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[MenuItemService] Error saving quick notes for item {menuItemId}: {ex}");
                 return false;
             }
         }
@@ -699,8 +1060,9 @@ namespace MyFirstMauiApp.Services
 
             try
             {
-                using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+                using var connection = new MySqlConnection(_connectionString);
                 await connection.OpenAsync();
+                await EnsureQuickNotesSchemaAsync(connection);
 
                 var query = @"
                     SELECT Id, MenuItemId, NoteText, DisplayOrder, Active, CreatedAt, UpdatedAt
@@ -719,7 +1081,7 @@ namespace MyFirstMauiApp.Services
                     {
                         Id = reader.GetString("Id"),
                         MenuItemId = reader.GetString("MenuItemId"),
-                        NoteText = reader.GetString("NoteText"),
+                        NoteText = reader.IsDBNull(reader.GetOrdinal("NoteText")) ? string.Empty : reader.GetString("NoteText"),
                         DisplayOrder = reader.GetInt32("DisplayOrder"),
                         Active = reader.GetBoolean("Active"),
                         CreatedAt = reader.GetDateTime("CreatedAt"),

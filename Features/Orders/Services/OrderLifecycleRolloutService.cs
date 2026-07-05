@@ -37,8 +37,8 @@ public sealed class OrderLifecycleRolloutConfig
         {
             SchemaMigrationReady = true,
             EnableLifecycleReads = true,
-            EnableLifecycleWrites = false,
-            EnableDraftSaveTable = false,
+            EnableLifecycleWrites = true,
+            EnableDraftSaveTable = true,
             EnableDraftSaveCollection = true,
             EnableDraftSaveDelivery = true,
             EnableResumePath = true,
@@ -58,8 +58,8 @@ public sealed class OrderLifecycleRolloutService
     {
         ["order.lifecycle.rollout.schema_migration_ready"] = true,
         ["order.lifecycle.rollout.lifecycle_reads_enabled"] = true,
-        ["order.lifecycle.rollout.lifecycle_writes_enabled"] = false,
-        ["order.lifecycle.rollout.draft_save_table_enabled"] = false,
+        ["order.lifecycle.rollout.lifecycle_writes_enabled"] = true,
+        ["order.lifecycle.rollout.draft_save_table_enabled"] = true,
         ["order.lifecycle.rollout.draft_save_collection_enabled"] = true,
         ["order.lifecycle.rollout.draft_save_delivery_enabled"] = true,
         ["order.lifecycle.rollout.resume_path_enabled"] = true,
@@ -175,7 +175,7 @@ public sealed class OrderLifecycleRolloutService
         const string upsertSql = @"
             INSERT INTO settings (setting_key, setting_value)
             VALUES (@key, @value)
-            ON DUPLICATE KEY UPDATE setting_key = setting_key";
+                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP";
 
         foreach (var entry in _defaultFlags)
         {
@@ -226,12 +226,6 @@ public sealed class OrderLifecycleRolloutService
             LegacyFallbackPathsRemoved = Get(flags, "order.lifecycle.rollout.legacy_fallback_paths_removed"),
             ValidationWindowClosed = Get(flags, "order.lifecycle.rollout.validation_window_closed")
         };
-
-        if (config.EnableLifecycleWrites && config.EnableDraftSaveTable)
-        {
-            config.EnableDraftSaveCollection = true;
-            config.EnableDraftSaveDelivery = true;
-        }
 
         return config;
     }

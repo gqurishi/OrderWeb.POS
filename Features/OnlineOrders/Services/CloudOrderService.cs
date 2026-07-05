@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text;
 using POS_in_NET.Models;
 using POS_in_NET.Models.Api;
+using MyFirstMauiApp.Services;
 
 namespace POS_in_NET.Services;
 
@@ -11,9 +12,11 @@ public class CloudOrderService
     private readonly DatabaseService _databaseService;
     private readonly OrderService _orderService;
     private readonly ReceiptService _receiptService;
+    private readonly OrderWebApiClient _orderWebApiClient;
     private OnlineOrderAutoPrintService? _autoPrintService;
     private Timer? _pollingTimer;
     private Timer? _ackRetryTimer;
+    private readonly SemaphoreSlim _ackRetryGate = new(1, 1);
     private bool _isPolling = false;
     private DateTime _lastSyncTime;
     private string? _lastModifiedHeader;
@@ -31,7 +34,8 @@ public class CloudOrderService
     public CloudOrderService(
         DatabaseService databaseService, 
         OrderService orderService,
-        ReceiptService receiptService)
+        ReceiptService receiptService,
+        OrderWebApiClient orderWebApiClient)
     {
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(10); // Reasonable timeout for 15-second polling
@@ -41,6 +45,7 @@ public class CloudOrderService
         _databaseService = databaseService;
         _orderService = orderService;
         _receiptService = receiptService;
+        _orderWebApiClient = orderWebApiClient;
         _lastSyncTime = DateTime.UtcNow.AddHours(-24); // Start from 24 hours ago
         
         System.Diagnostics.Debug.WriteLine("========================================");
@@ -170,6 +175,13 @@ public class CloudOrderService
     /// </summary>
     private async Task PollForOrdersAsync()
     {
+        var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
+        if (!roleCheck.Allowed)
+        {
+            System.Diagnostics.Debug.WriteLine($"Cloud order polling skipped: {roleCheck.Reason}");
+            return;
+        }
+
         // Prevent concurrent polling for consistency
         lock (_pollingLock)
         {
@@ -182,13 +194,16 @@ public class CloudOrderService
         try
         {
             // Get configuration from database
-            var config = await _databaseService.GetCloudConfigAsync();
-            var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-            var apiKey = config.GetValueOrDefault("api_key", "");
-            var apiBaseUrl = config.GetValueOrDefault("api_base_url", "");
-            var cloudUrl = !string.IsNullOrWhiteSpace(apiBaseUrl)
-                ? apiBaseUrl
-                : config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            var sharedConfig = await _orderWebApiClient.GetConfigAsync();
+            if (sharedConfig == null)
+            {
+                _isPolling = false;
+                return;
+            }
+
+            var tenantSlug = sharedConfig.TenantSlug;
+            var apiKey = sharedConfig.ApiKey;
+            var cloudUrl = sharedConfig.ApiBaseUrl;
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
@@ -203,18 +218,15 @@ public class CloudOrderService
             System.Diagnostics.Debug.WriteLine($"    API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             
             // CRITICAL: Clear ALL headers first to avoid "multiple values" error
-            _httpClient.DefaultRequestHeaders.Clear();
-            
-            // OrderWeb.net REST API uses Bearer token authentication (as per official documentation)
-            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
-            
-            // Add smart change detection header (note: this may not be supported by OrderWeb.net)
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            _orderWebApiClient.ApplyAuthHeaders(request, apiKey);
+            request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+
             if (!string.IsNullOrEmpty(_lastModifiedHeader))
             {
                 try
                 {
-                    _httpClient.DefaultRequestHeaders.Add("If-Modified-Since", _lastModifiedHeader);
+                    request.Headers.TryAddWithoutValidation("If-Modified-Since", _lastModifiedHeader);
                 }
                 catch
                 {
@@ -224,7 +236,7 @@ public class CloudOrderService
 
             System.Diagnostics.Debug.WriteLine($" Aggressive polling check: {endpoint}");
             var apiStartTime = DateTime.Now;
-            var response = await _httpClient.GetAsync(endpoint);
+            var response = await _orderWebApiClient.SendAsync(request);
             var apiDuration = (DateTime.Now - apiStartTime).TotalMilliseconds;
             
             System.Diagnostics.Debug.WriteLine($" API Response: Status={response.StatusCode}, Duration={apiDuration:F0}ms");
@@ -380,7 +392,7 @@ public class CloudOrderService
                 return false;
             }
 
-            var localOrder = ConvertCloudOrderToLocal(cloudOrder);
+            var localOrder = await ConvertCloudOrderToLocalAsync(cloudOrder);
             var saveResult = await _orderService.SaveOrderAsync(localOrder);
 
             if (!saveResult.Success)
@@ -522,7 +534,7 @@ public class CloudOrderService
     /// <summary>
     /// Convert cloud order format to local Order model
     /// </summary>
-    private Order ConvertCloudOrderToLocal(CloudOrderResponse cloudOrder)
+    private async Task<Order> ConvertCloudOrderToLocalAsync(CloudOrderResponse cloudOrder)
     {
         // Parse financial data
         decimal.TryParse(cloudOrder.Total, out var total);
@@ -579,11 +591,24 @@ public class CloudOrderService
         {
             foreach (var cloudItem in cloudOrder.Items)
             {
+                var inferredVariant = string.IsNullOrWhiteSpace(cloudItem.VariantId) && string.IsNullOrWhiteSpace(cloudItem.VariantName)
+                    ? await InferVariantAsync(cloudItem.MenuItemId, cloudItem.Price)
+                    : null;
+
+                var variantId = !string.IsNullOrWhiteSpace(cloudItem.VariantId) ? cloudItem.VariantId : inferredVariant?.Id;
+                var variantName = !string.IsNullOrWhiteSpace(cloudItem.VariantName) ? cloudItem.VariantName : inferredVariant?.Name;
+                var displayName = !string.IsNullOrWhiteSpace(cloudItem.DisplayName)
+                    ? cloudItem.DisplayName
+                    : BuildCloudDisplayName(cloudItem.Name, variantName);
+
                 var localItem = new Models.OrderItem
                 {
                     OrderId = cloudOrder.Id, // Use UUID, not OrderNumber
                     CloudItemId = cloudItem.Id,
                     MenuItemId = cloudItem.MenuItemId,
+                    VariantId = variantId,
+                    VariantName = variantName,
+                    DisplayName = displayName,
                     ItemName = cloudItem.Name ?? "Unknown Item",
                     Quantity = cloudItem.Quantity,
                     ItemPrice = cloudItem.Price, // Now properly mapping price!
@@ -613,6 +638,31 @@ public class CloudOrderService
         }
 
         return localOrder;
+    }
+
+    private static async Task<MyFirstMauiApp.Models.FoodMenu.MenuItemVariant?> InferVariantAsync(string? menuItemId, decimal? price)
+    {
+        try
+        {
+            return await new MenuItemService().InferVariantByPriceAsync(menuItemId, price);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Variant inference warning: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string? BuildCloudDisplayName(string? itemName, string? variantName)
+    {
+        if (string.IsNullOrWhiteSpace(itemName))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(variantName)
+            ? itemName
+            : $"{itemName.Trim()} ({variantName.Trim()})";
     }
 
     /// <summary>
@@ -693,6 +743,9 @@ public class CloudOrderService
             {
                 Id = item.CloudItemId ?? item.Id,
                 MenuItemId = item.MenuItemId,
+                VariantId = item.VariantId,
+                VariantName = item.VariantName,
+                DisplayName = item.DisplayName,
                 Name = item.ItemName,
                 Quantity = item.Quantity,
                 Price = item.ItemPrice ?? 0m,
@@ -1102,42 +1155,9 @@ public class CloudOrderService
     {
         if (!string.IsNullOrEmpty(_deviceId))
             return _deviceId;
-            
-        try
-        {
-            using var connection = await _databaseService.GetConnectionAsync();
-            using var command = connection.CreateCommand();
-            
-            // Try to get existing device ID from settings
-            command.CommandText = "SELECT value FROM cloud_config WHERE `key` = 'device_id'";
-            var result = await command.ExecuteScalarAsync();
-            
-            if (result != null && !string.IsNullOrEmpty(result.ToString()))
-            {
-                _deviceId = result.ToString();
-            }
-            else
-            {
-                // Generate new device ID
-                _deviceId = $"POS_{Environment.MachineName}_{Guid.NewGuid().ToString().Substring(0, 8)}";
-                
-                // Save it to database
-                command.CommandText = @"INSERT INTO cloud_config (`key`, value) VALUES ('device_id', @deviceId)
-                                       ON DUPLICATE KEY UPDATE value = @deviceId";
-                command.Parameters.AddWithValue("@deviceId", _deviceId);
-                await command.ExecuteNonQueryAsync();
-                
-                System.Diagnostics.Debug.WriteLine($" Generated new device ID: {_deviceId}");
-            }
-            
-            return _deviceId!;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($" Error getting device ID: {ex.Message}");
-            // Fallback to machine name
-            return $"POS_{Environment.MachineName}";
-        }
+
+        _deviceId = await _orderWebApiClient.GetDeviceIdAsync();
+        return _deviceId;
     }
     
     /// <summary>
@@ -1148,27 +1168,32 @@ public class CloudOrderService
     {
         try
         {
-            var config = await _databaseService.GetCloudConfigAsync();
-            var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-            var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
-            
-            if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
+            var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
+            if (!roleCheck.Allowed)
+            {
+                System.Diagnostics.Debug.WriteLine($" Cannot send Order Received: {roleCheck.Reason}");
+                return false;
+            }
+
+            var config = await _orderWebApiClient.GetConfigAsync();
+            if (config == null)
             {
                 System.Diagnostics.Debug.WriteLine(" Cannot send Order Received: No configuration");
                 return false;
             }
 
-            var url = $"{cloudUrl}/pos/orders/received";
+            var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/received");
             var deviceId = await GetDeviceIdAsync();
+            var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-received", orderId, status, deviceId);
             
             var payload = new
             {
-                tenant = tenantSlug,
+                tenant = config.TenantSlug,
                 order_id = orderId,
                 received_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 device_id = deviceId,
-                status = status
+                status = status,
+                idempotency_key = idempotencyKey
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -1180,7 +1205,7 @@ public class CloudOrderService
                 )
             };
             
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            _orderWebApiClient.ApplyAuthHeaders(request, config.ApiKey, idempotencyKey);
 
             System.Diagnostics.Debug.WriteLine($" Sending Order Received for {orderId}: {status}");
 
@@ -1243,28 +1268,33 @@ public class CloudOrderService
     {
         try
         {
-            var config = await _databaseService.GetCloudConfigAsync();
-            var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-            var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
-            
-            if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
+            var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
+            if (!roleCheck.Allowed)
+            {
+                System.Diagnostics.Debug.WriteLine($" Cannot send ACK: {roleCheck.Reason}");
+                return false;
+            }
+
+            var config = await _orderWebApiClient.GetConfigAsync();
+            if (config == null)
             {
                 System.Diagnostics.Debug.WriteLine(" Cannot send ACK: No configuration");
                 return false;
             }
 
-            var url = $"{cloudUrl}/pos/orders/ack";
+            var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/ack");
             var deviceId = await GetDeviceIdAsync();
+            var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-print-ack", orderId, status, deviceId);
             
             // Build enhanced payload with optional fields
             var payload = new Dictionary<string, object>
             {
-                ["tenant"] = tenantSlug,
+                ["tenant"] = config.TenantSlug,
                 ["order_id"] = orderId,
                 ["status"] = status,
                 ["printed_at"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                ["device_id"] = deviceId
+                ["device_id"] = deviceId,
+                ["idempotency_key"] = idempotencyKey
             };
             
             if (!string.IsNullOrEmpty(errorReason))
@@ -1288,7 +1318,7 @@ public class CloudOrderService
                 )
             };
             
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            _orderWebApiClient.ApplyAuthHeaders(request, config.ApiKey, idempotencyKey);
 
             System.Diagnostics.Debug.WriteLine($" Sending enhanced ACK for order {orderId}: {status}");
 
@@ -1390,6 +1420,11 @@ public class CloudOrderService
     /// </summary>
     private async Task RetryPendingAcksAsync()
     {
+        if (!await _ackRetryGate.WaitAsync(0))
+        {
+            return;
+        }
+
         try
         {
             // Get pending ACKs from last 6 hours
@@ -1409,20 +1444,22 @@ public class CloudOrderService
             
             var pendingAcks = new List<Models.Api.PendingAck>();
             
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            using (var reader = await command.ExecuteReaderAsync())
             {
-                pendingAcks.Add(new Models.Api.PendingAck
+                while (await reader.ReadAsync())
                 {
-                    Id = reader.GetInt32(0),
-                    OrderId = reader.GetString(1),
-                    Status = reader.GetString(2),
-                    Reason = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    PrintedAt = reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-                    DeviceId = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    CreatedAt = reader.GetDateTime(6),
-                    RetryCount = reader.GetInt32(7)
-                });
+                    pendingAcks.Add(new Models.Api.PendingAck
+                    {
+                        Id = reader.GetInt32(0),
+                        OrderId = reader.GetString(1),
+                        Status = reader.GetString(2),
+                        Reason = reader.IsDBNull(3) ? null : reader.GetString(3),
+                        PrintedAt = reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+                        DeviceId = reader.IsDBNull(5) ? null : reader.GetString(5),
+                        CreatedAt = reader.GetDateTime(6),
+                        RetryCount = reader.GetInt32(7)
+                    });
+                }
             }
 
             if (pendingAcks.Count == 0) return;
@@ -1460,6 +1497,10 @@ public class CloudOrderService
         {
             System.Diagnostics.Debug.WriteLine($" ACK retry error: {ex.Message}");
         }
+        finally
+        {
+            _ackRetryGate.Release();
+        }
     }
     
     /// <summary>
@@ -1469,24 +1510,22 @@ public class CloudOrderService
     {
         try
         {
-            var config = await _databaseService.GetCloudConfigAsync();
-            var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
-            var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
-            
-            if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
+            var config = await _orderWebApiClient.GetConfigAsync();
+            if (config == null)
                 return false;
 
-            var url = $"{cloudUrl}/pos/orders/ack";
+            var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/ack");
+            var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-print-ack", ack.OrderId, ack.Status, ack.DeviceId);
             
             var payload = new
             {
-                tenant = tenantSlug,
+                tenant = config.TenantSlug,
                 order_id = ack.OrderId,
                 status = ack.Status,
                 printed_at = (ack.PrintedAt ?? DateTime.UtcNow).ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 device_id = ack.DeviceId,
-                reason = ack.Reason
+                reason = ack.Reason,
+                idempotency_key = idempotencyKey
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -1498,7 +1537,7 @@ public class CloudOrderService
                 )
             };
             
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            _orderWebApiClient.ApplyAuthHeaders(request, config.ApiKey, idempotencyKey);
 
             var response = await _httpClient.SendAsync(request);
             return response.IsSuccessStatusCode;
@@ -1819,11 +1858,11 @@ public class CloudOrderService
                 return null;
             }
 
-            var url = $"{cloudUrl}/pos/config?tenant={tenantSlug}";
+            var url = $"{OrderWebApiClient.NormalizeApiBaseUrl(cloudUrl)}/pos/config?tenant={tenantSlug}";
             var deviceId = await GetDeviceIdAsync();
             
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            _orderWebApiClient.ApplyAuthHeaders(request, apiKey);
             request.Headers.Add("X-Device-ID", deviceId);
 
             System.Diagnostics.Debug.WriteLine($" Fetching remote configuration");
@@ -1874,9 +1913,9 @@ public class CloudOrderService
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = @"
-                    INSERT INTO cloud_config (`key`, value) 
+                    INSERT INTO settings (setting_key, setting_value) 
                     VALUES (@key, @value) 
-                    ON DUPLICATE KEY UPDATE value = @value";
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)";
                 
                 command.Parameters.AddWithValue("@key", kvp.Key);
                 command.Parameters.AddWithValue("@value", kvp.Value);

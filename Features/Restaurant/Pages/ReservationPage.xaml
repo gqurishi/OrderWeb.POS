@@ -137,16 +137,11 @@
                                     StrokeShape="RoundRectangle 10">
                                 <Grid RowDefinitions="Auto,*,Auto">
                                     <Label Text="{Binding DayText}"
-                                           FontSize="14"
+                                           FontSize="16"
                                            FontAttributes="Bold"
                                            TextColor="{Binding TextColor}"
-                                           HorizontalTextAlignment="Center" />
-                                    <Label Grid.Row="2"
-                                           Text="{Binding CountText}"
-                                           FontSize="11"
-                                           FontAttributes="Bold"
-                                           TextColor="{Binding CountColor}"
-                                           HorizontalTextAlignment="Center" />
+                                           HorizontalTextAlignment="Center"
+                                           VerticalOptions="Center" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -229,15 +224,16 @@
                 </Border.Shadow>
                 <Grid RowDefinitions="Auto,*">
                     <Grid Padding="18,16"
-                          ColumnDefinitions="110,*,150,110,110,130"
+                          ColumnDefinitions="90,*,80,150,90,130,350"
                           ColumnSpacing="12"
                           BackgroundColor="#F8FAFC">
                         <Label Text="Time" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                        <Label Grid.Column="1" Text="Name" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                        <Label Grid.Column="2" Text="Phone" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                        <Label Grid.Column="3" Text="Guests" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="1" Text="Guest" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                        <Label Grid.Column="2" Text="Cover" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="3" Text="Phone" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
                         <Label Grid.Column="4" Text="Table" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
-                        <Label Grid.Column="5" Text="Status" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="5" Text="Promo" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="6" Text="Actions" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
                     </Grid>
 
                     <CollectionView Grid.Row="1"
@@ -268,29 +264,111 @@
                         <CollectionView.ItemTemplate>
                             <DataTemplate>
                                 <Grid Padding="18,14"
-                                      ColumnDefinitions="110,*,150,110,110,130"
+                                      ColumnDefinitions="90,*,80,150,90,130,350"
                                       ColumnSpacing="12"
                                       RowDefinitions="Auto,Auto">
                                     <Grid.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnReservationTapped" />
+                                        <TapGestureRecognizer Tapped="OnReservationRowTapped" />
                                     </Grid.GestureRecognizers>
                                     <Label Text="{Binding TimeText}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
-                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                    <VerticalStackLayout Grid.Column="1" Spacing="6">
                                         <Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" />
                                         <Label Text="{Binding Note}" FontSize="12" TextColor="#64748B" LineBreakMode="TailTruncation" />
+                                        <FlexLayout Wrap="Wrap"
+                                                    Direction="Row"
+                                                    AlignItems="Start"
+                                                    JustifyContent="Start"
+                                                    IsVisible="{Binding HasAnySpecialInfo}">
+                                            <Border BackgroundColor="#FFF7ED"
+                                                    Stroke="#FED7AA"
+                                                    StrokeThickness="1"
+                                                    Padding="8,3"
+                                                    Margin="0,0,6,4"
+                                                    StrokeShape="RoundRectangle 8"
+                                                    IsVisible="{Binding HasAllergies}">
+                                                <Label Text="Allergies" FontSize="11" FontAttributes="Bold" TextColor="#C2410C" />
+                                            </Border>
+                                            <Border BackgroundColor="#ECFDF5"
+                                                    Stroke="#BBF7D0"
+                                                    StrokeThickness="1"
+                                                    Padding="8,3"
+                                                    Margin="0,0,6,4"
+                                                    StrokeShape="RoundRectangle 8"
+                                                    IsVisible="{Binding HasSpecialRequests}">
+                                                <Label Text="Special requests" FontSize="11" FontAttributes="Bold" TextColor="#047857" />
+                                            </Border>
+                                        </FlexLayout>
                                     </VerticalStackLayout>
-                                    <Label Grid.Column="2" Text="{Binding Phone}" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
-                                    <Label Grid.Column="3" Text="{Binding Guests}" FontSize="15" FontAttributes="Bold" TextColor="#0F766E" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" Text="{Binding Guests}" FontSize="15" FontAttributes="Bold" TextColor="#0F766E" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+                                    <Label Grid.Column="3" Text="{Binding Phone}" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
                                     <Label Grid.Column="4" Text="{Binding Table}" FontSize="15" FontAttributes="Bold" TextColor="#1D4ED8" HorizontalTextAlignment="Center" VerticalOptions="Center" />
-                                    <Border Grid.Column="5"
-                                            BackgroundColor="{Binding StatusBackground}"
-                                            Stroke="{Binding StatusBorder}"
-                                            StrokeThickness="1"
-                                            Padding="10,6"
-                                            StrokeShape="RoundRectangle 10"
-                                            VerticalOptions="Center">
-                                        <Label Text="{Binding Status}" FontSize="12" FontAttributes="Bold" TextColor="{Binding StatusTextColor}" HorizontalTextAlignment="Center" />
-                                    </Border>
+                                    <Label Grid.Column="5"
+                                           Text="{Binding PromoColumnText}"
+                                           FontSize="13"
+                                           FontAttributes="Bold"
+                                           TextColor="{Binding PromoColumnTextColor}"
+                                           HorizontalTextAlignment="Center"
+                                           VerticalOptions="Center"
+                                           LineBreakMode="TailTruncation" />
+                                    <HorizontalStackLayout Grid.Column="6"
+                                                           Spacing="8"
+                                                           HorizontalOptions="Center"
+                                                           VerticalOptions="Center">
+                                        <Button Text="{Binding ShowButtonText}"
+                                                BackgroundColor="{Binding ShowButtonBackground}"
+                                                TextColor="{Binding ShowButtonTextColor}"
+                                                BorderColor="{Binding ShowButtonBorderColor}"
+                                                BorderWidth="1"
+                                                FontAttributes="Bold"
+                                                FontSize="12"
+                                                CornerRadius="10"
+                                                HeightRequest="34"
+                                                WidthRequest="82"
+                                                Padding="0"
+                                                IsVisible="{Binding IsShowButtonVisible}"
+                                                IsEnabled="{Binding IsShowButtonEnabled}"
+                                                Clicked="OnReservationShowClicked" />
+                                        <Button Text="Details"
+                                                BackgroundColor="#EFF6FF"
+                                                TextColor="#1D4ED8"
+                                                BorderColor="#BFDBFE"
+                                                BorderWidth="1"
+                                                FontAttributes="Bold"
+                                                FontSize="12"
+                                                CornerRadius="10"
+                                                HeightRequest="34"
+                                                WidthRequest="82"
+                                                Padding="0"
+                                                Clicked="OnReservationDetailsClicked" />
+                                        <Button Text="{Binding NoShowButtonText}"
+                                                BackgroundColor="{Binding NoShowButtonBackground}"
+                                                TextColor="{Binding NoShowButtonTextColor}"
+                                                BorderColor="{Binding NoShowButtonBorderColor}"
+                                                BorderWidth="1"
+                                                FontAttributes="Bold"
+                                                FontSize="12"
+                                                CornerRadius="10"
+                                                HeightRequest="34"
+                                                WidthRequest="92"
+                                                Padding="0"
+                                                IsVisible="{Binding IsNoShowButtonVisible}"
+                                                IsEnabled="{Binding IsNoShowButtonEnabled}"
+                                                Clicked="OnReservationNoShowClicked" />
+                                        <Button Text="{Binding CancelButtonText}"
+                                                BackgroundColor="{Binding CancelButtonBackground}"
+                                                TextColor="{Binding CancelButtonTextColor}"
+                                                BorderColor="{Binding CancelButtonBorderColor}"
+                                                BorderWidth="1"
+                                                FontAttributes="Bold"
+                                                FontSize="12"
+                                                CornerRadius="10"
+                                                HeightRequest="34"
+                                                WidthRequest="82"
+                                                Padding="0"
+                                                IsVisible="{Binding IsCancelButtonVisible}"
+                                                IsEnabled="{Binding IsCancelButtonEnabled}"
+                                                Clicked="OnReservationCancelClicked" />
+                                    </HorizontalStackLayout>
                                 </Grid>
                             </DataTemplate>
                         </CollectionView.ItemTemplate>
@@ -298,6 +376,122 @@
                 </Grid>
             </Border>
         </Grid>
+        </Grid>
+
+        <Grid Grid.RowSpan="2"
+              BackgroundColor="#990F172A"
+              IsVisible="{Binding IsDetailsVisible}"
+              InputTransparent="False">
+            <Border BackgroundColor="White"
+                    Stroke="#CBD5E1"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 18"
+                    Padding="24"
+                    WidthRequest="620"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Radius="18" Opacity="0.18" Offset="0,8" />
+                </Border.Shadow>
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                      RowSpacing="18">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Reservation Details"
+                                   FontSize="26"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A" />
+                            <Label Text="{Binding SelectedReservation.DateTimeText}"
+                                   FontSize="15"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1"
+                                Text="X"
+                                BackgroundColor="#FEE2E2"
+                                TextColor="#DC2626"
+                                BorderColor="#FECACA"
+                                BorderWidth="1"
+                                FontAttributes="Bold"
+                                FontSize="18"
+                                CornerRadius="24"
+                                HeightRequest="48"
+                                WidthRequest="48"
+                                Padding="0"
+                                Clicked="OnCloseDetailsClicked" />
+                    </Grid>
+
+                    <Grid Grid.Row="1"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="14">
+                        <Border BackgroundColor="#F8FAFC"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                Padding="18"
+                                StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Guest" FontSize="13" FontAttributes="Bold" TextColor="#64748B" />
+                                <Label Text="{Binding SelectedReservation.Name}" FontSize="22" FontAttributes="Bold" TextColor="#0F172A" />
+                                <Label Text="{Binding SelectedReservation.PhoneDisplay}" FontSize="15" TextColor="#334155" />
+                                <Label Text="{Binding SelectedReservation.EmailDisplay}" FontSize="15" TextColor="#334155" LineBreakMode="TailTruncation" />
+                            </VerticalStackLayout>
+                        </Border>
+                        <Border Grid.Column="1"
+                                BackgroundColor="#F0FDF4"
+                                Stroke="#86EFAC"
+                                StrokeThickness="1"
+                                Padding="18"
+                                StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Booking" FontSize="13" FontAttributes="Bold" TextColor="#047857" />
+                                <Label Text="{Binding SelectedReservation.GuestsText}" FontSize="18" FontAttributes="Bold" TextColor="#0F766E" />
+                                <Label Text="{Binding SelectedReservation.TableDisplay}" FontSize="16" TextColor="#334155" />
+                                <Label Text="{Binding SelectedReservation.StatusDisplay}" FontSize="16" TextColor="#334155" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="2"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="14">
+                        <Border BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeThickness="1"
+                                Padding="18"
+                                StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Promocode" FontSize="13" FontAttributes="Bold" TextColor="#1D4ED8" />
+                                <Label Text="{Binding SelectedReservation.PromoCodeDisplay}" FontSize="18" FontAttributes="Bold" TextColor="#1E3A8A" />
+                            </VerticalStackLayout>
+                        </Border>
+                        <Border Grid.Column="1"
+                                BackgroundColor="#FFF7ED"
+                                Stroke="#FED7AA"
+                                StrokeThickness="1"
+                                Padding="18"
+                                StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Allergies / dietary" FontSize="13" FontAttributes="Bold" TextColor="#C2410C" />
+                                <Label Text="{Binding SelectedReservation.AllergiesDisplay}" FontSize="16" TextColor="#0F172A" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </Grid>
+
+                    <Border Grid.Row="3"
+                            BackgroundColor="#F8FAFC"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="18"
+                            StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Special requests" FontSize="13" FontAttributes="Bold" TextColor="#64748B" />
+                            <Label Text="{Binding SelectedReservation.SpecialRequestsDisplay}"
+                                   FontSize="16"
+                                   TextColor="#0F172A"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </ContentPage>

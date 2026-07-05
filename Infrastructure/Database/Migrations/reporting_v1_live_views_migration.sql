@@ -55,6 +55,9 @@ SELECT
 
     oi.id AS order_item_id,
     oi.menu_item_id,
+    oi.variant_id,
+    oi.variant_name,
+    COALESCE(NULLIF(oi.display_name, ''), NULLIF(CONCAT(oi.item_name, CASE WHEN COALESCE(oi.variant_name, '') <> '' THEN CONCAT(' (', oi.variant_name, ')') ELSE '' END), ''), oi.item_name) AS display_name,
     oi.item_name,
     oi.quantity,
     COALESCE(oi.item_price, 0.00) AS unit_price,
@@ -123,13 +126,16 @@ SELECT
     source_channel,
     order_type,
     menu_item_id,
+    variant_id,
+    variant_name,
+    display_name,
     item_name,
     SUM(quantity) AS total_quantity,
     ROUND(SUM(line_gross), 2) AS gross_sales,
     ROUND(SUM(line_net), 2) AS net_sales,
     ROUND(SUM(line_vat), 2) AS vat_amount
 FROM vw_report_order_lines_live
-GROUP BY business_date, source_channel, order_type, menu_item_id, item_name;
+GROUP BY business_date, source_channel, order_type, menu_item_id, variant_id, variant_name, display_name, item_name;
 
 
 -- ========================================

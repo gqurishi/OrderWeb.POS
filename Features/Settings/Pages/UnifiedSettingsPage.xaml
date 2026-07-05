@@ -755,7 +755,7 @@
                                         <RoundRectangle CornerRadius="20"/>
                                     </Border.StrokeShape>
                                     <Label x:Name="UserCountLabel"
-                                           Text="3 Users" 
+                                           Text="0 Users" 
                                            FontSize="14" 
                                            FontAttributes="Bold"
                                            TextColor="#1E40AF"/>
@@ -834,8 +834,8 @@
                                                         </Border>
                                                         
                                                         <!-- Status Indicator -->
-                                                        <Border BackgroundColor="#F0FDF4" 
-                                                                Stroke="#BBF7D0" 
+                                                        <Border BackgroundColor="{Binding StatusBackgroundColor}" 
+                                                                Stroke="{Binding StatusBorderColor}" 
                                                                 StrokeThickness="1"
                                                                 Padding="8,4"
                                                                 Grid.Column="1">
@@ -843,15 +843,15 @@
                                                                 <RoundRectangle CornerRadius="8"/>
                                                             </Border.StrokeShape>
                                                             <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6">
-                                                                <Ellipse Fill="#22C55E" 
+                                                                <Ellipse Fill="{Binding StatusDotColor}" 
                                                                          WidthRequest="8" 
                                                                          HeightRequest="8"
                                                                          Grid.Column="0"
                                                                          VerticalOptions="Center"/>
-                                                                <Label Text="Active" 
+                                                                <Label Text="{Binding StatusText}" 
                                                                        FontSize="13" 
                                                                        FontAttributes="Bold"
-                                                                       TextColor="#15803D"
+                                                                       TextColor="{Binding StatusTextColor}"
                                                                        Grid.Column="1"/>
                                                             </Grid>
                                                         </Border>
@@ -880,19 +880,37 @@
                                                         </Button.Shadow>
                                                     </Button>
                                                     
-                                                    <!-- Delete Button -->
-                                                    <Button Text="Delete" 
-                                                            BackgroundColor="#EF4444" 
-                                                            TextColor="White"
+                                                    <!-- Deactivate Button -->
+                                                    <Button Text="{Binding DeactivateButtonText}" 
+                                                            BackgroundColor="{Binding DeactivateButtonBackgroundColor}" 
+                                                            TextColor="{Binding DeactivateButtonTextColor}"
                                                             FontSize="14"
                                                             FontAttributes="Bold"
                                                             Padding="16,10"
                                                             CornerRadius="10"
-                                                            WidthRequest="80"
+                                                            WidthRequest="112"
+                                                            IsEnabled="{Binding CanDeactivate}"
                                                             Clicked="OnDeleteUserClicked"
                                                             CommandParameter="{Binding}">
                                                         <Button.Shadow>
                                                             <Shadow Brush="#EF4444" Radius="8" Opacity="0.2" Offset="0,2"/>
+                                                        </Button.Shadow>
+                                                    </Button>
+
+                                                    <!-- Delete Button -->
+                                                    <Button Text="X"
+                                                            BackgroundColor="#FEE2E2"
+                                                            TextColor="#B91C1C"
+                                                            FontSize="18"
+                                                            FontAttributes="Bold"
+                                                            Padding="0"
+                                                            CornerRadius="10"
+                                                            WidthRequest="56"
+                                                            HeightRequest="44"
+                                                            Clicked="OnPermanentDeleteUserClicked"
+                                                            CommandParameter="{Binding}">
+                                                        <Button.Shadow>
+                                                            <Shadow Brush="#EF4444" Radius="8" Opacity="0.16" Offset="0,2"/>
                                                         </Button.Shadow>
                                                     </Button>
                                                     
@@ -1389,7 +1407,8 @@
                                 <Label Text="OrderWeb Connect Configuration" FontSize="18" FontAttributes="Bold" TextColor="#1E293B" Margin="0,0,0,16"/>
 
                                 <HorizontalStackLayout Spacing="12" Margin="0,0,0,16">
-                                    <Switch x:Name="CloudOnlineMasterSwitch"/>
+                                    <Switch x:Name="CloudOnlineMasterSwitch"
+                                            Toggled="OnCloudOnlineMasterToggled"/>
                                     <Label x:Name="CloudOnlineMasterLabel"
                                            Text="Online order master terminal"
                                            FontSize="14"
@@ -1399,7 +1418,7 @@
                                 </HorizontalStackLayout>
                                 
                                 <!-- Connection Settings Grid -->
-                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="24" RowSpacing="20">
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="24" RowSpacing="20">
                                     
                                     <!-- Column 1 -->
                                     <Label Text="Tenant Slug" FontSize="14" FontAttributes="Bold" TextColor="#374151" Grid.Row="0" Grid.Column="0"/>
@@ -1412,6 +1431,7 @@
                                                FontSize="14" 
                                                TextColor="#1F2937" 
                                                PlaceholderColor="#9CA3AF"
+                                               TextChanged="OnCloudFieldChanged"
                                                Margin="12,8" />
                                     </Border>
                                     
@@ -1427,6 +1447,7 @@
                                                    TextColor="#1F2937"
                                                    PlaceholderColor="#9CA3AF"
                                                    IsPassword="True"
+                                                   TextChanged="OnCloudFieldChanged"
                                                    Margin="12,8" />
                                         </Border>
                                         <Button x:Name="ToggleCloudApiKeyButton"
@@ -1447,12 +1468,17 @@
                                             <RoundRectangle CornerRadius="8" />
                                         </Border.StrokeShape>
                                         <Entry x:Name="CloudRestApiUrlEntry"
-                                               Placeholder="https://api.orderweb.co.uk"
+                                               Placeholder="https://orderweb.net/api"
                                                FontSize="14"
                                                TextColor="#1F2937"
                                                PlaceholderColor="#9CA3AF"
+                                               TextChanged="OnCloudFieldChanged"
                                                Margin="12,8" />
                                     </Border>
+                                    <Label Grid.Row="6" Grid.Column="0"
+                                           Text="Base URL only — do not add /bistro or tenant slug."
+                                           FontSize="12"
+                                           TextColor="#64748B"/>
                                     
                                     <!-- Column 2 -->
                                     <Label Text="WebSocket URL" FontSize="14" FontAttributes="Bold" TextColor="#374151" Grid.Row="0" Grid.Column="1"/>
@@ -1461,15 +1487,29 @@
                                             <RoundRectangle CornerRadius="8" />
                                         </Border.StrokeShape>
                                         <Entry x:Name="CloudWebSocketUrlEntry"
-                                               Placeholder="wss://ws.orderweb.co.uk"
+                                               Placeholder="wss://orderweb.net/ws/pos"
                                                FontSize="14"
                                                TextColor="#1F2937"
                                                PlaceholderColor="#9CA3AF"
+                                               TextChanged="OnCloudFieldChanged"
                                                Margin="12,8" />
                                     </Border>
+                                    <Label Grid.Row="2" Grid.Column="1"
+                                           Text="Base URL only — tenant is sent separately."
+                                           FontSize="12"
+                                           TextColor="#64748B"/>
                                     
                                     <!-- Connection Actions -->
-                                    <HorizontalStackLayout Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Spacing="12" Margin="0,24,0,0">
+                                    <HorizontalStackLayout Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Spacing="12" Margin="0,24,0,0">
+                                        <Button x:Name="CloudSaveSettingsButton"
+                                                Text="Save Settings"
+                                                BackgroundColor="#0F766E"
+                                                TextColor="White"
+                                                FontAttributes="Bold"
+                                                FontSize="14"
+                                                HeightRequest="44"
+                                                CornerRadius="8"
+                                                Clicked="OnCloudSaveSettingsClicked"/>
                                         <Button x:Name="CloudConnectButton"
                                                 Text="Connect"
                                                 BackgroundColor="#3B82F6"

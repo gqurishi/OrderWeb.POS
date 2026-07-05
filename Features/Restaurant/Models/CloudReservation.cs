@@ -12,6 +12,7 @@ public sealed class CloudReservation
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;
+    public string PromoCode { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
     public string Allergies { get; set; } = string.Empty;
     public string Status { get; set; } = "confirmed";

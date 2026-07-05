@@ -359,7 +359,7 @@ namespace POS_in_NET.Pages
                 // Create new category
                 ResultCategory = new MenuCategory
                 {
-                    Id = $"cat-{Guid.NewGuid()}",
+                    Id = Guid.NewGuid().ToString(),
                     Name = categoryName,
                     Description = "",
                     Icon = "", // Default icon

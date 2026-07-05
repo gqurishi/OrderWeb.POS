@@ -356,6 +356,17 @@ public sealed class ZReportService
               AND LOWER(COALESCE(NULLIF(source_channel, ''), 'local')) NOT IN ('web', 'online')
               AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
               AND COALESCE(local_lifecycle_state, '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                  OR paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = orders.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                  )
+              )
             GROUP BY LOWER(COALESCE(NULLIF(payment_method, ''), 'cash'))";
 
         command.Parameters.AddWithValue("@startDate", start);
@@ -403,6 +414,17 @@ public sealed class ZReportService
               AND created_at < @endDate
               AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
               AND COALESCE(local_lifecycle_state, '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                  OR paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = orders.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                  )
+              )
             GROUP BY LOWER(COALESCE(NULLIF(payment_method, ''), 'cash'))";
 
         command.Parameters.AddWithValue("@startDate", start);
@@ -458,6 +480,17 @@ public sealed class ZReportService
               AND created_at < @endDate
               AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
               AND COALESCE(local_lifecycle_state, '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                  OR paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = orders.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                  )
+              )
             GROUP BY LOWER(COALESCE(NULLIF(source_channel, ''), 'local'))";
 
         command.Parameters.AddWithValue("@startDate", start);
@@ -501,6 +534,17 @@ public sealed class ZReportService
               AND created_at < @endDate
               AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
               AND COALESCE(local_lifecycle_state, '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                  OR paid_at IS NOT NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = orders.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                  )
+              )
             GROUP BY LOWER(COALESCE(NULLIF(order_type, ''), 'table'))";
 
         command.Parameters.AddWithValue("@startDate", start);

@@ -6,14 +6,14 @@ namespace OrderWeb.DatabaseSetup.Tests;
 public class BundledMigrationTests
 {
     [Fact]
-    public void BundledMigrations_Include012()
+    public void BundledMigrations_IncludeLatest()
     {
         var migrationsPath = FindRepoMigrationsPath();
         Assert.NotNull(migrationsPath);
 
         var engine = new MigrationEngine(migrationsPath!, "1.0.0");
-        Assert.Equal(12, engine.GetBundledSchemaVersion());
-        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "012_cloud_reservations");
+        Assert.Equal(22, engine.GetBundledSchemaVersion());
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "022_reservation_customer_details");
     }
 
     private static string? FindRepoMigrationsPath()
@@ -22,7 +22,7 @@ public class BundledMigrationTests
         while (dir != null)
         {
             var candidate = Path.Combine(dir.FullName, "Database", "Migrations");
-            if (File.Exists(Path.Combine(candidate, "012_cloud_reservations.sql")))
+            if (File.Exists(Path.Combine(candidate, "022_reservation_customer_details.sql")))
             {
                 return candidate;
             }

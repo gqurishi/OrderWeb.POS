@@ -510,7 +510,7 @@ public class OnlineOrderAutoPrintService
             {
                 // Item name with quantity and price
                 var itemLine = $"{item.Quantity}x {item.Name}";
-                var priceLine = $"${item.Price:F2}";
+                var priceLine = $"£{item.Price:F2}";
                 
                 builder.PrintColumns(itemLine, priceLine);
 
@@ -520,7 +520,7 @@ public class OnlineOrderAutoPrintService
                     foreach (var addon in item.SelectedAddons)
                     {
                         var addonText = $"   + {addon.Name}";
-                        var addonPrice = addon.Price > 0 ? $"${addon.Price:F2}" : "";
+                        var addonPrice = addon.Price > 0 ? $"£{addon.Price:F2}" : "";
                         builder.PrintColumns(addonText, addonPrice);
                     }
                 }
@@ -540,15 +540,15 @@ public class OnlineOrderAutoPrintService
         decimal.TryParse(order.DeliveryFee, out var deliveryFee);
         decimal.TryParse(order.Total, out var total);
 
-        builder.PrintColumns("Subtotal:", $"${subtotal:F2}");
+        builder.PrintColumns("Subtotal:", $"£{subtotal:F2}");
         
         if (deliveryFee > 0)
-            builder.PrintColumns("Delivery:", $"${deliveryFee:F2}");
+            builder.PrintColumns("Delivery:", $"£{deliveryFee:F2}");
 
         builder.PrintLine(new string('=', lineWidth))
                .SetFontSize(2, 1)
                .SetBold(true)
-               .PrintColumns("TOTAL:", $"${total:F2}")
+               .PrintColumns("TOTAL:", $"£{total:F2}")
                .SetNormalSize()
                .SetBold(false)
                .PrintLine("(VAT included in item prices)");

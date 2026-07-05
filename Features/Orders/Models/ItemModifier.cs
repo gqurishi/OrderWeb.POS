@@ -34,9 +34,9 @@ namespace POS_in_NET.Models
             get
             {
                 if (PriceAdjustment > 0)
-                    return $"{Name} (+${PriceAdjustment:F2})";
+                    return $"{Name} (+£{PriceAdjustment:F2})";
                 else if (PriceAdjustment < 0)
-                    return $"{Name} (-${Math.Abs(PriceAdjustment):F2})";
+                    return $"{Name} (-£{Math.Abs(PriceAdjustment):F2})";
                 else
                     return Name;
             }
@@ -47,9 +47,9 @@ namespace POS_in_NET.Models
             get
             {
                 if (PriceAdjustment > 0)
-                    return $"+${PriceAdjustment:F2}";
+                    return $"+£{PriceAdjustment:F2}";
                 else if (PriceAdjustment < 0)
-                    return $"-${Math.Abs(PriceAdjustment):F2}";
+                    return $"-£{Math.Abs(PriceAdjustment):F2}";
                 else
                     return "No charge";
             }

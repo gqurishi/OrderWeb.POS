@@ -16,18 +16,22 @@ namespace POS_in_NET.Pages
         private readonly MenuItemService _menuItemService;
         private readonly MenuCategoryService _categoryService;
         private readonly MealDealService _mealDealService;
+        private readonly TastingMenuService _tastingMenuService;
         
         private List<MenuCategory> _allCategories = new();
         private List<MenuCategory> _topCategories = new();
         private List<MenuCategory> _subCategories = new();
         private List<FoodMenuItem> _allItems = new();
         private List<MealDeal> _allMealDeals = new();
+        private List<TastingMenu> _allTastingMenus = new();
         
         private MenuCategory? _editingCategory;
         private MenuCategory? _selectedParentCategory;
         private string _selectedColor = "#3B82F6";
         private string _currentTab = "Items";
         private string _searchText = "";
+        private bool _hasInitialLoad;
+        private bool _isSavingSubCategory;
         private TaskCompletionSource<bool>? _deleteConfirmTaskSource;
         
         // Drag and drop state
@@ -50,6 +54,7 @@ namespace POS_in_NET.Pages
             _menuItemService = new MenuItemService();
             _categoryService = new MenuCategoryService();
             _mealDealService = new MealDealService();
+            _tastingMenuService = new TastingMenuService();
             
             if (TopBar != null)
             {
@@ -62,35 +67,55 @@ namespace POS_in_NET.Pages
         protected override async void OnAppearing()
         {
             base.OnAppearing();
-            await LoadAllDataAsync();
-            SelectTab("Items"); // Default to Items tab
+
+            if (!_hasInitialLoad)
+            {
+                await LoadAllDataAsync();
+                SelectTab("Items");
+                _hasInitialLoad = true;
+                return;
+            }
+
+            await RefreshMenuDataAsync();
+            SelectTab(_currentTab);
         }
 
         #region Data Loading
 
-        private async Task LoadAllDataAsync()
+        private async Task RefreshMenuDataAsync()
         {
             try
             {
-                // Load categories
-                _allCategories = await _categoryService.GetAllCategoriesAsync();
-                _topCategories = _allCategories.Where(c => c.ParentId == null).OrderBy(c => c.DisplayOrder).ToList();
-                _subCategories = _allCategories.Where(c => c.ParentId != null).OrderBy(c => c.DisplayOrder).ToList();
-                
-                // Load items
+                await LoadCategoriesAsync();
                 _allItems = await _menuItemService.GetAllItemsAsync();
-                
-                // Load meal deals
                 _allMealDeals = await _mealDealService.GetAllDealsAsync();
-                
-                // Refresh current tab
+                _allTastingMenus = await _tastingMenuService.GetAllAsync();
                 RefreshCurrentTab();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error loading data: {ex.Message}");
-                await ToastNotification.ShowAsync("Error", "Failed to load data", NotificationType.Error);
+                System.Diagnostics.Debug.WriteLine($"Error refreshing menu data: {ex.Message}");
+                await ToastNotification.ShowAsync("Error", $"Failed to refresh menu data: {ex.Message}", NotificationType.Error);
             }
+        }
+
+        private async Task LoadCategoriesAsync()
+        {
+            _allCategories = await _categoryService.GetAllCategoriesAsync();
+            _topCategories = _allCategories
+                .Where(c => string.IsNullOrEmpty(c.ParentId))
+                .OrderBy(c => c.DisplayOrder)
+                .ToList();
+            _subCategories = _allCategories
+                .Where(c => !string.IsNullOrEmpty(c.ParentId))
+                .OrderBy(c => c.DisplayOrder)
+                .ToList();
+            RefreshCurrentTab();
+        }
+
+        private async Task LoadAllDataAsync()
+        {
+            await RefreshMenuDataAsync();
         }
 
         private void RefreshCurrentTab()
@@ -103,6 +128,8 @@ namespace POS_in_NET.Pages
                 BuildItemsList();
             else if (MealDealsContent.IsVisible)
                 BuildMealDealsList();
+            else if (TastingMenusContent.IsVisible)
+                BuildTastingMenusList();
         }
 
         #endregion
@@ -129,12 +156,17 @@ namespace POS_in_NET.Pages
             MealDealsTabBorder.BackgroundColor = Colors.Transparent;
             MealDealsTabLabel.TextColor = Color.FromArgb("#64748B");
             MealDealsTabLabel.FontAttributes = FontAttributes.None;
+
+            TastingMenusTabBorder.BackgroundColor = Colors.Transparent;
+            TastingMenusTabLabel.TextColor = Color.FromArgb("#64748B");
+            TastingMenusTabLabel.FontAttributes = FontAttributes.None;
             
             // Hide all content
             ItemsContent.IsVisible = false;
             SubCategoriesContent.IsVisible = false;
             CategoriesContent.IsVisible = false;
             MealDealsContent.IsVisible = false;
+            TastingMenusContent.IsVisible = false;
             
             // Activate selected tab
             switch (tabName)
@@ -170,6 +202,14 @@ namespace POS_in_NET.Pages
                     MealDealsContent.IsVisible = true;
                     BuildMealDealsList();
                     break;
+
+                case "TastingMenus":
+                    TastingMenusTabBorder.BackgroundColor = Color.FromArgb("#0EA5E9");
+                    TastingMenusTabLabel.TextColor = Colors.White;
+                    TastingMenusTabLabel.FontAttributes = FontAttributes.Bold;
+                    TastingMenusContent.IsVisible = true;
+                    BuildTastingMenusList();
+                    break;
             }
         }
 
@@ -177,6 +217,7 @@ namespace POS_in_NET.Pages
         private void OnSubCategoriesTabClicked(object sender, EventArgs e) => SelectTab("SubCategories");
         private void OnCategoriesTabClicked(object sender, EventArgs e) => SelectTab("Categories");
         private void OnMealDealsTabClicked(object sender, EventArgs e) => SelectTab("MealDeals");
+        private void OnTastingMenusTabClicked(object sender, EventArgs e) => SelectTab("TastingMenus");
         
         #endregion
         
@@ -1500,6 +1541,180 @@ namespace POS_in_NET.Pages
 
         #endregion
 
+        #region Tasting Menus Tab
+
+        private void BuildTastingMenusList()
+        {
+            TastingMenusListContainer.Children.Clear();
+
+            var filteredMenus = _allTastingMenus.AsEnumerable();
+            if (!string.IsNullOrEmpty(_searchText))
+            {
+                filteredMenus = filteredMenus.Where(menu =>
+                    menu.Name.ToLower().Contains(_searchText) ||
+                    (menu.Description?.ToLower().Contains(_searchText) ?? false) ||
+                    menu.Options.Any(option => option.DisplayName.ToLower().Contains(_searchText)) ||
+                    menu.Courses.Any(course => course.Name.ToLower().Contains(_searchText)));
+            }
+
+            var materialized = filteredMenus.ToList();
+            foreach (var menu in materialized)
+            {
+                TastingMenusListContainer.Children.Add(CreateTastingMenuRow(menu));
+            }
+
+            if (materialized.Count == 0)
+            {
+                var message = string.IsNullOrEmpty(_searchText)
+                    ? "No tasting menus yet"
+                    : $"No tasting menus matching \"{_searchText}\"";
+                TastingMenusListContainer.Children.Add(CreateEmptyState(message, "Create multi-course packages with optional wine pairings"));
+            }
+        }
+
+        private View CreateTastingMenuRow(TastingMenu menu)
+        {
+            var grid = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Star },
+                    new ColumnDefinition { Width = 220 },
+                    new ColumnDefinition { Width = 120 },
+                    new ColumnDefinition { Width = 100 },
+                    new ColumnDefinition { Width = 100 }
+                },
+                ColumnSpacing = 10,
+                Padding = new Thickness(24, 16),
+                BackgroundColor = Colors.White
+            };
+
+            var nameStack = new VerticalStackLayout { Spacing = 2 };
+            nameStack.Add(new Label { Text = menu.Name, FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1E293B") });
+            if (!string.IsNullOrWhiteSpace(menu.Description))
+            {
+                nameStack.Add(new Label { Text = menu.Description, FontSize = 12, TextColor = Color.FromArgb("#64748B"), LineBreakMode = LineBreakMode.TailTruncation });
+            }
+            grid.Add(nameStack, 0);
+
+            grid.Add(new Label
+            {
+                Text = menu.OptionsDisplay,
+                FontSize = 12,
+                TextColor = Color.FromArgb("#475569"),
+                LineBreakMode = LineBreakMode.TailTruncation,
+                VerticalOptions = LayoutOptions.Center
+            }, 1);
+
+            grid.Add(new Border
+            {
+                BackgroundColor = Color.FromArgb("#E0F2FE"),
+                Stroke = Color.FromArgb("#38BDF8"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 12 },
+                Padding = new Thickness(10, 4),
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center,
+                Content = new Label { Text = menu.CoursesDisplay, FontSize = 12, TextColor = Color.FromArgb("#0369A1"), FontAttributes = FontAttributes.Bold }
+            }, 2);
+
+            var statusBorder = new Border
+            {
+                BackgroundColor = Color.FromArgb(menu.Active ? "#D1FAE5" : "#FEE2E2"),
+                StrokeThickness = 0,
+                StrokeShape = new RoundRectangle { CornerRadius = 12 },
+                Padding = new Thickness(10, 4),
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center,
+                Content = new Label { Text = menu.Active ? "Active" : "Inactive", FontSize = 11, TextColor = Color.FromArgb(menu.Active ? "#10B981" : "#EF4444"), FontAttributes = FontAttributes.Bold }
+            };
+            var statusTap = new TapGestureRecognizer();
+            statusTap.Tapped += async (_, _) => await ToggleTastingMenuStatus(menu);
+            statusBorder.GestureRecognizers.Add(statusTap);
+            grid.Add(statusBorder, 3);
+
+            var actionsStack = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
+            var editBtn = new Border
+            {
+                BackgroundColor = Color.FromArgb("#60A5FA"),
+                WidthRequest = 40,
+                HeightRequest = 40,
+                StrokeThickness = 0,
+                StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                Content = new Label { Text = "\u2710", FontSize = 22, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
+            };
+            var editTap = new TapGestureRecognizer();
+            editTap.Tapped += (_, _) => Navigation.PushAsync(new AddEditTastingMenuPage(menu));
+            editBtn.GestureRecognizers.Add(editTap);
+
+            var deleteBtn = new Border
+            {
+                BackgroundColor = Color.FromArgb("#F87171"),
+                WidthRequest = 40,
+                HeightRequest = 40,
+                StrokeThickness = 0,
+                StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                Content = new Label { Text = "\u2716", FontSize = 20, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
+            };
+            var deleteTap = new TapGestureRecognizer();
+            deleteTap.Tapped += async (_, _) => await OnDeleteTastingMenuClicked(menu);
+            deleteBtn.GestureRecognizers.Add(deleteTap);
+
+            actionsStack.Add(editBtn);
+            actionsStack.Add(deleteBtn);
+            grid.Add(actionsStack, 4);
+
+            var container = new VerticalStackLayout { Spacing = 0 };
+            container.Add(grid);
+            container.Add(new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E2E8F0") });
+            return container;
+        }
+
+        private void OnAddTastingMenuClicked(object sender, EventArgs e)
+        {
+            Navigation.PushAsync(new AddEditTastingMenuPage());
+        }
+
+        private async Task ToggleTastingMenuStatus(TastingMenu menu)
+        {
+            try
+            {
+                await _tastingMenuService.ToggleActiveAsync(menu.Id);
+                menu.Active = !menu.Active;
+                OrderPlacementPageSimple.InvalidateMenuCache();
+                BuildTastingMenusList();
+                await ToastNotification.ShowAsync("Success", $"Tasting menu {(menu.Active ? "activated" : "deactivated")}", NotificationType.Success, 1500);
+            }
+            catch (Exception ex)
+            {
+                await ToastNotification.ShowAsync("Error", ex.Message, NotificationType.Error);
+            }
+        }
+
+        private async Task OnDeleteTastingMenuClicked(TastingMenu menu)
+        {
+            var confirmed = await DisplayAlert("Delete Tasting Menu", $"Delete '{menu.Name}'?", "Delete", "Cancel");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            try
+            {
+                await _tastingMenuService.DeleteAsync(menu.Id);
+                _allTastingMenus.Remove(menu);
+                OrderPlacementPageSimple.InvalidateMenuCache();
+                BuildTastingMenusList();
+                await ToastNotification.ShowAsync("Deleted", "Tasting menu deleted", NotificationType.Success, 1500);
+            }
+            catch (Exception ex)
+            {
+                await ToastNotification.ShowAsync("Error", ex.Message, NotificationType.Error);
+            }
+        }
+
+        #endregion
+
         #region Category Dialog
 
         private void BuildColorPicker()
@@ -1678,7 +1893,7 @@ namespace POS_in_NET.Pages
                 }
                 
                 AddCategoryDialog.IsVisible = false;
-                await LoadAllDataAsync();
+                await LoadCategoriesAsync();
             }
             catch (Exception ex)
             {
@@ -2008,59 +2223,88 @@ namespace POS_in_NET.Pages
 
         private async void OnSaveSubCategoryClicked(object sender, EventArgs e)
         {
+            if (_isSavingSubCategory)
+            {
+                return;
+            }
+
             var name = SubCategoryNameEntry.Text?.Trim();
             if (string.IsNullOrEmpty(name))
             {
-                await ToastNotification.ShowAsync("Error", "Please enter a sub-category name", NotificationType.Warning);
+                await ToastNotification.ShowAsync("Required", "Please enter a sub-category name", NotificationType.Warning);
                 return;
             }
             
             if (_selectedParentCategory == null)
             {
-                await ToastNotification.ShowAsync("Error", "Please select a parent category", NotificationType.Warning);
+                await ToastNotification.ShowAsync("Required", "Please select a parent category", NotificationType.Warning);
                 return;
             }
             
             try
             {
+                _isSavingSubCategory = true;
+                SaveSubCategoryButton.IsEnabled = false;
+                SaveSubCategoryButton.Text = "Saving...";
+                var isUpdate = _editingCategory != null;
+
                 if (_editingCategory != null)
                 {
-                    // Update existing
                     _editingCategory.Name = name;
                     _editingCategory.ParentId = _selectedParentCategory.Id;
                     _editingCategory.Color = _selectedColor;
                     _editingCategory.Active = SubCategoryActiveSwitch.IsToggled;
+                    _editingCategory.Icon = string.IsNullOrEmpty(_editingCategory.Icon) ? string.Empty : _editingCategory.Icon;
                     
                     await _categoryService.UpdateCategoryAsync(_editingCategory);
-                    await ToastNotification.ShowAsync("Success", "Sub-category updated successfully", NotificationType.Success, 1500);
                 }
                 else
                 {
-                    // Create new
                     var maxDisplayOrder = _subCategories.Any() 
                         ? _subCategories.Max(c => c.DisplayOrder) 
                         : 0;
                     
                     var newSubCategory = new MenuCategory
                     {
+                        Id = Guid.NewGuid().ToString(),
                         Name = name,
                         ParentId = _selectedParentCategory.Id,
                         Color = _selectedColor,
+                        Icon = string.Empty,
                         Active = SubCategoryActiveSwitch.IsToggled,
                         DisplayOrder = maxDisplayOrder + 1,
                         Description = null
                     };
                     
-                    await _categoryService.CreateCategoryAsync(newSubCategory);
-                    await ToastNotification.ShowAsync("Success", "Sub-category created successfully", NotificationType.Success, 1500);
+                    var saved = await _categoryService.CreateCategoryAsync(newSubCategory);
+                    if (!saved)
+                    {
+                        throw new InvalidOperationException("Database did not save the sub-category.");
+                    }
                 }
-                
+
                 AddSubCategoryDialog.IsVisible = false;
-                await LoadAllDataAsync();
+                _editingCategory = null;
+                _selectedParentCategory = null;
+
+                await LoadCategoriesAsync();
+
+                _ = ToastNotification.ShowAsync(
+                    "Saved",
+                    isUpdate ? "Sub-category updated successfully" : "Sub-category created successfully",
+                    NotificationType.Success,
+                    1500);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await ToastNotification.ShowAsync("Error", "Failed to save sub-category", NotificationType.Error);
+                System.Diagnostics.Debug.WriteLine($"[FoodMenu] Save sub-category failed: {ex.Message}");
+                await ToastNotification.ShowAsync("Error", $"Failed to save sub-category: {ex.Message}", NotificationType.Error, 4000);
+            }
+            finally
+            {
+                _isSavingSubCategory = false;
+                SaveSubCategoryButton.IsEnabled = true;
+                SaveSubCategoryButton.Text = "Save Sub-Category";
             }
         }
 

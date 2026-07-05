@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS FoodMenuItems (
     vat_config_type VARCHAR(20) DEFAULT 'standard',
     vat_category VARCHAR(20) DEFAULT 'HotFood',
     calculated_vat_rate DECIMAL(5,2) DEFAULT 20.00,
+    ItemType VARCHAR(20) NOT NULL DEFAULT 'Food',
     Addons TEXT,
     Tags TEXT,
     print_in_red BOOLEAN NOT NULL DEFAULT FALSE,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS FoodMenuItems (
     INDEX idx_foodmenu_item_cat (CategoryId),
     INDEX idx_foodmenu_item_order (DisplayOrder),
     INDEX idx_foodmenu_item_featured (IsFeatured),
+    INDEX idx_foodmenu_item_type (ItemType),
     INDEX idx_vat_config (vat_config_type),
     INDEX idx_vat_category (vat_category),
     CONSTRAINT fk_foodmenu_item_cat FOREIGN KEY (CategoryId) REFERENCES FoodMenuCategories(Id) ON DELETE CASCADE
@@ -97,16 +99,30 @@ CREATE TABLE IF NOT EXISTS ItemComments (
 CREATE TABLE IF NOT EXISTS MenuItemQuickNotes (
     Id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
     MenuItemId VARCHAR(36) NOT NULL,
-    NoteId VARCHAR(36) NOT NULL,
+    NoteText VARCHAR(255) NOT NULL,
     DisplayOrder INT NOT NULL DEFAULT 0,
     Active BOOLEAN NOT NULL DEFAULT TRUE,
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_menu_item_note (MenuItemId, NoteId),
     INDEX idx_quick_notes_item (MenuItemId),
-    INDEX idx_quick_notes_note (NoteId),
     CONSTRAINT fk_quick_notes_item FOREIGN KEY (MenuItemId) REFERENCES FoodMenuItems(Id) ON DELETE CASCADE,
-    CONSTRAINT fk_quick_notes_note FOREIGN KEY (NoteId) REFERENCES PredefinedNotes(Id) ON DELETE CASCADE
+    INDEX idx_menuitem_quick_note_active (Active),
+    INDEX idx_menuitem_quick_note_order (DisplayOrder)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS MenuItemVariants (
+    Id VARCHAR(36) PRIMARY KEY,
+    MenuItemId VARCHAR(36) NOT NULL,
+    Name VARCHAR(100) NOT NULL,
+    Description TEXT NULL,
+    Price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    DisplayOrder INT NOT NULL DEFAULT 0,
+    Active BOOLEAN NOT NULL DEFAULT TRUE,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_menu_item_variants_item (MenuItemId),
+    INDEX idx_menu_item_variants_active_order (MenuItemId, Active, DisplayOrder),
+    CONSTRAINT fk_menu_item_variants_item FOREIGN KEY (MenuItemId) REFERENCES FoodMenuItems(Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS MenuItemComponents (
@@ -177,11 +193,12 @@ CREATE TABLE IF NOT EXISTS MenuItems (
     Color VARCHAR(20) DEFAULT '#3B82F6',
     DisplayOrder INT NOT NULL DEFAULT 0,
     Active BOOLEAN NOT NULL DEFAULT TRUE,
+    ItemType VARCHAR(20) NOT NULL DEFAULT 'Food',
     print_in_red TINYINT(1) DEFAULT 0,
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_menu_items_category (CategoryId),
     INDEX idx_menu_items_active (Active),
+    INDEX idx_menu_items_type (ItemType),
     CONSTRAINT fk_menu_items_category FOREIGN KEY (CategoryId) REFERENCES MenuCategories(Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

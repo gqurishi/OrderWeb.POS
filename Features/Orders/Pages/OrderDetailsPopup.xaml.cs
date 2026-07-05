@@ -30,9 +30,9 @@ public partial class OrderDetailsPopup : ContentPage
         VoucherLabel.Text = "N/A"; // Order model doesn't have VoucherCode field
         
         // Customer Section
-        CustomerNameLabel.Text = _order.CustomerName ?? "N/A";
-        CustomerPhoneLabel.Text = _order.CustomerPhone ?? "N/A";
-        CustomerEmailLabel.Text = _order.CustomerEmail ?? "N/A";
+        CustomerNameLabel.Text = string.IsNullOrWhiteSpace(_order.CustomerName) ? "N/A" : _order.CustomerName.Trim();
+        CustomerPhoneLabel.Text = string.IsNullOrWhiteSpace(_order.CustomerPhone) ? "N/A" : _order.CustomerPhone.Trim();
+        CustomerEmailLabel.Text = string.IsNullOrWhiteSpace(_order.CustomerEmail) ? "N/A" : _order.CustomerEmail.Trim();
         CustomerAddressLabel.Text = string.IsNullOrWhiteSpace(_order.CustomerAddress) ? "Collection" : _order.CustomerAddress;
         
         // Order Items - Debug logging

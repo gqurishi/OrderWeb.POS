@@ -304,6 +304,9 @@ namespace POS_in_NET.Models
         private int _databaseId;
         private string _orderId = string.Empty;
         private string _menuItemId = string.Empty;
+        private string? _variantId;
+        private string? _variantName;
+        private string? _displayName;
         private string _categoryId = string.Empty;
         private string _categoryColor = "#3B82F6";
         private string _name = string.Empty;
@@ -349,6 +352,26 @@ namespace POS_in_NET.Models
             set { _menuItemId = value; OnPropertyChanged(); }
         }
 
+        public string? VariantId
+        {
+            get => _variantId;
+            set { _variantId = string.IsNullOrWhiteSpace(value) ? null : value; OnPropertyChanged(); }
+        }
+
+        public string? VariantName
+        {
+            get => _variantName;
+            set { _variantName = string.IsNullOrWhiteSpace(value) ? null : value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayName)); OnPropertyChanged(nameof(ModifiersDisplay)); }
+        }
+
+        public string? DisplayName
+        {
+            get => string.IsNullOrWhiteSpace(_displayName)
+                ? (!string.IsNullOrWhiteSpace(VariantName) ? $"{Name} ({VariantName})" : Name)
+                : _displayName;
+            set { _displayName = string.IsNullOrWhiteSpace(value) ? null : value; OnPropertyChanged(); }
+        }
+
         public string CategoryId
         {
             get => _categoryId;
@@ -364,7 +387,7 @@ namespace POS_in_NET.Models
         public string Name
         {
             get => _name;
-            set { _name = value; OnPropertyChanged(); }
+            set { _name = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayName)); }
         }
 
         public decimal UnitPrice
@@ -442,6 +465,8 @@ namespace POS_in_NET.Models
                 var parts = new List<string>();
                 if (!string.IsNullOrWhiteSpace(Modifiers))
                     parts.Add(Modifiers);
+                if (!string.IsNullOrWhiteSpace(VariantName))
+                    parts.Add(VariantName);
                 if (SelectedAddons.Any())
                     parts.AddRange(SelectedAddons.Select(a => a.Name));
                 return string.Join(", ", parts);

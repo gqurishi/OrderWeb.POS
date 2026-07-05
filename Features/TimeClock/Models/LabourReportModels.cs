@@ -21,13 +21,7 @@ public sealed class LabourReportRow
     {
         get
         {
-            var minutes = WorkedMinutes;
-            if (!ClockOutAt.HasValue && ClockInAt.Date <= DateTime.Today)
-            {
-                minutes += (int)Math.Max(0, (DateTime.Now - ClockInAt).TotalMinutes);
-            }
-
-            return $"{minutes / 60}h {minutes % 60}m";
+            return $"{WorkedMinutes / 60}h {WorkedMinutes % 60}m";
         }
     }
 

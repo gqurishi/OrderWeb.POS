@@ -232,7 +232,7 @@
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="8"/>
                     </Border.StrokeShape>
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                         <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
                             <Label x:Name="OrderIdentityLabel" 
                                 Text="Order # Table 1" 
@@ -246,7 +246,9 @@
                                        Text="Guests = 2" 
                                        FontSize="14" 
                                        TextColor="#475569"
-                                       FontAttributes="Bold"/>
+                                       FontAttributes="Bold"
+                                       LineBreakMode="TailTruncation"
+                                       MaxLines="1"/>
                             </HorizontalStackLayout>
                         </VerticalStackLayout>
 

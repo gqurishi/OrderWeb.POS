@@ -30,6 +30,19 @@ namespace MyFirstMauiApp.Models.FoodMenu
     {
     }
 
+    public class MenuItemVariant
+    {
+        public string Id { get; set; } = string.Empty;
+        public string MenuItemId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public decimal Price { get; set; }
+        public int DisplayOrder { get; set; }
+        public bool Active { get; set; } = true;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime UpdatedAt { get; set; } = DateTime.Now;
+    }
+
     public class MenuItemComponent
     {
         public int Id { get; set; }
@@ -250,17 +263,22 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public string VatConfigType { get; set; } = "standard";
         public string VatCategory { get; set; } = "HotFood";
         public decimal CalculatedVatRate { get; set; }
+        public string ItemType { get; set; } = "Food";
         public string? LabelText { get; set; }
         public bool PrintComponentLabels { get; set; }
         public string? ComponentLabelsJson { get; set; }
         public string? PrintGroupId { get; set; }
 
         public List<Addon> Addons { get; set; } = new();
+        public List<MenuItemVariant> Variants { get; set; } = new();
         public List<string> Tags { get; set; } = new();
         public List<MenuItemComponent> Components { get; set; } = new();
 
         [JsonIgnore]
         public bool HasComponents => Components.Count > 0;
+
+        [JsonIgnore]
+        public bool HasActiveVariants => Variants.Any(v => v.Active);
 
         [JsonIgnore]
         public bool IsMixedVat => string.Equals(VatConfigType, "component", StringComparison.OrdinalIgnoreCase);
@@ -322,6 +340,164 @@ namespace MyFirstMauiApp.Models.FoodMenu
         }
     }
 
+    public class TastingMenuChoice
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public string? PrintGroupId { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public class TastingMenuCourse
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public int CourseNumber { get; set; }
+        public bool Required { get; set; } = true;
+        public List<TastingMenuChoice> Choices { get; set; } = new();
+
+        public string ChoiceDisplay => Choices.Count == 0
+            ? "No dishes"
+            : $"{Choices.Count} dish option{(Choices.Count == 1 ? string.Empty : "s")}";
+    }
+
+    public class TastingMenuOption
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public bool IncludesWine { get; set; }
+        public int CourseCount { get; set; }
+        public int SortOrder { get; set; }
+
+        public string DisplayName => string.IsNullOrWhiteSpace(Name)
+            ? $"{CourseCount} Course{(IncludesWine ? " With Wine" : string.Empty)}"
+            : Name;
+    }
+
+    public class TastingMenu
+    {
+        public const string PosCategoryId = "__tasting_menus__";
+        public const string OrderMenuItemPrefix = "tasting:";
+
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string Color { get; set; } = "#0EA5E9";
+        public bool Active { get; set; } = true;
+        public int DisplayOrder { get; set; }
+        public string VatCategory { get; set; } = "HotFood";
+        public bool ManualCourseCalling { get; set; } = true;
+        public List<TastingMenuOption> Options { get; set; } = new();
+        public List<TastingMenuCourse> Courses { get; set; } = new();
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+        public string OptionsDisplay => Options.Count == 0
+            ? "No options"
+            : string.Join(", ", Options.OrderBy(o => o.SortOrder).Select(o => $"{o.DisplayName} £{o.Price:F2}"));
+
+        public string CoursesDisplay => Courses.Count == 0
+            ? "No courses"
+            : $"{Courses.Count} course{(Courses.Count == 1 ? string.Empty : "s")}";
+
+        public string ConfigJson => JsonSerializer.Serialize(new TastingMenuConfigPayload
+        {
+            VatCategory = VatCategory,
+            ManualCourseCalling = ManualCourseCalling,
+            Options = Options.OrderBy(o => o.SortOrder).ToList(),
+            Courses = Courses.OrderBy(c => c.CourseNumber).ToList()
+        });
+
+        public static void ApplyConfigFromJson(TastingMenu menu, string? json)
+        {
+            menu.Options = new List<TastingMenuOption>();
+            menu.Courses = new List<TastingMenuCourse>();
+            menu.VatCategory = "HotFood";
+            menu.ManualCourseCalling = true;
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            try
+            {
+                var config = JsonSerializer.Deserialize<TastingMenuConfigPayload>(json);
+                menu.VatCategory = string.IsNullOrWhiteSpace(config?.VatCategory) ? "HotFood" : config!.VatCategory!;
+                menu.ManualCourseCalling = config?.ManualCourseCalling ?? true;
+                menu.Options = (config?.Options ?? new List<TastingMenuOption>())
+                    .Where(o => !string.IsNullOrWhiteSpace(o.Name))
+                    .OrderBy(o => o.SortOrder)
+                    .Select((o, index) => new TastingMenuOption
+                    {
+                        Id = string.IsNullOrWhiteSpace(o.Id) ? Guid.NewGuid().ToString() : o.Id,
+                        Name = o.Name.Trim(),
+                        Price = o.Price,
+                        IncludesWine = o.IncludesWine,
+                        CourseCount = o.CourseCount <= 0 ? index + 1 : o.CourseCount,
+                        SortOrder = index
+                    })
+                    .ToList();
+                menu.Courses = (config?.Courses ?? new List<TastingMenuCourse>())
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Name))
+                    .OrderBy(c => c.CourseNumber)
+                    .Select((c, index) => new TastingMenuCourse
+                    {
+                        Id = string.IsNullOrWhiteSpace(c.Id) ? Guid.NewGuid().ToString() : c.Id,
+                        Name = c.Name.Trim(),
+                        CourseNumber = c.CourseNumber <= 0 ? index + 1 : c.CourseNumber,
+                        Required = c.Required,
+                        Choices = c.Choices
+                            .Where(choice => !string.IsNullOrWhiteSpace(choice.Name))
+                            .OrderBy(choice => choice.SortOrder)
+                            .Select((choice, choiceIndex) => new TastingMenuChoice
+                            {
+                                Id = string.IsNullOrWhiteSpace(choice.Id) ? Guid.NewGuid().ToString() : choice.Id,
+                                Name = choice.Name.Trim(),
+                                PrintGroupId = choice.PrintGroupId,
+                                SortOrder = choiceIndex
+                            })
+                            .ToList()
+                    })
+                    .ToList();
+            }
+            catch
+            {
+                menu.Options = new List<TastingMenuOption>();
+                menu.Courses = new List<TastingMenuCourse>();
+            }
+        }
+
+        private sealed class TastingMenuConfigPayload
+        {
+            public string? VatCategory { get; set; }
+            public bool ManualCourseCalling { get; set; } = true;
+            public List<TastingMenuOption>? Options { get; set; }
+            public List<TastingMenuCourse>? Courses { get; set; }
+        }
+    }
+
+    public static class TastingMenuNotesHelper
+    {
+        public static string BuildOrderMenuItemId(string menuId, string optionId) =>
+            $"{TastingMenu.OrderMenuItemPrefix}{menuId}:{optionId}";
+
+        public static string FormatSelections(TastingMenuOption option, IEnumerable<(TastingMenuCourse Course, TastingMenuChoice Choice)> selections)
+        {
+            var lines = new List<string>
+            {
+                $"Package: {option.DisplayName}",
+                option.IncludesWine ? "Wine pairing: Yes" : "Wine pairing: No"
+            };
+
+            lines.AddRange(selections
+                .OrderBy(s => s.Course.CourseNumber)
+                .Select(s => $"Course {s.Course.CourseNumber} - {s.Course.Name}: {s.Choice.Name}"));
+
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
     public class ComponentVATBreakdown
     {
         public string ComponentName { get; set; } = string.Empty;

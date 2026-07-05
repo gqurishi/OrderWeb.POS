@@ -96,6 +96,22 @@
                                    TextColor="#64748B"
                                    VerticalOptions="Center"/>
                         </Border>
+
+                        <!-- Tasting Menus Tab -->
+                        <Border x:Name="TastingMenusTabBorder"
+                                BackgroundColor="Transparent"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 22"
+                                Padding="20,10">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTastingMenusTabClicked"/>
+                            </Border.GestureRecognizers>
+                            <Label x:Name="TastingMenusTabLabel"
+                                   Text="Tasting Menus"
+                                   FontSize="14"
+                                   TextColor="#64748B"
+                                   VerticalOptions="Center"/>
+                        </Border>
                     </HorizontalStackLayout>
                 </Border>
                 
@@ -354,6 +370,56 @@
                             <BoxView HeightRequest="1" Color="#E2E8F0"/>
                             <!-- List Items Container -->
                             <VerticalStackLayout x:Name="MealDealsListContainer" Spacing="0"/>
+                        </VerticalStackLayout>
+                    </ScrollView>
+                </Grid>
+            </Border>
+
+            <!-- ==================== TASTING MENUS CONTENT ==================== -->
+            <Border x:Name="TastingMenusContent" 
+                    IsVisible="False"
+                    BackgroundColor="White"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 16"
+                    Padding="0">
+                
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" 
+                          Padding="24,20"
+                          ColumnDefinitions="Auto,*,Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="4">
+                            <Label Text="Tasting Menus"
+                                   FontSize="22"
+                                   FontAttributes="Bold"
+                                   TextColor="#1E293B"/>
+                            <Label Text="Create priced multi-course packages with wine options"
+                                   FontSize="13"
+                                   TextColor="#64748B"/>
+                        </VerticalStackLayout>
+                        
+                        <Button Grid.Column="2"
+                                Text="+ Create Tasting Menu"
+                                BackgroundColor="#0EA5E9"
+                                TextColor="White"
+                                FontSize="14"
+                                FontAttributes="Bold"
+                                CornerRadius="10"
+                                Padding="20,12"
+                                Clicked="OnAddTastingMenuClicked"/>
+                    </Grid>
+                    
+                    <ScrollView Grid.Row="1">
+                        <VerticalStackLayout Spacing="0">
+                            <Grid ColumnDefinitions="*,220,120,100,100" ColumnSpacing="10" Padding="24,12" BackgroundColor="White">
+                                <Label Grid.Column="0" Text="Menu Name" FontSize="12" TextColor="#64748B" FontAttributes="Bold"/>
+                                <Label Grid.Column="1" Text="Options" FontSize="12" TextColor="#64748B" FontAttributes="Bold"/>
+                                <Label Grid.Column="2" Text="Courses" FontSize="12" TextColor="#64748B" FontAttributes="Bold" HorizontalOptions="Center"/>
+                                <Label Grid.Column="3" Text="Status" FontSize="12" TextColor="#64748B" FontAttributes="Bold" HorizontalOptions="Center"/>
+                                <Label Grid.Column="4" Text="Actions" FontSize="12" TextColor="#64748B" FontAttributes="Bold" HorizontalOptions="Center"/>
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="#E2E8F0"/>
+                            <VerticalStackLayout x:Name="TastingMenusListContainer" Spacing="0"/>
                         </VerticalStackLayout>
                     </ScrollView>
                 </Grid>

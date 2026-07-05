@@ -35,6 +35,10 @@ public sealed class OrderWebWebhookRouterService
             {
                 eventType = eventElement.GetString();
             }
+            if (string.IsNullOrWhiteSpace(eventType) && root.TryGetProperty("type", out var typeElement))
+            {
+                eventType = typeElement.GetString();
+            }
 
             if (string.IsNullOrWhiteSpace(eventType))
             {
@@ -44,7 +48,7 @@ public sealed class OrderWebWebhookRouterService
             return eventType.ToLowerInvariant() switch
             {
                 "order_created" => await _cloudOrderService.ProcessWebhookOrderAsync(root),
-                "reservation_created" or "reservation_updated" =>
+                "new_reservation" or "reservation_created" or "reservation_updated" or "reservation_cancelled" =>
                     await _reservationSyncService.ProcessWebhookPayloadAsync(body, eventType),
                 _ => (true, $"Ignored event {eventType}.")
             };

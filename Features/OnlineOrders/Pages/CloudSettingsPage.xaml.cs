@@ -89,7 +89,7 @@ public partial class CloudSettingsPage : ContentPage
     {
         try
         {
-            await Shell.Current.GoToAsync("//businesssettings");
+            await Shell.Current.GoToAsync("//settings");
         }
         catch (Exception ex)
         {
@@ -101,7 +101,7 @@ public partial class CloudSettingsPage : ContentPage
     {
         try
         {
-            await Shell.Current.GoToAsync("//usermanagement");
+            await Shell.Current.GoToAsync("//settings?tab=UserManagement");
         }
         catch (Exception ex)
         {
@@ -267,7 +267,7 @@ public partial class CloudSettingsPage : ContentPage
                 }
                 
                 // Update device ID
-                command.CommandText = "SELECT value FROM cloud_config WHERE `key` = 'device_id' LIMIT 1";
+                command.CommandText = "SELECT setting_value FROM settings WHERE setting_key = 'orderweb_device_id' LIMIT 1";
                 var deviceId = await command.ExecuteScalarAsync();
                 if (deviceId != null && !string.IsNullOrEmpty(deviceId.ToString()))
                 {
@@ -936,11 +936,11 @@ public partial class CloudSettingsPage : ContentPage
 
     private async void OnBusinessSettingsClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("//businesssettings");
+        await Shell.Current.GoToAsync("//settings");
     }
 
     private async void OnUserManagementClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("//usermanagement");
+        await Shell.Current.GoToAsync("//settings?tab=UserManagement");
     }
 }

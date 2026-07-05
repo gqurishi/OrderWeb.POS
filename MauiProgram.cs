@@ -61,6 +61,8 @@ public static class MauiProgram
 		// Register Cloud Services (Lazy loaded)
 		builder.Services.AddSingleton<OnlineOrderApiService>();
 		builder.Services.AddSingleton<BackgroundSyncService>();
+		builder.Services.AddSingleton<OfflineQueueService>();
+		builder.Services.AddSingleton<OrderWebApiClient>();
 		builder.Services.AddSingleton<CloudOrderService>();
 		builder.Services.AddSingleton<ReceiptService>();
 		builder.Services.AddSingleton<CloudSyncService>();
@@ -147,8 +149,6 @@ public static class MauiProgram
 		builder.Services.AddTransient<TablePage>();
 		builder.Services.AddTransient<OrderManagementPage>();
 		// MenuManagementPage removed - using FoodMenuPage instead
-		builder.Services.AddTransient<UserManagementPage>();
-		builder.Services.AddTransient<BusinessSettingsPage>();
 		builder.Services.AddTransient<CloudSettingsPage>();
 		builder.Services.AddTransient<PostcodeLookupPage>();
 		builder.Services.AddTransient<WebOrdersPage>();

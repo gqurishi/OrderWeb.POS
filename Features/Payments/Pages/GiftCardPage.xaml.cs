@@ -70,6 +70,20 @@ public partial class GiftCardPage : ContentPage
         });
     }
 
+    private async void OnCloseClicked(object sender, EventArgs e)
+    {
+        try
+        {
+            var dashboardRoute = _roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role);
+            await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Gift card close navigation failed: {ex.Message}");
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Navigation Error", "Could not return to the dashboard. Please try again.");
+        }
+    }
+    
     private async void OnCheckGiftCardClicked(object sender, EventArgs e)
     {
         var cardNumber = GiftCardEntry.Text?.Trim();
@@ -93,15 +107,24 @@ public partial class GiftCardPage : ContentPage
 
             System.Diagnostics.Debug.WriteLine($"UI: Result - Success: {result.Success}, Error: {result.Error}");
 
-            if (result.Success && result.GiftCard != null)
+            if (result.GiftCard != null)
             {
                 _currentGiftCard = result.GiftCard;
                 DisplayGiftCardDetails(result.GiftCard);
                 GiftCardDetailsFrame.IsVisible = true;
 
-                NotificationService.Instance.ShowSuccess(
-                    $"Balance: {result.GiftCard.BalanceDisplay}", 
-                    "Gift Card Found!");
+                if (result.Success)
+                {
+                    NotificationService.Instance.ShowSuccess(
+                        $"Balance: {result.GiftCard.BalanceDisplay}", 
+                        "Gift Card Found!");
+                }
+                else
+                {
+                    NotificationService.Instance.ShowWarning(
+                        result.Error ?? "Gift card cannot be used.",
+                        "Gift Card Checked");
+                }
             }
             else
             {
@@ -174,12 +197,19 @@ public partial class GiftCardPage : ContentPage
         }
 
         // Confirm redemption
-        var confirm = await DisplayAlert("Confirm Redemption", 
+        var confirmDialog = new POS_in_NET.Views.ModernConfirmDialog();
+        confirmDialog.SetConfirm(
+            "Confirm Redemption",
             $"Redeem £{amount:F2} from gift card?\n\n" +
             $"Card: {_currentGiftCard.CardNumber}\n" +
             $"Current Balance: {_currentGiftCard.BalanceDisplay}\n" +
-            $"Remaining after: £{(_currentGiftCard.Balance - amount):F2}", 
-            "Redeem", "Cancel");
+            $"Remaining after: £{(_currentGiftCard.Balance - amount):F2}",
+            "Redeem",
+            "Cancel",
+            "£",
+            "#2563EB");
+
+        var confirm = await confirmDialog.ShowAsync();
 
         if (!confirm)
             return;
@@ -191,19 +221,26 @@ public partial class GiftCardPage : ContentPage
             RedeemButton.IsEnabled = false;
 
             var description = $"POS Redemption - Order Payment";
+            var manualOrderId = $"POS-GIFTCARD-{DateTime.Now:yyyyMMddHHmmss}";
             var result = await _loyaltyService.RedeemGiftCardAsync(
                 _currentGiftCard.CardNumber, 
                 amount, 
-                description);
+                description,
+                manualOrderId,
+                manualOrderId);
 
             if (result.Success)
             {
-                NotificationService.Instance.ShowSuccess(
-                    $"Redeemed: {result.AmountRedeemedDisplay} | Remaining: {result.RemainingBalanceDisplay}", 
-                    "Redemption Successful!");
+                var previousBalance = _currentGiftCard.Balance;
+                var refreshedCard = await RefreshGiftCardDetails(showNotification: false);
+                var redeemedAmount = result.EffectiveAmountRedeemed ?? amount;
+                var remainingBalance = result.EffectiveRemainingBalance
+                    ?? refreshedCard?.Balance
+                    ?? Math.Max(0, previousBalance - redeemedAmount);
 
-                // Refresh the gift card details
-                await RefreshGiftCardDetails();
+                NotificationService.Instance.ShowSuccess(
+                    $"Redeemed: £{redeemedAmount:F2} | Remaining: £{remainingBalance:F2}", 
+                    "Redemption Successful!");
             }
             else
             {
@@ -221,7 +258,7 @@ public partial class GiftCardPage : ContentPage
         }
         finally
         {
-            RedeemButton.Text = "Redeem Amount";
+            RedeemButton.Text = "Redeem";
             RedeemButton.IsEnabled = true;
         }
     }
@@ -234,20 +271,33 @@ public partial class GiftCardPage : ContentPage
         await RefreshGiftCardDetails();
     }
 
-    private async Task RefreshGiftCardDetails()
+    private async Task<GiftCard?> RefreshGiftCardDetails(bool showNotification = true)
     {
         if (_currentGiftCard == null)
-            return;
+            return null;
 
         try
         {
             var result = await _loyaltyService.CheckGiftCardBalanceAsync(_currentGiftCard.CardNumber);
 
-            if (result.Success && result.GiftCard != null)
+            if (result.GiftCard != null)
             {
                 _currentGiftCard = result.GiftCard;
                 DisplayGiftCardDetails(result.GiftCard);
-                NotificationService.Instance.ShowSuccess("Gift card details refreshed", "Refreshed");
+                if (showNotification)
+                {
+                    if (result.Success)
+                    {
+                        NotificationService.Instance.ShowSuccess("Gift card details refreshed", "Refreshed");
+                    }
+                    else
+                    {
+                        NotificationService.Instance.ShowWarning(
+                            result.Error ?? "Gift card details refreshed, but this card cannot be used.",
+                            "Refreshed");
+                    }
+                }
+                return result.GiftCard;
             }
             else
             {
@@ -259,44 +309,52 @@ public partial class GiftCardPage : ContentPage
             System.Diagnostics.Debug.WriteLine($"Error refreshing gift card: {ex.Message}");
             NotificationService.Instance.ShowError("Failed to refresh gift card", "Error");
         }
+
+        return null;
     }
 
     private void DisplayGiftCardDetails(GiftCard giftCard)
     {
-        CardNumberLabel.Text = giftCard.CardNumber;
+        CardNumberLabel.Text = string.IsNullOrWhiteSpace(giftCard.CardNumber)
+            ? "No card number"
+            : giftCard.CardNumber.Trim();
         BalanceLabel.Text = giftCard.BalanceDisplay;
-        CardTypeLabel.Text = giftCard.CardTypeDisplay; // NEW: Show digital/physical
+        CardTypeLabel.Text = string.IsNullOrWhiteSpace(giftCard.CardTypeDisplay)
+            ? "Card type not saved"
+            : giftCard.CardTypeDisplay;
         StatusLabel.Text = giftCard.StatusDisplay;
-        ExpiryLabel.Text = giftCard.ExpiryDisplay;
+        ExpiryLabel.Text = string.IsNullOrWhiteSpace(giftCard.ExpiryDisplay)
+            ? "No expiry date"
+            : giftCard.ExpiryDisplay;
 
         // Update status color based on card state
         if (giftCard.IsExpired)
         {
-            StatusLabel.TextColor = Color.FromArgb("#dc3545"); // Red
+            StatusLabel.TextColor = Color.FromArgb("#DC2626");
             StatusLabel.Text = "Expired";
             RedeemButton.IsEnabled = false;
-            RedeemButton.BackgroundColor = Color.FromArgb("#6c757d"); // Gray
+            RedeemButton.BackgroundColor = Color.FromArgb("#94A3B8");
         }
         else if (!giftCard.IsActive)
         {
-            StatusLabel.TextColor = Color.FromArgb("#ffc107"); // Yellow
+            StatusLabel.TextColor = Color.FromArgb("#C2410C");
             StatusLabel.Text = "Inactive";
             RedeemButton.IsEnabled = false;
-            RedeemButton.BackgroundColor = Color.FromArgb("#6c757d"); // Gray
+            RedeemButton.BackgroundColor = Color.FromArgb("#94A3B8");
         }
         else if (giftCard.Balance <= 0)
         {
-            StatusLabel.TextColor = Color.FromArgb("#6c757d"); // Gray
+            StatusLabel.TextColor = Color.FromArgb("#64748B");
             StatusLabel.Text = "Zero Balance";
             RedeemButton.IsEnabled = false;
-            RedeemButton.BackgroundColor = Color.FromArgb("#6c757d"); // Gray
+            RedeemButton.BackgroundColor = Color.FromArgb("#94A3B8");
         }
         else
         {
-            StatusLabel.TextColor = Color.FromArgb("#28a745"); // Green
+            StatusLabel.TextColor = Color.FromArgb("#059669");
             StatusLabel.Text = "Active";
             RedeemButton.IsEnabled = true;
-            RedeemButton.BackgroundColor = Color.FromArgb("#28a745"); // Green
+            RedeemButton.BackgroundColor = Color.FromArgb("#10B981");
         }
 
         System.Diagnostics.Debug.WriteLine($"Displayed gift card: {giftCard.CardNumber} - Balance: {giftCard.BalanceDisplay}");

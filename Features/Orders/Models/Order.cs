@@ -154,6 +154,9 @@ public class OrderItem
     // OrderWeb.net fields
     public int? CloudItemId { get; set; }
     public string? MenuItemId { get; set; }
+    public string? VariantId { get; set; }
+    public string? VariantName { get; set; }
+    public string? DisplayName { get; set; }
     public string? PrintGroupId { get; set; }
     
     [Required]

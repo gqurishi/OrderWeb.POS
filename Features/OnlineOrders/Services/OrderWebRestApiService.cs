@@ -91,7 +91,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<GiftCardBalanceResponse>();
-                System.Diagnostics.Debug.WriteLine($" Gift card balance: ${result?.Balance ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Gift card balance: £{result?.Balance ?? 0}");
                 return (true, result?.Balance ?? 0, "Balance retrieved");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -118,7 +118,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/gift-cards/{cardNumber}/deduct";
-            System.Diagnostics.Debug.WriteLine($" Deducting ${amount} from gift card: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine($" Deducting £{amount} from gift card: {cardNumber}");
 
             var request = new
             {
@@ -132,7 +132,7 @@ public class OrderWebRestApiService
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<GiftCardDeductResponse>();
-                System.Diagnostics.Debug.WriteLine($" Gift card deducted. Remaining: ${result?.RemainingBalance ?? 0}");
+                System.Diagnostics.Debug.WriteLine($" Gift card deducted. Remaining: £{result?.RemainingBalance ?? 0}");
                 return (true, result?.RemainingBalance ?? 0, "Deduction successful");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)

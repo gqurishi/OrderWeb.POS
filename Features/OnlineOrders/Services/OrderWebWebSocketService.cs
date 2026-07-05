@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using MyFirstMauiApp.Services;
 
 namespace POS_in_NET.Services;
 
@@ -412,6 +413,7 @@ public class OrderWebWebSocketService
                 case "new_reservation":
                 case "reservation_created":
                 case "reservation_updated":
+                case "reservation_cancelled":
                     await HandleNewReservationAsync(root);
                     break;
 
@@ -518,7 +520,7 @@ public class OrderWebWebSocketService
                 ? DateTime.Parse(caElem.GetString() ?? DateTime.Now.ToString())
                 : DateTime.Now;
 
-            System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber} - {customerName} - ${totalAmount}");
+            System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber} - {customerName} - £{totalAmount}");
 
             var cloudOrder = new Models.Api.CloudOrderResponse
             {
@@ -554,6 +556,9 @@ public class OrderWebWebSocketService
                     {
                         Id = itemElem.TryGetProperty("id", out var idElem) && idElem.ValueKind == JsonValueKind.Number ? idElem.GetInt32() : 0,
                         MenuItemId = itemElem.TryGetProperty("menuItemId", out var menuIdElem) ? menuIdElem.GetString() : null,
+                        VariantId = GetStringProperty(itemElem, "variantId") ?? GetStringProperty(itemElem, "variant_id"),
+                        VariantName = GetStringProperty(itemElem, "variantName") ?? GetStringProperty(itemElem, "variant_name"),
+                        DisplayName = GetStringProperty(itemElem, "displayName") ?? GetStringProperty(itemElem, "display_name"),
                         Name = itemName,
                         Quantity = itemElem.TryGetProperty("quantity", out var qtyElem) ? qtyElem.GetInt32() : 1,
                         Price = GetDecimalProperty(itemElem, "price", 0m),
@@ -642,6 +647,13 @@ public class OrderWebWebSocketService
         };
     }
 
+    private static string? GetStringProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null
+            ? value.GetString()
+            : null;
+    }
+
     private async Task<bool> SaveOrderWithoutCloudServiceAsync(Models.Api.CloudOrderResponse cloudOrder, string rawOrderData)
     {
         var order = new Models.Order
@@ -672,11 +684,20 @@ public class OrderWebWebSocketService
 
         foreach (var cloudItem in cloudOrder.Items)
         {
+            var inferredVariant = string.IsNullOrWhiteSpace(cloudItem.VariantId) && string.IsNullOrWhiteSpace(cloudItem.VariantName)
+                ? await InferVariantAsync(cloudItem.MenuItemId, cloudItem.Price)
+                : null;
+            var variantId = !string.IsNullOrWhiteSpace(cloudItem.VariantId) ? cloudItem.VariantId : inferredVariant?.Id;
+            var variantName = !string.IsNullOrWhiteSpace(cloudItem.VariantName) ? cloudItem.VariantName : inferredVariant?.Name;
+
             var item = new Models.OrderItem
             {
                 OrderId = cloudOrder.Id,
                 CloudItemId = cloudItem.Id,
                 MenuItemId = cloudItem.MenuItemId,
+                VariantId = variantId,
+                VariantName = variantName,
+                DisplayName = !string.IsNullOrWhiteSpace(cloudItem.DisplayName) ? cloudItem.DisplayName : BuildDisplayName(cloudItem.Name, variantName),
                 ItemName = cloudItem.Name ?? "Unknown Item",
                 Quantity = cloudItem.Quantity,
                 ItemPrice = cloudItem.Price ?? 0m,
@@ -704,6 +725,31 @@ public class OrderWebWebSocketService
         }
 
         return success;
+    }
+
+    private static async Task<MyFirstMauiApp.Models.FoodMenu.MenuItemVariant?> InferVariantAsync(string? menuItemId, decimal? price)
+    {
+        try
+        {
+            return await new MenuItemService().InferVariantByPriceAsync(menuItemId, price);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Variant inference warning: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string? BuildDisplayName(string? itemName, string? variantName)
+    {
+        if (string.IsNullOrWhiteSpace(itemName))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(variantName)
+            ? itemName
+            : $"{itemName.Trim()} ({variantName.Trim()})";
     }
 
     /// <summary>
@@ -737,7 +783,7 @@ public class OrderWebWebSocketService
             var cardNumber = data.GetProperty("card_number").GetString() ?? "";
             var newBalance = data.GetProperty("balance").GetDecimal();
 
-            System.Diagnostics.Debug.WriteLine($" Gift card updated: {cardNumber} → ${newBalance}");
+            System.Diagnostics.Debug.WriteLine($" Gift card updated: {cardNumber} → £{newBalance}");
 
             GiftCardUpdated?.Invoke(this, new GiftCardUpdatedEventArgs
             {

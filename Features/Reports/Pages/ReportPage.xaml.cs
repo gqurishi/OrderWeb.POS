@@ -66,6 +66,11 @@ public partial class ReportPage : ContentPage
     private string _discountEventsText = "0 events";
     private string _discountTotalText = "£0.00";
     private string _discountLastEventText = "No discounts in this range";
+    private string _voidCancelledTotalText = "0 orders";
+    private string _voidCancelledAmountText = "£0.00";
+    private string _voidCancelledVoidedText = "0 voided";
+    private string _voidCancelledCancelledText = "0 cancelled";
+    private string _voidCancelledLastEventText = "No voided or cancelled orders in this range";
     private string _calendarPopupTitle = "Select Date";
     private string _calendarMonthLabel = DateTime.Today.ToString("MMMM yyyy");
     private DateTime _calendarDisplayedMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -102,7 +107,9 @@ public partial class ReportPage : ContentPage
         TopSellItems,
         CashDrawer,
         DiscountAudit,
-        StaffHours
+        StaffHours,
+        VoidCancelled,
+        HistoricalReports
     }
 
     private enum CalendarTarget
@@ -117,6 +124,7 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<CashDrawerReportRow> CashDrawerAudits { get; } = new();
     public ObservableCollection<TillExpenseReportRow> TillExpenses { get; } = new();
     public ObservableCollection<DiscountAuditReportRow> DiscountAudits { get; } = new();
+    public ObservableCollection<ReportVoidCancelledRow> VoidCancelledOrders { get; } = new();
     public ObservableCollection<LabourReportRow> StaffHoursRows { get; } = new();
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
@@ -129,6 +137,7 @@ public partial class ReportPage : ContentPage
     public bool HasStaffHoursRows => StaffHoursRows.Count > 0;
     public bool HasTillExpenses => TillExpenses.Count > 0;
     public bool HasDiscountAudits => DiscountAudits.Count > 0;
+    public bool HasVoidCancelledOrders => VoidCancelledOrders.Count > 0;
     public bool HasHistoricalReports => HistoricalReports.Count > 0;
     public bool HasDailyTrend => DailyTrend.Count > 1;
 
@@ -286,7 +295,7 @@ public partial class ReportPage : ContentPage
         : "Mother terminal full report mode: live reports, end-of-day snapshots, history, exports, cash drawer, and audit reports are available.";
 
     public bool IsOrdersReportVisible => _reportViewMode == ReportViewMode.Orders;
-    public bool IsHistoricalReportsVisible => IsOrdersReportVisible && CanUseFullReportTools;
+    public bool IsHistoricalReportsVisible => _reportViewMode == ReportViewMode.HistoricalReports && CanUseFullReportTools;
 
     public bool IsTopSellReportVisible => _reportViewMode == ReportViewMode.TopSellItems;
 
@@ -295,6 +304,73 @@ public partial class ReportPage : ContentPage
     public bool IsDiscountAuditReportVisible => _reportViewMode == ReportViewMode.DiscountAudit && CanUseAuditReports;
 
     public bool IsStaffHoursReportVisible => _reportViewMode == ReportViewMode.StaffHours && CanUseAuditReports;
+
+    public bool IsVoidCancelledReportVisible => _reportViewMode == ReportViewMode.VoidCancelled && CanUseAuditReports;
+
+    public string VoidCancelledTotalText
+    {
+        get => _voidCancelledTotalText;
+        set
+        {
+            if (_voidCancelledTotalText != value)
+            {
+                _voidCancelledTotalText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VoidCancelledAmountText
+    {
+        get => _voidCancelledAmountText;
+        set
+        {
+            if (_voidCancelledAmountText != value)
+            {
+                _voidCancelledAmountText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VoidCancelledVoidedText
+    {
+        get => _voidCancelledVoidedText;
+        set
+        {
+            if (_voidCancelledVoidedText != value)
+            {
+                _voidCancelledVoidedText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VoidCancelledCancelledText
+    {
+        get => _voidCancelledCancelledText;
+        set
+        {
+            if (_voidCancelledCancelledText != value)
+            {
+                _voidCancelledCancelledText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VoidCancelledLastEventText
+    {
+        get => _voidCancelledLastEventText;
+        set
+        {
+            if (_voidCancelledLastEventText != value)
+            {
+                _voidCancelledLastEventText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
 
     public string StaffHoursTotalText
     {
@@ -1067,6 +1143,11 @@ public partial class ReportPage : ContentPage
             OnPropertyChanged(nameof(HasDiscountAudits));
         };
 
+        VoidCancelledOrders.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasVoidCancelledOrders));
+        };
+
         HistoricalReports.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasHistoricalReports));
@@ -1226,6 +1307,40 @@ public partial class ReportPage : ContentPage
                 IsTopSellCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadReportAsync();
+                return;
+            }
+
+            if (button.Text == "Void / Cancelled")
+            {
+                if (!CanUseAuditReports)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
+                ApplyReportMode(ReportViewMode.VoidCancelled);
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                UpdatePresetButtonStyles();
+                await LoadReportAsync();
+                return;
+            }
+
+            if (button.Text == "Historical Reports")
+            {
+                if (!CanUseFullReportTools)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
+                ApplyReportMode(ReportViewMode.HistoricalReports);
+                IsCustomRangeVisible = false;
+                IsCustomRangeDirty = false;
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                UpdatePresetButtonStyles();
+                await LoadHistoricalReportsAsync();
                 return;
             }
 
@@ -1446,6 +1561,7 @@ public partial class ReportPage : ContentPage
         OnPropertyChanged(nameof(IsCashDrawerReportVisible));
         OnPropertyChanged(nameof(IsDiscountAuditReportVisible));
         OnPropertyChanged(nameof(IsStaffHoursReportVisible));
+        OnPropertyChanged(nameof(IsVoidCancelledReportVisible));
         UpdatePresetButtonStyles();
     }
 
@@ -1742,6 +1858,56 @@ public partial class ReportPage : ContentPage
         }
     }
 
+    private async void OnHardDeleteOrderClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.CommandParameter is not ReportOrderRow order)
+        {
+            await AppAlertService.ShowAlertAsync("Order Error", "Unable to identify the selected order.");
+            return;
+        }
+
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
+        var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
+        var confirm = await DisplayAlert(
+            "Void Order",
+            $"Permanently remove order {orderLabel}?\n\nThis is for demo/test orders only. It will delete the order, items, payments, events, print queue entries, and related local records.",
+            "Void / Delete",
+            "Cancel");
+
+        if (!confirm)
+        {
+            return;
+        }
+
+        try
+        {
+            button.IsEnabled = false;
+            var deleted = await _reportService.HardDeleteOrderAsync(order.OrderDbId);
+
+            if (!deleted)
+            {
+                await AppAlertService.ShowAlertAsync("Not Found", $"Order {orderLabel} was not found.");
+                return;
+            }
+
+            await AppAlertService.ShowAlertAsync("Order Removed", $"Order {orderLabel} has been permanently deleted.");
+            await LoadReportAsync();
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Void Failed", ex.Message);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
     private void ApplyPreset(ReportDatePreset preset, bool loadImmediately = true)
     {
         var today = DateTime.Today;
@@ -1788,6 +1954,8 @@ public partial class ReportPage : ContentPage
         ApplyPresetStyle(CashDrawerButton, _reportViewMode == ReportViewMode.CashDrawer);
         ApplyPresetStyle(DiscountAuditButton, _reportViewMode == ReportViewMode.DiscountAudit);
         ApplyPresetStyle(StaffHoursButton, _reportViewMode == ReportViewMode.StaffHours);
+        ApplyPresetStyle(VoidCancelledButton, _reportViewMode == ReportViewMode.VoidCancelled);
+        ApplyPresetStyle(HistoricalReportsButton, _reportViewMode == ReportViewMode.HistoricalReports);
     }
 
     private static void ApplyPresetStyle(Button? button, bool isActive)
@@ -1870,6 +2038,19 @@ public partial class ReportPage : ContentPage
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ApplyStaffHoursReport(rows, summary);
+                    LastUpdatedText = lastUpdated;
+                });
+                return;
+            }
+
+            if (_reportViewMode == ReportViewMode.VoidCancelled)
+            {
+                var audit = await _reportService.GetVoidCancelledReportAsync(StartDate, EndDate, SearchText);
+                var lastUpdated = $"Void / cancelled audit · {StartDate:dd MMM} – {EndDate:dd MMM} · updated {DateTime.Now:HH:mm:ss}";
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ApplyVoidCancelledReport(audit);
                     LastUpdatedText = lastUpdated;
                 });
                 return;
@@ -2222,6 +2403,25 @@ public partial class ReportPage : ContentPage
         return string.IsNullOrWhiteSpace(entry.ApprovedByName)
             ? "Approval required"
             : $"Approved by {entry.ApprovedByName}";
+    }
+
+    private void ApplyVoidCancelledReport(ReportVoidCancelledSnapshot report)
+    {
+        VoidCancelledOrders.Clear();
+        foreach (var order in report.Orders)
+        {
+            VoidCancelledOrders.Add(order);
+        }
+
+        VoidCancelledTotalText = $"{report.Summary.TotalCount} orders";
+        VoidCancelledAmountText = $"£{report.Summary.TotalAmount:F2}";
+        VoidCancelledVoidedText = $"{report.Summary.VoidedCount} voided · £{report.Summary.VoidedAmount:F2}";
+        VoidCancelledCancelledText = $"{report.Summary.CancelledCount} cancelled · £{report.Summary.CancelledAmount:F2}";
+        VoidCancelledLastEventText = report.Orders.Count > 0
+            ? $"Last event {report.Orders[0].AuditAtDisplay}"
+            : "No voided or cancelled orders in this range";
+
+        OnPropertyChanged(nameof(HasVoidCancelledOrders));
     }
 
     private void ApplyKpiPalette(

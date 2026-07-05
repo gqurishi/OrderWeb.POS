@@ -17,12 +17,31 @@
                                    Grid.RowSpan="2"
                                    ZIndex="2000"
                                    InputTransparent="True"/>
+
+        <Button Grid.Row="1"
+                Text="X"
+                BackgroundColor="#FEF2F2"
+                BorderColor="#FCA5A5"
+                BorderWidth="1"
+                TextColor="#DC2626"
+                FontAttributes="Bold"
+                FontSize="18"
+                WidthRequest="48"
+                HeightRequest="48"
+                CornerRadius="24"
+                Padding="0"
+                Margin="0,20,32,0"
+                HorizontalOptions="End"
+                VerticalOptions="Start"
+                ZIndex="10"
+                ToolTipProperties.Text="Close"
+                Clicked="OnCloseClicked" />
         
         <!-- Modern Main Content -->
         <ScrollView Grid.Row="1">
             <Grid Padding="40,32" 
-                  ColumnDefinitions="*,*" 
-                  ColumnSpacing="32"
+                  ColumnDefinitions="0.9*,1.1*" 
+                  ColumnSpacing="28"
                   MaximumWidthRequest="1600" 
                   HorizontalOptions="Center">
 
@@ -31,87 +50,88 @@
                         BackgroundColor="White"
                         Stroke="#E5E7EB"
                         StrokeThickness="1"
-                        Padding="48,40"
-                        StrokeShape="RoundRectangle 16"
+                        Padding="32"
+                        StrokeShape="RoundRectangle 14"
                         Shadow="{StaticResource CardShadow}"
                         VerticalOptions="Start">
-                    <VerticalStackLayout Spacing="24">
-                        <Label Text="Customer Loyalty" 
-                               FontSize="28"
-                               FontAttributes="Bold"
-                               TextColor="#1F2937" />
+                    <VerticalStackLayout Spacing="20">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Customer Loyalty"
+                                   FontSize="28"
+                                   FontAttributes="Bold"
+                                   TextColor="#111827" />
+                            <Label Text="Search by phone number, then add or redeem points."
+                                   FontSize="15"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
 
                         <!-- Clean Entry Field -->
                         <Border Stroke="#D1D5DB"
                                 StrokeThickness="1"
-                                BackgroundColor="#F9FAFB"
+                                BackgroundColor="#F8FAFC"
                                 StrokeShape="RoundRectangle 10"
-                                Padding="20,16">
-                            <Entry x:Name="PhoneSearchEntry"
-                                   Placeholder="Enter phone number (e.g., 07306506797)"
-                                   FontSize="17"
-                                   TextColor="#1F2937"
-                                   PlaceholderColor="#9CA3AF"
-                                   BackgroundColor="Transparent"
-                                   Keyboard="Telephone"
-                                   HeightRequest="56"
-                                   Completed="OnSearchCustomerClicked" />
+                                Padding="16,10">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                <Border Grid.Column="0"
+                                        BackgroundColor="#DBEAFE"
+                                        StrokeThickness="0"
+                                        WidthRequest="40"
+                                        HeightRequest="40"
+                                        StrokeShape="RoundRectangle 20"
+                                        VerticalOptions="Center">
+                                    <Label Text="☎"
+                                           FontSize="18"
+                                           TextColor="#2563EB"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center" />
+                                </Border>
+                                <Entry Grid.Column="1"
+                                       x:Name="PhoneSearchEntry"
+                                       Placeholder="Phone number"
+                                       FontSize="18"
+                                       TextColor="#111827"
+                                       PlaceholderColor="#94A3B8"
+                                       BackgroundColor="Transparent"
+                                       Keyboard="Telephone"
+                                       HeightRequest="52"
+                                       Completed="OnSearchCustomerClicked" />
+                            </Grid>
                         </Border>
 
                         <!-- Action Buttons -->
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                             <Button Grid.Column="0"
                                     Text="Search"
                                     BackgroundColor="#3B82F6"
                                     TextColor="White"
                                     FontAttributes="Bold"
                                     FontSize="18"
-                                    HeightRequest="60"
+                                    HeightRequest="56"
                                     CornerRadius="10"
-                                    Clicked="OnSearchCustomerClicked">
-                                <Button.Shadow>
-                                    <Shadow Brush="#3B82F6"
-                                            Offset="0,4"
-                                            Radius="12"
-                                            Opacity="0.3" />
-                                </Button.Shadow>
-                            </Button>
+                                    Clicked="OnSearchCustomerClicked" />
                             
                             <Button Grid.Column="1"
                                     Text="New Customer"
                                     BackgroundColor="#10B981"
                                     TextColor="White"
                                     FontAttributes="Bold"
-                                    FontSize="18"
-                                    HeightRequest="60"
-                                    Padding="24,0"
+                                    FontSize="17"
+                                    HeightRequest="56"
                                     CornerRadius="10"
-                                    Clicked="OnAddNewCustomerClicked">
-                                <Button.Shadow>
-                                    <Shadow Brush="#10B981"
-                                            Offset="0,4"
-                                            Radius="12"
-                                            Opacity="0.3" />
-                                </Button.Shadow>
-                            </Button>
+                                    Clicked="OnAddNewCustomerClicked" />
                         </Grid>
                         
                         <!-- Debug Test Connection Button -->
                         <Button Text="Test API Connection"
-                                BackgroundColor="#F59E0B"
-                                TextColor="White"
+                                BackgroundColor="#FFF7ED"
+                                BorderColor="#FDBA74"
+                                BorderWidth="1"
+                                TextColor="#C2410C"
                                 FontAttributes="Bold"
-                                FontSize="14"
+                                FontSize="15"
                                 HeightRequest="48"
                                 CornerRadius="10"
-                                Clicked="OnTestConnectionClicked">
-                            <Button.Shadow>
-                                <Shadow Brush="#F59E0B"
-                                        Offset="0,3"
-                                        Radius="8"
-                                        Opacity="0.3" />
-                            </Button.Shadow>
-                        </Button>
+                                Clicked="OnTestConnectionClicked" />
                         
                         <!-- Information Box -->
                         <Border Stroke="#BFDBFE"
@@ -119,24 +139,31 @@
                                 BackgroundColor="#EFF6FF"
                                 StrokeShape="RoundRectangle 10"
                                 Padding="20,16">
-                            <VerticalStackLayout Spacing="8">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                <Border Grid.Column="0"
+                                        BackgroundColor="#DBEAFE"
+                                        StrokeThickness="0"
+                                        WidthRequest="34"
+                                        HeightRequest="34"
+                                        StrokeShape="RoundRectangle 17">
+                                    <Label Text="i"
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="#2563EB"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center" />
+                                </Border>
+                                <VerticalStackLayout Grid.Column="1" Spacing="6">
                                 <Label Text="Information" 
                                        FontSize="16"
                                        FontAttributes="Bold"
                                        TextColor="#1E40AF" />
-                                <Label Text="• Customer data syncs from OrderWeb.net" 
+                                <Label Text="Customer data syncs from OrderWeb.net. 100 points equals £1 discount." 
                                        FontSize="14"
-                                       TextColor="#1E3A8A" />
-                                <Label Text="• Default: 1 point per £1 spent" 
-                                       FontSize="14"
-                                       TextColor="#1E3A8A" />
-                                <Label Text="• Redemption: 100 points = £1 discount" 
-                                       FontSize="14"
-                                       TextColor="#1E3A8A" />
-                                <Label Text="• All actions sync immediately" 
-                                       FontSize="14"
-                                       TextColor="#1E3A8A" />
-                            </VerticalStackLayout>
+                                       TextColor="#1E3A8A"
+                                       LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Grid>
                         </Border>
                     </VerticalStackLayout>
                 </Border>
@@ -145,204 +172,194 @@
                 <Border x:Name="CustomerDetailsFrame"
                         Grid.Column="1"
                         BackgroundColor="White"
-                        Stroke="#10B981"
-                        StrokeThickness="2"
-                        Padding="48,40"
-                        StrokeShape="RoundRectangle 16"
+                        Stroke="#D1FAE5"
+                        StrokeThickness="1"
+                        Padding="32"
+                        StrokeShape="RoundRectangle 14"
                         Shadow="{StaticResource CardShadow}"
                         IsVisible="False"
                         VerticalOptions="Start">
-                    <VerticalStackLayout Spacing="28">
+                    <VerticalStackLayout Spacing="22">
                         <!-- Header -->
-                        <Label Text="Customer Details" 
-                               FontSize="28"
-                               FontAttributes="Bold"
-                               TextColor="#10B981" />
-
-                        <BoxView HeightRequest="1" 
-                                 BackgroundColor="#E5E7EB" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="Customer Details"
+                                       FontSize="28"
+                                       FontAttributes="Bold"
+                                       TextColor="#111827" />
+                                <Label x:Name="CustomerLastVisitLabel"
+                                       Text="Last Visit: Never"
+                                       FontSize="14"
+                                       TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <Border Grid.Column="1"
+                                    BackgroundColor="#ECFDF5"
+                                    Stroke="#A7F3D0"
+                                    StrokeThickness="1"
+                                    Padding="14,8"
+                                    StrokeShape="RoundRectangle 18"
+                                    VerticalOptions="Center">
+                                <Label Text="Active"
+                                       FontSize="14"
+                                       FontAttributes="Bold"
+                                       TextColor="#059669" />
+                            </Border>
+                        </Grid>
 
                         <!-- Customer Info -->
-                        <VerticalStackLayout Spacing="12">
-                            <Label Text="Customer Information" 
-                                   FontSize="15"
-                                   FontAttributes="Bold"
-                                   TextColor="#6B7280" />
-                            
-                            <Label x:Name="CustomerNameLabel" 
-                                   Text="Name: John Doe" 
-                                   FontSize="18" 
-                                   FontAttributes="Bold"
-                                   TextColor="#111827" />
-                            
-                            <Label x:Name="CustomerPhoneLabel" 
-                                   Text="Phone: 01234567890" 
-                                   FontSize="16"
-                                   TextColor="#6B7280" />
-                            
-                            <Label x:Name="CustomerEmailLabel" 
-                                   Text="Email: john@example.com" 
-                                   FontSize="16"
-                                   TextColor="#6B7280" />
-                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="1.05*,0.95*" ColumnSpacing="18">
+                            <Border Grid.Column="0"
+                                    BackgroundColor="#F8FAFC"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    Padding="20"
+                                    StrokeShape="RoundRectangle 12">
+                                <VerticalStackLayout Spacing="12">
+                                    <Label Text="Customer Information"
+                                           FontSize="14"
+                                           FontAttributes="Bold"
+                                           TextColor="#64748B" />
+                                    <Label x:Name="CustomerNameLabel"
+                                           Text="No name saved"
+                                           FontSize="22"
+                                           FontAttributes="Bold"
+                                           TextColor="#111827" />
+                                    <Label x:Name="CustomerPhoneLabel"
+                                           Text="Phone not saved"
+                                           FontSize="16"
+                                           TextColor="#475569" />
+                                    <Label x:Name="CustomerEmailLabel"
+                                           Text="Email not saved"
+                                           FontSize="16"
+                                           TextColor="#475569"
+                                           LineBreakMode="TailTruncation" />
+                                </VerticalStackLayout>
+                            </Border>
 
-                        <BoxView HeightRequest="1" 
-                                 BackgroundColor="#E5E7EB" />
-
-                        <!-- Current Points Display -->
-                        <Border Stroke="#10B981"
-                                StrokeThickness="2"
-                                BackgroundColor="#ECFDF5"
-                                StrokeShape="RoundRectangle 12"
-                                Padding="24,20">
-                            <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
-                                <Label Text="Current Points" 
-                                       FontSize="16"
-                                       TextColor="#059669"
-                                       HorizontalOptions="Center" />
-                                <Label x:Name="CustomerPointsLabel" 
-                                       Text="150" 
-                                       FontSize="48" 
-                                       FontAttributes="Bold"
-                                       TextColor="#10B981"
-                                       HorizontalOptions="Center" />
-                                <Label x:Name="RedemptionValueLabel" 
-                                       Text="Worth: £1.50" 
-                                       FontSize="16"
-                                       TextColor="#059669"
-                                       HorizontalOptions="Center" />
-                            </VerticalStackLayout>
-                        </Border>
-
-                        <BoxView HeightRequest="1" 
-                                 BackgroundColor="#E5E7EB" />
+                            <!-- Current Points Display -->
+                            <Border Grid.Column="1"
+                                    Stroke="#10B981"
+                                    StrokeThickness="2"
+                                    BackgroundColor="#ECFDF5"
+                                    StrokeShape="RoundRectangle 12"
+                                    Padding="22,18">
+                                <VerticalStackLayout Spacing="6" VerticalOptions="Center">
+                                    <Label Text="Current Points"
+                                           FontSize="15"
+                                           FontAttributes="Bold"
+                                           TextColor="#059669"
+                                           HorizontalOptions="Center" />
+                                    <Label x:Name="CustomerPointsLabel"
+                                           Text="0 Points"
+                                           FontSize="42"
+                                           FontAttributes="Bold"
+                                           TextColor="#10B981"
+                                           HorizontalOptions="Center"
+                                           LineBreakMode="NoWrap" />
+                                    <Label x:Name="RedemptionValueLabel"
+                                           Text="Worth: £0.00"
+                                           FontSize="15"
+                                           TextColor="#047857"
+                                           HorizontalOptions="Center" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
 
                         <!-- Points Management -->
-                        <VerticalStackLayout Spacing="16">
-                            <Label Text="Adjust Points" 
-                                   FontSize="18"
-                                   FontAttributes="Bold"
-                                   TextColor="#1F2937" />
+                        <Border BackgroundColor="#F8FAFC"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                Padding="20"
+                                StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="14">
+                                <Label Text="Adjust Points"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#111827" />
 
-                            <!-- Points Entry -->
-                            <Border Stroke="#D1D5DB"
-                                    StrokeThickness="1"
-                                    BackgroundColor="#F9FAFB"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="20,16">
-                                <Entry x:Name="PointsEntry"
-                                       Placeholder="Enter points amount"
-                                       FontSize="17"
-                                       TextColor="#1F2937"
-                                       PlaceholderColor="#9CA3AF"
-                                       BackgroundColor="Transparent"
-                                       Keyboard="Numeric"
-                                       HeightRequest="48" />
-                            </Border>
+                                <Grid ColumnDefinitions="0.9*,1.1*" ColumnSpacing="12">
+                                    <Border Grid.Column="0"
+                                            Stroke="#D1D5DB"
+                                            StrokeThickness="1"
+                                            BackgroundColor="White"
+                                            StrokeShape="RoundRectangle 10"
+                                            Padding="14,8">
+                                        <Entry x:Name="PointsEntry"
+                                               Placeholder="Points"
+                                               FontSize="17"
+                                               TextColor="#111827"
+                                               PlaceholderColor="#94A3B8"
+                                               BackgroundColor="Transparent"
+                                               Keyboard="Numeric"
+                                               HeightRequest="44" />
+                                    </Border>
 
-                            <!-- Notes Entry -->
-                            <Border Stroke="#D1D5DB"
-                                    StrokeThickness="1"
-                                    BackgroundColor="#F9FAFB"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="20,16">
-                                <Entry x:Name="NotesEntry"
-                                       Placeholder="Optional notes..."
-                                       FontSize="17"
-                                       TextColor="#1F2937"
-                                       PlaceholderColor="#9CA3AF"
-                                       BackgroundColor="Transparent"
-                                       HeightRequest="48" />
-                            </Border>
+                                    <Border Grid.Column="1"
+                                            Stroke="#D1D5DB"
+                                            StrokeThickness="1"
+                                            BackgroundColor="White"
+                                            StrokeShape="RoundRectangle 10"
+                                            Padding="14,8">
+                                        <Entry x:Name="NotesEntry"
+                                               Placeholder="Reason / note"
+                                               FontSize="17"
+                                               TextColor="#111827"
+                                               PlaceholderColor="#94A3B8"
+                                               BackgroundColor="Transparent"
+                                               HeightRequest="44" />
+                                    </Border>
+                                </Grid>
 
-                            <!-- Action Buttons -->
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                                 <Button Grid.Column="0"
                                         Text="Add Points"
                                         BackgroundColor="#10B981"
                                         TextColor="White"
                                         FontAttributes="Bold"
                                         FontSize="16"
-                                        HeightRequest="52"
+                                        HeightRequest="50"
                                         CornerRadius="10"
-                                        Clicked="OnAddPointsClicked">
-                                    <Button.Shadow>
-                                        <Shadow Brush="#10B981"
-                                                Offset="0,4"
-                                                Radius="12"
-                                                Opacity="0.3" />
-                                    </Button.Shadow>
-                                </Button>
+                                        Clicked="OnAddPointsClicked" />
 
                                 <Button Grid.Column="1"
-                                        Text="Subtract Points"
+                                        Text="Redeem Points"
                                         BackgroundColor="#EF4444"
                                         TextColor="White"
                                         FontAttributes="Bold"
                                         FontSize="16"
-                                        HeightRequest="52"
+                                        HeightRequest="50"
                                         CornerRadius="10"
-                                        Clicked="OnSubtractPointsClicked">
-                                    <Button.Shadow>
-                                        <Shadow Brush="#EF4444"
-                                                Offset="0,4"
-                                                Radius="12"
-                                                Opacity="0.3" />
-                                    </Button.Shadow>
-                                </Button>
+                                        Clicked="OnRedeemPointsClicked" />
                             </Grid>
-                        </VerticalStackLayout>
-
-                        <BoxView HeightRequest="1" 
-                                 BackgroundColor="#E5E7EB" />
+                            </VerticalStackLayout>
+                        </Border>
 
                         <!-- Additional Info & Actions -->
                         <VerticalStackLayout Spacing="12">
-                            <Label x:Name="CustomerTotalSpentLabel" 
-                                   Text="Total Spent: £500.00" 
-                                   FontSize="16" 
-                                   TextColor="#6B7280" />
-                            
-                            <Label x:Name="CustomerLastVisitLabel" 
-                                   Text="Last Visit: Jan 15, 2025" 
-                                   FontSize="16"
-                                   TextColor="#6B7280" />
-
-                            <!-- Quick Action Buttons -->
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,12,0,0">
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                                 <Button Grid.Column="0"
                                         Text="View History"
-                                        BackgroundColor="#3B82F6"
-                                        TextColor="White"
+                                        BackgroundColor="#EFF6FF"
+                                        BorderColor="#BFDBFE"
+                                        BorderWidth="1"
+                                        TextColor="#2563EB"
                                         FontAttributes="Bold"
                                         FontSize="15"
                                         HeightRequest="48"
                                         CornerRadius="10"
-                                        Clicked="OnViewHistoryClicked">
-                                    <Button.Shadow>
-                                        <Shadow Brush="#3B82F6"
-                                                Offset="0,3"
-                                                Radius="8"
-                                                Opacity="0.3" />
-                                    </Button.Shadow>
-                                </Button>
+                                        Clicked="OnViewHistoryClicked" />
 
                                 <Button Grid.Column="1"
                                         Text="Send Statement"
-                                        BackgroundColor="#6B7280"
-                                        TextColor="White"
+                                        BackgroundColor="#F1F5F9"
+                                        BorderColor="#CBD5E1"
+                                        BorderWidth="1"
+                                        TextColor="#334155"
                                         FontAttributes="Bold"
                                         FontSize="15"
                                         HeightRequest="48"
                                         CornerRadius="10"
-                                        Clicked="OnSendStatementClicked">
-                                    <Button.Shadow>
-                                        <Shadow Brush="#6B7280"
-                                                Offset="0,3"
-                                                Radius="8"
-                                                Opacity="0.3" />
-                                    </Button.Shadow>
-                                </Button>
+                                        Clicked="OnSendStatementClicked" />
                             </Grid>
                         </VerticalStackLayout>
                     </VerticalStackLayout>
