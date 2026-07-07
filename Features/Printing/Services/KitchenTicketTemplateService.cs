@@ -8,10 +8,14 @@ namespace POS_in_NET.Services;
 public static class KitchenTicketTemplateService
 {
     private const int LineWidth = 48;
-    private const string ThankYouText = "Thank you for your order";
 
-    public static byte[] BuildTableSectionTickets(TableOrder order, PrintGroup group, IReadOnlyList<TableOrderItem> items)
+    public static byte[] BuildTableSectionTickets(
+        TableOrder order,
+        PrintGroup group,
+        IReadOnlyList<TableOrderItem> items,
+        KitchenTemplateSettings? settings = null)
     {
+        settings = NormalizeSettings(settings);
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
@@ -20,7 +24,7 @@ public static class KitchenTicketTemplateService
         var sections = GroupTableItems(items, group.Name);
         foreach (var section in sections)
         {
-            PrintHeader(builder, ticketTitle, orderReference, printedAt, section.Title);
+            PrintHeader(builder, ticketTitle, orderReference, printedAt, settings, section.Title);
 
             foreach (var item in section.Items)
             {
@@ -28,7 +32,7 @@ public static class KitchenTicketTemplateService
             }
 
             PrintOrderNotes(builder, order.Notes);
-            PrintCheckedByFooter(builder);
+            PrintCheckedByFooter(builder, settings);
             builder.FeedLines(2).Cut(true);
         }
 
@@ -40,8 +44,10 @@ public static class KitchenTicketTemplateService
         NetworkPrinter printer,
         IReadOnlyList<TableOrderItem> items,
         string orderType,
-        IReadOnlyDictionary<string, string>? printGroupNames)
+        IReadOnlyDictionary<string, string>? printGroupNames,
+        KitchenTemplateSettings? settings = null)
     {
+        settings = NormalizeSettings(settings);
         var builder = new EscPosBuilder(printer.Brand, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
@@ -52,11 +58,11 @@ public static class KitchenTicketTemplateService
             builder.Buzzer();
         }
 
-        PrintHeader(builder, ticketTitle, orderReference, printedAt);
+        PrintHeader(builder, ticketTitle, orderReference, printedAt, settings);
 
         foreach (var section in GroupTakeawayItems(items, printGroupNames))
         {
-            PrintSectionTitle(builder, section.Title);
+            PrintSectionTitle(builder, section.Title, settings);
             foreach (var item in section.Items)
             {
                 PrintTableItem(builder, item);
@@ -64,7 +70,7 @@ public static class KitchenTicketTemplateService
         }
 
         PrintOrderNotes(builder, order.Notes);
-        PrintCheckedByFooter(builder);
+        PrintCheckedByFooter(builder, settings);
 
         if (printer.HasCutter)
         {
@@ -74,8 +80,12 @@ public static class KitchenTicketTemplateService
         return builder.Build();
     }
 
-    public static byte[] BuildOnlineKitchenTicket(CloudOrderResponse order, NetworkPrinter printer)
+    public static byte[] BuildOnlineKitchenTicket(
+        CloudOrderResponse order,
+        NetworkPrinter printer,
+        KitchenTemplateSettings? settings = null)
     {
+        settings = NormalizeSettings(settings);
         var builder = new EscPosBuilder(printer.Brand, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber;
@@ -86,8 +96,8 @@ public static class KitchenTicketTemplateService
             builder.Buzzer();
         }
 
-        PrintHeader(builder, ticketTitle, orderReference, printedAt);
-        PrintSectionTitle(builder, "ITEMS");
+        PrintHeader(builder, ticketTitle, orderReference, printedAt, settings);
+        PrintSectionTitle(builder, "ITEMS", settings);
 
         foreach (var item in order.Items)
         {
@@ -95,7 +105,7 @@ public static class KitchenTicketTemplateService
         }
 
         PrintOrderNotes(builder, order.SpecialInstructions);
-        PrintCheckedByFooter(builder);
+        PrintCheckedByFooter(builder, settings);
 
         if (printer.HasCutter)
         {
@@ -105,46 +115,63 @@ public static class KitchenTicketTemplateService
         return builder.Build();
     }
 
-    public static string BuildPreview(KitchenTicketPreviewMode mode)
+    public static string BuildPreview(KitchenTicketPreviewMode mode, KitchenTemplateSettings? settings = null)
     {
+        settings = NormalizeSettings(settings);
         return mode switch
         {
-            KitchenTicketPreviewMode.Table => BuildTablePreview(),
-            KitchenTicketPreviewMode.Delivery => BuildTakeawayPreview("DELIVERY"),
-            _ => BuildTakeawayPreview("COLLECTION")
+            KitchenTicketPreviewMode.Table => BuildTablePreview(settings),
+            KitchenTicketPreviewMode.Delivery => BuildTakeawayPreview("DELIVERY", settings),
+            _ => BuildTakeawayPreview("COLLECTION", settings)
         };
     }
 
-    private static void PrintHeader(EscPosBuilder builder, string title, string orderReference, DateTime printedAt, string? sectionTitle = null)
+    private static void PrintHeader(
+        EscPosBuilder builder,
+        string title,
+        string orderReference,
+        DateTime printedAt,
+        KitchenTemplateSettings settings,
+        string? sectionTitle = null)
     {
         builder.SetAlign(TextAlign.Left)
                .SetNormalSize()
                .SetBold(false)
                .PrintLine(new string('=', LineWidth))
-               .SetAlign(TextAlign.Center)
-               .SetFontSize(2, 2)
-               .SetBold(true)
-               .PrintLine(title)
-               .SetNormalSize()
+               .SetAlign(TextAlign.Center);
+
+        PrintStyledCentered(builder, title, settings.HeadingSize, settings.HeadingBold);
+
+        builder.SetNormalSize()
                .SetBold(false)
                .SetAlign(TextAlign.Left)
                .PrintLine(new string('=', LineWidth));
 
-        PrintWrapped(builder, $"Order #: {orderReference}", 0);
-        builder.PrintColumns($"Date: {printedAt:dd MMM yyyy}", $"Time: {printedAt:HH:mm}");
+        PrintOrderInfo(builder, orderReference, printedAt, settings);
 
         if (!string.IsNullOrWhiteSpace(sectionTitle))
         {
-            PrintWrapped(builder, $"Section: {sectionTitle}", 0);
+            PrintSectionTitle(builder, $"Section: {sectionTitle}", settings);
         }
 
         builder.PrintLine(new string('-', LineWidth)).FeedLines(1);
     }
 
-    private static void PrintSectionTitle(EscPosBuilder builder, string title)
+    private static void PrintSectionTitle(EscPosBuilder builder, string title, KitchenTemplateSettings settings)
     {
-        builder.SetBold(true)
-               .PrintLine(title)
+        var normalizedTitle = string.IsNullOrWhiteSpace(title) ? "ITEMS" : title.Trim();
+        if (settings.SectionHeadingSize != KitchenHeadingSize.Normal)
+        {
+            var width = ApplyInlineSize(builder, settings.SectionHeadingSize);
+            builder.SetBold(settings.SectionHeadingBold);
+            PrintWrapped(builder, normalizedTitle.ToUpperInvariant(), 0, width);
+            builder.SetNormalSize().SetBold(false);
+            return;
+        }
+
+        builder.SetNormalSize()
+               .SetBold(settings.SectionHeadingBold)
+               .PrintLine(settings.SectionHeadingBold ? normalizedTitle.ToUpperInvariant() : normalizedTitle)
                .SetBold(false);
     }
 
@@ -152,7 +179,7 @@ public static class KitchenTicketTemplateService
     {
         var name = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Name : item.DisplayName;
 
-        builder.SetBold(true);
+        builder.SetNormalSize().SetBold(true);
         PrintWrapped(builder, $"{Math.Max(1, item.Quantity)}x {name}");
         builder.SetBold(false);
 
@@ -176,7 +203,7 @@ public static class KitchenTicketTemplateService
             builder.SetBold(false);
         }
 
-        builder.FeedLines(1);
+        builder.SetNormalSize().SetBold(false).FeedLines(1);
     }
 
     private static void PrintCloudItem(EscPosBuilder builder, CloudOrderItem item)
@@ -192,7 +219,7 @@ public static class KitchenTicketTemplateService
             name = $"{name} ({item.VariantName})";
         }
 
-        builder.SetBold(true);
+        builder.SetNormalSize().SetBold(true);
         PrintWrapped(builder, $"{Math.Max(1, item.Quantity)}x {name}");
         builder.SetBold(false);
 
@@ -211,7 +238,7 @@ public static class KitchenTicketTemplateService
             builder.SetBold(false);
         }
 
-        builder.FeedLines(1);
+        builder.SetNormalSize().SetBold(false).FeedLines(1);
     }
 
     private static void PrintOrderNotes(EscPosBuilder builder, string? notes)
@@ -229,14 +256,26 @@ public static class KitchenTicketTemplateService
         builder.FeedLines(1);
     }
 
-    private static void PrintCheckedByFooter(EscPosBuilder builder)
+    private static void PrintCheckedByFooter(EscPosBuilder builder, KitchenTemplateSettings settings)
     {
-        builder.PrintLine(new string('-', LineWidth))
-               .PrintLine("Checked by: ____________________")
-               .FeedLines(1)
-               .SetAlign(TextAlign.Center)
-               .PrintLine(ThankYouText)
+        builder.SetNormalSize()
+               .SetBold(false)
                .SetAlign(TextAlign.Left)
+               .PrintLine(new string('-', LineWidth));
+
+        if (settings.ShowCheckedByLine)
+        {
+            builder.PrintLine("Checked by: ______________________________")
+                   .FeedLines(2);
+        }
+
+        builder.SetAlign(TextAlign.Center);
+        foreach (var footerLine in WrapText(settings.FooterText, 30).Take(2))
+        {
+            builder.PrintLine(footerLine);
+        }
+
+        builder.SetAlign(TextAlign.Left)
                .PrintLine(new string('=', LineWidth))
                .FeedLines(2);
     }
@@ -268,10 +307,73 @@ public static class KitchenTicketTemplateService
             .Select(group => new KitchenTicketSection<TableOrderItem>(group.Key, group.ToList()));
     }
 
-    private static void PrintWrapped(EscPosBuilder builder, string? text, int indent = 0)
+    private static void PrintStyledCentered(EscPosBuilder builder, string title, KitchenHeadingSize headingSize, bool bold)
+    {
+        var effectiveWidth = ApplyHeadingSize(builder, headingSize);
+        builder.SetBold(bold);
+        foreach (var line in WrapText(title, effectiveWidth))
+        {
+            builder.PrintLine(line);
+        }
+
+        builder.SetNormalSize().SetBold(false);
+    }
+
+    private static int ApplyHeadingSize(EscPosBuilder builder, KitchenHeadingSize headingSize)
+    {
+        return headingSize switch
+        {
+            KitchenHeadingSize.ExtraLarge => ApplyFontSize(builder, 3, 2),
+            KitchenHeadingSize.Large => ApplyFontSize(builder, 2, 2),
+            _ => ApplyFontSize(builder, 1, 1)
+        };
+    }
+
+    private static int ApplyFontSize(EscPosBuilder builder, int widthMultiplier, int heightMultiplier)
+    {
+        widthMultiplier = Math.Clamp(widthMultiplier, 1, 8);
+        heightMultiplier = Math.Clamp(heightMultiplier, 1, 8);
+        builder.SetFontSize(widthMultiplier, heightMultiplier);
+        return Math.Max(8, LineWidth / widthMultiplier);
+    }
+
+    private static int ApplyInlineSize(EscPosBuilder builder, KitchenHeadingSize size)
+    {
+        return size switch
+        {
+            KitchenHeadingSize.ExtraLarge => ApplyFontSize(builder, 3, 1),
+            KitchenHeadingSize.Large => ApplyFontSize(builder, 2, 1),
+            _ => ApplyFontSize(builder, 1, 1)
+        };
+    }
+
+    private static void PrintOrderInfo(EscPosBuilder builder, string orderReference, DateTime printedAt, KitchenTemplateSettings settings)
+    {
+        if (settings.OrderInfoSize != KitchenHeadingSize.Normal)
+        {
+            var width = ApplyInlineSize(builder, settings.OrderInfoSize);
+            builder.SetBold(settings.OrderInfoBold);
+            PrintWrapped(builder, $"Order #: {orderReference}", 0, width);
+            PrintWrapped(builder, $"Date: {printedAt:dd MMM yyyy}", 0, width);
+            PrintWrapped(builder, $"Time: {printedAt:HH:mm}", 0, width);
+            builder.SetNormalSize().SetBold(false);
+            return;
+        }
+
+        builder.SetNormalSize().SetBold(settings.OrderInfoBold);
+        PrintWrapped(builder, $"Order #: {orderReference}", 0);
+        builder.PrintColumns($"Date: {printedAt:dd MMM yyyy}", $"Time: {printedAt:HH:mm}");
+        builder.SetBold(false);
+    }
+
+    private static KitchenTemplateSettings NormalizeSettings(KitchenTemplateSettings? settings) =>
+        (settings ?? KitchenTemplateSettings.Default()).Normalized();
+
+    private static void PrintWrapped(EscPosBuilder builder, string? text, int indent = 0, int? widthOverride = null)
     {
         var prefix = new string(' ', Math.Clamp(indent, 0, LineWidth - 1));
-        foreach (var line in WrapText(text, LineWidth - prefix.Length))
+        var width = Math.Max(8, (widthOverride ?? LineWidth) - prefix.Length);
+        foreach (var line in WrapText(text, width))
         {
             builder.PrintLine(prefix + line);
         }
@@ -362,69 +464,87 @@ public static class KitchenTicketTemplateService
         return string.IsNullOrWhiteSpace(title) ? "ITEMS" : title.ToUpperInvariant();
     }
 
-    private static string BuildTablePreview()
+    private static string BuildTablePreview(KitchenTemplateSettings settings)
     {
         var builder = new StringBuilder();
-        AppendPreviewHeader(builder, "TABLE 12", "STARTER");
+        AppendPreviewHeader(builder, "TABLE 12", settings, "STARTER");
         builder.AppendLine("2x Chicken Pakora");
         builder.AppendLine("   No salad");
         builder.AppendLine("   Extra sauce");
         builder.AppendLine();
         builder.AppendLine("1x Soup");
         builder.AppendLine("   Hot");
-        AppendPreviewFooter(builder, includeCutMarker: true);
+        AppendPreviewFooter(builder, settings, includeCutMarker: true);
         builder.AppendLine();
-        AppendPreviewHeader(builder, "TABLE 12", "MAIN");
+        AppendPreviewHeader(builder, "TABLE 12", settings, "MAIN");
         builder.AppendLine("1x Lamb Curry");
         builder.AppendLine("   Medium hot");
         builder.AppendLine();
         builder.AppendLine("2x Pilau Rice");
-        AppendPreviewFooter(builder, includeCutMarker: true);
+        AppendPreviewFooter(builder, settings, includeCutMarker: true);
         return builder.ToString();
     }
 
-    private static string BuildTakeawayPreview(string title)
+    private static string BuildTakeawayPreview(string title, KitchenTemplateSettings settings)
     {
         var builder = new StringBuilder();
-        AppendPreviewHeader(builder, title);
-        builder.AppendLine("STARTER");
+        AppendPreviewHeader(builder, title, settings);
+        builder.AppendLine(FormatPreviewSectionTitle("STARTER", settings));
         builder.AppendLine("2x Chicken Pakora");
         builder.AppendLine("   No salad");
         builder.AppendLine();
-        builder.AppendLine("MAIN");
+        builder.AppendLine(FormatPreviewSectionTitle("MAIN", settings));
         builder.AppendLine("1x Lamb Curry");
         builder.AppendLine("   Medium hot");
         builder.AppendLine();
-        builder.AppendLine("TANDOORI");
+        builder.AppendLine(FormatPreviewSectionTitle("TANDOORI", settings));
         builder.AppendLine("1x Chicken Tikka");
         builder.AppendLine("   Well done");
-        AppendPreviewFooter(builder, includeCutMarker: false);
+        AppendPreviewFooter(builder, settings, includeCutMarker: false);
         return builder.ToString();
     }
 
-    private static void AppendPreviewHeader(StringBuilder builder, string title, string? section = null)
+    private static void AppendPreviewHeader(StringBuilder builder, string title, KitchenTemplateSettings settings, string? section = null)
     {
         builder.AppendLine(new string('=', LineWidth));
         builder.AppendLine(CenterPreviewText(title));
         builder.AppendLine(new string('=', LineWidth));
-        builder.AppendLine("Order #: 1042");
-        builder.AppendLine("Date: 06 Jul 2026                    Time: 14:25");
+        if (settings.OrderInfoSize != KitchenHeadingSize.Normal)
+        {
+            builder.AppendLine("Order #: 1042");
+            builder.AppendLine("Date: 06 Jul 2026");
+            builder.AppendLine("Time: 14:25");
+        }
+        else
+        {
+            builder.AppendLine("Order #: 1042");
+            builder.AppendLine("Date: 06 Jul 2026                    Time: 14:25");
+        }
 
         if (!string.IsNullOrWhiteSpace(section))
         {
-            builder.AppendLine($"Section: {section}");
+        builder.AppendLine(FormatPreviewSectionTitle($"Section: {section}", settings));
         }
 
         builder.AppendLine(new string('-', LineWidth));
         builder.AppendLine();
     }
 
-    private static void AppendPreviewFooter(StringBuilder builder, bool includeCutMarker)
+    private static void AppendPreviewFooter(StringBuilder builder, KitchenTemplateSettings settings, bool includeCutMarker)
     {
         builder.AppendLine(new string('-', LineWidth));
-        builder.AppendLine("Checked by: ____________________");
-        builder.AppendLine();
-        builder.AppendLine(CenterPreviewText(ThankYouText));
+        if (settings.ShowCheckedByLine)
+        {
+            builder.AppendLine("Checked by: ______________________________");
+            builder.AppendLine();
+            builder.AppendLine();
+        }
+
+        foreach (var footerLine in WrapText(settings.FooterText, 30).Take(2))
+        {
+            builder.AppendLine(CenterPreviewText(footerLine));
+        }
+
         builder.AppendLine(new string('=', LineWidth));
 
         if (includeCutMarker)
@@ -432,6 +552,9 @@ public static class KitchenTicketTemplateService
             builder.AppendLine("                  -- CUT --");
         }
     }
+
+    private static string FormatPreviewSectionTitle(string title, KitchenTemplateSettings settings) =>
+        settings.SectionHeadingBold ? title.ToUpperInvariant() : title;
 
     private static string CenterPreviewText(string text)
     {

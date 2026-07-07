@@ -42,6 +42,7 @@ public class OnlineOrderAutoPrintService
     private readonly EscPosBuilder _escPosBuilder;
     private readonly CloudOrderService _cloudOrderService;
     private readonly DatabaseService _databaseService;
+    private readonly KitchenTemplateSettingsService _kitchenTemplateSettingsService;
     
     // Configuration
     private const int MAX_RETRY_ATTEMPTS = 3;
@@ -57,7 +58,8 @@ public class OnlineOrderAutoPrintService
         NetworkPrinterService printerService,
         EscPosBuilder escPosBuilder,
         CloudOrderService cloudOrderService,
-        DatabaseService databaseService)
+        DatabaseService databaseService,
+        KitchenTemplateSettingsService kitchenTemplateSettingsService)
     {
         _printerDbService = printerDbService;
         _printQueueService = printQueueService;
@@ -65,6 +67,7 @@ public class OnlineOrderAutoPrintService
         _escPosBuilder = escPosBuilder;
         _cloudOrderService = cloudOrderService;
         _databaseService = databaseService;
+        _kitchenTemplateSettingsService = kitchenTemplateSettingsService;
 
         _printQueueService.JobCompleted += OnPrintJobCompleted;
         _printQueueService.JobFailed += OnPrintJobFailed;
@@ -414,7 +417,8 @@ public class OnlineOrderAutoPrintService
         try
         {
             // Build ESC/POS kitchen ticket data
-            var printData = BuildKitchenTicket(order, printer);
+            var templateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
+            var printData = BuildKitchenTicket(order, printer, templateSettings);
             
             // Enqueue the print job
             var jobId = await _printQueueService.EnqueueAsync(
@@ -603,9 +607,12 @@ public class OnlineOrderAutoPrintService
     /// <summary>
     /// Build ESC/POS data for kitchen ticket
     /// </summary>
-    private byte[] BuildKitchenTicket(CloudOrderResponse order, NetworkPrinter printer)
+    private byte[] BuildKitchenTicket(
+        CloudOrderResponse order,
+        NetworkPrinter printer,
+        KitchenTemplateSettings templateSettings)
     {
-        return KitchenTicketTemplateService.BuildOnlineKitchenTicket(order, printer);
+        return KitchenTicketTemplateService.BuildOnlineKitchenTicket(order, printer, templateSettings);
     }
 
     /// <summary>

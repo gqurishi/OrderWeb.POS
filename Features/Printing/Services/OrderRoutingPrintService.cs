@@ -42,12 +42,15 @@ public sealed class OrderRoutingPrintService
     private readonly PrintGroupService _printGroupService;
     private readonly NetworkPrinterService _printerService;
     private readonly PdfPrintService _pdfPrintService;
+    private readonly KitchenTemplateSettingsService _kitchenTemplateSettingsService;
 
     public OrderRoutingPrintService()
     {
         _printGroupService = new PrintGroupService();
         _printerService = new NetworkPrinterService();
         _pdfPrintService = new PdfPrintService();
+        _kitchenTemplateSettingsService = ServiceHelper.GetService<KitchenTemplateSettingsService>()
+            ?? new KitchenTemplateSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
     }
 
     /// <summary>
@@ -274,7 +277,8 @@ public sealed class OrderRoutingPrintService
             .GroupBy(group => group.Id, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
 
-        var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType, printGroupNames);
+        var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
+        var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType, printGroupNames, kitchenTemplateSettings);
         var sent = await _printerService.SendRawDataAsync(takeawayPrinter.IpAddress, takeawayPrinter.Port, ticketData);
 
         if (sent)
@@ -357,7 +361,8 @@ public sealed class OrderRoutingPrintService
             return result;
         }
 
-        var ticketData = BuildTicket(order, singlePrinter, itemsToPrint);
+        var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
+        var ticketData = BuildTicket(order, singlePrinter, itemsToPrint, kitchenTemplateSettings);
         var sent = await _printerService.SendRawDataAsync(singlePrinter.PrinterIp, singlePrinter.PrinterPort, ticketData);
 
         if (sent)
@@ -398,6 +403,7 @@ public sealed class OrderRoutingPrintService
         var expandedItems = itemsToPrint
             .SelectMany(item => ExpandTastingMenuPrintItems(item, activeGroups, result))
             .ToList();
+        var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
         var splitPrintItemIds = expandedItems
             .Where(item => TryGetTastingMenuSourceItemId(item.Id, out _))
             .GroupBy(item =>
@@ -443,7 +449,7 @@ public sealed class OrderRoutingPrintService
                 continue;
             }
 
-            var ticketData = BuildTicket(order, group, batchItems);
+            var ticketData = BuildTicket(order, group, batchItems, kitchenTemplateSettings);
             var sent = await _printerService.SendRawDataAsync(group.PrinterIp, group.PrinterPort, ticketData);
 
             if (sent)
@@ -666,12 +672,12 @@ public sealed class OrderRoutingPrintService
         return null;
     }
 
-    private byte[] BuildTicket(TableOrder order, PrintGroup group, List<TableOrderItem> items)
+    private byte[] BuildTicket(TableOrder order, PrintGroup group, List<TableOrderItem> items, KitchenTemplateSettings kitchenTemplateSettings)
     {
         var printerType = string.IsNullOrWhiteSpace(group.PrinterType) ? "kitchen" : group.PrinterType.Trim().ToLowerInvariant();
         if (printerType == "kitchen")
         {
-            return KitchenTicketTemplateService.BuildTableSectionTickets(order, group, items);
+            return KitchenTicketTemplateService.BuildTableSectionTickets(order, group, items, kitchenTemplateSettings);
         }
 
         var headerText = printerType switch
@@ -741,9 +747,10 @@ public sealed class OrderRoutingPrintService
         NetworkPrinter printer,
         List<TableOrderItem> items,
         string orderType,
-        IReadOnlyDictionary<string, string> printGroupNames)
+        IReadOnlyDictionary<string, string> printGroupNames,
+        KitchenTemplateSettings kitchenTemplateSettings)
     {
-        return KitchenTicketTemplateService.BuildTakeawayKitchenTicket(order, printer, items, orderType, printGroupNames);
+        return KitchenTicketTemplateService.BuildTakeawayKitchenTicket(order, printer, items, orderType, printGroupNames, kitchenTemplateSettings);
 
     }
 

@@ -11,13 +11,13 @@
             <Setter Property="TextColor" Value="#1A1A1A" />
             <Setter Property="BorderColor" Value="#252525" />
             <Setter Property="BorderWidth" Value="3" />
-            <Setter Property="CornerRadius" Value="65" />
-            <Setter Property="WidthRequest" Value="130" />
-            <Setter Property="HeightRequest" Value="130" />
-            <Setter Property="MinimumWidthRequest" Value="130" />
-            <Setter Property="MinimumHeightRequest" Value="130" />
+            <Setter Property="CornerRadius" Value="50" />
+            <Setter Property="WidthRequest" Value="100" />
+            <Setter Property="HeightRequest" Value="100" />
+            <Setter Property="MinimumWidthRequest" Value="100" />
+            <Setter Property="MinimumHeightRequest" Value="100" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="FontSize" Value="46" />
+            <Setter Property="FontSize" Value="36" />
             <Setter Property="FontAttributes" Value="None" />
             <Setter Property="Shadow">
                 <Shadow Brush="Black"
@@ -46,11 +46,11 @@
         </Style>
 
         <Style x:Key="PinActionButton" TargetType="Button" BasedOn="{StaticResource PinKeyButton}">
-            <Setter Property="FontSize" Value="26" />
+            <Setter Property="FontSize" Value="18" />
         </Style>
 
         <Style x:Key="PinBackspaceButton" TargetType="Button" BasedOn="{StaticResource PinKeyButton}">
-            <Setter Property="FontSize" Value="40" />
+            <Setter Property="FontSize" Value="32" />
             <Setter Property="TextColor" Value="#EF4444" />
         </Style>
     </ContentPage.Resources>
@@ -61,16 +61,16 @@
         <!-- LEFT SIDE: Welcome/Branding Panel -->
         <Grid Grid.Column="0" 
               BackgroundColor="#F8F9FA"
-              Padding="72,56">
+              Padding="48,40">
             
-            <VerticalStackLayout Spacing="72" 
+            <VerticalStackLayout Spacing="58" 
                                  VerticalOptions="Center"
                                  HorizontalOptions="Center">
                 
                 <!-- Logo/Brand Name -->
                 <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                     <Label Text="POS" 
-                           FontSize="74"
+                           FontSize="58"
                            TextColor="{StaticResource Primary}"
                            HorizontalOptions="Center" />
                 </VerticalStackLayout>
@@ -78,15 +78,15 @@
                 <!-- Welcome Message -->
                 <VerticalStackLayout Spacing="10" 
                                      HorizontalOptions="Center"
-                                     Margin="0,30,0,0">
+                                     Margin="0,20,0,0">
                     <Label Text="Welcome Back!" 
-                           FontSize="40"
+                           FontSize="32"
                            FontAttributes="Bold"
                            TextColor="{StaticResource TextPrimary}"
                            HorizontalOptions="Center" />
                     <Label x:Name="WelcomeSubtitleLabel"
                            Text="Restaurant Name" 
-                           FontSize="30"
+                           FontSize="24"
                            FontAttributes="Bold"
                            TextColor="{StaticResource TextPrimary}"
                            Opacity="0.72"
@@ -98,7 +98,7 @@
                 <!-- Optional: Restaurant Info -->
                 <VerticalStackLayout Spacing="8" 
                                      HorizontalOptions="Center"
-                                     Margin="0,80,0,0">
+                                     Margin="0,40,0,0">
                     <Label x:Name="RestaurantNameLabel"
                            Text="Restaurant Name" 
                            FontSize="20"
@@ -121,19 +121,20 @@
         <!-- RIGHT SIDE: PIN Login Panel -->
         <Grid Grid.Column="1" 
               BackgroundColor="White"
-              Padding="64,56">
+              Padding="44,34">
             
-            <ScrollView VerticalOptions="Center">
-                <VerticalStackLayout Spacing="96" 
+            <ScrollView VerticalOptions="Center"
+                        VerticalScrollBarVisibility="Never">
+                <VerticalStackLayout Spacing="46" 
                                      HorizontalOptions="Center"
-                                     MaximumWidthRequest="560">
+                                     MaximumWidthRequest="430">
 
                     <!-- PIN Display Card -->
-                    <VerticalStackLayout Spacing="58" HorizontalOptions="Center">
+                    <VerticalStackLayout Spacing="28" HorizontalOptions="Center">
                         
                         <!-- Title -->
                         <Label Text="Enter your PIN or swipe employee card" 
-                               FontSize="24"
+                               FontSize="18"
                                TextColor="{StaticResource TextSecondary}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center" />
@@ -154,33 +155,33 @@
                         </Border>
                         
                         <!-- PIN Dots Display -->
-                        <HorizontalStackLayout Spacing="28" 
+                        <HorizontalStackLayout Spacing="22" 
                                                HorizontalOptions="Center"
                                                Margin="0">
                             <Border x:Name="Dot1"
-                                    WidthRequest="26"
-                                    HeightRequest="26"
+                                    WidthRequest="18"
+                                    HeightRequest="18"
                                     BackgroundColor="#E5E7EB"
                                     StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 13" />
+                                    StrokeShape="RoundRectangle 9" />
                             <Border x:Name="Dot2"
-                                    WidthRequest="26"
-                                    HeightRequest="26"
+                                    WidthRequest="18"
+                                    HeightRequest="18"
                                     BackgroundColor="#E5E7EB"
                                     StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 13" />
+                                    StrokeShape="RoundRectangle 9" />
                             <Border x:Name="Dot3"
-                                    WidthRequest="26"
-                                    HeightRequest="26"
+                                    WidthRequest="18"
+                                    HeightRequest="18"
                                     BackgroundColor="#E5E7EB"
                                     StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 13" />
+                                    StrokeShape="RoundRectangle 9" />
                             <Border x:Name="Dot4"
-                                    WidthRequest="26"
-                                    HeightRequest="26"
+                                    WidthRequest="18"
+                                    HeightRequest="18"
                                     BackgroundColor="#E5E7EB"
                                     StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 13" />
+                                    StrokeShape="RoundRectangle 9" />
                         </HorizontalStackLayout>
 
                         <!-- Error Message -->
@@ -232,14 +233,14 @@
                                        HorizontalOptions="Center" />
 
                     <!-- Classic 3x4 Keypad (Like Picture 2) -->
-                    <VerticalStackLayout Spacing="56"
+                    <VerticalStackLayout Spacing="36"
                                          HorizontalOptions="Center">
                         
                         <!-- Classic 3x4 Keypad Grid -->
-                        <Grid ColumnDefinitions="130,130,130"
-                              RowDefinitions="130,130,130,130"
-                              ColumnSpacing="28"
-                              RowSpacing="28"
+                        <Grid ColumnDefinitions="100,100,100"
+                              RowDefinitions="100,100,100,100"
+                              ColumnSpacing="18"
+                              RowSpacing="18"
                               HorizontalOptions="Center">
                             
                             <!-- Row 1: 1, 2, 3 -->
@@ -305,11 +306,11 @@
                                 Clicked="OnClockInOutClicked"
                                 BackgroundColor="#6366F1"
                                 TextColor="White"
-                                FontSize="30"
+                                FontSize="22"
                                 FontAttributes="None"
-                                WidthRequest="448"
-                                HeightRequest="80"
-                                CornerRadius="40"
+                                WidthRequest="334"
+                                HeightRequest="58"
+                                CornerRadius="29"
                                 Padding="0"
                                 Shadow="{Shadow Brush=#6366F1, Radius=16, Opacity=0.32, Offset='0,7'}" />
                         
@@ -322,16 +323,16 @@
             <VerticalStackLayout HorizontalOptions="End" 
                                  VerticalOptions="Start"
                                  Spacing="4"
-                                 Margin="0,40,44,0">
+                                 Margin="0,20,0,0">
                 <Label x:Name="CurrentTimeLabel" 
                        Text="12:29 pm"
-                       FontSize="28"
+                       FontSize="24"
                        FontAttributes="Bold"
                        TextColor="{StaticResource Primary}"
                        HorizontalTextAlignment="End" />
                 <Label x:Name="CurrentDateLabel" 
                        Text="Wednesday, Oct 22, 2025" 
-                       FontSize="16"
+                       FontSize="13"
                        TextColor="{StaticResource TextSecondary}"
                        HorizontalTextAlignment="End" />
             </VerticalStackLayout>

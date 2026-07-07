@@ -122,6 +122,7 @@ public class EscPosBuilder
     public EscPosBuilder SetNormalSize()
     {
         _buffer.AddRange(Commands.NORMAL_SIZE);
+        _buffer.AddRange(new byte[] { 0x1D, 0x21, 0x00 });
         return this;
     }
 

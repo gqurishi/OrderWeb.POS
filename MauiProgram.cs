@@ -11,9 +11,6 @@ public static class MauiProgram
 {
 	public static MauiApp CreateMauiApp()
 	{
-		// Register Syncfusion license - Essential Studio® UI Edition v31.x Binary License
-		Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjGyl/Vkd+XU9FcVRDX3xKf0x/TGpQb19xflBPallYVBYiSV9jS3tSdEVkWHZddHdUQmFfU091Xg==");
-		
 		try
 		{
 			AppDiagnostics.Log("=== MAUI PROGRAM START ===");
@@ -108,6 +105,11 @@ public static class MauiProgram
 		builder.Services.AddSingleton<OnlineOrderAutoPrintService>();
 		builder.Services.AddSingleton<PrintGroupService>();
 		builder.Services.AddSingleton<PrintingPolicyService>();
+		builder.Services.AddSingleton<KitchenTemplateSettingsService>();
+		builder.Services.AddSingleton<CollectionReceiptTemplateSettingsService>();
+		builder.Services.AddSingleton<DeliveryReceiptTemplateSettingsService>();
+		builder.Services.AddSingleton<TableBillReceiptTemplateSettingsService>();
+		builder.Services.AddSingleton<TablePaymentReceiptTemplateSettingsService>();
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
