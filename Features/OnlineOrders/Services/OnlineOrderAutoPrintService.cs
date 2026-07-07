@@ -553,12 +553,25 @@ public class OnlineOrderAutoPrintService
                .SetBold(false)
                .PrintLine("(VAT included in item prices)");
 
-        // Payment method
+        // Payment method/status. Cash from OrderWeb is only the requested tender until staff confirms payment.
         builder.PrintLine(new string('-', lineWidth));
-        var paymentMethod = order.PaymentMethod ?? "Online";
-        builder.SetAlign(TextAlign.Center)
-               .PrintLine($"Paid: {paymentMethod}")
-               .FeedLines(1);
+        var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
+        if (OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus))
+        {
+            builder.SetAlign(TextAlign.Center)
+                   .SetBold(true)
+                   .PrintLine("PAID")
+                   .SetBold(false)
+                   .PrintLine($"Payment: {paymentMethod}")
+                   .FeedLines(1);
+        }
+        else
+        {
+            builder.SetAlign(TextAlign.Left)
+                   .PrintLine($"Payment: {paymentMethod}")
+                   .PrintColumns("Amount Due:", $"Â£{total:F2}")
+                   .FeedLines(1);
+        }
 
         // Special instructions for entire order
         if (!string.IsNullOrEmpty(order.SpecialInstructions))
@@ -592,125 +605,7 @@ public class OnlineOrderAutoPrintService
     /// </summary>
     private byte[] BuildKitchenTicket(CloudOrderResponse order, NetworkPrinter printer)
     {
-        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
-        var lineWidth = printer.PaperWidth == PaperWidth.Mm80 ? 48 : 32;
-        
-        builder.Initialize();
-
-        // Sound buzzer for kitchen alert
-        if (printer.HasBuzzer)
-        {
-            builder.Buzzer();
-        }
-
-        // Large header - ONLINE ORDER
-        builder.SetAlign(TextAlign.Center)
-               .SetFontSize(2, 2)
-               .SetBold(true)
-               .PrintLine("*** ONLINE ***")
-               .SetNormalSize();
-
-        // Order number - LARGE
-        builder.SetFontSize(3, 3)
-               .PrintLine($"#{order.OrderNumber}")
-               .SetNormalSize()
-               .SetBold(false)
-               .FeedLines(1);
-
-        // Order type
-        var orderType = order.OrderType?.ToUpper() ?? "PICKUP";
-        builder.SetFontSize(2, 1)
-               .SetBold(true)
-               .PrintLine($"[ {orderType} ]")
-               .SetNormalSize()
-               .SetBold(false);
-
-        // Scheduled pickup time - prominent
-        if (order.ScheduledTime.HasValue)
-        {
-            builder.SetFontSize(2, 2)
-                   .SetBold(true)
-                   .PrintLine($"PICKUP: {order.ScheduledTime.Value:MMM dd hh:mm tt}")
-                   .SetNormalSize()
-                   .SetBold(false);
-        }
-
-        builder.PrintLine(new string('=', lineWidth));
-
-        // Time received
-        builder.SetAlign(TextAlign.Left)
-               .PrintLine($"Received: {DateTime.Now:hh:mm tt}");
-
-        // Customer name for identification
-        if (!string.IsNullOrEmpty(order.CustomerName))
-        {
-            builder.SetBold(true)
-                   .PrintLine($"Customer: {order.CustomerName}")
-                   .SetBold(false);
-        }
-
-        builder.PrintLine(new string('=', lineWidth));
-
-        // Items - LARGE and clear for kitchen
-        if (order.Items != null)
-        {
-            foreach (var item in order.Items)
-            {
-                // Quantity prominently displayed
-                builder.SetFontSize(2, 2)
-                       .SetBold(true)
-                       .PrintLine($"{item.Quantity}x {item.Name}")
-                       .SetNormalSize()
-                       .SetBold(false);
-
-                // Modifiers
-                if (item.SelectedAddons != null && item.SelectedAddons.Any())
-                {
-                    foreach (var addon in item.SelectedAddons)
-                    {
-                        builder.SetFontSize(1, 1)
-                               .PrintLine($"    + {addon.Name}");
-                    }
-                }
-
-                // Item special instructions
-                if (!string.IsNullOrEmpty(item.SpecialInstructions))
-                {
-                    builder.SetBold(true)
-                           .PrintLine($"    >> {item.SpecialInstructions}")
-                           .SetBold(false);
-                }
-
-                builder.FeedLines(1);
-            }
-        }
-
-        builder.PrintLine(new string('=', lineWidth));
-
-        // Order special instructions - PROMINENT
-        if (!string.IsNullOrEmpty(order.SpecialInstructions))
-        {
-            builder.SetFontSize(2, 1)
-                   .SetBold(true)
-                   .PrintLine("NOTES:")
-                   .SetNormalSize()
-                   .PrintLine(order.SpecialInstructions)
-                   .SetBold(false);
-        }
-
-        // Footer
-        builder.FeedLines(1)
-               .SetAlign(TextAlign.Center)
-               .PrintLine($"Order ID: {order.Id}")
-               .FeedLines(3);
-
-        // Cut paper
-        if (printer.HasCutter)
-        {
-            builder.Cut(true);
-        }
-
-        return builder.Build();
+        return KitchenTicketTemplateService.BuildOnlineKitchenTicket(order, printer);
     }
 
     /// <summary>

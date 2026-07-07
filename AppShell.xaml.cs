@@ -46,6 +46,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         Routing.RegisterRoute("reportdetails", typeof(ReportOrderDetailsPage));
         Routing.RegisterRoute("collection", typeof(CollectionCustomerModal));
         Routing.RegisterRoute("delivery", typeof(DeliveryCustomerModal));
+        Routing.RegisterRoute("printtemplates", typeof(PrintTemplatesPage));
 
         // Register User Dashboard route
         Routing.RegisterRoute("userdashboard", typeof(UserDashboardPage));

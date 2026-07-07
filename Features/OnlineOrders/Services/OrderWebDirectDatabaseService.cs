@@ -515,9 +515,10 @@ public class OrderWebDirectDatabaseService
             command.CommandText = @"
                 UPDATE orders 
                 SET payment_method = @paymentMethod
-                WHERE cloud_order_id = @cloudOrderId OR order_number = @orderNumber";
+                WHERE (cloud_order_id = @cloudOrderId OR order_number = @orderNumber)
+                  AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided')";
 
-            command.Parameters.AddWithValue("@paymentMethod", cloudOrder.PaymentMethod ?? "cash");
+            command.Parameters.AddWithValue("@paymentMethod", OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod ?? "cash"));
             command.Parameters.AddWithValue("@cloudOrderId", cloudOrder.Id);
             command.Parameters.AddWithValue("@orderNumber", cloudOrder.OrderNumber);
 
@@ -681,16 +682,19 @@ public class OrderWebDirectDatabaseService
             // Order details
             OrderType = cloudOrder.OrderType,
             SourceChannel = "web",
-            PaymentMethod = cloudOrder.PaymentMethod,
+            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod),
             ScheduledTime = cloudOrder.ScheduledTime,
             SpecialInstructions = cloudOrder.SpecialInstructions,
 
             // Status and timing
             Status = OrderStatus.New,
+            LocalLifecycleState = LocalLifecycleState.Active,
+            IsOpen = true,
             SyncStatus = Models.SyncStatus.Synced,
             CreatedAt = cloudOrder.CreatedAt,
             UpdatedAt = DateTime.Now,
             KitchenTime = DateTime.Now,
+            PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus),
 
             // Initialize items list
             Items = new List<Models.OrderItem>()

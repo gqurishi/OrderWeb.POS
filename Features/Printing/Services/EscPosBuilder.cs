@@ -324,6 +324,27 @@ public class EscPosBuilder
         return FeedLines(1);
     }
 
+    public EscPosBuilder PrintRasterImage(byte[] rasterData, int widthPixels, int heightPixels)
+    {
+        if (rasterData.Length == 0 || widthPixels <= 0 || heightPixels <= 0)
+        {
+            return this;
+        }
+
+        var widthBytes = (widthPixels + 7) / 8;
+        _buffer.AddRange(new byte[]
+        {
+            0x1D, 0x76, 0x30, 0x00,
+            (byte)(widthBytes & 0xFF),
+            (byte)((widthBytes >> 8) & 0xFF),
+            (byte)(heightPixels & 0xFF),
+            (byte)((heightPixels >> 8) & 0xFF)
+        });
+        _buffer.AddRange(rasterData);
+
+        return FeedLines(1);
+    }
+
     /// <summary>
     /// Build and return the ESC/POS command buffer
     /// </summary>

@@ -208,7 +208,7 @@
                                 <ColumnDefinition Width="100" />
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="120" />
-                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="260" />
                             </Grid.ColumnDefinitions>
                         
                         <Label Grid.Column="0" 
@@ -290,7 +290,7 @@
                                             <ColumnDefinition Width="100" />
                                             <ColumnDefinition Width="110" />
                                             <ColumnDefinition Width="120" />
-                                            <ColumnDefinition Width="200" />
+                                            <ColumnDefinition Width="260" />
                                         </Grid.ColumnDefinitions>
                                     
                                     <!-- Order ID -->
@@ -337,40 +337,13 @@
                                     
                                     <!-- Payment Method -->
                                     <Label Grid.Column="4"
-                                           Text="{Binding PaymentMethod, TargetNullValue='N/A', FallbackValue='N/A'}"
+                                           Text="{Binding PaymentMethodDisplay}"
                                            FontFamily="AlegreyaBold"
                                            FontSize="13"
-                                           TextColor="#4B5563"
+                                           TextColor="{Binding PaymentMethodColor}"
                                            HorizontalTextAlignment="Center"
                                            VerticalOptions="Center"
-                                           Margin="5,0">
-                                        <Label.Triggers>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="cash">
-                                                <Setter Property="Text" Value="Cash" />
-                                                <Setter Property="TextColor" Value="#059669" />
-                                            </DataTrigger>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Cash">
-                                                <Setter Property="Text" Value="Cash" />
-                                                <Setter Property="TextColor" Value="#059669" />
-                                            </DataTrigger>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="card">
-                                                <Setter Property="Text" Value="Card" />
-                                                <Setter Property="TextColor" Value="#2563EB" />
-                                            </DataTrigger>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="Card">
-                                                <Setter Property="Text" Value="Card" />
-                                                <Setter Property="TextColor" Value="#2563EB" />
-                                            </DataTrigger>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="voucher">
-                                                <Setter Property="Text" Value="Gift Card" />
-                                                <Setter Property="TextColor" Value="#7C3AED" />
-                                            </DataTrigger>
-                                            <DataTrigger TargetType="Label" Binding="{Binding PaymentMethod}" Value="gift_card">
-                                                <Setter Property="Text" Value="Gift Card" />
-                                                <Setter Property="TextColor" Value="#7C3AED" />
-                                            </DataTrigger>
-                                        </Label.Triggers>
-                                    </Label>
+                                           Margin="5,0"/>
                                     
                                     <!-- Total Amount -->
                                     <Label Grid.Column="5" 
@@ -430,6 +403,18 @@
                                                 Padding="0"
                                                 CornerRadius="8"
                                                 Clicked="OnPrintReceiptClicked"
+                                                CommandParameter="{Binding Order}" />
+                                        <Button Text="Pay"
+                                                BackgroundColor="#059669"
+                                                TextColor="White"
+                                                FontFamily="AlegreyaBold"
+                                                FontSize="15"
+                                                WidthRequest="72"
+                                                HeightRequest="42"
+                                                Padding="0"
+                                                CornerRadius="8"
+                                                IsVisible="{Binding CanTakePayment}"
+                                                Clicked="OnTakePaymentClicked"
                                                 CommandParameter="{Binding Order}" />
                                         </StackLayout>
                                 </Grid>

@@ -104,7 +104,17 @@ public class ReceiptService
         if (!string.IsNullOrEmpty(order.PaymentMethod))
         {
             receipt.AppendLine();
-            receipt.AppendLine($"Payment Method: {order.PaymentMethod}");
+            var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
+            if (order.LocalLifecycleState == LocalLifecycleState.Paid || order.PaidAt.HasValue)
+            {
+                receipt.AppendLine("PAID");
+                receipt.AppendLine($"Payment Method: {paymentMethod}");
+            }
+            else
+            {
+                receipt.AppendLine($"Payment Method: {paymentMethod}");
+                receipt.AppendLine($"Amount Due: Â£{order.TotalAmount:F2}");
+            }
         }
 
         if (!string.IsNullOrEmpty(order.SpecialInstructions))
@@ -201,7 +211,18 @@ public class ReceiptService
             receipt.AppendLine($"Total: £{total:F2}");
         receipt.AppendLine("(VAT included in item prices)");
         
-        receipt.AppendLine($"Payment: {order.PaymentMethod?.ToUpper() ?? "UNKNOWN"}");
+        var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
+        if (OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus))
+        {
+            receipt.AppendLine("PAID");
+            receipt.AppendLine($"Payment: {paymentMethod}");
+        }
+        else
+        {
+            receipt.AppendLine($"Payment: {paymentMethod}");
+            if (decimal.TryParse(order.Total, out var dueTotal))
+                receipt.AppendLine($"Amount Due: Â£{dueTotal:F2}");
+        }
         receipt.AppendLine("========================================");
 
         // Special Instructions

@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using POS_in_NET.Models;
+using POS_in_NET.Services;
 
 namespace POS_in_NET.Models.Api;
 
@@ -67,10 +68,12 @@ public class ApiOrder
             DeliveryFee = deliveryFee,
             TaxAmount = tax,
             OrderType = OrderType,
-            PaymentMethod = PaymentMethod,
+            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(PaymentMethod),
             SpecialInstructions = SpecialInstructions,
             ScheduledTime = ScheduledTime,
             Status = OrderStatus.New,
+            LocalLifecycleState = LocalLifecycleState.Active,
+            IsOpen = true,
             SyncStatus = SyncStatus.Synced,
             CreatedAt = CreatedAt,
             UpdatedAt = DateTime.Now,

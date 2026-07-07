@@ -160,6 +160,7 @@ public static class MauiProgram
 		builder.Services.AddTransient<CustomerDataPage>();
 		builder.Services.AddTransient<TerminalSetupPage>();
 		builder.Services.AddTransient<InitialAdminSetupPage>();
+		builder.Services.AddTransient<PrintTemplatesPage>();
 
 		var app = builder.Build();
 

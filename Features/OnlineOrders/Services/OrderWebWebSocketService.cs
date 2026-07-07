@@ -510,6 +510,9 @@ public class OrderWebWebSocketService
             var orderType = orderElement.TryGetProperty("orderType", out var otElem) ? otElem.GetString() ?? "pickup" : "pickup";
             var orderSource = orderElement.TryGetProperty("orderSource", out var osElem) ? osElem.GetString() ?? "online" : "online";
             var paymentMethod = orderElement.TryGetProperty("paymentMethod", out var pmElem) ? pmElem.GetString() ?? "online" : "online";
+            var paymentStatus = GetStringProperty(orderElement, "paymentStatus")
+                ?? GetStringProperty(orderElement, "payment_status")
+                ?? (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(paymentMethod) ? "pending" : "paid");
             var specialInstructions = orderElement.TryGetProperty("notes", out var instElem) ? instElem.GetString() ?? "" : "";
             var scheduledTime = orderElement.TryGetProperty("scheduledTime", out var stElem) && stElem.ValueKind != JsonValueKind.Null 
                 ? DateTime.Parse(stElem.GetString() ?? "") 
@@ -536,7 +539,7 @@ public class OrderWebWebSocketService
                 Tax = taxAmount.ToString("0.00"),
                 OrderType = orderType,
                 PaymentMethod = paymentMethod,
-                PaymentStatus = "paid",
+                PaymentStatus = paymentStatus,
                 SpecialInstructions = specialInstructions,
                 ScheduledTime = scheduledTime,
                 CreatedAt = createdAt
@@ -670,16 +673,18 @@ public class OrderWebWebSocketService
             DeliveryFee = decimal.TryParse(cloudOrder.DeliveryFee, out var deliveryFee) ? deliveryFee : 0m,
             TaxAmount = decimal.TryParse(cloudOrder.Tax, out var tax) ? tax : 0m,
             OrderType = cloudOrder.OrderType ?? "pickup",
-            PaymentMethod = cloudOrder.PaymentMethod ?? "online",
+            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod ?? "online"),
             SpecialInstructions = cloudOrder.SpecialInstructions ?? "",
             ScheduledTime = cloudOrder.ScheduledTime,
             Status = Models.OrderStatus.New,
+            LocalLifecycleState = Models.LocalLifecycleState.Active,
+            IsOpen = true,
             SyncStatus = Models.SyncStatus.Synced,
             SourceChannel = "web",
             CreatedAt = cloudOrder.CreatedAt,
             UpdatedAt = DateTime.Now,
             OrderData = rawOrderData,
-            PaymentStatus = Models.PaymentStatus.Paid
+            PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus)
         };
 
         foreach (var cloudItem in cloudOrder.Items)

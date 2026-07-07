@@ -94,7 +94,7 @@ public class OrderWebConnectionKeeperService
         System.Diagnostics.Debug.WriteLine("OrderWebConnectionKeeper started");
     }
 
-    public async Task ApplyConfigurationAsync(CloudConfiguration? config = null)
+    public async Task ApplyConfigurationAsync(CloudConfiguration? config = null, bool forceBackfill = false)
     {
         await _connectLock.WaitAsync();
         try
@@ -181,11 +181,11 @@ public class OrderWebConnectionKeeperService
 
             _cloudOrderService.StartAckRetryService();
 
-            if (configChanged)
+            if (configChanged || forceBackfill)
             {
                 _ = Task.Run(async () =>
                 {
-                    var syncResult = await _cloudOrderService.SyncTodaysOrdersAsync();
+                    var syncResult = await _cloudOrderService.SyncLastSevenDaysAsync();
                     System.Diagnostics.Debug.WriteLine($"OrderWeb keeper catch-up sync: {syncResult.Message}");
                 });
             }
@@ -326,7 +326,7 @@ public class OrderWebConnectionKeeperService
             {
                 _ = Task.Run(async () =>
                 {
-                    var syncResult = await _cloudOrderService.SyncTodaysOrdersAsync();
+                    var syncResult = await _cloudOrderService.SyncLastSevenDaysAsync();
                     System.Diagnostics.Debug.WriteLine($"OrderWeb reconnect catch-up: {syncResult.Message}");
                 });
             }

@@ -2233,7 +2233,7 @@ namespace POS_in_NET.Pages
                 throw new InvalidOperationException("OrderWeb connection keeper is not available.");
             }
 
-            await _connectionKeeper.ApplyConfigurationAsync(_currentCloudConfig);
+            await _connectionKeeper.ApplyConfigurationAsync(_currentCloudConfig, forceBackfill: true);
             ApplyCloudStatusFromKeeper(_connectionKeeper.Status);
 
             if (!_connectionKeeper.Status.IsApiHealthy)

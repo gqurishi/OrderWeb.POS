@@ -5,23 +5,72 @@
              Shell.NavBarIsVisible="False"
              BackgroundColor="White">
 
+    <ContentPage.Resources>
+        <Style x:Key="PinKeyButton" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="White" />
+            <Setter Property="TextColor" Value="#1A1A1A" />
+            <Setter Property="BorderColor" Value="#252525" />
+            <Setter Property="BorderWidth" Value="3" />
+            <Setter Property="CornerRadius" Value="65" />
+            <Setter Property="WidthRequest" Value="130" />
+            <Setter Property="HeightRequest" Value="130" />
+            <Setter Property="MinimumWidthRequest" Value="130" />
+            <Setter Property="MinimumHeightRequest" Value="130" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="46" />
+            <Setter Property="FontAttributes" Value="None" />
+            <Setter Property="Shadow">
+                <Shadow Brush="Black"
+                        Radius="8"
+                        Opacity="0.16"
+                        Offset="0,4" />
+            </Setter>
+            <Setter Property="VisualStateManager.VisualStateGroups">
+                <VisualStateGroupList>
+                    <VisualStateGroup x:Name="CommonStates">
+                        <VisualState x:Name="Normal" />
+                        <VisualState x:Name="Pressed">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="0.96" />
+                                <Setter Property="BackgroundColor" Value="#F8FAFC" />
+                            </VisualState.Setters>
+                        </VisualState>
+                        <VisualState x:Name="Disabled">
+                            <VisualState.Setters>
+                                <Setter Property="Opacity" Value="0.55" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateGroupList>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PinActionButton" TargetType="Button" BasedOn="{StaticResource PinKeyButton}">
+            <Setter Property="FontSize" Value="26" />
+        </Style>
+
+        <Style x:Key="PinBackspaceButton" TargetType="Button" BasedOn="{StaticResource PinKeyButton}">
+            <Setter Property="FontSize" Value="40" />
+            <Setter Property="TextColor" Value="#EF4444" />
+        </Style>
+    </ContentPage.Resources>
+
     <!-- 2-Column Layout: Welcome Side + Login Side -->
     <Grid ColumnDefinitions="*,*">
         
         <!-- LEFT SIDE: Welcome/Branding Panel -->
         <Grid Grid.Column="0" 
               BackgroundColor="#F8F9FA"
-              Padding="60,40">
+              Padding="72,56">
             
-            <VerticalStackLayout Spacing="40" 
+            <VerticalStackLayout Spacing="72" 
                                  VerticalOptions="Center"
                                  HorizontalOptions="Center">
                 
                 <!-- Logo/Brand Name -->
                 <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                     <Label Text="POS" 
-                           FontSize="56" 
-                           FontAttributes="Bold"
+                           FontSize="74"
                            TextColor="{StaticResource Primary}"
                            HorizontalOptions="Center" />
                 </VerticalStackLayout>
@@ -29,15 +78,15 @@
                 <!-- Welcome Message -->
                 <VerticalStackLayout Spacing="10" 
                                      HorizontalOptions="Center"
-                                     Margin="0,42,0,0">
+                                     Margin="0,30,0,0">
                     <Label Text="Welcome Back!" 
-                           FontSize="32" 
+                           FontSize="40"
                            FontAttributes="Bold"
                            TextColor="{StaticResource TextPrimary}"
                            HorizontalOptions="Center" />
                     <Label x:Name="WelcomeSubtitleLabel"
                            Text="Restaurant Name" 
-                           FontSize="24"
+                           FontSize="30"
                            FontAttributes="Bold"
                            TextColor="{StaticResource TextPrimary}"
                            Opacity="0.72"
@@ -72,19 +121,19 @@
         <!-- RIGHT SIDE: PIN Login Panel -->
         <Grid Grid.Column="1" 
               BackgroundColor="White"
-              Padding="60,40">
+              Padding="64,56">
             
             <ScrollView VerticalOptions="Center">
-                <VerticalStackLayout Spacing="40" 
+                <VerticalStackLayout Spacing="96" 
                                      HorizontalOptions="Center"
-                                     MaximumWidthRequest="500">
+                                     MaximumWidthRequest="560">
 
                     <!-- PIN Display Card -->
-                    <VerticalStackLayout Spacing="32" HorizontalOptions="Center">
+                    <VerticalStackLayout Spacing="58" HorizontalOptions="Center">
                         
                         <!-- Title -->
                         <Label Text="Enter your PIN or swipe employee card" 
-                               FontSize="18"
+                               FontSize="24"
                                TextColor="{StaticResource TextSecondary}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center" />
@@ -105,41 +154,33 @@
                         </Border>
                         
                         <!-- PIN Dots Display -->
-                        <HorizontalStackLayout Spacing="24" 
+                        <HorizontalStackLayout Spacing="28" 
                                                HorizontalOptions="Center"
-                                               Margin="0,16,0,0">
-                            <Frame x:Name="Dot1"
-                                   WidthRequest="20"
-                                   HeightRequest="20"
-                                   CornerRadius="10"
-                                   BackgroundColor="#E5E7EB"
-                                   BorderColor="Transparent"
-                                   Padding="0"
-                                   HasShadow="False" />
-                            <Frame x:Name="Dot2"
-                                   WidthRequest="20"
-                                   HeightRequest="20"
-                                   CornerRadius="10"
-                                   BackgroundColor="#E5E7EB"
-                                   BorderColor="Transparent"
-                                   Padding="0"
-                                   HasShadow="False" />
-                            <Frame x:Name="Dot3"
-                                   WidthRequest="20"
-                                   HeightRequest="20"
-                                   CornerRadius="10"
-                                   BackgroundColor="#E5E7EB"
-                                   BorderColor="Transparent"
-                                   Padding="0"
-                                   HasShadow="False" />
-                            <Frame x:Name="Dot4"
-                                   WidthRequest="20"
-                                   HeightRequest="20"
-                                   CornerRadius="10"
-                                   BackgroundColor="#E5E7EB"
-                                   BorderColor="Transparent"
-                                   Padding="0"
-                                   HasShadow="False" />
+                                               Margin="0">
+                            <Border x:Name="Dot1"
+                                    WidthRequest="26"
+                                    HeightRequest="26"
+                                    BackgroundColor="#E5E7EB"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 13" />
+                            <Border x:Name="Dot2"
+                                    WidthRequest="26"
+                                    HeightRequest="26"
+                                    BackgroundColor="#E5E7EB"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 13" />
+                            <Border x:Name="Dot3"
+                                    WidthRequest="26"
+                                    HeightRequest="26"
+                                    BackgroundColor="#E5E7EB"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 13" />
+                            <Border x:Name="Dot4"
+                                    WidthRequest="26"
+                                    HeightRequest="26"
+                                    BackgroundColor="#E5E7EB"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 13" />
                         </HorizontalStackLayout>
 
                         <!-- Error Message -->
@@ -191,183 +232,86 @@
                                        HorizontalOptions="Center" />
 
                     <!-- Classic 3x4 Keypad (Like Picture 2) -->
-                    <VerticalStackLayout Spacing="20" 
-                                         HorizontalOptions="Center"
-                                         Margin="0,32,0,0">
+                    <VerticalStackLayout Spacing="56"
+                                         HorizontalOptions="Center">
                         
                         <!-- Classic 3x4 Keypad Grid -->
-                        <Grid ColumnDefinitions="100,100,100" 
-                              RowDefinitions="100,100,100,100" 
-                              ColumnSpacing="18" 
-                              RowSpacing="18"
+                        <Grid ColumnDefinitions="130,130,130"
+                              RowDefinitions="130,130,130,130"
+                              ColumnSpacing="28"
+                              RowSpacing="28"
                               HorizontalOptions="Center">
                             
                             <!-- Row 1: 1, 2, 3 -->
-                            <Border Grid.Row="0" Grid.Column="0" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="1" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="0" Grid.Column="1" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="2" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="0" Grid.Column="2" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="3" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
+                            <Button Grid.Row="0" Grid.Column="0"
+                                    Text="1"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="0" Grid.Column="1"
+                                    Text="2"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="0" Grid.Column="2"
+                                    Text="3"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
                             
                             <!-- Row 2: 4, 5, 6 -->
-                            <Border Grid.Row="1" Grid.Column="0" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="4" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="1" Grid.Column="1" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="5" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="1" Grid.Column="2" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="6" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
+                            <Button Grid.Row="1" Grid.Column="0"
+                                    Text="4"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="1" Grid.Column="1"
+                                    Text="5"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="1" Grid.Column="2"
+                                    Text="6"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
                             
                             <!-- Row 3: 7, 8, 9 -->
-                            <Border Grid.Row="2" Grid.Column="0" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="7" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="2" Grid.Column="1" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="8" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="2" Grid.Column="2" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="9" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
+                            <Button Grid.Row="2" Grid.Column="0"
+                                    Text="7"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="2" Grid.Column="1"
+                                    Text="8"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="2" Grid.Column="2"
+                                    Text="9"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
                             
                             <!-- Row 4: Clear, 0, X (Backspace) -->
-                            <Border Grid.Row="3" Grid.Column="0" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="Clear" Clicked="OnClearClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="18" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="3" Grid.Column="1" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="0" Clicked="OnKeyClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#1A1A1A"
-                                        FontSize="36" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
-                            <Border Grid.Row="3" Grid.Column="2" 
-                                    BackgroundColor="White"
-                                    Stroke="#2C2C2C"
-                                    StrokeThickness="3"
-                                    StrokeShape="RoundRectangle 50"
-                                    Shadow="{Shadow Brush=Black, Radius=8, Opacity=0.12, Offset='0,3'}">
-                                <Button Text="X" Clicked="OnBackspaceClicked" 
-                                        BackgroundColor="Transparent"
-                                        TextColor="#EF4444"
-                                        FontSize="32" FontAttributes="Bold"
-                                        WidthRequest="100" HeightRequest="100" />
-                            </Border>
+                            <Button Grid.Row="3" Grid.Column="0"
+                                    Text="Clear"
+                                    Clicked="OnClearClicked"
+                                    Style="{StaticResource PinActionButton}" />
+                            <Button Grid.Row="3" Grid.Column="1"
+                                    Text="0"
+                                    Clicked="OnKeyClicked"
+                                    Style="{StaticResource PinKeyButton}" />
+                            <Button Grid.Row="3" Grid.Column="2"
+                                    Text="X"
+                                    Clicked="OnBackspaceClicked"
+                                    Style="{StaticResource PinBackspaceButton}" />
                         </Grid>
                         
-                        <!-- Clock In/Out — full width (Sign In removed; PIN auto-logs in) -->
+                        <!-- Clock In/Out - full width (Sign In removed; PIN auto-logs in) -->
                         <Button x:Name="ClockInOutButton"
                                 Text="Clock In/Out"
                                 Clicked="OnClockInOutClicked"
                                 BackgroundColor="#6366F1"
                                 TextColor="White"
-                                FontSize="22"
-                                FontAttributes="Bold"
-                                WidthRequest="336"
-                                HeightRequest="60"
-                                CornerRadius="30"
-                                Margin="0,24,0,0"
-                                Shadow="{Shadow Brush=#6366F1, Radius=15, Opacity=0.35, Offset='0,5'}" />
+                                FontSize="30"
+                                FontAttributes="None"
+                                WidthRequest="448"
+                                HeightRequest="80"
+                                CornerRadius="40"
+                                Padding="0"
+                                Shadow="{Shadow Brush=#6366F1, Radius=16, Opacity=0.32, Offset='0,7'}" />
                         
                     </VerticalStackLayout>
                     
@@ -378,16 +322,16 @@
             <VerticalStackLayout HorizontalOptions="End" 
                                  VerticalOptions="Start"
                                  Spacing="4"
-                                 Margin="0,20,20,0">
+                                 Margin="0,40,44,0">
                 <Label x:Name="CurrentTimeLabel" 
-                       Text="12:29 PM" 
-                       FontSize="20"
+                       Text="12:29 pm"
+                       FontSize="28"
                        FontAttributes="Bold"
                        TextColor="{StaticResource Primary}"
                        HorizontalTextAlignment="End" />
                 <Label x:Name="CurrentDateLabel" 
                        Text="Wednesday, Oct 22, 2025" 
-                       FontSize="12"
+                       FontSize="16"
                        TextColor="{StaticResource TextSecondary}"
                        HorizontalTextAlignment="End" />
             </VerticalStackLayout>

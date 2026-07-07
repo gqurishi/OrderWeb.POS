@@ -186,48 +186,14 @@ namespace POS_in_NET.Pages
                 DateDisplayLabel.Text = _selectedDate.ToString("dd MMM yyyy");
                 System.Diagnostics.Debug.WriteLine($" Date picker initialized to: {_selectedDate:MMM dd, yyyy}");
                 
-                // Smart Auto-sync: Always sync from start of today to catch ALL orders
-                // This ensures we never miss orders that came when app was closed
+                // Smart Auto-sync: Always backfill the last 7 days so missed OrderWeb orders are saved locally.
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
-                var orderService = ServiceHelper.GetService<OrderService>();
-                if (cloudService != null && orderService != null)
+                if (cloudService != null)
                 {
                     try
                     {
-                        System.Diagnostics.Debug.WriteLine(" Smart Auto-sync: Syncing all orders from today...");
-                        
-                        // Get the latest order from database to check if we need historical sync
-                        var allOrders = await orderService.GetOrdersAsync();
-                        var latestOrder = allOrders
-                            .Where(IsWebOrder)
-                            .OrderByDescending(o => o.CreatedAt)
-                            .FirstOrDefault();
-                        
-                        DateTime syncFromDate;
-                        
-                        if (latestOrder != null && latestOrder.CreatedAt.Date >= DateTime.Today.AddDays(-1))
-                        {
-                            // Latest order is from today or yesterday - sync from start of today
-                            // This catches ALL orders including those that came when app was closed
-                            syncFromDate = DateTime.Today;
-                            System.Diagnostics.Debug.WriteLine($" Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
-                            System.Diagnostics.Debug.WriteLine($" Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (START OF TODAY)");
-                        }
-                        else if (latestOrder != null)
-                        {
-                            // Latest order is older - sync from 7 days ago to catch recent history
-                            syncFromDate = DateTime.Today.AddDays(-7);
-                            System.Diagnostics.Debug.WriteLine($" Last order: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
-                            System.Diagnostics.Debug.WriteLine($" Syncing from: {syncFromDate:yyyy-MM-dd HH:mm:ss} (LAST 7 DAYS)");
-                        }
-                        else
-                        {
-                            // No orders in database - sync last 60 days for initial setup
-                            syncFromDate = DateTime.Today.AddDays(-60);
-                            System.Diagnostics.Debug.WriteLine($" No orders in database, syncing last 60 days from {syncFromDate:yyyy-MM-dd}");
-                        }
-                        
-                        var syncResult = await cloudService.SyncOrdersByDateAsync(syncFromDate);
+                        System.Diagnostics.Debug.WriteLine(" Smart Auto-sync: Syncing last 7 days of OrderWeb orders...");
+                        var syncResult = await cloudService.SyncLastSevenDaysAsync();
                         System.Diagnostics.Debug.WriteLine($" Smart sync complete: {syncResult.Message}");
                         System.Diagnostics.Debug.WriteLine($" Found {syncResult.OrdersFound} orders from API");
                         
@@ -1032,12 +998,34 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async void OnTakePaymentClicked(object sender, EventArgs e)
+        {
+            if (sender is Button button && button.CommandParameter is Order order)
+            {
+                try
+                {
+                    await Navigation.PushAsync(new OrderPlacementPageSimple(order.OrderId), false);
+                }
+                catch (Exception ex)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Payment Error", $"Could not open payment screen: {ex.Message}");
+                }
+            }
+        }
+
         private async void OnMarkCompleteClicked(object sender, EventArgs e)
         {
             if (sender is Button button && button.CommandParameter is Order order)
             {
                 try
                 {
+                    if (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
+                        && order.LocalLifecycleState != LocalLifecycleState.Paid)
+                    {
+                        await Navigation.PushAsync(new OrderPlacementPageSimple(order.OrderId), false);
+                        return;
+                    }
+
                     bool confirm = await DisplayAlert("Complete Order", 
                         $"Mark order {order.OrderNumber} as completed?", "Yes", "No");
                     
@@ -1199,31 +1187,14 @@ namespace POS_in_NET.Pages
                 
                 // Get services
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
-                var orderService = ServiceHelper.GetService<OrderService>();
-                if (cloudService == null || orderService == null)
+                if (cloudService == null)
                 {
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Services not available");
                     return;
                 }
                 
-                // Smart sync: Get last order and sync from there
-                var allOrders = await orderService.GetOrdersAsync();
-                var latestOrder = allOrders
-                    .Where(IsWebOrder)
-                    .OrderByDescending(o => o.CreatedAt)
-                    .FirstOrDefault();
-                
-                DateTime syncFromDate = latestOrder != null 
-                    ? latestOrder.CreatedAt.AddHours(-1) 
-                    : DateTime.Today.AddDays(-60);
-                
-                System.Diagnostics.Debug.WriteLine($" Manual Sync: Syncing from {syncFromDate:yyyy-MM-dd HH:mm}");
-                if (latestOrder != null)
-                {
-                    System.Diagnostics.Debug.WriteLine($" Last order in database: {latestOrder.OrderNumber} at {latestOrder.CreatedAt:yyyy-MM-dd HH:mm}");
-                }
-                
-                var result = await cloudService.SyncOrdersByDateAsync(syncFromDate);
+                System.Diagnostics.Debug.WriteLine(" Manual Sync: Syncing last 7 days from OrderWeb.net");
+                var result = await cloudService.SyncLastSevenDaysAsync();
                 
                 System.Diagnostics.Debug.WriteLine($" Sync result: Success={result.Success}, OrdersFound={result.OrdersFound}, Message={result.Message}");
                 
@@ -1496,6 +1467,25 @@ namespace POS_in_NET.Pages
             public string? CustomerName => Order.CustomerName;
             public string? CustomerPhone => Order.CustomerPhone;
             public string? PaymentMethod => Order.PaymentMethod;
+            public string PaymentMethodDisplay
+            {
+                get
+                {
+                    var method = OnlineOrderPaymentHelper.GetDisplayMethod(Order.PaymentMethod);
+                    return CanTakePayment ? $"{method} Due" : method;
+                }
+            }
+            public Color PaymentMethodColor => OnlineOrderPaymentHelper.NormalizeMethod(Order.PaymentMethod) switch
+            {
+                "cash" => CanTakePayment ? Color.FromArgb("#B45309") : Color.FromArgb("#059669"),
+                "card" or "online" => Color.FromArgb("#2563EB"),
+                "gift_card" => Color.FromArgb("#7C3AED"),
+                _ => Color.FromArgb("#4B5563")
+            };
+            public bool CanTakePayment =>
+                Order.LocalLifecycleState != LocalLifecycleState.Paid &&
+                Order.LocalLifecycleState != LocalLifecycleState.Voided &&
+                OnlineOrderPaymentHelper.IsDeferredPaymentMethod(Order.PaymentMethod);
             public decimal TotalAmount => Order.TotalAmount;
             public string OrderTypeDisplay => string.IsNullOrWhiteSpace(Order.OrderType)
                 ? "Online"

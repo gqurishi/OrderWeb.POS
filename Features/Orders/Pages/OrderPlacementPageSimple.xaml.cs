@@ -57,6 +57,8 @@ namespace POS_in_NET.Pages
         private string? _pendingOrderId;
         private int? _tableSessionId;
         private string _persistentOrderNumber = string.Empty;
+        private string _orderSourceChannel = "local";
+        private string? _requestedPaymentMethod;
         private DateTime _lastSavedAt = DateTime.MinValue;
         private User? _currentUser;
 
@@ -1384,9 +1386,7 @@ namespace POS_in_NET.Pages
                 _currentOrder.Payments.Add(new TableOrderPayment
                 {
                     OrderId = _currentOrder.Id,
-                    Method = Enum.TryParse<PaymentMethodType>(payment.PaymentMethod, true, out var method)
-                        ? method
-                        : PaymentMethodType.Cash,
+                    Method = ParsePaymentMethodType(payment.PaymentMethod),
                     Amount = payment.Amount,
                     AmountReceived = payment.Amount,
                     Change = 0m,
@@ -1441,6 +1441,10 @@ namespace POS_in_NET.Pages
             }
 
             _persistentOrderNumber = loadedOrder.OrderNumber;
+            _orderSourceChannel = string.Equals(loadedOrder.SourceChannel, "web", StringComparison.OrdinalIgnoreCase) ? "web" : "local";
+            _requestedPaymentMethod = string.IsNullOrWhiteSpace(loadedOrder.PaymentMethod)
+                ? null
+                : loadedOrder.PaymentMethod.Trim();
             _lastSavedAt = loadedOrder.UpdatedAt == default ? DateTime.Now : loadedOrder.UpdatedAt;
             _hasShownConcurrencyConflict = false;
             ActiveTableOrderCacheService.Upsert(
@@ -1839,9 +1843,9 @@ namespace POS_in_NET.Pages
                 DeliveryFee = _currentOrder.ServiceCharge,
                 TaxAmount = _currentOrder.VAT,
                 OrderType = orderType,
-                SourceChannel = "local",
+                SourceChannel = _orderSourceChannel,
                 TableSessionId = _tableSessionId,
-                PaymentMethod = lifecycleState == LocalLifecycleState.Paid ? "paid" : null,
+                PaymentMethod = BuildPersistentPaymentMethod(lifecycleState),
                 SpecialInstructions = _currentOrder.Notes,
                 LocalLifecycleState = lifecycleState,
                 IsOpen = lifecycleState != LocalLifecycleState.Paid && lifecycleState != LocalLifecycleState.Voided,
@@ -1857,6 +1861,9 @@ namespace POS_in_NET.Pages
                     _ => OrderStatus.New
                 },
                 SyncStatus = POS_in_NET.Models.SyncStatus.Synced,
+                PaymentStatus = lifecycleState == LocalLifecycleState.Paid
+                    ? POS_in_NET.Models.PaymentStatus.Paid
+                    : POS_in_NET.Models.PaymentStatus.Pending,
                 CreatedAt = _currentOrder.CreatedAt == default ? now : _currentOrder.CreatedAt,
                 UpdatedAt = now,
                 ExpectedUpdatedAt = _lastSavedAt == default ? null : _lastSavedAt,
@@ -3356,7 +3363,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var printed = await PrintReceipt(_currentOrder.Total + _currentOrder.TipAmount, _currentOrder.TipAmount);
+            var printed = await PrintReceipt(_currentOrder.Total + _currentOrder.TipAmount, _currentOrder.TipAmount, isFinalPaymentReceipt: false);
             var printDialog = new ModernAlertDialog();
             if (printed)
             {
@@ -3668,6 +3675,7 @@ namespace POS_in_NET.Pages
                 if (paidThisAttempt > 0)
                 {
                     paidThisAttempt = Math.Min(paidThisAttempt, remainingBalance);
+                    AddReceiptPayment(paymentMethod, paidThisAttempt);
                     totalPaid += paidThisAttempt;
                     remainingBalance = Math.Max(0, remainingBalance - paidThisAttempt);
 
@@ -4099,6 +4107,78 @@ namespace POS_in_NET.Pages
             return await giftDialog.ShowAsync();
         }
 
+        private void AddReceiptPayment(PaymentMethod paymentMethod, decimal amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            var method = paymentMethod switch
+            {
+                PaymentMethod.Card => PaymentMethodType.Card,
+                PaymentMethod.GiftCard => PaymentMethodType.GiftCard,
+                PaymentMethod.Cash => PaymentMethodType.Cash,
+                _ => PaymentMethodType.Cash
+            };
+
+            _currentOrder.Payments.Add(new TableOrderPayment
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                OrderId = _currentOrder.Id,
+                Method = method,
+                Amount = amount,
+                CreatedAt = DateTime.Now,
+                StaffName = _currentUser?.Name ?? _currentUser?.Username ?? string.Empty
+            });
+        }
+
+        private static PaymentMethodType ParsePaymentMethodType(string? paymentMethod)
+        {
+            var normalized = (paymentMethod ?? string.Empty)
+                .Trim()
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty);
+
+            return normalized.ToLowerInvariant() switch
+            {
+                "card" => PaymentMethodType.Card,
+                "giftcard" => PaymentMethodType.GiftCard,
+                _ => PaymentMethodType.Cash
+            };
+        }
+
+        private string? BuildPersistentPaymentMethod(LocalLifecycleState lifecycleState)
+        {
+            if (lifecycleState != LocalLifecycleState.Paid)
+            {
+                return string.IsNullOrWhiteSpace(_requestedPaymentMethod)
+                    ? null
+                    : OnlineOrderPaymentHelper.GetStorageMethod(_requestedPaymentMethod);
+            }
+
+            var methods = _currentOrder.Payments
+                .Where(payment => payment.Amount > 0)
+                .Select(payment => payment.Method switch
+                {
+                    PaymentMethodType.Card => "card",
+                    PaymentMethodType.GiftCard => "gift_card",
+                    _ => "cash"
+                })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return methods.Count switch
+            {
+                0 => string.IsNullOrWhiteSpace(_requestedPaymentMethod)
+                    ? null
+                    : OnlineOrderPaymentHelper.GetStorageMethod(_requestedPaymentMethod),
+                1 => methods[0],
+                _ => "split"
+            };
+        }
+
         private string BuildPaymentTransactionId(string method, decimal amount, decimal alreadyPaid, string? splitTitle = null)
         {
             var orderReference = GetReceiptOrderReference();
@@ -4146,7 +4226,7 @@ namespace POS_in_NET.Pages
             );
             
             // Print receipt (always attempt, but do not block payment completion).
-            var receiptPrinted = await PrintReceipt(totalAmount, tip);
+            var receiptPrinted = await PrintReceipt(totalAmount, tip, isFinalPaymentReceipt: true);
             if (!receiptPrinted)
             {
                 var receiptFailedDialog = new ModernAlertDialog();
@@ -4338,7 +4418,7 @@ namespace POS_in_NET.Pages
             return "Table";
         }
 
-        private async Task<bool> PrintReceipt(decimal total, decimal tip)
+        private async Task<bool> PrintReceipt(decimal total, decimal tip, bool isFinalPaymentReceipt = false)
         {
             using var idleGuard = _inactivityService.BeginCriticalActivity();
 
@@ -4358,7 +4438,7 @@ namespace POS_in_NET.Pages
                 }
 
                 var printerService = ServiceHelper.GetService<NetworkPrinterService>() ?? new NetworkPrinterService();
-                var receiptData = BuildLocalReceiptData(receiptPrinter, total, tip);
+                var receiptData = await BuildLocalReceiptDataAsync(receiptPrinter, total, tip, isFinalPaymentReceipt);
                 var sent = await printerService.SendToPrinterAsync(receiptPrinter, receiptData);
 
                 await LogOperationalEventAsync(sent ? "receipt_printed" : "receipt_print_failed", new
@@ -4405,6 +4485,42 @@ namespace POS_in_NET.Pages
             }
 
             return null;
+        }
+
+        private async Task<byte[]> BuildLocalReceiptDataAsync(NetworkPrinter printer, decimal total, decimal tip, bool isFinalPaymentReceipt)
+        {
+            var businessService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+            var businessInfo = await businessService.GetBusinessInfoAsync();
+
+            if (_isCollectionOrder || _isDeliveryOrder)
+            {
+                var receiptKind = _isDeliveryOrder ? CustomerReceiptKind.Delivery : CustomerReceiptKind.Collection;
+                return await CollectionReceiptTemplateService.BuildLocalReceiptAsync(
+                    _currentOrder,
+                    businessInfo,
+                    printer,
+                    receiptKind,
+                    GetReceiptOrderReference(),
+                    _isDeliveryOrder ? _deliveryCustomerName : _collectionCustomerName,
+                    _isDeliveryOrder ? _deliveryCustomerPhone : _collectionCustomerPhone,
+                    _isDeliveryOrder ? _deliveryCustomerAddress : null,
+                    _isDeliveryOrder ? _currentOrder.Notes : null,
+                    total,
+                    tip);
+            }
+
+            return await CollectionReceiptTemplateService.BuildLocalReceiptAsync(
+                _currentOrder,
+                businessInfo,
+                printer,
+                isFinalPaymentReceipt ? CustomerReceiptKind.TablePayment : CustomerReceiptKind.TableBill,
+                GetReceiptOrderReference(),
+                string.Empty,
+                string.Empty,
+                null,
+                null,
+                total,
+                tip);
         }
 
         private byte[] BuildLocalReceiptData(NetworkPrinter printer, decimal total, decimal tip)

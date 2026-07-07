@@ -554,12 +554,11 @@ public partial class CloudSettingsPage : ContentPage
             }
             
             SyncOrdersButton.IsEnabled = false;
-            SyncOrdersButton.Text = "⏳ Syncing last 7 days...";
+            SyncOrdersButton.Text = "Syncing last 7 days...";
             
             System.Diagnostics.Debug.WriteLine(" Quick sync: Fetching last 7 days of orders...");
             
-            var sevenDaysAgo = DateTime.Today.AddDays(-7);
-            var syncResult = await _cloudOrderService.SyncOrdersByDateAsync(sevenDaysAgo);
+            var syncResult = await _cloudOrderService.SyncLastSevenDaysAsync();
             var totalOrders = syncResult.OrdersFound;
             
             System.Diagnostics.Debug.WriteLine($" Quick sync complete: {syncResult.Message}");
@@ -658,7 +657,7 @@ public partial class CloudSettingsPage : ContentPage
                 throw new InvalidOperationException("OrderWeb connection keeper is not available.");
             }
 
-            await keeper.ApplyConfigurationAsync(config);
+            await keeper.ApplyConfigurationAsync(config, forceBackfill: true);
 
             if (keeper.Status.IsFullyOperational || keeper.Status.IsApiHealthy)
             {

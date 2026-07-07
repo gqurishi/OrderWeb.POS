@@ -790,6 +790,11 @@ public partial class PrinterSetupPage : ContentPage
         }
     }
 
+    private async void OnPrintDesignClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushAsync(new PrintTemplatesPage());
+    }
+
     private async Task OnTestPrinterClicked(NetworkPrinter printer)
     {
         if (_printerService == null) return;

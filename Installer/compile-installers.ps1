@@ -1,9 +1,10 @@
-# Compile all OrderWeb POS Inno Setup scripts.
+# Compile OrderWeb POS Inno Setup script.
 # Requires Inno Setup 6+ (ISCC.exe on PATH or at default install location).
 
 param(
     [string]$Configuration = "Release",
-    [string]$InnoSetupCompiler = ""
+    [string]$InnoSetupCompiler = "",
+    [switch]$IncludeLegacyInstallers
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +13,8 @@ $installerDir = $PSScriptRoot
 if (-not $InnoSetupCompiler) {
     $candidates = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+        "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
     )
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) {
@@ -32,11 +34,17 @@ if (-not (Test-Path $publishExe)) {
 }
 
 $scripts = @(
+    "OrderWebPOS-Setup.iss"
+)
+
+if ($IncludeLegacyInstallers) {
+    $scripts += @(
     "OrderWebPOS-Mother.iss",
     "OrderWebPOS-Child.iss",
     "OrderWebPOS-Update-Mother.iss",
     "OrderWebPOS-Update-Child.iss"
-)
+    )
+}
 
 foreach ($script in $scripts) {
     Write-Host "Compiling $script..."
@@ -46,4 +54,4 @@ foreach ($script in $scripts) {
 }
 
 Write-Host ""
-Write-Host "Installers written to Installer\Output\"
+Write-Host "Installer written to Installer\Output\"

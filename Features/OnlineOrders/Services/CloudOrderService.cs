@@ -8,6 +8,10 @@ namespace POS_in_NET.Services;
 
 public class CloudOrderService
 {
+    private const int DefaultOrderSyncLimit = 100;
+    private const int BackfillOrderSyncLimit = 500;
+    private const int BackfillDays = 7;
+
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
     private readonly OrderService _orderService;
@@ -145,9 +149,8 @@ public class CloudOrderService
         
         try
         {
-            // Use SyncTodaysOrdersAsync instead of PollForOrdersAsync
-            // This fetches ALL orders from today, not just new ones
-            var syncResult = await SyncTodaysOrdersAsync();
+            // Manual sync should backfill recent OrderWeb history, not just new live orders.
+            var syncResult = await SyncLastSevenDaysAsync();
             
             if (!syncResult.Success)
             {
@@ -211,7 +214,7 @@ public class CloudOrderService
                 return;
             }
 
-            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 100);
+            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: DefaultOrderSyncLimit, status: "confirmed");
             
             System.Diagnostics.Debug.WriteLine($" Backup polling check: {endpoint}");
             System.Diagnostics.Debug.WriteLine($"    Restaurant: {tenantSlug}");
@@ -494,10 +497,10 @@ public class CloudOrderService
             var method = cloudOrder.PaymentMethod.ToLower().Trim();
             
             // If it's already a specific method, use it
-            if (method == "voucher" || method == "cash" || method == "card")
+            if (method == "voucher" || method == "cash" || method == "card" || method == "gift_card")
             {
                 System.Diagnostics.Debug.WriteLine($" Using PaymentMethod: '{method}'");
-                return method;
+                return OnlineOrderPaymentHelper.GetStorageMethod(method);
             }
             
             // If it's generic "online" or "online_payment", we need to be smarter
@@ -517,13 +520,13 @@ public class CloudOrderService
                     }
                 }
                 
-                // Default for online payments
-                System.Diagnostics.Debug.WriteLine($" DEFAULTING to: cash (couldn't determine specific method)");
-                return "cash";
+                // Default for online payments when OrderWeb does not expose the card processor name.
+                System.Diagnostics.Debug.WriteLine($" DEFAULTING to: online payment (specific provider not supplied)");
+                return "online";
             }
             
             System.Diagnostics.Debug.WriteLine($" Using PaymentMethod as-is: '{method}'");
-            return method;
+            return OnlineOrderPaymentHelper.GetStorageMethod(method);
         }
         
         // Priority 3: Default fallback
@@ -565,7 +568,7 @@ public class CloudOrderService
             OrderType = cloudOrder.OrderType,
             SourceChannel = "web",
             
-            // PAYMENT METHOD - Smart detection with multiple fallbacks
+            // PAYMENT METHOD - requested method on arrival; actual method replaces it when POS payment closes.
             PaymentMethod = DeterminePaymentMethod(cloudOrder),
             
             ScheduledTime = cloudOrder.ScheduledTime,
@@ -573,10 +576,13 @@ public class CloudOrderService
             
             // Status and timing
             Status = OrderStatus.New,
+            LocalLifecycleState = LocalLifecycleState.Active,
+            IsOpen = true,
             SyncStatus = Models.SyncStatus.Synced, // Already synced from cloud
             CreatedAt = cloudOrder.CreatedAt,
             UpdatedAt = DateTime.Now,
             KitchenTime = DateTime.Now, // Send to kitchen immediately
+            PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus),
             
             // Initialize items list
             Items = new List<Models.OrderItem>()
@@ -735,7 +741,11 @@ public class CloudOrderService
             Tax = order.TaxAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
             OrderType = order.OrderType,
             PaymentMethod = order.PaymentMethod,
-            PaymentStatus = order.PaymentStatus.ToString().ToLowerInvariant(),
+            PaymentStatus = order.LocalLifecycleState == LocalLifecycleState.Paid
+                || order.PaidAt.HasValue
+                || !OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
+                    ? "paid"
+                    : "pending",
             SpecialInstructions = order.SpecialInstructions,
             ScheduledTime = order.ScheduledTime,
             CreatedAt = order.CreatedAt,
@@ -816,7 +826,7 @@ public class CloudOrderService
             if (string.IsNullOrWhiteSpace(cloudUrl) || string.IsNullOrWhiteSpace(tenantSlug) || string.IsNullOrWhiteSpace(apiKey))
                 return (false, "Missing required parameters");
 
-            var endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 1);
+            var endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 1, status: "confirmed");
             
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             client.DefaultRequestHeaders.Clear();
@@ -898,10 +908,20 @@ public class CloudOrderService
         return baseUrl.TrimEnd('/');
     }
 
-    private static string BuildPullOrdersEndpoint(string? apiBaseUrl, string tenantSlug, int limit = 100, string? since = null)
+    private static string BuildPullOrdersEndpoint(
+        string? apiBaseUrl,
+        string tenantSlug,
+        int limit = DefaultOrderSyncLimit,
+        string? since = null,
+        string? status = null)
     {
         var baseUrl = NormalizeApiBaseUrl(apiBaseUrl, tenantSlug);
-        var endpoint = $"{baseUrl}/pos/pull-orders?tenant={Uri.EscapeDataString(tenantSlug)}&status=confirmed&limit={limit}";
+        var endpoint = $"{baseUrl}/pos/pull-orders?tenant={Uri.EscapeDataString(tenantSlug)}&limit={limit}";
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            endpoint += $"&status={Uri.EscapeDataString(status)}";
+        }
+
         if (!string.IsNullOrWhiteSpace(since))
         {
             endpoint += $"&since={Uri.EscapeDataString(since)}";
@@ -918,13 +938,30 @@ public class CloudOrderService
     {
         return await SyncOrdersByDateAsync(DateTime.Today);
     }
+
+    /// <summary>
+    /// Backfill recent OrderWeb orders whenever the API connection is established or manually synced.
+    /// Starts at local midnight seven days ago so no early-day orders are missed.
+    /// </summary>
+    public async Task<(bool Success, int OrdersFound, string Message)> SyncLastSevenDaysAsync()
+    {
+        var backfillStart = DateTime.Today.AddDays(-BackfillDays);
+        return await SyncOrdersByDateAsync(
+            backfillStart,
+            BackfillOrderSyncLimit,
+            $"last {BackfillDays} days");
+    }
     
     /// <summary>
     /// Sync orders from a specific date
     /// </summary>
-    public async Task<(bool Success, int OrdersFound, string Message)> SyncOrdersByDateAsync(DateTime targetDate)
+    public async Task<(bool Success, int OrdersFound, string Message)> SyncOrdersByDateAsync(
+        DateTime targetDate,
+        int limit = DefaultOrderSyncLimit,
+        string? rangeLabel = null)
     {
-        System.Diagnostics.Debug.WriteLine($" SYNC: Fetching all orders from {targetDate:yyyy-MM-dd}...");
+        var syncRange = rangeLabel ?? targetDate.ToString("yyyy-MM-dd");
+        System.Diagnostics.Debug.WriteLine($" SYNC: Fetching all orders from {syncRange}...");
         
         try
         {
@@ -953,14 +990,14 @@ public class CloudOrderService
             // Format: ISO 8601 (YYYY-MM-DDTHH:MM:SSZ) for API compatibility
             var targetDateUtc = targetDate.Kind == DateTimeKind.Utc ? targetDate : targetDate.ToUniversalTime();
             string sinceParam = targetDateUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 100, since: sinceParam);
+            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, since: sinceParam);
             
             System.Diagnostics.Debug.WriteLine("========================================");
             System.Diagnostics.Debug.WriteLine($" SYNCING ORDERS SINCE: {sinceParam}");
             System.Diagnostics.Debug.WriteLine($" Endpoint: {endpoint}");
             System.Diagnostics.Debug.WriteLine($" Restaurant: {tenantSlug}");
             System.Diagnostics.Debug.WriteLine($" API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
-            System.Diagnostics.Debug.WriteLine($"⏰ Pulling CONFIRMED orders from {targetDate:MMM dd, yyyy} onwards (max 60 days)");
+            System.Diagnostics.Debug.WriteLine($" Pulling OrderWeb orders from {syncRange} onwards (limit {limit})");
             System.Diagnostics.Debug.WriteLine("========================================");
             
             // CRITICAL: Clear ALL headers first to avoid "multiple values" error
@@ -1013,7 +1050,7 @@ public class CloudOrderService
                 
                 if (apiResponse?.Success == true && ordersToProcess.Any())
                 {
-                    System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from {targetDate:yyyy-MM-dd}");
+                    System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from {syncRange}");
                     
                     // Process all orders (will skip duplicates automatically)
                     int newOrdersCount = await ProcessNewOrdersAsync(ordersToProcess);
@@ -1023,12 +1060,12 @@ public class CloudOrderService
                     // Trigger UI refresh
                     OnOrdersUpdated?.Invoke();
                     
-                    return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {targetDate:MMM dd, yyyy} ({newOrdersCount} new)");
+                    return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {syncRange} ({newOrdersCount} new)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($" No orders found for {targetDate:yyyy-MM-dd}");
-                    return (true, 0, $"No orders found for {targetDate:MMM dd, yyyy}");
+                    System.Diagnostics.Debug.WriteLine($" No orders found for {syncRange}");
+                    return (true, 0, $"No orders found for {syncRange}");
                 }
             }
             else
@@ -1650,12 +1687,14 @@ public class CloudOrderService
             
             OrderType = dto.OrderType ?? "online",
             SourceChannel = "web",
-            PaymentMethod = dto.Payment?.Method ?? "card",
-            PaymentStatus = dto.Payment?.Status?.ToLower() == "paid" ? PaymentStatus.Paid : PaymentStatus.Pending,
+            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(dto.Payment?.Method ?? "card"),
+            PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(dto.Payment?.Method, dto.Payment?.Status),
             SpecialInstructions = dto.SpecialInstructions,
             ScheduledTime = DateTime.TryParse(dto.ScheduledFor, out var scheduledTime) ? scheduledTime : null,
             
             Status = OrderStatus.New,
+            LocalLifecycleState = LocalLifecycleState.Active,
+            IsOpen = true,
             SyncStatus = Models.SyncStatus.Synced,
             KitchenTime = DateTime.Now,
             

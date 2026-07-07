@@ -61,12 +61,7 @@ end;
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  if not FileExists(ExpandConstant('{src}\{#PublishRoot}\{#MyAppExeName}')) then
-  begin
-    MsgBox('Build inputs are missing. Run Installer\build-installer-inputs.ps1 first.', mbError, MB_OK);
-    Result := False;
-  end
-  else if not ConfigExists() then
+  if not ConfigExists() then
   begin
     MsgBox(
       'This update installer expects an existing mother installation.' + #13#10 +

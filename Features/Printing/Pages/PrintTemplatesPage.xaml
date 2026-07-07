@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:POS_in_NET.Views"
+             x:Class="POS_in_NET.Pages.PrintTemplatesPage"
+             BackgroundColor="#F1F5F9"
+             Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,*">
+        <views:TopBar x:Name="TopBar" Grid.Row="0"/>
+
+        <Grid Grid.Row="1"
+              Padding="32"
+              ColumnDefinitions="*,420"
+              ColumnSpacing="28">
+
+            <VerticalStackLayout Grid.Column="0" Spacing="18">
+                <Grid ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout Spacing="4">
+                        <Label x:Name="PageHeadingLabel"
+                               Text="Kitchen Template"
+                               FontSize="30"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"/>
+                        <Label x:Name="PageSubheadingLabel"
+                               Text="80mm kitchen ticket preview"
+                               FontSize="15"
+                               TextColor="#64748B"/>
+                    </VerticalStackLayout>
+
+                    <Button Grid.Column="1"
+                            Text="Back"
+                            BackgroundColor="#E2E8F0"
+                            TextColor="#334155"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnBackClicked"/>
+                </Grid>
+
+                <HorizontalStackLayout Spacing="10">
+                    <Button x:Name="KitchenTemplateButton"
+                            Text="Kitchen Ticket"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnKitchenTemplateClicked"/>
+                    <Button x:Name="CollectionReceiptTemplateButton"
+                            Text="Collection Receipt"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnCollectionReceiptTemplateClicked"/>
+                    <Button x:Name="DeliveryReceiptTemplateButton"
+                            Text="Delivery Receipt"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnDeliveryReceiptTemplateClicked"/>
+                    <Button x:Name="TableBillTemplateButton"
+                            Text="Table Bill"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnTableBillTemplateClicked"/>
+                    <Button x:Name="TablePaymentTemplateButton"
+                            Text="Table Payment"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnTablePaymentTemplateClicked"/>
+                </HorizontalStackLayout>
+
+                <HorizontalStackLayout x:Name="KitchenPreviewModes" Spacing="10">
+                    <Button x:Name="TablePreviewButton"
+                            Text="Table"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnTablePreviewClicked"/>
+                    <Button x:Name="CollectionPreviewButton"
+                            Text="Collection"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnCollectionPreviewClicked"/>
+                    <Button x:Name="DeliveryPreviewButton"
+                            Text="Delivery"
+                            CornerRadius="8"
+                            Padding="18,10"
+                            FontAttributes="Bold"
+                            Clicked="OnDeliveryPreviewClicked"/>
+                </HorizontalStackLayout>
+
+                <Border BackgroundColor="#E2E8F0"
+                        Padding="24"
+                        StrokeThickness="0"
+                        HorizontalOptions="Start">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+
+                    <Border BackgroundColor="White"
+                            Stroke="#CBD5E1"
+                            StrokeThickness="1"
+                            Padding="20"
+                            WidthRequest="420"
+                            HorizontalOptions="Start">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="4"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="#22000000" Offset="0,4" Radius="16" Opacity="0.18"/>
+                        </Border.Shadow>
+
+                        <ScrollView Orientation="Both"
+                                    HeightRequest="620"
+                                    HorizontalScrollBarVisibility="Always"
+                                    VerticalScrollBarVisibility="Always">
+                            <Label x:Name="PreviewTextLabel"
+                                   FontFamily="Consolas"
+                                   FontSize="14"
+                                   LineBreakMode="NoWrap"
+                                   TextColor="#111827"/>
+                        </ScrollView>
+                    </Border>
+                </Border>
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Grid.Column="1" Spacing="16">
+                <Border BackgroundColor="White" Padding="22" StrokeThickness="0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="14">
+                        <Label x:Name="PreviewTitleLabel"
+                               Text="Table kitchen ticket"
+                               FontSize="22"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"/>
+                        <Label Text="Paper"
+                               FontSize="12"
+                               FontAttributes="Bold"
+                               TextColor="#64748B"
+                               CharacterSpacing="1"/>
+                        <Label Text="80mm fixed"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="White" Padding="22" StrokeThickness="0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="12">
+                        <Label x:Name="RulesTitleLabel"
+                               Text="Kitchen Rules"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"/>
+                        <Label x:Name="RuleOneLabel"
+                               Text="Table orders cut after each section ticket."
+                               FontSize="15"
+                               TextColor="#334155"/>
+                        <Label x:Name="RuleTwoLabel"
+                               Text="Collection and delivery print on one ticket."
+                               FontSize="15"
+                               TextColor="#334155"/>
+                        <Label x:Name="RuleThreeLabel"
+                               Text="No money, VAT, payment, or customer contact details."
+                               FontSize="15"
+                               TextColor="#334155"/>
+                        <Label x:Name="RuleFourLabel"
+                               Text="Every ticket keeps order number, date, time, items, checked-by line, and footer."
+                               FontSize="15"
+                               TextColor="#334155"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="#EFF6FF" Padding="22" Stroke="#BFDBFE" StrokeThickness="1">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Next"
+                               FontSize="12"
+                               FontAttributes="Bold"
+                               TextColor="#1D4ED8"
+                               CharacterSpacing="1"/>
+                        <Label x:Name="NextStepLabel"
+                               Text="Customer receipt templates will be added after the kitchen ticket is approved."
+                               FontSize="15"
+                               TextColor="#1E3A8A"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

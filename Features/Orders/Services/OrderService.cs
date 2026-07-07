@@ -648,12 +648,22 @@ public class OrderService
             await EnsureLifecycleSchemaAsync(connection);
             
             // Get the current order to update status timestamps
-            const string selectSql = "SELECT status FROM orders WHERE id = @id";
+            const string selectSql = "SELECT status, payment_method, local_lifecycle_state FROM orders WHERE id = @id";
             using var selectCommand = new MySqlCommand(selectSql, connection);
             selectCommand.Parameters.AddWithValue("@id", orderId);
             
-            var currentStatusObj = await selectCommand.ExecuteScalarAsync();
-            if (currentStatusObj == null) return false;
+            string? currentPaymentMethod = null;
+            string? currentLifecycleText = null;
+            using (var reader = (MySqlDataReader)await selectCommand.ExecuteReaderAsync())
+            {
+                if (!await reader.ReadAsync())
+                {
+                    return false;
+                }
+
+                currentPaymentMethod = reader["payment_method"]?.ToString();
+                currentLifecycleText = reader["local_lifecycle_state"]?.ToString();
+            }
             
             // Determine which timestamp column to update based on new status
             var timestampColumn = newStatus switch
@@ -666,14 +676,24 @@ public class OrderService
                 _ => null
             };
             // Update the status and appropriate timestamp
-            var currentLifecycleSql = "SELECT local_lifecycle_state FROM orders WHERE id = @id";
-            using var lifecycleCommand = new MySqlCommand(currentLifecycleSql, connection);
-            lifecycleCommand.Parameters.AddWithValue("@id", orderId);
-
-            var currentLifecycleValue = await lifecycleCommand.ExecuteScalarAsync();
-            if (currentLifecycleValue != null && IsTerminalLifecycleState(ParseLocalLifecycleState(currentLifecycleValue.ToString())))
+            if (!string.IsNullOrWhiteSpace(currentLifecycleText) && IsTerminalLifecycleState(ParseLocalLifecycleState(currentLifecycleText)))
             {
                 return false;
+            }
+
+            if (newStatus == OrderStatus.Completed && OnlineOrderPaymentHelper.IsDeferredPaymentMethod(currentPaymentMethod))
+            {
+                const string approvedPaymentSql = @"
+                    SELECT COUNT(*)
+                    FROM order_payments
+                    WHERE order_id = @id AND status = 'approved' AND amount > 0";
+                using var approvedPaymentCommand = new MySqlCommand(approvedPaymentSql, connection);
+                approvedPaymentCommand.Parameters.AddWithValue("@id", orderId);
+                var approvedPaymentCount = Convert.ToInt32(await approvedPaymentCommand.ExecuteScalarAsync());
+                if (approvedPaymentCount == 0)
+                {
+                    return false;
+                }
             }
 
             var updateSql = timestampColumn != null 

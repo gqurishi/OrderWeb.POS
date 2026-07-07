@@ -45,7 +45,7 @@ public partial class LoginPage : ContentPage
     private void UpdateTimeDisplay()
     {
         var now = DateTime.Now;
-        CurrentTimeLabel.Text = now.ToString("h:mm tt");
+        CurrentTimeLabel.Text = now.ToString("h:mm tt").ToLowerInvariant();
         CurrentDateLabel.Text = now.ToString("dddd, MMM d, yyyy");
     }
 

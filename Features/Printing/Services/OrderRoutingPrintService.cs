@@ -269,7 +269,12 @@ public sealed class OrderRoutingPrintService
             return result;
         }
 
-        var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType);
+        var activeGroups = await _printGroupService.GetActivePrintGroupsAsync();
+        var printGroupNames = activeGroups
+            .GroupBy(group => group.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+
+        var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType, printGroupNames);
         var sent = await _printerService.SendRawDataAsync(takeawayPrinter.IpAddress, takeawayPrinter.Port, ticketData);
 
         if (sent)
@@ -664,6 +669,11 @@ public sealed class OrderRoutingPrintService
     private byte[] BuildTicket(TableOrder order, PrintGroup group, List<TableOrderItem> items)
     {
         var printerType = string.IsNullOrWhiteSpace(group.PrinterType) ? "kitchen" : group.PrinterType.Trim().ToLowerInvariant();
+        if (printerType == "kitchen")
+        {
+            return KitchenTicketTemplateService.BuildTableSectionTickets(order, group, items);
+        }
+
         var headerText = printerType switch
         {
             "bar" => "BAR",
@@ -714,6 +724,7 @@ public sealed class OrderRoutingPrintService
 
         builder.PrintLine(new string('=', lineWidth))
                .SetAlign(TextAlign.Center)
+               
                .PrintLine($"{group.Name} • {headerText}")
                .FeedLines(2);
 
@@ -725,79 +736,15 @@ public sealed class OrderRoutingPrintService
         return builder.Build();
     }
 
-    private byte[] BuildTakeawayTicket(TableOrder order, NetworkPrinter printer, List<TableOrderItem> items, string orderType)
+    private byte[] BuildTakeawayTicket(
+        TableOrder order,
+        NetworkPrinter printer,
+        List<TableOrderItem> items,
+        string orderType,
+        IReadOnlyDictionary<string, string> printGroupNames)
     {
-        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
-        var lineWidth = printer.PaperWidth == PaperWidth.Mm80 ? 48 : 32;
-        var orderReference = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber;
-        var typeLabel = NormalizeTakeawayOrderType(orderType);
+        return KitchenTicketTemplateService.BuildTakeawayKitchenTicket(order, printer, items, orderType, printGroupNames);
 
-        builder.Initialize();
-
-        if (printer.HasBuzzer)
-        {
-            builder.Buzzer();
-        }
-
-        builder.SetAlign(TextAlign.Center)
-               .SetFontSize(2, 2)
-               .SetBold(true)
-               .PrintLine("TAKEAWAY")
-               .SetNormalSize()
-               .SetBold(false)
-               .SetFontSize(2, 1)
-               .SetBold(true)
-               .PrintLine($"[ {typeLabel} ]")
-               .SetNormalSize()
-               .SetBold(false)
-               .PrintLine($"Order #{orderReference}")
-               .PrintLine(DateTime.Now.ToString("dd/MM/yyyy HH:mm"))
-               .PrintLine(new string('=', lineWidth))
-               .SetAlign(TextAlign.Left);
-
-        foreach (var item in items)
-        {
-            builder.SetFontSize(2, 1)
-                   .SetBold(true)
-                   .PrintLine($"{item.Quantity}x {item.DisplayName}")
-                   .SetNormalSize()
-                   .SetBold(false);
-
-            foreach (var addon in item.SelectedAddons)
-            {
-                builder.PrintLine($"   + {addon.Name}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(item.Notes))
-            {
-                builder.SetBold(true)
-                       .PrintLine($"   >> {item.Notes}")
-                       .SetBold(false);
-            }
-
-            builder.FeedLines(1);
-        }
-
-        if (!string.IsNullOrWhiteSpace(order.Notes))
-        {
-            builder.PrintLine(new string('-', lineWidth))
-                   .SetBold(true)
-                   .PrintLine("ORDER NOTES:")
-                   .SetBold(false)
-                   .PrintLine(order.Notes);
-        }
-
-        builder.PrintLine(new string('=', lineWidth))
-               .SetAlign(TextAlign.Center)
-               .PrintLine($"{typeLabel} • TAKEAWAY KITCHEN")
-               .FeedLines(2);
-
-        if (printer.HasCutter)
-        {
-            builder.Cut(true);
-        }
-
-        return builder.Build();
     }
 
     private static string NormalizeTakeawayOrderType(string orderType)
