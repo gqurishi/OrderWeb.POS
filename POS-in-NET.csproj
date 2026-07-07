@@ -83,14 +83,14 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.9" />
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'" />
 		<!-- Use MySqlConnector instead of MySql.Data for better cross-platform support -->
-		<PackageReference Include="MySqlConnector" Version="2.3.7" />
+		<PackageReference Include="MySqlConnector" Version="2.6.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 		<!-- ASP.NET Core for webhook server -->
 		
 		<!-- .NET MAUI Community Toolkit - Enhanced controls and behaviors -->
-		<PackageReference Include="CommunityToolkit.Maui" Version="7.0.1" />
-		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+		<PackageReference Include="CommunityToolkit.Maui" Version="14.2.0" />
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		
 		<!-- Syncfusion .NET MAUI UI Controls (Essential Studio® UI Edition Binary License v33.x) -->
 		<PackageReference Include="Syncfusion.Maui.Core" Version="33.2.15" />
