@@ -55,6 +55,7 @@ FROM (
     SELECT 'pending_acks' UNION ALL
     SELECT 'heartbeat_log' UNION ALL
     SELECT 'order_received_log' UNION ALL
+    SELECT 'orderweb_order_settlements' UNION ALL
     SELECT 'online_order_print_tracking' UNION ALL
     SELECT 'cloud_reservations' UNION ALL
     SELECT 'reservation_sync_state' UNION ALL

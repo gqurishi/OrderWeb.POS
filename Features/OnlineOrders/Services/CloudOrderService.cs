@@ -11,6 +11,7 @@ public class CloudOrderService
     private const int DefaultOrderSyncLimit = 100;
     private const int BackfillOrderSyncLimit = 500;
     private const int BackfillDays = 7;
+    private const string OrderSettlementOperationType = "order_settlement";
 
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
@@ -1295,6 +1296,389 @@ public class CloudOrderService
         {
             System.Diagnostics.Debug.WriteLine($" Failed to log order received: {ex.Message}");
         }
+    }
+
+    public async Task<bool> SendOrderSettlementAsync(
+        Order order,
+        string status = "completed",
+        string? staffId = null,
+        string? staffName = null,
+        string? notes = null)
+    {
+        if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var orderWebOrderId = ResolveOrderWebOrderId(order);
+        if (string.IsNullOrWhiteSpace(orderWebOrderId))
+        {
+            System.Diagnostics.Debug.WriteLine(" Cannot send settlement: missing OrderWeb order id");
+            return false;
+        }
+
+        var normalizedStatus = NormalizeSettlementStatus(status);
+        var paymentMethod = normalizedStatus == "completed"
+            ? NormalizeSettlementPaymentMethod(order.PaymentMethod)
+            : null;
+        var deviceId = await GetDeviceIdAsync();
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-settlement", orderWebOrderId, normalizedStatus);
+
+        if (await HasSettlementBeenRecordedAsync(orderWebOrderId, idempotencyKey))
+        {
+            System.Diagnostics.Debug.WriteLine($" Settlement already recorded for OrderWeb order {orderWebOrderId}");
+            return true;
+        }
+
+        var config = await _orderWebApiClient.GetConfigAsync();
+        if (config == null)
+        {
+            System.Diagnostics.Debug.WriteLine(" Cannot send settlement: No OrderWeb configuration");
+            return false;
+        }
+
+        var paidAt = ToUtc(order.PaidAt ?? order.CompletedTime ?? DateTime.Now);
+        var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/settle");
+        var payload = BuildSettlementPayload(
+            config.TenantSlug,
+            order,
+            orderWebOrderId,
+            normalizedStatus,
+            paymentMethod,
+            paidAt,
+            deviceId,
+            idempotencyKey,
+            staffId,
+            staffName,
+            notes);
+
+        try
+        {
+            var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
+            if (!roleCheck.Allowed)
+            {
+                System.Diagnostics.Debug.WriteLine($" Settlement queued: {roleCheck.Reason}");
+                return await QueueOrderSettlementAsync(
+                    order,
+                    orderWebOrderId,
+                    normalizedStatus,
+                    paymentMethod,
+                    paidAt,
+                    deviceId,
+                    idempotencyKey,
+                    payload,
+                    config,
+                    url,
+                    roleCheck.Reason);
+            }
+
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json")
+            };
+
+            _orderWebApiClient.ApplyAuthHeaders(request, config.ApiKey, idempotencyKey);
+
+            System.Diagnostics.Debug.WriteLine($" Sending settlement for OrderWeb order {orderWebOrderId}: {normalizedStatus}/{paymentMethod ?? "none"}");
+
+            var response = await _httpClient.SendAsync(request);
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                await RecordOrderSettlementAsync(
+                    order,
+                    orderWebOrderId,
+                    normalizedStatus,
+                    paymentMethod,
+                    paidAt,
+                    deviceId,
+                    idempotencyKey,
+                    sentToCloud: true,
+                    queuedForRetry: false,
+                    responseStatus: (int)response.StatusCode,
+                    responseBody: responseBody,
+                    lastError: null);
+
+                System.Diagnostics.Debug.WriteLine($" Settlement sent for OrderWeb order {orderWebOrderId}");
+                return true;
+            }
+
+            var error = $"HTTP {(int)response.StatusCode}: {responseBody}";
+            System.Diagnostics.Debug.WriteLine($" Settlement failed: {error}");
+            return await QueueOrderSettlementAsync(
+                order,
+                orderWebOrderId,
+                normalizedStatus,
+                paymentMethod,
+                paidAt,
+                deviceId,
+                idempotencyKey,
+                payload,
+                config,
+                url,
+                error);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Error sending settlement: {ex.Message}");
+            return await QueueOrderSettlementAsync(
+                order,
+                orderWebOrderId,
+                normalizedStatus,
+                paymentMethod,
+                paidAt,
+                deviceId,
+                idempotencyKey,
+                payload,
+                config,
+                url,
+                ex.Message);
+        }
+    }
+
+    private async Task<bool> QueueOrderSettlementAsync(
+        Order order,
+        string orderWebOrderId,
+        string status,
+        string? paymentMethod,
+        DateTime paidAtUtc,
+        string deviceId,
+        string idempotencyKey,
+        Dictionary<string, object> payload,
+        OrderWebApiConfig config,
+        string url,
+        string? lastError)
+    {
+        var queued = await _orderWebApiClient.EnqueueAsync(
+            OrderSettlementOperationType,
+            url,
+            payload,
+            config.ApiKey,
+            idempotencyKey,
+            priority: 1);
+
+        await RecordOrderSettlementAsync(
+            order,
+            orderWebOrderId,
+            status,
+            paymentMethod,
+            paidAtUtc,
+            deviceId,
+            idempotencyKey,
+            sentToCloud: false,
+            queuedForRetry: queued,
+            responseStatus: null,
+            responseBody: null,
+            lastError: queued ? null : lastError);
+
+        if (queued)
+        {
+            System.Diagnostics.Debug.WriteLine($" Settlement queued for OrderWeb order {orderWebOrderId}");
+        }
+
+        return queued;
+    }
+
+    private async Task<bool> HasSettlementBeenRecordedAsync(string orderWebOrderId, string idempotencyKey)
+    {
+        try
+        {
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT COUNT(*)
+                FROM orderweb_order_settlements
+                WHERE (cloud_order_id = @cloudOrderId OR idempotency_key = @idempotencyKey)
+                  AND (sent_to_cloud = 1 OR queued_for_retry = 1)";
+            command.Parameters.AddWithValue("@cloudOrderId", orderWebOrderId);
+            command.Parameters.AddWithValue("@idempotencyKey", idempotencyKey);
+            return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Settlement guard unavailable: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task RecordOrderSettlementAsync(
+        Order order,
+        string orderWebOrderId,
+        string status,
+        string? paymentMethod,
+        DateTime paidAtUtc,
+        string deviceId,
+        string idempotencyKey,
+        bool sentToCloud,
+        bool queuedForRetry,
+        int? responseStatus,
+        string? responseBody,
+        string? lastError)
+    {
+        try
+        {
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                INSERT INTO orderweb_order_settlements
+                    (local_order_id, cloud_order_id, order_number, status, payment_method,
+                     amount_paid, paid_at, fulfillment, device_id, idempotency_key,
+                     sent_to_cloud, queued_for_retry, last_attempt_at, sent_at,
+                     response_status, response_body, last_error)
+                VALUES
+                    (@localOrderId, @cloudOrderId, @orderNumber, @status, @paymentMethod,
+                     @amountPaid, @paidAt, @fulfillment, @deviceId, @idempotencyKey,
+                     @sentToCloud, @queuedForRetry, @lastAttemptAt, @sentAt,
+                     @responseStatus, @responseBody, @lastError)
+                ON DUPLICATE KEY UPDATE
+                    local_order_id = VALUES(local_order_id),
+                    order_number = COALESCE(VALUES(order_number), order_number),
+                    status = VALUES(status),
+                    payment_method = COALESCE(VALUES(payment_method), payment_method),
+                    amount_paid = VALUES(amount_paid),
+                    paid_at = VALUES(paid_at),
+                    fulfillment = VALUES(fulfillment),
+                    device_id = VALUES(device_id),
+                    sent_to_cloud = CASE WHEN VALUES(sent_to_cloud) = 1 THEN 1 ELSE sent_to_cloud END,
+                    queued_for_retry = CASE WHEN VALUES(queued_for_retry) = 1 THEN 1 ELSE queued_for_retry END,
+                    last_attempt_at = VALUES(last_attempt_at),
+                    sent_at = COALESCE(VALUES(sent_at), sent_at),
+                    response_status = COALESCE(VALUES(response_status), response_status),
+                    response_body = COALESCE(VALUES(response_body), response_body),
+                    last_error = VALUES(last_error),
+                    updated_at = CURRENT_TIMESTAMP";
+
+            command.Parameters.AddWithValue("@localOrderId", order.OrderId);
+            command.Parameters.AddWithValue("@cloudOrderId", orderWebOrderId);
+            command.Parameters.AddWithValue("@orderNumber", string.IsNullOrWhiteSpace(order.OrderNumber) ? (object)DBNull.Value : order.OrderNumber);
+            command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@paymentMethod", string.IsNullOrWhiteSpace(paymentMethod) ? (object)DBNull.Value : paymentMethod);
+            command.Parameters.AddWithValue("@amountPaid", status == "completed" ? order.TotalAmount : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@paidAt", status == "completed" ? paidAtUtc : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@fulfillment", NormalizeSettlementFulfillment(order.OrderType) ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@deviceId", deviceId);
+            command.Parameters.AddWithValue("@idempotencyKey", idempotencyKey);
+            command.Parameters.AddWithValue("@sentToCloud", sentToCloud);
+            command.Parameters.AddWithValue("@queuedForRetry", queuedForRetry);
+            command.Parameters.AddWithValue("@lastAttemptAt", DateTime.UtcNow);
+            command.Parameters.AddWithValue("@sentAt", sentToCloud ? DateTime.UtcNow : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@responseStatus", responseStatus ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@responseBody", string.IsNullOrWhiteSpace(responseBody) ? (object)DBNull.Value : responseBody);
+            command.Parameters.AddWithValue("@lastError", string.IsNullOrWhiteSpace(lastError) ? (object)DBNull.Value : lastError);
+
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Failed to record settlement: {ex.Message}");
+        }
+    }
+
+    private static Dictionary<string, object> BuildSettlementPayload(
+        string tenant,
+        Order order,
+        string orderWebOrderId,
+        string status,
+        string? paymentMethod,
+        DateTime paidAtUtc,
+        string deviceId,
+        string idempotencyKey,
+        string? staffId,
+        string? staffName,
+        string? notes)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["tenant"] = tenant,
+            ["order_id"] = orderWebOrderId,
+            ["status"] = status,
+            ["device_id"] = deviceId,
+            ["idempotency_key"] = idempotencyKey
+        };
+
+        if (status == "completed")
+        {
+            payload["payment_method"] = paymentMethod ?? "cash";
+            payload["paid_at"] = paidAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            payload["amount_paid"] = order.TotalAmount;
+        }
+
+        var fulfillment = NormalizeSettlementFulfillment(order.OrderType);
+        if (!string.IsNullOrWhiteSpace(fulfillment))
+        {
+            payload["fulfillment"] = fulfillment;
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.PaymentMethod) && !string.Equals(order.PaymentMethod, paymentMethod, StringComparison.OrdinalIgnoreCase))
+        {
+            payload["pos_payment_method"] = order.PaymentMethod;
+        }
+
+        if (!string.IsNullOrWhiteSpace(staffId))
+        {
+            payload["staff_id"] = staffId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(staffName))
+        {
+            payload["staff_name"] = staffName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(notes))
+        {
+            payload["notes"] = notes;
+        }
+
+        return payload;
+    }
+
+    private static string ResolveOrderWebOrderId(Order order)
+    {
+        return !string.IsNullOrWhiteSpace(order.CloudOrderId)
+            ? order.CloudOrderId.Trim()
+            : order.OrderId.Trim();
+    }
+
+    private static string NormalizeSettlementStatus(string? status)
+    {
+        var normalized = (status ?? "completed").Trim().Replace("-", "_").ToLowerInvariant();
+        return normalized switch
+        {
+            "cancelled" or "canceled" => "cancelled",
+            "no_show" or "noshow" => "no_show",
+            _ => "completed"
+        };
+    }
+
+    private static string NormalizeSettlementPaymentMethod(string? paymentMethod)
+    {
+        var normalized = OnlineOrderPaymentHelper.NormalizeMethod(paymentMethod);
+        return normalized == "cash" ? "cash" : "card";
+    }
+
+    private static string? NormalizeSettlementFulfillment(string? orderType)
+    {
+        var normalized = (orderType ?? string.Empty).Trim().Replace("-", "_").ToLowerInvariant();
+        return normalized switch
+        {
+            "delivery" or "del" => "delivery",
+            "pickup" or "pick_up" or "collection" or "collect" or "col" or "takeaway" or "take_away" => "collection",
+            _ => string.IsNullOrWhiteSpace(normalized) ? null : normalized
+        };
+    }
+
+    private static DateTime ToUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime()
+        };
     }
     
     /// <summary>

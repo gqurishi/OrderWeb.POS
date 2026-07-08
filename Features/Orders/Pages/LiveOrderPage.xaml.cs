@@ -51,6 +51,19 @@ namespace POS_in_NET.Pages
                                 AND TRIM(o2.order_id) <> TRIM(o2.cloud_order_id)
                             )
                           )";
+        private const string WebCashDueSourceFilter = @"
+                      (
+                        LOWER(COALESCE(o.source_channel, '')) = 'web'
+                        AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
+                        AND REPLACE(REPLACE(REPLACE(LOWER(COALESCE(o.payment_method, 'cash')), ' ', ''), '_', ''), '-', '')
+                            IN ('cash', 'cod', 'cashondelivery', 'cashoncollection')
+                      )";
+        private const string LiveOrderSourceFilter = @"
+                      (
+                        " + LocalSourceFilter + @"
+                        OR
+                        " + WebCashDueSourceFilter + @"
+                      )";
         private const string ActiveLifecycleFilter = @"
                       AND COALESCE(o.is_open, 1) = 1
                       AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) NOT IN ('paid', 'voided')";
@@ -233,6 +246,12 @@ namespace POS_in_NET.Pages
 
             var stack = new VerticalStackLayout { Spacing = 4 };
 
+            var badges = BuildOrderBadges(order);
+            if (badges.Count > 0)
+            {
+                stack.Children.Add(CreateBadgeRow(badges));
+            }
+
             stack.Children.Add(new Label
             {
                 Text = FormatOrderTypeLabel(order.OrderType),
@@ -286,6 +305,62 @@ namespace POS_in_NET.Pages
             border.GestureRecognizers.Add(tap);
 
             return border;
+        }
+
+        private static List<OrderBadge> BuildOrderBadges(Order order)
+        {
+            var badges = new List<OrderBadge>();
+            if (!IsWebOrder(order))
+            {
+                return badges;
+            }
+
+            badges.Add(new OrderBadge("WEB", "#DBEAFE", "#1D4ED8"));
+            badges.Add(new OrderBadge(FormatOrderTypeLabel(order.OrderType).ToUpperInvariant(), "#E0F2FE", "#0369A1"));
+
+            if (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
+                && order.LocalLifecycleState != LocalLifecycleState.Paid
+                && order.LocalLifecycleState != LocalLifecycleState.Voided)
+            {
+                badges.Add(new OrderBadge("CASH DUE", "#FEF3C7", "#B45309"));
+            }
+
+            return badges;
+        }
+
+        private static HorizontalStackLayout CreateBadgeRow(IReadOnlyList<OrderBadge> badges)
+        {
+            var row = new HorizontalStackLayout
+            {
+                Spacing = 4,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            foreach (var badge in badges)
+            {
+                row.Children.Add(CreateBadge(badge));
+            }
+
+            return row;
+        }
+
+        private static Border CreateBadge(OrderBadge badge)
+        {
+            return new Border
+            {
+                BackgroundColor = Color.FromArgb(badge.BackgroundColor),
+                StrokeThickness = 0,
+                Padding = new Thickness(6, 4),
+                StrokeShape = new RoundRectangle { CornerRadius = 6 },
+                Content = new Label
+                {
+                    Text = badge.Text,
+                    FontSize = 9,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb(badge.TextColor),
+                    LineBreakMode = LineBreakMode.NoWrap
+                }
+            };
         }
 
         private Border CreateTableCard(TableSession session)
@@ -406,6 +481,11 @@ namespace POS_in_NET.Pages
             };
         }
 
+        private static bool IsWebOrder(Order order)
+        {
+            return string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async Task NavigateToOrderAsync(Order order)
         {
             if (IsTableOrderType(order.OrderType) && order.TableSessionId.HasValue && order.TableSessionId.Value > 0)
@@ -471,13 +551,14 @@ namespace POS_in_NET.Pages
                 var query = $@"
                     SELECT o.id, o.order_id AS OrderId, o.order_number AS OrderNumber, o.customer_name AS CustomerName,
                            o.order_type AS OrderType, o.table_session_id AS TableSessionId,
+                           o.source_channel AS SourceChannel, o.payment_method AS PaymentMethod,
                            o.total_amount AS TotalAmount, o.created_at AS CreatedAt,
                            o.updated_at AS UpdatedAt, o.local_lifecycle_state AS LocalLifecycleState,
                            COALESCE(o.is_open, 1) AS IsOpen, COALESCE(o.draft_abandoned_flag, 0) AS DraftAbandonedFlag,
                            COALESCE(o.send_attempt_count, 0) AS SendAttemptCount,
                            COALESCE(o.payment_attempt_count, 0) AS PaymentAttemptCount
                     FROM orders o
-                    WHERE {LocalSourceFilter}
+                    WHERE {LiveOrderSourceFilter}
                       {ActiveLifecycleFilter}
                     ORDER BY FIELD(COALESCE(LOWER(o.local_lifecycle_state), 'active'), 'draft', 'active', 'sent_partial', 'sent_full', 'payment_partial'),
                              o.updated_at DESC, o.created_at DESC";
@@ -510,6 +591,7 @@ namespace POS_in_NET.Pages
                 var query = $@"
                     SELECT o.id, o.order_id AS OrderId, o.order_number AS OrderNumber, o.customer_name AS CustomerName,
                            o.order_type AS OrderType, o.table_session_id AS TableSessionId,
+                           o.source_channel AS SourceChannel, o.payment_method AS PaymentMethod,
                            o.total_amount AS TotalAmount, o.created_at AS CreatedAt,
                            o.updated_at AS UpdatedAt, o.local_lifecycle_state AS LocalLifecycleState,
                            COALESCE(o.is_open, 1) AS IsOpen, COALESCE(o.draft_abandoned_flag, 0) AS DraftAbandonedFlag,
@@ -517,7 +599,7 @@ namespace POS_in_NET.Pages
                            COALESCE(o.payment_attempt_count, 0) AS PaymentAttemptCount
                     FROM orders o
                     WHERE LOWER(o.order_type) IN ('pickup', 'collection', 'col', 'takeaway') 
-                      AND {LocalSourceFilter}
+                      AND {LiveOrderSourceFilter}
                       {ActiveLifecycleFilter}
                     ORDER BY FIELD(COALESCE(LOWER(o.local_lifecycle_state), 'active'), 'draft', 'active', 'sent_partial', 'sent_full', 'payment_partial'),
                              o.updated_at DESC, o.created_at DESC";
@@ -550,6 +632,7 @@ namespace POS_in_NET.Pages
                 var query = $@"
                     SELECT o.id, o.order_id AS OrderId, o.order_number AS OrderNumber, o.customer_name AS CustomerName,
                            o.order_type AS OrderType, o.table_session_id AS TableSessionId,
+                           o.source_channel AS SourceChannel, o.payment_method AS PaymentMethod,
                            o.total_amount AS TotalAmount, o.created_at AS CreatedAt,
                            o.updated_at AS UpdatedAt, o.local_lifecycle_state AS LocalLifecycleState,
                            COALESCE(o.is_open, 1) AS IsOpen, COALESCE(o.draft_abandoned_flag, 0) AS DraftAbandonedFlag,
@@ -557,7 +640,7 @@ namespace POS_in_NET.Pages
                            COALESCE(o.payment_attempt_count, 0) AS PaymentAttemptCount
                     FROM orders o
                     WHERE LOWER(o.order_type) IN ('delivery', 'del') 
-                      AND {LocalSourceFilter}
+                      AND {LiveOrderSourceFilter}
                       {ActiveLifecycleFilter}
                     ORDER BY FIELD(COALESCE(LOWER(o.local_lifecycle_state), 'active'), 'draft', 'active', 'sent_partial', 'sent_full', 'payment_partial'),
                              o.updated_at DESC, o.created_at DESC";
@@ -591,6 +674,8 @@ namespace POS_in_NET.Pages
                 OrderId = reader.IsDBNull(reader.GetOrdinal("OrderId")) ? string.Empty : reader.GetString("OrderId"),
                 OrderNumber = orderNumber,
                 OrderType = reader.IsDBNull(reader.GetOrdinal("OrderType")) ? "pickup" : reader.GetString("OrderType"),
+                SourceChannel = reader.IsDBNull(reader.GetOrdinal("SourceChannel")) ? "local" : reader.GetString("SourceChannel"),
+                PaymentMethod = reader.IsDBNull(reader.GetOrdinal("PaymentMethod")) ? null : reader.GetString("PaymentMethod"),
                 TableSessionId = reader.IsDBNull(reader.GetOrdinal("TableSessionId")) ? null : reader.GetInt32("TableSessionId"),
                 CustomerName = reader.IsDBNull(reader.GetOrdinal("CustomerName")) ? "Guest" : reader.GetString("CustomerName"),
                 TotalAmount = reader.IsDBNull(reader.GetOrdinal("TotalAmount")) ? 0 : reader.GetDecimal("TotalAmount"),
@@ -895,6 +980,8 @@ namespace POS_in_NET.Pages
                 knownOrderIds.Add(linkedOrderId);
             }
         }
+
+        private sealed record OrderBadge(string Text, string BackgroundColor, string TextColor);
 
         private static string? ExtractTableNumber(string? customerName)
         {

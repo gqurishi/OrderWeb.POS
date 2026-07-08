@@ -215,6 +215,7 @@ public class OrderService
             var updateQuery = @"
                 UPDATE orders SET 
                     order_number = @orderNumber,
+                    cloud_order_id = COALESCE(NULLIF(@cloudOrderId, ''), cloud_order_id),
                     customer_name = @customerName,
                     customer_phone = @customerPhone,
                     customer_email = COALESCE(NULLIF(@customerEmail, ''), customer_email),
@@ -256,6 +257,7 @@ public class OrderService
             using var command = new MySqlCommand(updateQuery, connection);
             var now = NormalizeTimestampForDb(DateTime.Now);
             command.Parameters.AddWithValue("@orderNumber", order.OrderNumber ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@cloudOrderId", order.CloudOrderId ?? string.Empty);
             command.Parameters.AddWithValue("@customerName", order.CustomerName);
             command.Parameters.AddWithValue("@customerPhone", order.CustomerPhone ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@customerEmail", order.CustomerEmail ?? string.Empty);

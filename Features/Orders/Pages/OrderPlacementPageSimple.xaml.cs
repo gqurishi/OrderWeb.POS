@@ -58,6 +58,7 @@ namespace POS_in_NET.Pages
         private int? _tableSessionId;
         private string _persistentOrderNumber = string.Empty;
         private string _orderSourceChannel = "local";
+        private string? _orderCloudOrderId;
         private string? _requestedPaymentMethod;
         private DateTime _lastSavedAt = DateTime.MinValue;
         private User? _currentUser;
@@ -1342,6 +1343,9 @@ namespace POS_in_NET.Pages
         {
             _currentOrder.Id = loadedOrder.OrderId;
             _pendingOrderId = loadedOrder.OrderId;
+            _orderCloudOrderId = string.Equals(loadedOrder.SourceChannel, "web", StringComparison.OrdinalIgnoreCase)
+                ? (string.IsNullOrWhiteSpace(loadedOrder.CloudOrderId) ? loadedOrder.OrderId : loadedOrder.CloudOrderId)
+                : loadedOrder.CloudOrderId;
             var resolvedSessionId = loadedOrder.TableSessionId ?? _tableSessionId;
             _tableSessionId = resolvedSessionId;
             _currentOrder.OrderNumber = loadedOrder.OrderNumber;
@@ -1834,6 +1838,7 @@ namespace POS_in_NET.Pages
             {
                 OrderId = _currentOrder.Id,
                 OrderNumber = shouldAssignOrderNumber ? _persistentOrderNumber : null,
+                CloudOrderId = string.IsNullOrWhiteSpace(_orderCloudOrderId) ? null : _orderCloudOrderId,
                 CustomerName = customerName,
                 CustomerPhone = customerPhone,
                 CustomerAddress = customerAddress,
@@ -4307,6 +4312,8 @@ namespace POS_in_NET.Pages
                     await deliveryCustomerService.UpdateLastOrderDateAsync(_deliveryCustomerId);
                 }
 
+                await SendOrderWebSettlementIfNeededAsync(order);
+
                 return true;
             }
             catch (Exception ex)
@@ -4314,6 +4321,50 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"Error saving paid order: {ex.Message}");
                 return false;
             }
+        }
+
+        private async Task SendOrderWebSettlementIfNeededAsync(Order order)
+        {
+            if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                if (cloudService == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("OrderWeb settlement skipped: CloudOrderService unavailable");
+                    return;
+                }
+
+                var actor = ResolveCurrentActor();
+                var sentOrQueued = await cloudService.SendOrderSettlementAsync(
+                    order,
+                    status: "completed",
+                    staffId: actor.ActorId,
+                    staffName: actor.ActorName,
+                    notes: BuildOrderWebSettlementNotes(order));
+
+                System.Diagnostics.Debug.WriteLine(sentOrQueued
+                    ? $"OrderWeb settlement sent/queued for {order.OrderId}"
+                    : $"OrderWeb settlement not sent for {order.OrderId}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OrderWeb settlement warning: {ex.Message}");
+            }
+        }
+
+        private static string? BuildOrderWebSettlementNotes(Order order)
+        {
+            if (string.IsNullOrWhiteSpace(order.PaymentMethod))
+            {
+                return null;
+            }
+
+            return $"POS tender: {order.PaymentMethod}";
         }
 
         private async Task<bool> SaveVoidedOrderAsync(string reason)
