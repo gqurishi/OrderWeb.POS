@@ -208,6 +208,12 @@ public partial class UserDashboardPage : ContentPage
         Shell.Current.FlyoutIsPresented = true;
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        _inactivityService.ResetActivity();
+        PosWindowService.MinimizeMainWindow();
+    }
+
     private async Task NavigateToAllowedRouteAsync(string requestedRoute, bool isModal = false, bool resetShellStacks = false)
     {
         _inactivityService.ResetActivity();

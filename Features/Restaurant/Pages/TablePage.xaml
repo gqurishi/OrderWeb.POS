@@ -78,10 +78,11 @@
         </VerticalStackLayout>
 
         <!-- Tables List - Compact Card Design -->
-        <ScrollView Grid.Row="1">
-            <CollectionView x:Name="TablesCollectionView"
+        <CollectionView Grid.Row="1"
+                          x:Name="TablesCollectionView"
                           SelectionMode="None"
-                          Margin="0,5,0,10">
+                          Margin="0,5,0,10"
+                          VerticalScrollBarVisibility="Always">
                 <CollectionView.ItemsLayout>
                     <LinearItemsLayout Orientation="Vertical" ItemSpacing="12" />
                 </CollectionView.ItemsLayout>
@@ -189,8 +190,7 @@
                                HorizontalOptions="Center" />
                     </VerticalStackLayout>
                 </CollectionView.EmptyView>
-            </CollectionView>
-        </ScrollView>
+        </CollectionView>
         </Grid>
         
         <!-- Custom Dialog Overlays -->

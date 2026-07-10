@@ -15,6 +15,7 @@ namespace POS_in_NET.Pages
         private readonly FloorService _floorService;
         private bool _isSubscribedToRefreshEvents;
         private bool _isLoadingTables;
+        private bool _isTableOperationInProgress;
         private DateTime _lastSuccessfulLoadAt = DateTime.MinValue;
 
         public TablePage()
@@ -84,6 +85,11 @@ namespace POS_in_NET.Pages
 
         private async Task RefreshTablesIfReadyAsync()
         {
+            if (_isTableOperationInProgress)
+            {
+                return;
+            }
+
             if ((DateTime.UtcNow - _lastSuccessfulLoadAt).TotalMilliseconds < 600)
             {
                 return;
@@ -163,7 +169,7 @@ namespace POS_in_NET.Pages
             {
                 LoadingIndicator.IsRunning = isLoading;
                 LoadingIndicator.IsVisible = isLoading;
-                AddTableButton.IsEnabled = !isLoading && !NoFloorsWarning.IsVisible;
+                AddTableButton.IsEnabled = !isLoading && !_isTableOperationInProgress && !NoFloorsWarning.IsVisible;
             });
         }
 
@@ -184,8 +190,14 @@ namespace POS_in_NET.Pages
 
         private async void OnAddTableClicked(object sender, EventArgs e)
         {
+            if (_isTableOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isTableOperationInProgress = true;
                 // Get all floors
                 var floors = await _floorService.GetAllFloorsAsync();
                 
@@ -197,11 +209,7 @@ namespace POS_in_NET.Pages
 
                 // Show elegant custom dialog
                 AddTableDialogOverlay.SetFloors(floors);
-                AddTableDialogOverlay.IsVisible = true;
-                
                 var result = await AddTableDialogOverlay.ShowAsync();
-                
-                AddTableDialogOverlay.IsVisible = false;
                 
                 if (!result.success || string.IsNullOrWhiteSpace(result.tableName))
                     return;
@@ -213,8 +221,28 @@ namespace POS_in_NET.Pages
 
                 if (createResult.success)
                 {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        if (createResult.tableId.HasValue)
+                        {
+                            UpsertTableInList(new RestaurantTable
+                            {
+                                Id = createResult.tableId.Value,
+                                TableNumber = result.tableName.Trim(),
+                                FloorId = result.floorId,
+                                FloorName = result.floorName,
+                                Capacity = 4,
+                                Shape = TableShape.Square,
+                                Status = TableStatus.Available,
+                                TableDesignIcon = result.tableDesignIcon,
+                                CreatedDate = DateTime.Now,
+                                UpdatedDate = DateTime.Now,
+                                IsActive = true
+                            });
+                        }
+                    });
+
                     await ToastNotification.ShowAsync("Success", createResult.message, NotificationType.Success, 2000);
-                    AppDataRefreshService.RequestRefresh();
                 }
                 else
                 {
@@ -227,14 +255,21 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isTableOperationInProgress = false;
                 SetLoading(false);
             }
         }
 
         private async void OnEditTableClicked(object sender, EventArgs e)
         {
+            if (_isTableOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isTableOperationInProgress = true;
                 var button = sender as Button;
                 var table = button?.CommandParameter as RestaurantTable;
 
@@ -267,8 +302,27 @@ namespace POS_in_NET.Pages
 
                 if (updateResult.success)
                 {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        UpsertTableInList(new RestaurantTable
+                        {
+                            Id = table.Id,
+                            TableNumber = result.tableName?.Trim() ?? table.TableNumber,
+                            FloorId = result.floorId,
+                            FloorName = result.floorName,
+                            Capacity = table.Capacity,
+                            Shape = table.Shape,
+                            Status = table.Status,
+                            TableDesignIcon = result.tableDesignIcon,
+                            PositionX = table.PositionX,
+                            PositionY = table.PositionY,
+                            CreatedDate = table.CreatedDate,
+                            UpdatedDate = DateTime.Now,
+                            IsActive = true
+                        });
+                    });
+
                     await ToastNotification.ShowAsync("Success", updateResult.message, NotificationType.Success, 2000);
-                    AppDataRefreshService.RequestRefresh();
                 }
                 else
                 {
@@ -281,14 +335,21 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isTableOperationInProgress = false;
                 SetLoading(false);
             }
         }
 
         private async void OnDeleteTableClicked(object sender, EventArgs e)
         {
+            if (_isTableOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isTableOperationInProgress = true;
                 var button = sender as Button;
                 var table = button?.CommandParameter as RestaurantTable;
 
@@ -309,8 +370,8 @@ namespace POS_in_NET.Pages
 
                     if (result.success)
                     {
+                        await MainThread.InvokeOnMainThreadAsync(() => RemoveTableFromList(table.Id));
                         await ToastNotification.ShowAsync("Success", result.message, NotificationType.Success, 2000);
-                        AppDataRefreshService.RequestRefresh();
                     }
                     else
                     {
@@ -324,8 +385,39 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isTableOperationInProgress = false;
                 SetLoading(false);
             }
+        }
+
+        private void UpsertTableInList(RestaurantTable table)
+        {
+            var existing = _tables.FirstOrDefault(item => item.Id == table.Id);
+            if (existing == null)
+            {
+                _tables.Add(table);
+            }
+            else
+            {
+                var index = _tables.IndexOf(existing);
+                if (index >= 0)
+                {
+                    _tables[index] = table;
+                }
+            }
+
+            _lastSuccessfulLoadAt = DateTime.UtcNow;
+        }
+
+        private void RemoveTableFromList(int tableId)
+        {
+            var existing = _tables.FirstOrDefault(item => item.Id == tableId);
+            if (existing != null)
+            {
+                _tables.Remove(existing);
+            }
+
+            _lastSuccessfulLoadAt = DateTime.UtcNow;
         }
 
         // Show custom styled prompt dialog

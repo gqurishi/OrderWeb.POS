@@ -157,6 +157,12 @@ public partial class TopBar : ContentView
         Shell.Current.FlyoutIsPresented = true;
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        ServiceHelper.GetService<InactivityService>()?.ResetActivity();
+        PosWindowService.MinimizeMainWindow();
+    }
+
     private async void OnLogoutClicked(object sender, EventArgs e)
     {
         try

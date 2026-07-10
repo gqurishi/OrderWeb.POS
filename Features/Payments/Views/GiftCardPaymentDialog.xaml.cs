@@ -27,13 +27,13 @@ namespace POS_in_NET.Views
         private string? _orderReference;
         private string? _paymentTransactionId;
         private GiftCard? _giftCard;
-        private readonly LoyaltyService? _loyaltyService;
+        private readonly OrderWebGiftCardApiService? _giftCardApiService;
         private bool _isUpdatingApplyAmount;
 
         public GiftCardPaymentDialog()
         {
             InitializeComponent();
-            _loyaltyService = Application.Current?.Handler?.MauiContext?.Services.GetService(typeof(LoyaltyService)) as LoyaltyService;
+            _giftCardApiService = Application.Current?.Handler?.MauiContext?.Services.GetService(typeof(OrderWebGiftCardApiService)) as OrderWebGiftCardApiService;
         }
 
         public void SetAmountDue(decimal amount, string? orderReference = null, string? paymentTransactionId = null)
@@ -92,7 +92,7 @@ namespace POS_in_NET.Views
                 return;
             }
 
-            if (_loyaltyService == null)
+            if (_giftCardApiService == null)
             {
                 SetStatus("Gift card service is not available.", true);
                 return;
@@ -101,12 +101,12 @@ namespace POS_in_NET.Views
             await RunBusyAsync("CHECKING...", async () =>
             {
                 SetStatus("Checking OrderWeb gift card...", false);
-                var result = await _loyaltyService.CheckGiftCardBalanceAsync(_cardNumber);
+                var result = await _giftCardApiService.LookupAsync(_cardNumber, GiftCardLookupPurpose.Redeem);
 
                 if (!result.Success || result.GiftCard == null)
                 {
                     ResetCardState();
-                    SetStatus(result.Error ?? "Gift card not found.", true);
+                    SetStatus(result.StatusMessage ?? "Gift card not found.", true);
                     return;
                 }
 
@@ -147,7 +147,7 @@ namespace POS_in_NET.Views
 
         private async void OnApplyClicked(object sender, EventArgs e)
         {
-            if (_loyaltyService == null || _giftCard == null || string.IsNullOrWhiteSpace(_cardNumber))
+            if (_giftCardApiService == null || _giftCard == null || string.IsNullOrWhiteSpace(_cardNumber))
             {
                 SetStatus("Check the gift card first.", true);
                 return;
@@ -159,7 +159,13 @@ namespace POS_in_NET.Views
                 return;
             }
 
-            if (applyAmount <= 0 || applyAmount > _cardBalance)
+            if (applyAmount <= 0)
+            {
+                SetStatus("Amount must be at least GBP 0.01.", true);
+                return;
+            }
+
+            if (applyAmount < 0)
             {
                 SetStatus($"Amount must be between £0.01 and £{_cardBalance:F2}.", true);
                 return;
@@ -168,17 +174,22 @@ namespace POS_in_NET.Views
             await RunBusyAsync("REDEEMING...", async () =>
             {
                 SetStatus("Confirming latest OrderWeb balance...", false);
-                var latestLookup = await _loyaltyService.CheckGiftCardBalanceAsync(_cardNumber);
+                var latestLookup = await _giftCardApiService.LookupAsync(_cardNumber, GiftCardLookupPurpose.Redeem);
                 if (!latestLookup.Success || latestLookup.GiftCard == null)
                 {
-                    SetStatus(latestLookup.Error ?? "Could not confirm gift card balance.", true);
+                    SetStatus(latestLookup.StatusMessage ?? "Could not confirm gift card balance.", true);
                     return;
                 }
 
-                if (Math.Abs(latestLookup.GiftCard.Balance - _cardBalance) > 0.009m)
+                var latestCard = latestLookup.GiftCard;
+                var latestCardNumber = string.IsNullOrWhiteSpace(latestCard.CardNumber)
+                    ? _cardNumber
+                    : latestCard.CardNumber;
+                ShowGiftCard(latestCard);
+
+                if (applyAmount > latestCard.Balance)
                 {
-                    ShowGiftCard(latestLookup.GiftCard);
-                    SetStatus("Balance changed. Review the amount and apply again.", true);
+                    SetStatus($"Amount exceeds latest OrderWeb balance. Max: GBP {latestCard.Balance:F2}.", true);
                     return;
                 }
 
@@ -189,21 +200,24 @@ namespace POS_in_NET.Views
                     ? _paymentTransactionId
                     : $"gift-card:{orderReference}:{_cardNumber}:{applyAmount:F2}";
                 var description = $"POS gift card payment - {orderReference}";
-                var redeemResult = await _loyaltyService.RedeemGiftCardAsync(
-                    _cardNumber,
-                    applyAmount,
-                    description,
-                    transactionId,
-                    orderReference);
+                var redeemResult = await _giftCardApiService.RedeemAsync(
+                    new GiftCardRedeemRequest
+                    {
+                        CardNumber = latestCardNumber,
+                        Amount = applyAmount,
+                        Description = description,
+                        OrderId = orderReference
+                    },
+                    transactionId);
 
                 if (!redeemResult.Success)
                 {
-                    SetStatus(redeemResult.Error ?? "OrderWeb rejected the gift card redemption.", true);
+                    SetStatus(redeemResult.Error ?? redeemResult.Message ?? "OrderWeb rejected the gift card redemption.", true);
                     return;
                 }
 
                 var amountApplied = redeemResult.EffectiveAmountRedeemed ?? applyAmount;
-                var newBalance = redeemResult.EffectiveRemainingBalance ?? Math.Max(0, _cardBalance - amountApplied);
+                var newBalance = redeemResult.EffectiveRemainingBalance ?? Math.Max(0, latestCard.Balance - amountApplied);
                 var remaining = Math.Max(0, _amountDue - amountApplied);
 
                 var result = new GiftCardPaymentResult
@@ -213,7 +227,7 @@ namespace POS_in_NET.Views
                     AmountApplied = amountApplied,
                     Remaining = remaining,
                     NewCardBalance = newBalance,
-                    PreviousCardBalance = _cardBalance,
+                    PreviousCardBalance = latestCard.Balance,
                     OrderWebMessage = redeemResult.Message
                 };
 
@@ -316,8 +330,7 @@ namespace POS_in_NET.Views
             var hasAmount = TryParseGiftCardAmount(ApplyAmountEntry.Text, out var applyAmount);
             var canApply = hasActiveCard
                 && hasAmount
-                && applyAmount > 0
-                && applyAmount <= _cardBalance + 0.009m;
+                && applyAmount > 0;
 
             ApplyButton.IsEnabled = canApply;
             ApplyButton.BackgroundColor = canApply

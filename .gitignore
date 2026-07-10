@@ -83,6 +83,7 @@ Archive/
 installer/staging/
 installer/output/
 publish/
+ReadyToCopy/
 
 # IDE files
 *.swp

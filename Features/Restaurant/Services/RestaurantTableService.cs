@@ -345,12 +345,9 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    await TerminalEventSyncService.PublishAsync(
+                    await PublishTableChangeSafelyAsync(
                         connection,
-                        AppDataChangeKind.TableLayout,
-                        "table",
                         tableId.ToString(),
-                        null,
                         new { action = "position_updated", positionX, positionY });
 
                     System.Diagnostics.Debug.WriteLine($" Table position updated: ID={tableId} to ({positionX}, {positionY})");
@@ -449,12 +446,9 @@ namespace POS_in_NET.Services
 
                 var newId = Convert.ToInt32(await command.ExecuteScalarAsync());
 
-                await TerminalEventSyncService.PublishAsync(
+                await PublishTableChangeSafelyAsync(
                     connection,
-                    AppDataChangeKind.TableLayout,
-                    "table",
                     newId.ToString(),
-                    null,
                     new { action = "created", tableNumber, floorId });
 
                 System.Diagnostics.Debug.WriteLine($" Table created: {tableNumber} on floor ID {floorId} (ID: {newId}) with design: {tableDesignIcon}");
@@ -530,12 +524,9 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    await TerminalEventSyncService.PublishAsync(
+                    await PublishTableChangeSafelyAsync(
                         connection,
-                        AppDataChangeKind.TableLayout,
-                        "table",
                         id.ToString(),
-                        null,
                         new { action = "updated", tableNumber, floorId, status = status.ToString() });
 
                     System.Diagnostics.Debug.WriteLine($" Table updated: {tableNumber} (ID: {id}) with design: {tableDesignIcon}");
@@ -582,12 +573,9 @@ namespace POS_in_NET.Services
 
                 if (rowsAffected > 0)
                 {
-                    await TerminalEventSyncService.PublishAsync(
+                    await PublishTableChangeSafelyAsync(
                         connection,
-                        AppDataChangeKind.TableLayout,
-                        "table",
                         id.ToString(),
-                        null,
                         new { action = "deleted" });
 
                     System.Diagnostics.Debug.WriteLine($" Table deleted (ID: {id})");
@@ -595,7 +583,7 @@ namespace POS_in_NET.Services
                 }
                 else
                 {
-                    return (false, "Table not found");
+                    return (true, "Table already deleted");
                 }
             }
             catch (Exception ex)
@@ -659,6 +647,27 @@ namespace POS_in_NET.Services
             {
                 System.Diagnostics.Debug.WriteLine($" Error checking floors existence: {ex.Message}");
                 return false;
+            }
+        }
+
+        private static async Task PublishTableChangeSafelyAsync(
+            MySqlConnection connection,
+            string tableId,
+            object payload)
+        {
+            try
+            {
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "table",
+                    tableId,
+                    null,
+                    payload);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Table live-update publish skipped: {ex.Message}");
             }
         }
     }

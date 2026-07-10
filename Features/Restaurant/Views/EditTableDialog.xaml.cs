@@ -82,7 +82,14 @@ public partial class EditTableDialog : ContentView
         // Auto-focus on table number entry
         Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(100), () =>
         {
-            TableNumberEntry.Focus();
+            try
+            {
+                TableNumberEntry.Focus();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"EditTableDialog focus skipped: {ex.Message}");
+            }
         });
         
         return _taskCompletionSource.Task;

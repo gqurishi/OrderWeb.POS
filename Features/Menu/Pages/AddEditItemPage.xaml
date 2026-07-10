@@ -345,6 +345,10 @@
                                 FontSize="14"
                                 FontAttributes="Bold"
                                 TextColor="#475569" />
+                            <Label Text="Use 0.00 for free items that still need to print to bar or kitchen."
+                                FontSize="12"
+                                TextColor="#64748B"
+                                Margin="0,-6,0,0"/>
                             <Border BackgroundColor="#F8FAFC"
                                  StrokeThickness="2"
                                  Stroke="#E2E8F0"

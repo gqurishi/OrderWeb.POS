@@ -6,6 +6,23 @@
              Shell.NavBarIsVisible="False">
 
     <Grid RowDefinitions="*,Auto,*" Padding="36">
+        <Button Grid.RowSpan="3"
+                Text="-"
+                WidthRequest="44"
+                HeightRequest="44"
+                Padding="0"
+                CornerRadius="22"
+                BackgroundColor="#E5E7EB"
+                TextColor="#1F2937"
+                FontSize="24"
+                FontAttributes="Bold"
+                HorizontalOptions="End"
+                VerticalOptions="Start"
+                Margin="0,0,0,0"
+                ZIndex="10"
+                Clicked="OnMinimizeClicked"
+                ToolTipProperties.Text="Minimize POS" />
+
         <Border Grid.Row="1"
                 WidthRequest="640"
                 MaximumWidthRequest="640"

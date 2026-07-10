@@ -990,9 +990,11 @@ public partial class AddEditItemPage : ContentPage
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(DineInPriceEntry.Text) || !decimal.TryParse(DineInPriceEntry.Text, out decimal dineInPrice) || dineInPrice <= 0)
+            if (string.IsNullOrWhiteSpace(DineInPriceEntry.Text) || !decimal.TryParse(DineInPriceEntry.Text, out decimal dineInPrice) || dineInPrice < 0)
             {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation Error", "Please enter a valid dine-in/table price.");
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Validation Error",
+                    "Please enter a valid dine-in/table price. Use 0.00 if this is a free item.");
                 return;
             }
 

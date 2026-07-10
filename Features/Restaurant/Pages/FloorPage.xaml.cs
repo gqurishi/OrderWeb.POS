@@ -14,6 +14,7 @@ namespace POS_in_NET.Pages
         private readonly FloorService _floorService;
         private bool _isSubscribedToRefreshEvents;
         private bool _isLoadingFloors;
+        private bool _isFloorOperationInProgress;
         private DateTime _lastSuccessfulLoadAt = DateTime.MinValue;
 
         public FloorPage()
@@ -82,6 +83,11 @@ namespace POS_in_NET.Pages
 
         private async Task RefreshFloorsIfReadyAsync()
         {
+            if (_isFloorOperationInProgress)
+            {
+                return;
+            }
+
             if ((DateTime.UtcNow - _lastSuccessfulLoadAt).TotalMilliseconds < 600)
             {
                 return;
@@ -160,8 +166,14 @@ namespace POS_in_NET.Pages
 
         private async void OnAddFloorClicked(object sender, EventArgs e)
         {
+            if (_isFloorOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isFloorOperationInProgress = true;
                 System.Diagnostics.Debug.WriteLine(" Add Floor button clicked");
                 
                 // Show custom dialog
@@ -174,7 +186,8 @@ namespace POS_in_NET.Pages
                     return; // User cancelled
                 }
 
-                System.Diagnostics.Debug.WriteLine($" Creating floor: {result.floorName}");
+                var floorName = result.floorName.Trim();
+                System.Diagnostics.Debug.WriteLine($" Creating floor: {floorName}");
                 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
@@ -188,13 +201,27 @@ namespace POS_in_NET.Pages
 
                 if (createResult.success)
                 {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        if (createResult.floorId.HasValue)
+                        {
+                            UpsertFloorInList(new Floor
+                            {
+                                Id = createResult.floorId.Value,
+                                Name = floorName,
+                                Description = string.Empty,
+                                IsActive = true,
+                                TableCount = 0,
+                                CreatedDate = DateTime.Now,
+                                UpdatedDate = DateTime.Now
+                            });
+                        }
+                    });
+
                     await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
                         await ToastNotification.ShowAsync("Success", createResult.message, NotificationType.Success, 2000);
                     });
-                    
-                    System.Diagnostics.Debug.WriteLine(" Reloading floors list...");
-                    await LoadFloorsAsync(); // Refresh list
                 }
                 else
                 {
@@ -214,6 +241,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     LoadingIndicator.IsRunning = false;
@@ -225,8 +253,14 @@ namespace POS_in_NET.Pages
 
         private async void OnEditFloorClicked(object sender, EventArgs e)
         {
+            if (_isFloorOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isFloorOperationInProgress = true;
                 var button = sender as Button;
                 var floor = button?.CommandParameter as Floor;
 
@@ -245,7 +279,8 @@ namespace POS_in_NET.Pages
                     return; // User cancelled
                 }
 
-                System.Diagnostics.Debug.WriteLine($" Updating floor to: {result.floorName}");
+                var floorName = result.floorName.Trim();
+                System.Diagnostics.Debug.WriteLine($" Updating floor to: {floorName}");
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
@@ -254,16 +289,30 @@ namespace POS_in_NET.Pages
                     AddFloorButton.IsEnabled = false;
                 });
 
-                var updateResult = await _floorService.UpdateFloorAsync(floor.Id, result.floorName, "");
+                var updateResult = await _floorService.UpdateFloorAsync(floor.Id, floorName, "");
                 System.Diagnostics.Debug.WriteLine($" Update result: success={updateResult.success}");
 
                 if (updateResult.success)
                 {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        UpsertFloorInList(new Floor
+                        {
+                            Id = floor.Id,
+                            Name = floorName,
+                            Description = floor.Description,
+                            BackgroundImage = floor.BackgroundImage,
+                            IsActive = floor.IsActive,
+                            TableCount = floor.TableCount,
+                            CreatedDate = floor.CreatedDate,
+                            UpdatedDate = DateTime.Now
+                        });
+                    });
+
                     await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
                         await ToastNotification.ShowAsync("Success", updateResult.message, NotificationType.Success, 2000);
                     });
-                    await LoadFloorsAsync(); // Refresh list
                 }
                 else
                 {
@@ -283,6 +332,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     LoadingIndicator.IsRunning = false;
@@ -294,8 +344,14 @@ namespace POS_in_NET.Pages
 
         private async void OnDeleteFloorClicked(object sender, EventArgs e)
         {
+            if (_isFloorOperationInProgress)
+            {
+                return;
+            }
+
             try
             {
+                _isFloorOperationInProgress = true;
                 var button = sender as Button;
                 var floor = button?.CommandParameter as Floor;
 
@@ -348,11 +404,15 @@ namespace POS_in_NET.Pages
 
                     if (result.success)
                     {
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            RemoveFloorFromList(floor.Id);
+                        });
+
                         await MainThread.InvokeOnMainThreadAsync(async () =>
                         {
                             await ToastNotification.ShowAsync("Success", result.message, NotificationType.Success, 2000);
                         });
-                        await LoadFloorsAsync(); // Refresh list
                     }
                     else
                     {
@@ -377,6 +437,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
+                _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     LoadingIndicator.IsRunning = false;
@@ -384,6 +445,36 @@ namespace POS_in_NET.Pages
                     AddFloorButton.IsEnabled = true;
                 });
             }
+        }
+
+        private void UpsertFloorInList(Floor floor)
+        {
+            var existing = _floors.FirstOrDefault(item => item.Id == floor.Id);
+            if (existing == null)
+            {
+                _floors.Add(floor);
+            }
+            else
+            {
+                var index = _floors.IndexOf(existing);
+                if (index >= 0)
+                {
+                    _floors[index] = floor;
+                }
+            }
+
+            _lastSuccessfulLoadAt = DateTime.UtcNow;
+        }
+
+        private void RemoveFloorFromList(int floorId)
+        {
+            var existing = _floors.FirstOrDefault(item => item.Id == floorId);
+            if (existing != null)
+            {
+                _floors.Remove(existing);
+            }
+
+            _lastSuccessfulLoadAt = DateTime.UtcNow;
         }
     }
 }

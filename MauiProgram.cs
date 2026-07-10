@@ -4,6 +4,7 @@ using POS_in_NET.Pages;
 using MyFirstMauiApp.Services;
 using CommunityToolkit.Maui;
 using Syncfusion.Maui.Core.Hosting;
+using Microsoft.Maui.LifecycleEvents;
 
 namespace POS_in_NET;
 
@@ -27,6 +28,14 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 				// Legacy alias — some screens historically referenced OpenSansBold
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansBold");
+			})
+			.ConfigureLifecycleEvents(events =>
+			{
+#if WINDOWS
+				events.AddWindows(windows =>
+					windows.OnWindowCreated(window =>
+						PosWindowService.ApplyLockedFullscreen(window)));
+#endif
 			});
 
 #if DEBUG
@@ -77,6 +86,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<OrderWebConnectionKeeperService>();
 		
 		// Register Loyalty & Gift Card Services
+		builder.Services.AddSingleton<OrderWebGiftCardApiService>();
+		builder.Services.AddSingleton<GiftCardActivationQueueService>();
 		builder.Services.AddSingleton<LoyaltyService>();
 		
 		// Register PDF Receipt Service (Syncfusion PDF Library)

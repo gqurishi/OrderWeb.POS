@@ -12,6 +12,7 @@ public partial class AddFloorDialog : ContentView
     public Task<(bool success, string? floorName)> ShowAsync()
     {
         _taskCompletionSource = new TaskCompletionSource<(bool, string?)>();
+        FloorNameEntry.Text = string.Empty;
         IsVisible = true;
         
         // Auto-focus on floor name entry

@@ -11,6 +11,11 @@ public partial class InitialAdminSetupPage : ContentPage
         InitializeComponent();
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        PosWindowService.MinimizeMainWindow();
+    }
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();

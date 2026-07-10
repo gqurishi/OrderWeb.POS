@@ -331,6 +331,25 @@ public class ReceiptService
         }
     }
 
+    public async Task<bool> PrintReceiptTextAsync(string receiptText, string? orderId = null)
+    {
+        if (string.IsNullOrWhiteSpace(receiptText))
+        {
+            return false;
+        }
+
+        try
+        {
+            await PrintToSystemAsync(receiptText, orderId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Print text receipt failed: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>
     /// Print to system default printer
     /// </summary>

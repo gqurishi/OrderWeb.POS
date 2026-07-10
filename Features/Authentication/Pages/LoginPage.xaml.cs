@@ -65,6 +65,11 @@ public partial class LoginPage : ContentPage
         await Navigation.PushModalAsync(new ClockTimeModal(), false);
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        PosWindowService.MinimizeMainWindow();
+    }
+
     private void OnUsernameCompleted(object sender, EventArgs e)
     {
         // Not used in PIN mode

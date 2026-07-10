@@ -90,6 +90,74 @@ public class FlexibleNullableDecimalConverter : JsonConverter<decimal?>
 }
 
 /// <summary>
+/// Flexible converter for OrderWeb suggested amount arrays where values may be
+/// numbers or strings.
+/// </summary>
+public class FlexibleDecimalListConverter : JsonConverter<List<decimal>>
+{
+    public override List<decimal> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var values = new List<decimal>();
+
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            return values;
+        }
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndArray)
+            {
+                return values;
+            }
+
+            if (reader.TokenType == JsonTokenType.Number && reader.TryGetDecimal(out var number))
+            {
+                values.Add(number);
+            }
+            else if (reader.TokenType == JsonTokenType.String
+                && decimal.TryParse(reader.GetString(), out var parsed))
+            {
+                values.Add(parsed);
+            }
+        }
+
+        return values;
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<decimal> value, JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        foreach (var amount in value)
+        {
+            writer.WriteNumberValue(amount);
+        }
+
+        writer.WriteEndArray();
+    }
+}
+
+public static class GiftCardLookupPurpose
+{
+    public const string Activate = "activate";
+    public const string TopUp = "topup";
+    public const string Redeem = "redeem";
+
+    public static string Normalize(string? purpose)
+    {
+        return purpose?.Trim().ToLowerInvariant() switch
+        {
+            Activate => Activate,
+            TopUp => TopUp,
+            "top-up" => TopUp,
+            "top_up" => TopUp,
+            Redeem => Redeem,
+            _ => Redeem
+        };
+    }
+}
+
+/// <summary>
 /// Gift card information from OrderWeb.net
 /// CRITICAL: API returns balance as STRING "100.00" not decimal number!
 /// </summary>
@@ -185,6 +253,31 @@ public class GiftCardLookupResponse
     
     [JsonPropertyName("gift_card")]
     public GiftCard? GiftCard { get; set; }
+
+    [JsonPropertyName("till")]
+    public GiftCardTillInstructions? Till { get; set; }
+
+    [JsonIgnore]
+    public bool CanProceed => Till?.CanProceed ?? Success;
+
+    [JsonIgnore]
+    public string? StatusMessage => Till?.StatusMessage ?? Message ?? Error;
+
+    [JsonIgnore]
+    public bool CanQueueForRetry { get; set; }
+}
+
+public class GiftCardTillInstructions
+{
+    [JsonPropertyName("can_proceed")]
+    public bool? CanProceed { get; set; }
+
+    [JsonPropertyName("status_message")]
+    public string? StatusMessage { get; set; }
+
+    [JsonPropertyName("suggested_amounts")]
+    [JsonConverter(typeof(FlexibleDecimalListConverter))]
+    public List<decimal> SuggestedAmounts { get; set; } = new();
 }
 
 /// <summary>
@@ -212,6 +305,69 @@ public class GiftCardRedeemRequest
 
     [JsonPropertyName("orderId")]
     public string? OrderId { get; set; }
+}
+
+public class GiftCardActivateRequest
+{
+    [JsonPropertyName("cardNumber")]
+    public string CardNumber { get; set; } = string.Empty;
+
+    [JsonPropertyName("amount")]
+    public decimal Amount { get; set; }
+
+    [JsonPropertyName("paymentMethod")]
+    public string PaymentMethod { get; set; } = string.Empty;
+
+    [JsonPropertyName("orderId")]
+    public string? OrderId { get; set; }
+
+    [JsonPropertyName("tillOrderId")]
+    public string? TillOrderId { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
+public class GiftCardSellRequest
+{
+    [JsonPropertyName("cardNumber")]
+    public string? CardNumber { get; set; }
+
+    [JsonPropertyName("amount")]
+    public decimal Amount { get; set; }
+
+    [JsonPropertyName("paymentMethod")]
+    public string PaymentMethod { get; set; } = string.Empty;
+
+    [JsonPropertyName("orderId")]
+    public string? OrderId { get; set; }
+
+    [JsonPropertyName("tillOrderId")]
+    public string? TillOrderId { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
+public class GiftCardTopUpRequest
+{
+    [JsonPropertyName("cardNumber")]
+    public string CardNumber { get; set; } = string.Empty;
+
+    [JsonPropertyName("amount")]
+    public decimal Amount { get; set; }
+
+    [JsonPropertyName("paymentMethod")]
+    public string PaymentMethod { get; set; } = string.Empty;
+
+    [JsonPropertyName("orderId")]
+    public string? OrderId { get; set; }
+
+    [JsonPropertyName("tillOrderId")]
+    public string? TillOrderId { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
 }
 
 /// <summary>
@@ -262,6 +418,47 @@ public class GiftCardRedeemResponse
     
     [JsonIgnore]
     public string AmountRedeemedDisplay => EffectiveAmountRedeemed.HasValue ? $"£{EffectiveAmountRedeemed.Value:F2}" : "N/A";
+}
+
+public class GiftCardTransactionResponse
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("gift_card")]
+    public GiftCard? GiftCard { get; set; }
+
+    [JsonPropertyName("receipt")]
+    public GiftCardReceipt? Receipt { get; set; }
+
+    [JsonPropertyName("transaction_id")]
+    public string? TransactionId { get; set; }
+
+    [JsonPropertyName("remaining_balance")]
+    [JsonConverter(typeof(FlexibleNullableDecimalConverter))]
+    public decimal? RemainingBalance { get; set; }
+
+    [JsonPropertyName("new_balance")]
+    [JsonConverter(typeof(FlexibleNullableDecimalConverter))]
+    public decimal? NewBalance { get; set; }
+
+    [JsonIgnore]
+    public decimal? EffectiveBalance => NewBalance ?? RemainingBalance ?? GiftCard?.Balance;
+
+    [JsonIgnore]
+    public bool CanQueueForRetry { get; set; }
+}
+
+public class GiftCardReceipt
+{
+    [JsonPropertyName("lines")]
+    public List<string> Lines { get; set; } = new();
 }
 
 /// <summary>

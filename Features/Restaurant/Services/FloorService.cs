@@ -206,12 +206,9 @@ namespace POS_in_NET.Services
                     Description = floorDescription?.Trim() ?? string.Empty,
                     IsActive = true
                 });
-                await TerminalEventSyncService.PublishAsync(
+                await PublishFloorChangeSafelyAsync(
                     connection,
-                    AppDataChangeKind.TableLayout,
-                    "floor",
                     newFloorId.ToString(),
-                    null,
                     new { action = "created", floorName });
                 AppDataRefreshService.RequestRefresh();
                 
@@ -295,12 +292,9 @@ namespace POS_in_NET.Services
                 
                 if (floorsDeleted > 0)
                 {
-                    await TerminalEventSyncService.PublishAsync(
+                    await PublishFloorChangeSafelyAsync(
                         connection,
-                        AppDataChangeKind.TableLayout,
-                        "floor",
                         floorId.ToString(),
-                        null,
                         new { action = "deleted", tableCount });
 
                     NotifyFloorsChanged(FloorChangeAction.Deleted, new Floor
@@ -316,10 +310,16 @@ namespace POS_in_NET.Services
                         : "Floor permanently deleted";
                     return (true, message);
                 }
-                else
+
+                NotifyFloorsChanged(FloorChangeAction.Deleted, new Floor
                 {
-                    return (false, "Floor not found");
-                }
+                    Id = floorId,
+                    Name = string.Empty,
+                    IsActive = false
+                });
+                AppDataRefreshService.RequestRefresh();
+
+                return (true, "Floor already deleted");
             }
             catch (Exception error)
             {
@@ -365,12 +365,9 @@ namespace POS_in_NET.Services
 
                 if (affectedRows > 0)
                 {
-                    await TerminalEventSyncService.PublishAsync(
+                    await PublishFloorChangeSafelyAsync(
                         connection,
-                        AppDataChangeKind.TableLayout,
-                        "floor",
                         floorId.ToString(),
-                        null,
                         new { action = "background_updated" });
 
                     System.Diagnostics.Debug.WriteLine($" Floor background updated: ID={floorId}");
@@ -430,12 +427,9 @@ namespace POS_in_NET.Services
 
                 await UpdateFloorBackgroundKeyAsync(connection, floorId, $"db:{contentHash}");
 
-                await TerminalEventSyncService.PublishAsync(
+                await PublishFloorChangeSafelyAsync(
                     connection,
-                    AppDataChangeKind.TableLayout,
-                    "floor",
                     floorId.ToString(),
-                    null,
                     new { action = "background_image_updated", contentHash });
 
                 return localPath;
@@ -508,12 +502,9 @@ namespace POS_in_NET.Services
 
                 await UpdateFloorBackgroundKeyAsync(connection, floorId, string.Empty);
 
-                await TerminalEventSyncService.PublishAsync(
+                await PublishFloorChangeSafelyAsync(
                     connection,
-                    AppDataChangeKind.TableLayout,
-                    "floor",
                     floorId.ToString(),
-                    null,
                     new { action = "background_image_removed" });
 
                 return true;
@@ -715,15 +706,52 @@ namespace POS_in_NET.Services
                 Description = floorDescription?.Trim() ?? string.Empty,
                 IsActive = true
             });
-            await TerminalEventSyncService.PublishAsync(
-                AppDataChangeKind.TableLayout,
-                "floor",
+            await PublishFloorChangeSafelyAsync(
                 floorId.ToString(),
-                null,
                 new { action = "updated", floorName });
             AppDataRefreshService.RequestRefresh();
 
             return (true, $"Floor '{floorName}' updated successfully");
+        }
+
+        private static async Task PublishFloorChangeSafelyAsync(
+            MySqlConnection connection,
+            string floorId,
+            object payload)
+        {
+            try
+            {
+                await TerminalEventSyncService.PublishAsync(
+                    connection,
+                    AppDataChangeKind.TableLayout,
+                    "floor",
+                    floorId,
+                    null,
+                    payload);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Floor live-update publish skipped: {ex.Message}");
+            }
+        }
+
+        private static async Task PublishFloorChangeSafelyAsync(
+            string floorId,
+            object payload)
+        {
+            try
+            {
+                await TerminalEventSyncService.PublishAsync(
+                    AppDataChangeKind.TableLayout,
+                    "floor",
+                    floorId,
+                    null,
+                    payload);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Floor live-update publish skipped: {ex.Message}");
+            }
         }
     }
 

@@ -251,6 +251,12 @@ public partial class ManagerDashboardPage : ContentPage
         Shell.Current.FlyoutIsPresented = true;
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        _inactivityService.ResetActivity();
+        PosWindowService.MinimizeMainWindow();
+    }
+
     private static void ClearShellDetailStacks()
     {
         if (Shell.Current is not Shell shell)

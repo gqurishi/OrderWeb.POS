@@ -143,12 +143,17 @@
                                TextColor="{StaticResource Purple900}"
                                BackgroundColor="White"
                                ClearButtonVisibility="WhileEditing"
+                               IsReadOnly="True"
                                Keyboard="Default"
                                FontFamily="AlegreyaRegular"
                                FontSize="14"
                                HeightRequest="42"
                                Focused="OnGlobalSearchEntryFocused"
-                               TextChanged="OnGlobalSearchChanged" />
+                               TextChanged="OnGlobalSearchChanged">
+                            <Entry.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnSearchSectionTapped" />
+                            </Entry.GestureRecognizers>
+                        </Entry>
                         <Label Text="Tip: search by full or partial order number"
                                FontFamily="AlegreyaRegular"
                                FontSize="11"

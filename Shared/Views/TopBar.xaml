@@ -58,6 +58,18 @@
                                    VerticalOptions="Center"
                                    Spacing="15"
                                    ZIndex="2">
+
+                <Button Text="-"
+                        WidthRequest="44"
+                        HeightRequest="44"
+                        Padding="0"
+                        CornerRadius="22"
+                        BackgroundColor="#E5E7EB"
+                        TextColor="#1F2937"
+                        FontSize="24"
+                        FontAttributes="Bold"
+                        Clicked="OnMinimizeClicked"
+                        ToolTipProperties.Text="Minimize POS"/>
                 
                 <!-- Custom Content Placeholder (for Web Orders page) -->
                 <ContentPresenter x:Name="CustomContentPresenter" 

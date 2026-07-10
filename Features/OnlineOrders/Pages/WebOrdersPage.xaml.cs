@@ -310,12 +310,15 @@ namespace POS_in_NET.Pages
                 
                 //  FILTER BY SELECTED DATE (or show all if toggle enabled)
                 List<Order> filteredWebOrders;
+                var hasSearch = !string.IsNullOrWhiteSpace(_searchText);
                 
-                if (_showAllOrders)
+                if (_showAllOrders || hasSearch)
                 {
-                    // Show ALL web orders regardless of date
+                    // Global search must cover all cached web orders, not only the selected date.
                     filteredWebOrders = allOrders.Where(IsWebOrder).ToList();
-                    System.Diagnostics.Debug.WriteLine($" Showing ALL orders: {filteredWebOrders.Count}");
+                    System.Diagnostics.Debug.WriteLine(hasSearch
+                        ? $" Searching ALL web orders: {filteredWebOrders.Count}"
+                        : $" Showing ALL orders: {filteredWebOrders.Count}");
                 }
                 else
                 {
@@ -341,13 +344,12 @@ namespace POS_in_NET.Pages
                 }
                 
                 // Apply search filter if exists
-                if (!string.IsNullOrWhiteSpace(_searchText))
+                if (hasSearch)
                 {
-                    filteredWebOrders = filteredWebOrders.Where(o => 
-                        o.CustomerName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true ||
-                        o.CustomerPhone?.Contains(_searchText) == true ||
-                        o.OrderNumber?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true
-                    ).ToList();
+                    filteredWebOrders = filteredWebOrders
+                        .Where(o => MatchesWebOrderSearch(o, _searchText))
+                        .ToList();
+                    System.Diagnostics.Debug.WriteLine($" Search '{_searchText}' matched {filteredWebOrders.Count} web orders");
                 }
 
                 //  PAGINATION - Show 10 orders per page for speed
@@ -377,7 +379,11 @@ namespace POS_in_NET.Pages
                         ).ToList();
                         
                         // Update "Showing" label
-                        if (_selectedDate.Date == DateTime.Today)
+                        if (!string.IsNullOrWhiteSpace(_searchText))
+                        {
+                            SelectedDateLabel.Text = $"Search: {_searchText.Trim()}";
+                        }
+                        else if (_selectedDate.Date == DateTime.Today)
                         {
                             SelectedDateLabel.Text = "Showing: Today";
                         }
@@ -444,6 +450,27 @@ namespace POS_in_NET.Pages
         private static bool IsWebOrder(Order order)
         {
             return string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool MatchesWebOrderSearch(Order order, string searchText)
+        {
+            var query = searchText.Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return true;
+            }
+
+            return Contains(order.OrderNumber, query)
+                || Contains(order.CloudOrderId, query)
+                || Contains(order.OrderId, query)
+                || Contains(order.CustomerName, query)
+                || Contains(order.CustomerPhone, query);
+        }
+
+        private static bool Contains(string? value, string query)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && value.Contains(query, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<Dictionary<int, WebOrderPrintStatus>> LoadPrintStatusesAsync(List<Order> orders)
@@ -917,7 +944,7 @@ namespace POS_in_NET.Pages
                 var keyboard = new VirtualKeyboardDialog();
                 keyboard.SetInitialText(_searchText);
 
-                var result = await keyboard.ShowAsync();
+                var result = await keyboard.ShowAsync(this);
                 if (result == null)
                 {
                     return;

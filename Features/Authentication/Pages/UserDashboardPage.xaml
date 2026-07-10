@@ -29,6 +29,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <Image Grid.Column="0"
@@ -77,8 +78,22 @@
                            HorizontalOptions="End"/>
                 </StackLayout>
                 
+                <Button Grid.Column="3"
+                        Text="-"
+                        WidthRequest="42"
+                        HeightRequest="42"
+                        Padding="0"
+                        CornerRadius="21"
+                        BackgroundColor="#E5E7EB"
+                        TextColor="#1F2937"
+                        FontSize="22"
+                        FontAttributes="Bold"
+                        Margin="0,0,12,0"
+                        Clicked="OnMinimizeClicked"
+                        ToolTipProperties.Text="Minimize POS" />
+
                 <!-- Logout Button -->
-                <Image Grid.Column="3"
+                <Image Grid.Column="4"
                        Source="outred.png"
                       WidthRequest="42"
                       HeightRequest="42"

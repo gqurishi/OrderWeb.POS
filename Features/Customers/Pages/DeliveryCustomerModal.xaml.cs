@@ -5,6 +5,10 @@ namespace POS_in_NET.Pages;
 
 public partial class DeliveryCustomerModal : ContentPage
 {
+    private const int MaxVisibleAddressResults = 10;
+    private const double AddressResultRowHeight = 54;
+    private const double AddressResultsHeightPadding = 8;
+
     private readonly DeliveryCustomerService _customerService;
     private readonly PostcodeLookupService _postcodeLookupService;
     private readonly DeliveryZoneService _deliveryZoneService;
@@ -75,8 +79,7 @@ public partial class DeliveryCustomerModal : ContentPage
 
             if (addresses.Count > 0)
             {
-                AddressResultsCollection.ItemsSource = addresses;
-                AddressResultsBorder.IsVisible = true;
+                ShowAddressResults(addresses);
                 await ToastNotification.ShowAsync(
                     "OrderWeb",
                     $"Found {addresses.Count} address(es). Select one to fill the form.",
@@ -126,7 +129,19 @@ public partial class DeliveryCustomerModal : ContentPage
             PostcodeResultEntry.Text = address.Postcode;
 
             AddressResultsBorder.IsVisible = false;
+            AddressResultsCollection.SelectedItem = null;
         }
+    }
+
+    private void ShowAddressResults(IReadOnlyCollection<AddressResult> addresses)
+    {
+        var visibleRows = Math.Min(Math.Max(addresses.Count, 1), MaxVisibleAddressResults);
+        var height = (visibleRows * AddressResultRowHeight) + AddressResultsHeightPadding;
+
+        AddressResultsBorder.HeightRequest = height;
+        AddressResultsCollection.HeightRequest = height;
+        AddressResultsCollection.ItemsSource = addresses.ToList();
+        AddressResultsBorder.IsVisible = true;
     }
 
     private async void OnSearchClicked(object sender, EventArgs e)

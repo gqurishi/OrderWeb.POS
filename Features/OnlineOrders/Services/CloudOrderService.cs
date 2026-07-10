@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text;
+using System.Net;
 using POS_in_NET.Models;
 using POS_in_NET.Models.Api;
 using MyFirstMauiApp.Services;
@@ -901,12 +902,7 @@ public class CloudOrderService
             baseUrl = baseUrl[..^(tenantSlug.Length + 1)];
         }
 
-        if (baseUrl.EndsWith("/pos/pull-orders", StringComparison.OrdinalIgnoreCase))
-        {
-            baseUrl = baseUrl[..^"/pos/pull-orders".Length];
-        }
-
-        return baseUrl.TrimEnd('/');
+        return OrderWebApiClient.NormalizeApiBaseUrl(baseUrl);
     }
 
     private static string BuildPullOrdersEndpoint(
@@ -929,6 +925,154 @@ public class CloudOrderService
         }
 
         return endpoint;
+    }
+
+    private async Task<OrderPullResult> PullOrdersFromOrderWebAsync(string endpoint, string apiKey)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+        _orderWebApiClient.ApplyAuthHeaders(request, apiKey);
+        request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+
+        System.Diagnostics.Debug.WriteLine($" Making sync request: {endpoint}");
+        var response = await _httpClient.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        System.Diagnostics.Debug.WriteLine($" API Response Status: {response.StatusCode}");
+        System.Diagnostics.Debug.WriteLine($" Response Headers: {response.Headers}");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            System.Diagnostics.Debug.WriteLine($" Sync failed: {response.StatusCode} - {content}");
+            return OrderPullResult.Failed(response.StatusCode, BuildPullOrdersError(response.StatusCode, content));
+        }
+
+        System.Diagnostics.Debug.WriteLine("========================================");
+        System.Diagnostics.Debug.WriteLine($" API RESPONSE ({content.Length} chars):");
+        System.Diagnostics.Debug.WriteLine($"First 500 chars: {content.Substring(0, Math.Min(500, content.Length))}");
+        System.Diagnostics.Debug.WriteLine("========================================");
+
+        var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(content, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        var orders = ExtractOrders(apiResponse);
+        System.Diagnostics.Debug.WriteLine($" API Response Parsed:");
+        System.Diagnostics.Debug.WriteLine($"   Success: {apiResponse?.Success}");
+        System.Diagnostics.Debug.WriteLine($"   Orders count: {apiResponse?.Orders?.Count ?? 0}");
+        System.Diagnostics.Debug.WriteLine($"   PendingOrders count: {apiResponse?.PendingOrders?.Count ?? 0}");
+        System.Diagnostics.Debug.WriteLine($"   Orders to process: {orders.Count}");
+
+        if (orders.Count > 0)
+        {
+            var firstOrder = orders.First();
+            System.Diagnostics.Debug.WriteLine($" First order details:");
+            System.Diagnostics.Debug.WriteLine($"   ID: {firstOrder.Id}");
+            System.Diagnostics.Debug.WriteLine($"   OrderNumber: {firstOrder.OrderNumber}");
+            System.Diagnostics.Debug.WriteLine($"   Customer: {firstOrder.CustomerName}");
+            System.Diagnostics.Debug.WriteLine($"   CreatedAt: {firstOrder.CreatedAt}");
+            System.Diagnostics.Debug.WriteLine($"   Total: {firstOrder.TotalAmount}");
+        }
+
+        if (apiResponse?.Success == false && orders.Count == 0)
+        {
+            var apiError = apiResponse.Error ?? apiResponse.Message ?? "OrderWeb returned success=false.";
+            return OrderPullResult.Failed(InferPullErrorStatus(apiError), $"API error: {apiError}");
+        }
+
+        return OrderPullResult.Ok(orders);
+    }
+
+    private static List<CloudOrderResponse> ExtractOrders(OrderWebApiResponse? apiResponse)
+    {
+        if (apiResponse?.Orders?.Any() == true)
+        {
+            return apiResponse.Orders;
+        }
+
+        return apiResponse?.PendingOrders ?? new List<CloudOrderResponse>();
+    }
+
+    private static string BuildPullOrdersError(HttpStatusCode statusCode, string content)
+    {
+        var trimmed = (content ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return $"API error: {statusCode}";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            var root = document.RootElement;
+            var message = GetJsonString(root, "error")
+                ?? GetJsonString(root, "message")
+                ?? GetJsonString(root, "details");
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return $"API error: {statusCode} - {message}";
+            }
+        }
+        catch
+        {
+            // Use the raw snippet below.
+        }
+
+        var snippet = trimmed.Length > 220 ? $"{trimmed[..220]}..." : trimmed;
+        return $"API error: {statusCode} - {snippet}";
+    }
+
+    private static string? GetJsonString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static bool ShouldRetryWithBroadPull(HttpStatusCode? statusCode)
+    {
+        return statusCode == HttpStatusCode.InternalServerError
+            || statusCode == HttpStatusCode.BadRequest
+            || statusCode == HttpStatusCode.UnprocessableEntity;
+    }
+
+    private static HttpStatusCode InferPullErrorStatus(string? apiError)
+    {
+        if (string.IsNullOrWhiteSpace(apiError))
+        {
+            return HttpStatusCode.OK;
+        }
+
+        if (apiError.Contains("InternalServerError", StringComparison.OrdinalIgnoreCase)
+            || apiError.Contains("internal server", StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpStatusCode.InternalServerError;
+        }
+
+        if (apiError.Contains("BadRequest", StringComparison.OrdinalIgnoreCase)
+            || apiError.Contains("bad request", StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpStatusCode.BadRequest;
+        }
+
+        if (apiError.Contains("Unprocessable", StringComparison.OrdinalIgnoreCase)
+            || apiError.Contains("validation", StringComparison.OrdinalIgnoreCase))
+        {
+            return HttpStatusCode.UnprocessableEntity;
+        }
+
+        return HttpStatusCode.OK;
+    }
+
+    private sealed record OrderPullResult(
+        bool Success,
+        List<CloudOrderResponse> Orders,
+        HttpStatusCode? StatusCode,
+        string? Error)
+    {
+        public static OrderPullResult Ok(List<CloudOrderResponse> orders) => new(true, orders, null, null);
+
+        public static OrderPullResult Failed(HttpStatusCode statusCode, string error) => new(false, new List<CloudOrderResponse>(), statusCode, error);
     }
 
     /// <summary>
@@ -1000,81 +1144,62 @@ public class CloudOrderService
             System.Diagnostics.Debug.WriteLine($" API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             System.Diagnostics.Debug.WriteLine($" Pulling OrderWeb orders from {syncRange} onwards (limit {limit})");
             System.Diagnostics.Debug.WriteLine("========================================");
-            
-            // CRITICAL: Clear ALL headers first to avoid "multiple values" error
-            _httpClient.DefaultRequestHeaders.Clear();
-            
-            // OrderWeb.net REST API uses Bearer token authentication
-            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 
-            System.Diagnostics.Debug.WriteLine($" Making sync request...");
-            var response = await _httpClient.GetAsync(endpoint);
-            
-            System.Diagnostics.Debug.WriteLine($" API Response Status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($" Response Headers: {response.Headers}");
-            
-            if (response.IsSuccessStatusCode)
+            var pullResult = await PullOrdersFromOrderWebAsync(endpoint, apiKey);
+            var usedFallback = false;
+            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
             {
-                var jsonContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine("========================================");
-                System.Diagnostics.Debug.WriteLine($" API RESPONSE ({jsonContent.Length} chars):");
-                System.Diagnostics.Debug.WriteLine($"First 500 chars: {jsonContent.Substring(0, Math.Min(500, jsonContent.Length))}");
-                System.Diagnostics.Debug.WriteLine("========================================");
-                
-                var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-                
-                // DEBUG: Log API response structure
-                System.Diagnostics.Debug.WriteLine($" API Response Parsed:");
-                System.Diagnostics.Debug.WriteLine($"   Success: {apiResponse?.Success}");
-                System.Diagnostics.Debug.WriteLine($"   Orders count: {apiResponse?.Orders?.Count ?? 0}");
-                System.Diagnostics.Debug.WriteLine($"   PendingOrders count: {apiResponse?.PendingOrders?.Count ?? 0}");
-                
-                if (apiResponse?.Orders != null && apiResponse.Orders.Any())
-                {
-                    System.Diagnostics.Debug.WriteLine($" First order details:");
-                    var firstOrder = apiResponse.Orders.First();
-                    System.Diagnostics.Debug.WriteLine($"   ID: {firstOrder.Id}");
-                    System.Diagnostics.Debug.WriteLine($"   OrderNumber: {firstOrder.OrderNumber}");
-                    System.Diagnostics.Debug.WriteLine($"   Customer: {firstOrder.CustomerName}");
-                    System.Diagnostics.Debug.WriteLine($"   CreatedAt: {firstOrder.CreatedAt}");
-                    System.Diagnostics.Debug.WriteLine($"   Total: {firstOrder.TotalAmount}");
-                }
+                var confirmedSinceEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, since: sinceParam, status: "confirmed");
+                System.Diagnostics.Debug.WriteLine($" Since pull failed ({pullResult.Error}). Retrying confirmed since pull: {confirmedSinceEndpoint}");
+                pullResult = await PullOrdersFromOrderWebAsync(confirmedSinceEndpoint, apiKey);
+                usedFallback = pullResult.Success;
+            }
 
-                // Check both Orders (new API) and PendingOrders (old API) for compatibility
-                var ordersToProcess = apiResponse?.Orders?.Any() == true ? apiResponse.Orders : apiResponse?.PendingOrders ?? new List<CloudOrderResponse>();
-                
-                System.Diagnostics.Debug.WriteLine($" Orders to process: {ordersToProcess.Count}");
-                
-                if (apiResponse?.Success == true && ordersToProcess.Any())
+            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
+            {
+                var broadConfirmedEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, status: "confirmed");
+                System.Diagnostics.Debug.WriteLine($" Confirmed since pull failed ({pullResult.Error}). Retrying broad confirmed pull: {broadConfirmedEndpoint}");
+                pullResult = await PullOrdersFromOrderWebAsync(broadConfirmedEndpoint, apiKey);
+                usedFallback = pullResult.Success;
+            }
+
+            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
+            {
+                var broadEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit);
+                System.Diagnostics.Debug.WriteLine($" Broad confirmed pull failed ({pullResult.Error}). Retrying broad pull: {broadEndpoint}");
+                pullResult = await PullOrdersFromOrderWebAsync(broadEndpoint, apiKey);
+                if (pullResult.Success)
                 {
-                    System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from {syncRange}");
-                    
-                    // Process all orders (will skip duplicates automatically)
-                    int newOrdersCount = await ProcessNewOrdersAsync(ordersToProcess);
-                    
-                    System.Diagnostics.Debug.WriteLine($" SYNC COMPLETE: Processed {ordersToProcess.Count} orders, {newOrdersCount} were new");
-                    
-                    // Trigger UI refresh
-                    OnOrdersUpdated?.Invoke();
-                    
-                    return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {syncRange} ({newOrdersCount} new)");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($" No orders found for {syncRange}");
-                    return (true, 0, $"No orders found for {syncRange}");
+                    usedFallback = true;
                 }
             }
-            else
+
+            if (!pullResult.Success)
             {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($" Sync failed: {response.StatusCode} - {errorContent}");
-                return (false, 0, $"API error: {response.StatusCode}");
+                return (false, 0, pullResult.Error ?? "API error while pulling OrderWeb orders.");
             }
+
+            var syncStartDate = targetDate.Date;
+            var ordersToProcess = pullResult.Orders
+                .Where(order => order.CreatedAt == default || order.CreatedAt.Date >= syncStartDate)
+                .ToList();
+
+            if (ordersToProcess.Any())
+            {
+                System.Diagnostics.Debug.WriteLine($" Found {ordersToProcess.Count} orders from {syncRange}");
+
+                var newOrdersCount = await ProcessNewOrdersAsync(ordersToProcess);
+
+                System.Diagnostics.Debug.WriteLine($" SYNC COMPLETE: Processed {ordersToProcess.Count} orders, {newOrdersCount} were new");
+
+                OnOrdersUpdated?.Invoke();
+
+                var fallbackNote = usedFallback ? " using broad fallback" : string.Empty;
+                return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {syncRange}{fallbackNote} ({newOrdersCount} new)");
+            }
+
+            System.Diagnostics.Debug.WriteLine($" No orders found for {syncRange}");
+            return (true, 0, $"No orders found for {syncRange}");
         }
         catch (Exception ex)
         {

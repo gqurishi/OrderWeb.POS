@@ -19,6 +19,11 @@ public partial class TerminalSetupPage : ContentPage
         UpdateModeUi();
     }
 
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+        PosWindowService.MinimizeMainWindow();
+    }
+
     private void LoadExistingConfiguration()
     {
         var config = TerminalConfigurationService.GetConfiguration();

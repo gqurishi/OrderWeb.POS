@@ -12,7 +12,6 @@ namespace POS_in_NET.Views
     public partial class AddTableDialog : ContentView
     {
         private TaskCompletionSource<(bool success, int floorId, string floorName, string? tableName, string tableDesignIcon)>? _taskCompletionSource;
-        private Grid? _parentGrid;
         private readonly FloorService _floorService;
         private List<Floor> _floors = new List<Floor>();
         private string _selectedDesignIcon = "table_1.png"; // Default design
@@ -33,6 +32,8 @@ namespace POS_in_NET.Views
             _floors = floors;
             FloorSelectionStack.Children.Clear();
             _floorBorders.Clear();
+            _selectedFloorId = 0;
+            _selectedFloorName = string.Empty;
             
             // Create elegant floor selection cards
             for (int i = 0; i < floors.Count; i++)
@@ -182,47 +183,27 @@ namespace POS_in_NET.Views
             }
         }
 
-        public async Task<(bool success, int floorId, string floorName, string? tableName, string tableDesignIcon)> ShowAsync()
+        public Task<(bool success, int floorId, string floorName, string? tableName, string tableDesignIcon)> ShowAsync()
         {
             _taskCompletionSource = new TaskCompletionSource<(bool, int, string, string?, string)>();
-            
-            // Find the page's content grid
-            if (Application.Current?.MainPage is Shell shell)
+
+            TableNumberEntry.Text = string.Empty;
+            SelectDesign(1);
+            IsVisible = true;
+
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(100), () =>
             {
-                var currentPage = shell.CurrentPage;
-                
-                if (currentPage != null)
+                try
                 {
-                    var pageContent = FindPageContent(currentPage);
-                    if (pageContent is Grid mainGrid)
-                    {
-                        _parentGrid = mainGrid;
-                        
-                        // Make sure dialog fills entire grid
-                        Grid.SetRowSpan(this, mainGrid.RowDefinitions.Count > 0 ? mainGrid.RowDefinitions.Count : 1);
-                        Grid.SetColumnSpan(this, mainGrid.ColumnDefinitions.Count > 0 ? mainGrid.ColumnDefinitions.Count : 1);
-                        
-                        // Add dialog overlay to the grid
-                        mainGrid.Children.Add(this);
-                        
-                        // Focus on the entry field
-                        await Task.Delay(100);
-                        TableNumberEntry.Focus();
-                    }
+                    TableNumberEntry.Focus();
                 }
-            }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"AddTableDialog focus skipped: {ex.Message}");
+                }
+            });
 
-            return await _taskCompletionSource.Task;
-        }
-
-        private Element? FindPageContent(Element element)
-        {
-            var contentProperty = element.GetType().GetProperty("Content");
-            if (contentProperty != null)
-            {
-                return contentProperty.GetValue(element) as Element;
-            }
-            return null;
+            return _taskCompletionSource.Task;
         }
 
         private async void OnCreateClicked(object sender, EventArgs e)
@@ -256,6 +237,7 @@ namespace POS_in_NET.Views
                 _selectedFloorId = selectedFloor.Id;
             }
 
+            _selectedFloorName = selectedFloor.Name;
             _taskCompletionSource?.TrySetResult((true, _selectedFloorId, _selectedFloorName, tableName, _selectedDesignIcon));
             CloseDialog();
         }
@@ -338,10 +320,7 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
-            if (_parentGrid != null)
-            {
-                _parentGrid.Children.Remove(this);
-            }
+            IsVisible = false;
         }
     }
 }

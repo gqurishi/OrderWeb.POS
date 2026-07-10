@@ -15,17 +15,22 @@ public class LoyaltyService
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
     private readonly OrderWebApiClient? _orderWebApiClient;
+    private readonly OrderWebGiftCardApiService? _giftCardApiService;
     private string? _apiKey;
     private string? _baseUrl;
     private string? _tenantId;
     private string? _restaurantSlug;
 
-    public LoyaltyService(DatabaseService databaseService, OrderWebApiClient? orderWebApiClient = null)
+    public LoyaltyService(
+        DatabaseService databaseService,
+        OrderWebApiClient? orderWebApiClient = null,
+        OrderWebGiftCardApiService? giftCardApiService = null)
     {
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
         _databaseService = databaseService;
         _orderWebApiClient = orderWebApiClient;
+        _giftCardApiService = giftCardApiService;
     }
 
     private readonly SemaphoreSlim _initLock = new(1, 1);
@@ -378,6 +383,11 @@ public class LoyaltyService
     /// </summary>
     public async Task<GiftCardLookupResponse> CheckGiftCardBalanceAsync(string cardNumber)
     {
+        if (_giftCardApiService != null)
+        {
+            return await _giftCardApiService.LookupAsync(cardNumber, GiftCardLookupPurpose.Redeem);
+        }
+
         await EnsureInitializedAsync();
         try
         {
@@ -435,6 +445,19 @@ public class LoyaltyService
     /// </summary>
     public async Task<GiftCardRedeemResponse> RedeemGiftCardAsync(string cardNumber, decimal amount, string description, string? transactionId = null, string? orderId = null)
     {
+        if (_giftCardApiService != null)
+        {
+            return await _giftCardApiService.RedeemAsync(
+                new GiftCardRedeemRequest
+                {
+                    CardNumber = cardNumber,
+                    Amount = amount,
+                    Description = description,
+                    OrderId = orderId
+                },
+                transactionId);
+        }
+
         await EnsureInitializedAsync();
         try
         {
@@ -678,9 +701,14 @@ public class LoyaltyService
         return OrderWebApiClient.BuildIdempotencyKey(operation, fallbackParts);
     }
 
-    private static string GetGiftCardTenant()
+    private string GetGiftCardTenant()
     {
-        return "bistro";
+        if (!string.IsNullOrWhiteSpace(_tenantId))
+        {
+            return _tenantId.Trim();
+        }
+
+        return _restaurantSlug?.Trim() ?? string.Empty;
     }
 
     private static string BuildFallbackGiftCardOrderId(string? transactionId)

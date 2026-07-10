@@ -130,32 +130,33 @@
                             StrokeThickness="2"
                             Stroke="#E2E8F0"
                             Padding="0"
-                            MaximumHeightRequest="200"
+                            MaximumHeightRequest="560"
+                            MinimumHeightRequest="56"
                             Margin="0,8,0,0">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="12"/>
                         </Border.StrokeShape>
-                        <ScrollView>
-                            <CollectionView x:Name="AddressResultsCollection"
-                                            SelectionMode="Single"
-                                            SelectionChanged="OnAddressSelected">
-                                <CollectionView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Padding="16,12"
-                                                BackgroundColor="Transparent"
-                                                Margin="0,0,0,1">
-                                            <VerticalStackLayout Spacing="4">
-                                                <Label Text="{Binding DisplayText}" 
-                                                       FontSize="15" 
-                                                       FontAttributes="Bold"
-                                                       TextColor="#1A202C"
-                                                       LineBreakMode="WordWrap"/>
-                                            </VerticalStackLayout>
-                                        </Border>
-                                    </DataTemplate>
-                                </CollectionView.ItemTemplate>
-                            </CollectionView>
-                        </ScrollView>
+                        <CollectionView x:Name="AddressResultsCollection"
+                                        SelectionMode="Single"
+                                        ItemSizingStrategy="MeasureFirstItem"
+                                        SelectionChanged="OnAddressSelected">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="16,12"
+                                            BackgroundColor="Transparent"
+                                            MinimumHeightRequest="52"
+                                            Margin="0,0,0,1">
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label Text="{Binding DisplayText}" 
+                                                   FontSize="15" 
+                                                   FontAttributes="Bold"
+                                                   TextColor="#1A202C"
+                                                   LineBreakMode="WordWrap"/>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
                     </Border>
                     
                     <!-- Structured Address Form -->

@@ -171,6 +171,9 @@ public partial class App : Application
 			var offlineQueueService = serviceProvider.GetService<OfflineQueueService>();
 			offlineQueueService?.StartAutoProcessing();
 
+			var giftCardActivationQueueService = serviceProvider.GetService<GiftCardActivationQueueService>();
+			giftCardActivationQueueService?.StartAutoFlush();
+
 			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
 			if (reservationSyncService != null)
 			{
