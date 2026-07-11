@@ -11,8 +11,6 @@ public partial class App : Application
 	{
 		try
 		{
-			Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("NDE1MDY0NUAzMjM3MmUzMDJlMzBQUWtDaHdJdXBlVTM0bmFxUVEveGZ1bkswUGJ6SXN1UExNeWtobERJK2p3PQ==");
-
 			AppDiagnostics.Log("=== APP CONSTRUCTOR ===");
 
 			InitializeComponent();
@@ -167,12 +165,6 @@ public partial class App : Application
 			}
 
 			_cloudOrderService = serviceProvider.GetService<CloudOrderService>();
-
-			var offlineQueueService = serviceProvider.GetService<OfflineQueueService>();
-			offlineQueueService?.StartAutoProcessing();
-
-			var giftCardActivationQueueService = serviceProvider.GetService<GiftCardActivationQueueService>();
-			giftCardActivationQueueService?.StartAutoFlush();
 
 			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
 			if (reservationSyncService != null)

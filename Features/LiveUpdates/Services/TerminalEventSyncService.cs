@@ -231,6 +231,9 @@ public static class TerminalEventSyncService
     {
         AppDataChangeKind.Orders => "orders",
         AppDataChangeKind.TableLayout => "table_layout",
+        AppDataChangeKind.Reservations => "reservations",
+        AppDataChangeKind.Settings => "settings",
+        AppDataChangeKind.Printers => "printers",
         AppDataChangeKind.All => "all",
         _ => "manual"
     };
@@ -239,6 +242,10 @@ public static class TerminalEventSyncService
     {
         "orders" => AppDataChangeKind.Orders,
         "table_layout" => AppDataChangeKind.TableLayout,
+        "tables" => AppDataChangeKind.TableLayout,
+        "reservations" => AppDataChangeKind.Reservations,
+        "settings" => AppDataChangeKind.Settings,
+        "printers" => AppDataChangeKind.Printers,
         "all" => AppDataChangeKind.All,
         _ => AppDataChangeKind.Manual
     };

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text;
 using System.Net;
+using MySqlConnector;
 using POS_in_NET.Models;
 using POS_in_NET.Models.Api;
 using MyFirstMauiApp.Services;
@@ -10,9 +11,11 @@ namespace POS_in_NET.Services;
 public class CloudOrderService
 {
     private const int DefaultOrderSyncLimit = 100;
-    private const int BackfillOrderSyncLimit = 500;
+    private const int BackfillOrderSyncLimit = 100;
+    private const int MaxOrderSyncLimit = 100;
     private const int BackfillDays = 7;
     private const string OrderSettlementOperationType = "order_settlement";
+    private static readonly bool EnableVerboseCloudPayloadLogging = false;
 
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
@@ -24,17 +27,20 @@ public class CloudOrderService
     private Timer? _ackRetryTimer;
     private readonly SemaphoreSlim _ackRetryGate = new(1, 1);
     private bool _isPolling = false;
+    private bool _isBackupPollingEnabled = false;
+    private bool _isAckRetryEnabled = false;
     private DateTime _lastSyncTime;
     private string? _lastModifiedHeader;
     private readonly object _pollingLock = new object();
     private OrderWebWebSocketService? _webSocketService;
     private string? _deviceId;
     
-    // Live update event - Used by BOTH WebSocket AND aggressive polling for UI refresh
+    // Live update event - Used by WebSocket and backup polling for UI refresh.
     public event Action? OnOrdersUpdated;
     
     // Public properties for status monitoring
-    public bool IsPolling => _pollingTimer != null;
+    public bool IsPolling => _isBackupPollingEnabled;
+    public bool IsAckRetryActive => _isAckRetryEnabled;
     public DateTime LastSyncTime => _lastSyncTime;
     
     public CloudOrderService(
@@ -86,49 +92,14 @@ public class CloudOrderService
     /// </summary>
     public async Task StartPollingAsync()
     {
-        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
-        if (!onlineMasterCheck.Allowed)
+        var readiness = await EnsureBackupPollingReadyAsync();
+        if (!readiness.Success)
         {
-            System.Diagnostics.Debug.WriteLine($"Cloud polling skipped: {onlineMasterCheck.Reason}");
+            System.Diagnostics.Debug.WriteLine($"Cloud polling skipped: {readiness.Message}");
             return;
         }
 
-        var config = await _databaseService.GetCloudConfigAsync();
-        
-        if (!config.ContainsKey("is_enabled") || config["is_enabled"] != "True")
-        {
-            System.Diagnostics.Debug.WriteLine("Cloud polling is disabled");
-            return;
-        }
-
-        if (string.IsNullOrEmpty(config.GetValueOrDefault("tenant_slug")) || 
-            string.IsNullOrEmpty(config.GetValueOrDefault("api_key")))
-        {
-            System.Diagnostics.Debug.WriteLine("Cloud configuration incomplete");
-            return;
-        }
-
-        // Moderate polling: 15-second interval to balance responsiveness with server load
-        const double POLLING_INTERVAL = 15.0; // 15 seconds - reasonable polling for backup sync
-        
-        // Stop any existing polling first
-        StopPolling();
-        
-        System.Diagnostics.Debug.WriteLine($" Starting backup polling every {POLLING_INTERVAL} seconds");
-        System.Diagnostics.Debug.WriteLine(" Polling runs in background AND triggers UI refresh when new orders found");
-        System.Diagnostics.Debug.WriteLine(" Works with WebSocket for redundant order delivery");
-        
-        // Reset change detection
-        _lastModifiedHeader = null;
-        
-        // Start immediate fetch, then continue with timer
-        _ = Task.Run(async () => await PollForOrdersAsync());
-        
-        var intervalMs = (int)(POLLING_INTERVAL * 1000); // 3000ms = 3 seconds
-        _pollingTimer = new Timer(async _ => await PollForOrdersAsync(), 
-            null, TimeSpan.FromMilliseconds(intervalMs), TimeSpan.FromMilliseconds(intervalMs));
-            
-        System.Diagnostics.Debug.WriteLine(" Backup polling timer started successfully");
+        await PollForOrdersAsync();
     }
 
     /// <summary>
@@ -138,8 +109,57 @@ public class CloudOrderService
     {
         _pollingTimer?.Dispose();
         _pollingTimer = null;
+        _isBackupPollingEnabled = false;
         _isPolling = false;
         System.Diagnostics.Debug.WriteLine("Cloud order polling stopped");
+    }
+
+    public async Task<(bool Success, string Message)> RunBackupPollingOnceAsync()
+    {
+        var readiness = await EnsureBackupPollingReadyAsync();
+        if (!readiness.Success)
+        {
+            return readiness;
+        }
+
+        await PollForOrdersAsync();
+        return (true, "Backup order polling checked.");
+    }
+
+    private async Task<(bool Success, string Message)> EnsureBackupPollingReadyAsync()
+    {
+        var onlineMasterCheck = await TerminalRoleService.CanRunOnlineOrderMasterJobsAsync(_databaseService);
+        if (!onlineMasterCheck.Allowed)
+        {
+            _isBackupPollingEnabled = false;
+            return (false, onlineMasterCheck.Reason);
+        }
+
+        var config = await _databaseService.GetCloudConfigAsync();
+
+        if (!config.ContainsKey("is_enabled") || config["is_enabled"] != "True")
+        {
+            _isBackupPollingEnabled = false;
+            return (false, "Cloud polling is disabled.");
+        }
+
+        if (string.IsNullOrEmpty(config.GetValueOrDefault("tenant_slug")) ||
+            string.IsNullOrEmpty(config.GetValueOrDefault("api_key")))
+        {
+            _isBackupPollingEnabled = false;
+            return (false, "Cloud configuration incomplete.");
+        }
+
+        _pollingTimer?.Dispose();
+        _pollingTimer = null;
+        if (!_isBackupPollingEnabled)
+        {
+            _lastModifiedHeader = null;
+            System.Diagnostics.Debug.WriteLine(" Backup polling enabled (managed by background sync)");
+        }
+
+        _isBackupPollingEnabled = true;
+        return (true, "Backup polling ready.");
     }
 
     /// <summary>
@@ -239,7 +259,7 @@ public class CloudOrderService
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($" Aggressive polling check: {endpoint}");
+            System.Diagnostics.Debug.WriteLine($" Backup polling check: {endpoint}");
             var apiStartTime = DateTime.Now;
             var response = await _orderWebApiClient.SendAsync(request);
             var apiDuration = (DateTime.Now - apiStartTime).TotalMilliseconds;
@@ -250,9 +270,10 @@ public class CloudOrderService
             {
                 var jsonContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($" Polling response in {apiDuration:F0}ms | Content: {jsonContent.Length} chars");
-#if DEBUG
-                System.Diagnostics.Debug.WriteLine($" API RESPONSE: {jsonContent}");
-#endif
+                if (EnableVerboseCloudPayloadLogging)
+                {
+                    System.Diagnostics.Debug.WriteLine($" API RESPONSE: {jsonContent}");
+                }
                 
                 var parseStart = DateTime.Now;
                 var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
@@ -645,7 +666,27 @@ public class CloudOrderService
             }
         }
 
+        ApplyOrderTotalFallback(localOrder);
         return localOrder;
+    }
+
+    private static void ApplyOrderTotalFallback(Order order)
+    {
+        var itemTotal = order.Items.Sum(item => item.TotalPrice);
+        if (itemTotal <= 0)
+        {
+            return;
+        }
+
+        if (order.SubtotalAmount <= 0)
+        {
+            order.SubtotalAmount = itemTotal;
+        }
+
+        if (order.TotalAmount <= 0)
+        {
+            order.TotalAmount = itemTotal + Math.Max(0, order.DeliveryFee);
+        }
     }
 
     private static async Task<MyFirstMauiApp.Models.FoodMenu.MenuItemVariant?> InferVariantAsync(string? menuItemId, decimal? price)
@@ -828,11 +869,13 @@ public class CloudOrderService
             if (string.IsNullOrWhiteSpace(cloudUrl) || string.IsNullOrWhiteSpace(tenantSlug) || string.IsNullOrWhiteSpace(apiKey))
                 return (false, "Missing required parameters");
 
-            var endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: 1, status: "confirmed");
+            var endpoint = BuildIntegrationEndpoint(cloudUrl, tenantSlug);
             
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-API-Key", apiKey);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
 
             var response = await client.GetAsync(endpoint);
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -843,17 +886,11 @@ public class CloudOrderService
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
             {
-                // Check if this is OrderWeb.net responding with a database error
-                if (responseContent.Contains("\"success\":false") && responseContent.Contains("\"error\""))
-                {
-                    // This means we connected successfully, but OrderWeb.net has an internal issue
-                    return (true, "Connection successful (OrderWeb.net responded, but has internal database issue)");
-                }
-                return (false, $"Server error: {responseContent}");
+                return (false, BuildPullOrdersError(response.StatusCode, responseContent));
             }
             else
             {
-                return (false, $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
+                return (false, BuildPullOrdersError(response.StatusCode, responseContent));
             }
         }
         catch (HttpRequestException ex)
@@ -927,6 +964,12 @@ public class CloudOrderService
         return endpoint;
     }
 
+    private static string BuildIntegrationEndpoint(string? apiBaseUrl, string tenantSlug)
+    {
+        var baseUrl = NormalizeApiBaseUrl(apiBaseUrl, tenantSlug);
+        return $"{baseUrl}/pos/integration?tenant={Uri.EscapeDataString(tenantSlug)}";
+    }
+
     private async Task<OrderPullResult> PullOrdersFromOrderWebAsync(string endpoint, string apiKey)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
@@ -946,10 +989,13 @@ public class CloudOrderService
             return OrderPullResult.Failed(response.StatusCode, BuildPullOrdersError(response.StatusCode, content));
         }
 
-        System.Diagnostics.Debug.WriteLine("========================================");
-        System.Diagnostics.Debug.WriteLine($" API RESPONSE ({content.Length} chars):");
-        System.Diagnostics.Debug.WriteLine($"First 500 chars: {content.Substring(0, Math.Min(500, content.Length))}");
-        System.Diagnostics.Debug.WriteLine("========================================");
+        if (EnableVerboseCloudPayloadLogging)
+        {
+            System.Diagnostics.Debug.WriteLine("========================================");
+            System.Diagnostics.Debug.WriteLine($" API RESPONSE ({content.Length} chars):");
+            System.Diagnostics.Debug.WriteLine($"First 500 chars: {content.Substring(0, Math.Min(500, content.Length))}");
+            System.Diagnostics.Debug.WriteLine("========================================");
+        }
 
         var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(content, new JsonSerializerOptions
         {
@@ -1005,12 +1051,19 @@ public class CloudOrderService
         {
             using var document = JsonDocument.Parse(trimmed);
             var root = document.RootElement;
-            var message = GetJsonString(root, "error")
-                ?? GetJsonString(root, "message")
-                ?? GetJsonString(root, "details");
-            if (!string.IsNullOrWhiteSpace(message))
+            var parts = new[]
+                {
+                    GetJsonString(root, "error"),
+                    GetJsonString(root, "message"),
+                    GetJsonString(root, "details")
+                }
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (parts.Count > 0)
             {
-                return $"API error: {statusCode} - {message}";
+                return $"API error: {statusCode} - {string.Join(" - ", parts)}";
             }
         }
         catch
@@ -1130,47 +1183,83 @@ public class CloudOrderService
                 return (false, 0, "Cloud configuration incomplete");
             }
 
-            // Build endpoint with SINCE parameter (required by OrderWeb.net)
-            // Convert local time to UTC for API (OrderWeb.net expects UTC)
-            // Format: ISO 8601 (YYYY-MM-DDTHH:MM:SSZ) for API compatibility
-            var targetDateUtc = targetDate.Kind == DateTimeKind.Utc ? targetDate : targetDate.ToUniversalTime();
-            string sinceParam = targetDateUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            string endpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, since: sinceParam);
+            var requestLimit = Math.Clamp(limit, 1, MaxOrderSyncLimit);
+            var localStart = DateTime.SpecifyKind(targetDate.Date, DateTimeKind.Local);
+            var sinceParam = localStart.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var dateOnlySinceParam = targetDate.Date.ToString("yyyy-MM-dd");
             
             System.Diagnostics.Debug.WriteLine("========================================");
             System.Diagnostics.Debug.WriteLine($" SYNCING ORDERS SINCE: {sinceParam}");
-            System.Diagnostics.Debug.WriteLine($" Endpoint: {endpoint}");
             System.Diagnostics.Debug.WriteLine($" Restaurant: {tenantSlug}");
             System.Diagnostics.Debug.WriteLine($" API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
-            System.Diagnostics.Debug.WriteLine($" Pulling OrderWeb orders from {syncRange} onwards (limit {limit})");
+            System.Diagnostics.Debug.WriteLine($" Pulling OrderWeb orders from {syncRange} onwards (limit {requestLimit})");
             System.Diagnostics.Debug.WriteLine("========================================");
 
-            var pullResult = await PullOrdersFromOrderWebAsync(endpoint, apiKey);
+            var pullAttempts = new List<(string Label, string Endpoint, bool Broad)>
+            {
+                (
+                    "confirmed orders since UTC timestamp",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit, since: sinceParam, status: "confirmed"),
+                    false
+                ),
+                (
+                    "confirmed orders since trading date",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit, since: dateOnlySinceParam, status: "confirmed"),
+                    false
+                ),
+                (
+                    "orders since UTC timestamp",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit, since: sinceParam),
+                    false
+                ),
+                (
+                    "orders since trading date",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit, since: dateOnlySinceParam),
+                    false
+                ),
+                (
+                    "broad confirmed orders",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit, status: "confirmed"),
+                    true
+                ),
+                (
+                    "broad orders",
+                    BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: requestLimit),
+                    true
+                )
+            };
+
+            var primaryAttempt = pullAttempts[0];
+            System.Diagnostics.Debug.WriteLine($" Trying OrderWeb pull: {primaryAttempt.Label}");
+            var pullResult = await PullOrdersFromOrderWebAsync(primaryAttempt.Endpoint, apiKey);
             var usedFallback = false;
-            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
+            foreach (var attempt in pullAttempts.Skip(1))
             {
-                var confirmedSinceEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, since: sinceParam, status: "confirmed");
-                System.Diagnostics.Debug.WriteLine($" Since pull failed ({pullResult.Error}). Retrying confirmed since pull: {confirmedSinceEndpoint}");
-                pullResult = await PullOrdersFromOrderWebAsync(confirmedSinceEndpoint, apiKey);
-                usedFallback = pullResult.Success;
-            }
+                if (pullResult.Success && pullResult.Orders.Count > 0)
+                {
+                    break;
+                }
 
-            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
-            {
-                var broadConfirmedEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit, status: "confirmed");
-                System.Diagnostics.Debug.WriteLine($" Confirmed since pull failed ({pullResult.Error}). Retrying broad confirmed pull: {broadConfirmedEndpoint}");
-                pullResult = await PullOrdersFromOrderWebAsync(broadConfirmedEndpoint, apiKey);
-                usedFallback = pullResult.Success;
-            }
+                if (!ShouldTryNextOrderPullAttempt(pullResult, attempt.Broad))
+                {
+                    break;
+                }
 
-            if (!pullResult.Success && ShouldRetryWithBroadPull(pullResult.StatusCode))
-            {
-                var broadEndpoint = BuildPullOrdersEndpoint(cloudUrl, tenantSlug, limit: limit);
-                System.Diagnostics.Debug.WriteLine($" Broad confirmed pull failed ({pullResult.Error}). Retrying broad pull: {broadEndpoint}");
-                pullResult = await PullOrdersFromOrderWebAsync(broadEndpoint, apiKey);
-                if (pullResult.Success)
+                System.Diagnostics.Debug.WriteLine($" OrderWeb pull attempt returned {DescribeOrderPullResult(pullResult)}. Retrying {attempt.Label}: {attempt.Endpoint}");
+                var fallbackResult = await PullOrdersFromOrderWebAsync(attempt.Endpoint, apiKey);
+                if (fallbackResult.Success)
                 {
                     usedFallback = true;
+                    pullResult = fallbackResult;
+
+                    if (fallbackResult.Orders.Count > 0 || !attempt.Broad)
+                    {
+                        break;
+                    }
+                }
+                else if (!pullResult.Success)
+                {
+                    pullResult = fallbackResult;
                 }
             }
 
@@ -1194,7 +1283,7 @@ public class CloudOrderService
 
                 OnOrdersUpdated?.Invoke();
 
-                var fallbackNote = usedFallback ? " using broad fallback" : string.Empty;
+                var fallbackNote = usedFallback ? " using fallback" : string.Empty;
                 return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {syncRange}{fallbackNote} ({newOrdersCount} new)");
             }
 
@@ -1221,7 +1310,9 @@ public class CloudOrderService
             var config = await _databaseService.GetCloudConfigAsync();
             var tenantSlug = config.GetValueOrDefault("tenant_slug", "");
             var apiKey = config.GetValueOrDefault("api_key", "");
-            var cloudUrl = config.GetValueOrDefault("cloud_url", "https://orderweb.net/api");
+            var cloudUrl = config.GetValueOrDefault(
+                "api_base_url",
+                config.GetValueOrDefault("cloud_url", "https://orderweb.net/api"));
             
             if (string.IsNullOrEmpty(tenantSlug) || string.IsNullOrEmpty(apiKey))
             {
@@ -1250,7 +1341,10 @@ public class CloudOrderService
             if (response.IsSuccessStatusCode)
             {
                 var jsonContent = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($" CATCH-UP API RESPONSE: {jsonContent}");
+                if (EnableVerboseCloudPayloadLogging)
+                {
+                    System.Diagnostics.Debug.WriteLine($" CATCH-UP API RESPONSE: {jsonContent}");
+                }
                 
                 var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
                 {
@@ -1423,9 +1517,26 @@ public class CloudOrderService
         }
     }
 
+    private static bool ShouldTryNextOrderPullAttempt(OrderPullResult pullResult, bool nextAttemptIsBroad)
+    {
+        if (!pullResult.Success)
+        {
+            return ShouldRetryWithBroadPull(pullResult.StatusCode);
+        }
+
+        return pullResult.Orders.Count == 0 && !nextAttemptIsBroad;
+    }
+
+    private static string DescribeOrderPullResult(OrderPullResult pullResult)
+    {
+        return pullResult.Success
+            ? $"success with {pullResult.Orders.Count} order(s)"
+            : pullResult.Error ?? "API error";
+    }
+
     public async Task<bool> SendOrderSettlementAsync(
         Order order,
-        string status = "completed",
+        string status = "paid",
         string? staffId = null,
         string? staffName = null,
         string? notes = null)
@@ -1443,18 +1554,10 @@ public class CloudOrderService
         }
 
         var normalizedStatus = NormalizeSettlementStatus(status);
-        var paymentMethod = normalizedStatus == "completed"
+        var paymentMethod = normalizedStatus == "paid"
             ? NormalizeSettlementPaymentMethod(order.PaymentMethod)
             : null;
         var deviceId = await GetDeviceIdAsync();
-        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-settlement", orderWebOrderId, normalizedStatus);
-
-        if (await HasSettlementBeenRecordedAsync(orderWebOrderId, idempotencyKey))
-        {
-            System.Diagnostics.Debug.WriteLine($" Settlement already recorded for OrderWeb order {orderWebOrderId}");
-            return true;
-        }
-
         var config = await _orderWebApiClient.GetConfigAsync();
         if (config == null)
         {
@@ -1462,8 +1565,18 @@ public class CloudOrderService
             return false;
         }
 
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-settlement", orderWebOrderId, normalizedStatus);
         var paidAt = ToUtc(order.PaidAt ?? order.CompletedTime ?? DateTime.Now);
-        var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/settle");
+        var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/ack");
+
+        await RepairLegacyOrderSettlementQueueAsync(url);
+
+        if (await HasSettlementBeenRecordedAsync(orderWebOrderId, idempotencyKey))
+        {
+            System.Diagnostics.Debug.WriteLine($" Settlement already recorded for OrderWeb order {orderWebOrderId}");
+            return true;
+        }
+
         var payload = BuildSettlementPayload(
             config.TenantSlug,
             order,
@@ -1608,6 +1721,110 @@ public class CloudOrderService
         return queued;
     }
 
+    private async Task RepairLegacyOrderSettlementQueueAsync(string ackUrl)
+    {
+        try
+        {
+            using var connection = await _databaseService.GetConnectionAsync();
+            var queuedItems = new List<(int Id, string Payload)>();
+
+            using (var select = connection.CreateCommand())
+            {
+                select.CommandText = @"
+                    SELECT id, payload
+                    FROM offline_queue
+                    WHERE operation_type = @operationType
+                      AND status IN ('pending', 'processing', 'failed')
+                      AND (
+                          endpoint LIKE '%/pos/orders/settle'
+                          OR payload LIKE '%""status"":""completed""%'
+                          OR payload LIKE '%amount_paid%'
+                          OR payload LIKE '%pos_payment_method%'
+                          OR payload LIKE '%staff_name%'
+                      )";
+                select.Parameters.AddWithValue("@operationType", OrderSettlementOperationType);
+
+                using var reader = await select.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    queuedItems.Add((reader.GetInt32(0), reader.GetString(1)));
+                }
+            }
+
+            var repaired = 0;
+            foreach (var item in queuedItems)
+            {
+                var repairedPayload = BuildQueuedSettlementAckPayload(item.Payload);
+                using var update = connection.CreateCommand();
+                update.CommandText = @"
+                    UPDATE offline_queue
+                    SET endpoint = @ackUrl,
+                        payload = @payload,
+                        status = 'pending',
+                        retry_count = 0,
+                        last_error = NULL,
+                        response_status = NULL,
+                        response_body = NULL,
+                        scheduled_at = NULL
+                    WHERE id = @id";
+                update.Parameters.AddWithValue("@ackUrl", ackUrl);
+                update.Parameters.AddWithValue("@payload", repairedPayload);
+                update.Parameters.AddWithValue("@id", item.Id);
+                repaired += await update.ExecuteNonQueryAsync();
+            }
+
+            if (repaired > 0)
+            {
+                System.Diagnostics.Debug.WriteLine($" Repaired {repaired} legacy OrderWeb settlement queue item(s) to paid /pos/orders/ack.");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" Legacy settlement queue repair skipped: {ex.Message}");
+        }
+    }
+
+    private static string BuildQueuedSettlementAckPayload(string payloadJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+            var status = NormalizeSettlementStatus(GetJsonString(root, "status"));
+            var payload = new Dictionary<string, object>
+            {
+                ["tenant"] = GetJsonString(root, "tenant") ?? string.Empty,
+                ["order_id"] = GetJsonString(root, "order_id") ?? string.Empty,
+                ["status"] = status,
+                ["device_id"] = GetJsonString(root, "device_id") ?? string.Empty,
+                ["idempotency_key"] = GetJsonString(root, "idempotency_key") ?? string.Empty
+            };
+
+            if (status == "paid")
+            {
+                payload["payment_method"] = NormalizeSettlementPaymentMethod(
+                    GetJsonString(root, "payment_method")
+                    ?? GetJsonString(root, "pos_payment_method"));
+                payload["paid_at"] = GetJsonString(root, "paid_at")
+                    ?? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            }
+            else
+            {
+                var reason = GetJsonString(root, "reason") ?? GetJsonString(root, "notes");
+                if (!string.IsNullOrWhiteSpace(reason))
+                {
+                    payload["reason"] = reason;
+                }
+            }
+
+            return JsonSerializer.Serialize(payload);
+        }
+        catch
+        {
+            return payloadJson;
+        }
+    }
+
     private async Task<bool> HasSettlementBeenRecordedAsync(string orderWebOrderId, string idempotencyKey)
     {
         try
@@ -1617,7 +1834,7 @@ public class CloudOrderService
             command.CommandText = @"
                 SELECT COUNT(*)
                 FROM orderweb_order_settlements
-                WHERE (cloud_order_id = @cloudOrderId OR idempotency_key = @idempotencyKey)
+                WHERE (idempotency_key = @idempotencyKey OR (cloud_order_id = @cloudOrderId AND sent_to_cloud = 1))
                   AND (sent_to_cloud = 1 OR queued_for_retry = 1)";
             command.Parameters.AddWithValue("@cloudOrderId", orderWebOrderId);
             command.Parameters.AddWithValue("@idempotencyKey", idempotencyKey);
@@ -1647,6 +1864,7 @@ public class CloudOrderService
         try
         {
             using var connection = await _databaseService.GetConnectionAsync();
+            await EnsureOrderSettlementSchemaAsync(connection);
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 INSERT INTO orderweb_order_settlements
@@ -1668,6 +1886,7 @@ public class CloudOrderService
                     paid_at = VALUES(paid_at),
                     fulfillment = VALUES(fulfillment),
                     device_id = VALUES(device_id),
+                    idempotency_key = VALUES(idempotency_key),
                     sent_to_cloud = CASE WHEN VALUES(sent_to_cloud) = 1 THEN 1 ELSE sent_to_cloud END,
                     queued_for_retry = CASE WHEN VALUES(queued_for_retry) = 1 THEN 1 ELSE queued_for_retry END,
                     last_attempt_at = VALUES(last_attempt_at),
@@ -1682,8 +1901,8 @@ public class CloudOrderService
             command.Parameters.AddWithValue("@orderNumber", string.IsNullOrWhiteSpace(order.OrderNumber) ? (object)DBNull.Value : order.OrderNumber);
             command.Parameters.AddWithValue("@status", status);
             command.Parameters.AddWithValue("@paymentMethod", string.IsNullOrWhiteSpace(paymentMethod) ? (object)DBNull.Value : paymentMethod);
-            command.Parameters.AddWithValue("@amountPaid", status == "completed" ? order.TotalAmount : (object)DBNull.Value);
-            command.Parameters.AddWithValue("@paidAt", status == "completed" ? paidAtUtc : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@amountPaid", status == "paid" ? order.TotalAmount : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@paidAt", status == "paid" ? paidAtUtc : (object)DBNull.Value);
             command.Parameters.AddWithValue("@fulfillment", NormalizeSettlementFulfillment(order.OrderType) ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@deviceId", deviceId);
             command.Parameters.AddWithValue("@idempotencyKey", idempotencyKey);
@@ -1700,6 +1919,23 @@ public class CloudOrderService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($" Failed to record settlement: {ex.Message}");
+        }
+    }
+
+    private static async Task EnsureOrderSettlementSchemaAsync(MySqlConnection connection)
+    {
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                ALTER TABLE orderweb_order_settlements
+                MODIFY COLUMN status ENUM('paid', 'completed', 'cancelled', 'no_show') NOT NULL DEFAULT 'paid',
+                MODIFY COLUMN payment_method ENUM('cash', 'card', 'gift_card', 'voucher', 'gift') NULL";
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($" OrderWeb settlement schema check skipped: {ex.Message}");
         }
     }
 
@@ -1725,37 +1961,15 @@ public class CloudOrderService
             ["idempotency_key"] = idempotencyKey
         };
 
-        if (status == "completed")
+        if (status == "paid")
         {
             payload["payment_method"] = paymentMethod ?? "cash";
             payload["paid_at"] = paidAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            payload["amount_paid"] = order.TotalAmount;
         }
 
-        var fulfillment = NormalizeSettlementFulfillment(order.OrderType);
-        if (!string.IsNullOrWhiteSpace(fulfillment))
+        if (status != "paid" && !string.IsNullOrWhiteSpace(notes))
         {
-            payload["fulfillment"] = fulfillment;
-        }
-
-        if (!string.IsNullOrWhiteSpace(order.PaymentMethod) && !string.Equals(order.PaymentMethod, paymentMethod, StringComparison.OrdinalIgnoreCase))
-        {
-            payload["pos_payment_method"] = order.PaymentMethod;
-        }
-
-        if (!string.IsNullOrWhiteSpace(staffId))
-        {
-            payload["staff_id"] = staffId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(staffName))
-        {
-            payload["staff_name"] = staffName;
-        }
-
-        if (!string.IsNullOrWhiteSpace(notes))
-        {
-            payload["notes"] = notes;
+            payload["reason"] = notes;
         }
 
         return payload;
@@ -1770,19 +1984,24 @@ public class CloudOrderService
 
     private static string NormalizeSettlementStatus(string? status)
     {
-        var normalized = (status ?? "completed").Trim().Replace("-", "_").ToLowerInvariant();
+        var normalized = (status ?? "paid").Trim().Replace("-", "_").ToLowerInvariant();
         return normalized switch
         {
             "cancelled" or "canceled" => "cancelled",
             "no_show" or "noshow" => "no_show",
-            _ => "completed"
+            _ => "paid"
         };
     }
 
     private static string NormalizeSettlementPaymentMethod(string? paymentMethod)
     {
         var normalized = OnlineOrderPaymentHelper.NormalizeMethod(paymentMethod);
-        return normalized == "cash" ? "cash" : "card";
+        return normalized switch
+        {
+            "cash" => "cash",
+            "gift_card" or "voucher" or "gift" => "gift_card",
+            _ => "card"
+        };
     }
 
     private static string? NormalizeSettlementFulfillment(string? orderType)
@@ -1935,20 +2154,10 @@ public class CloudOrderService
     /// </summary>
     public void StartAckRetryService()
     {
-        if (_ackRetryTimer != null)
-        {
-            _ackRetryTimer.Dispose();
-        }
-        
-        System.Diagnostics.Debug.WriteLine(" ACK retry service started");
-        
-        // Run every 60 seconds
-        _ackRetryTimer = new Timer(
-            async _ => await RetryPendingAcksAsync(),
-            null,
-            TimeSpan.FromSeconds(30), // Start after 30 seconds
-            TimeSpan.FromSeconds(60)  // Repeat every 60 seconds
-        );
+        _ackRetryTimer?.Dispose();
+        _ackRetryTimer = null;
+        _isAckRetryEnabled = true;
+        System.Diagnostics.Debug.WriteLine(" ACK retry service enabled (managed by background sync)");
     }
     
     /// <summary>
@@ -1958,9 +2167,17 @@ public class CloudOrderService
     {
         _ackRetryTimer?.Dispose();
         _ackRetryTimer = null;
+        _isAckRetryEnabled = false;
         System.Diagnostics.Debug.WriteLine("⏸ ACK retry service stopped");
     }
     
+    public async Task<(bool Success, string Message)> RetryPendingAcksOnceAsync()
+    {
+        StartAckRetryService();
+        await RetryPendingAcksAsync();
+        return (true, "Pending ACK retry checked.");
+    }
+
     /// <summary>
     /// Retry sending pending acknowledgments
     /// </summary>
@@ -2244,6 +2461,7 @@ public class CloudOrderService
             }
         }
 
+        ApplyOrderTotalFallback(order);
         return order;
     }
     

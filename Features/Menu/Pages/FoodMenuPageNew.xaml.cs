@@ -21,6 +21,11 @@ namespace POS_in_NET.Pages
         private ObservableCollection<PredefinedNote> _allNotes;
         private string _selectedCategory = "All Categories";
         private string _selectedPriority = "All Priorities";
+        private string _activeTab = "Items";
+        private bool _hasLoadedItems;
+        private bool _hasLoadedCategories;
+        private bool _hasLoadedSubCategories;
+        private bool _hasLoadedNotes;
 
         public FoodMenuPageNew()
         {
@@ -34,6 +39,11 @@ namespace POS_in_NET.Pages
             _subCategories = new ObservableCollection<MenuCategory>();
             _notes = new ObservableCollection<PredefinedNote>();
             _allNotes = new ObservableCollection<PredefinedNote>();
+
+            ItemsCollectionView.ItemsSource = _items;
+            CategoriesCollectionView.ItemsSource = _categories;
+            SubCategoriesCollectionView.ItemsSource = _subCategories;
+            NotesCollectionView.ItemsSource = _notes;
             
             // Subscribe to NotificationService events
             NotificationService.Instance.NotificationRequested += OnNotificationRequested;
@@ -55,22 +65,7 @@ namespace POS_in_NET.Pages
             
             System.Diagnostics.Debug.WriteLine(" NEW Food Menu Page Loading");
             
-            // Initialize with empty collections
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                _items.Clear();
-                _categories.Clear();
-                _subCategories.Clear();
-                _notes.Clear();
-                ItemsCollectionView.ItemsSource = _items;
-                CategoriesCollectionView.ItemsSource = _categories;
-                SubCategoriesCollectionView.ItemsSource = _subCategories;
-                NotesCollectionView.ItemsSource = _notes;
-                System.Diagnostics.Debug.WriteLine(" Page loaded with empty lists");
-            });
-            
-            // Load items data immediately for Menu Items tab (default visible)
-            await LoadItemsAsync();
+            await EnsureActiveTabLoadedAsync();
         }
 
         private async Task LoadDataAsync()
@@ -110,6 +105,7 @@ namespace POS_in_NET.Pages
                     {
                         _items.Add(item);
                     }
+                    _hasLoadedItems = true;
                     System.Diagnostics.Debug.WriteLine($" Loaded {_items.Count} items");
                 });
             }
@@ -136,6 +132,7 @@ namespace POS_in_NET.Pages
                     {
                         _categories.Add(category);
                     }
+                    _hasLoadedCategories = true;
                     System.Diagnostics.Debug.WriteLine($" Loaded {_categories.Count} categories");
                 });
             }
@@ -173,6 +170,7 @@ namespace POS_in_NET.Pages
                     {
                         _subCategories.Add(subCategory);
                     }
+                    _hasLoadedSubCategories = true;
                     System.Diagnostics.Debug.WriteLine($" Loaded {_subCategories.Count} sub-categories");
                 });
             }
@@ -199,6 +197,7 @@ namespace POS_in_NET.Pages
                     }
                     
                     UpdateNoteStats();
+                    _hasLoadedNotes = true;
                     System.Diagnostics.Debug.WriteLine($" Loaded {_notes.Count} notes");
                 });
             }
@@ -321,6 +320,7 @@ namespace POS_in_NET.Pages
         private void ActivateTab(string tabName)
         {
             System.Diagnostics.Debug.WriteLine($" Activating tab: {tabName}");
+            _activeTab = tabName;
 
             // Hide all content
             ItemsContent.IsVisible = false;
@@ -338,22 +338,22 @@ namespace POS_in_NET.Pages
                 case "Items":
                     ItemsContent.IsVisible = true;
                     SetButtonActive(ItemsButton);
-                    _ = LoadItemsAsync();
+                    _ = EnsureActiveTabLoadedAsync();
                     break;
                 case "Categories":
                     CategoriesContent.IsVisible = true;
                     SetButtonActive(CategoriesButton);
-                    _ = LoadCategoriesAsync();
+                    _ = EnsureActiveTabLoadedAsync();
                     break;
                 case "SubCategories":
                     SubCategoriesContent.IsVisible = true;
                     SetButtonActive(SubCategoriesButton);
-                    _ = LoadSubCategoriesAsync();
+                    _ = EnsureActiveTabLoadedAsync();
                     break;
                 case "Notes":
                     NotesContent.IsVisible = true;
                     SetButtonActive(NotesButton);
-                    _ = LoadNotesAsync();
+                    _ = EnsureActiveTabLoadedAsync();
                     break;
                 case "MealDeals":
                     MealDealsContent.IsVisible = true;
@@ -362,6 +362,18 @@ namespace POS_in_NET.Pages
             }
 
             System.Diagnostics.Debug.WriteLine($" Tab activated: {tabName}");
+        }
+
+        private Task EnsureActiveTabLoadedAsync()
+        {
+            return _activeTab switch
+            {
+                "Items" when !_hasLoadedItems => LoadItemsAsync(),
+                "Categories" when !_hasLoadedCategories => LoadCategoriesAsync(),
+                "SubCategories" when !_hasLoadedSubCategories => LoadSubCategoriesAsync(),
+                "Notes" when !_hasLoadedNotes => LoadNotesAsync(),
+                _ => Task.CompletedTask
+            };
         }
 
         private void ResetAllButtons()

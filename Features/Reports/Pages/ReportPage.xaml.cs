@@ -1175,13 +1175,12 @@ public partial class ReportPage : ContentPage
         {
             _hasLoaded = true;
             await LoadReportAsync();
-            if (CanUseFullReportTools)
-            {
-                await LoadHistoricalReportsAsync(updateStatusText: false);
-            }
+            _ = LoadReportSupportDataInBackgroundAsync(loadHistory: CanUseFullReportTools);
         }
-
-        await RefreshOrderWebUploadStateAsync();
+        else
+        {
+            _ = LoadReportSupportDataInBackgroundAsync(loadHistory: false);
+        }
     }
 
     protected override void OnDisappearing()
@@ -1216,28 +1215,40 @@ public partial class ReportPage : ContentPage
 
     private async void OnRefreshRequested(object? sender, EventArgs e)
     {
-        await RefreshCurrentReportAsync();
+        await RefreshCurrentReportAsync(loadHistory: true);
     }
 
     private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
     {
-        if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.Orders && e.Kind != AppDataChangeKind.All))
+        if (e.IsFromCurrentTerminal || !e.HasKind(AppDataChangeKind.Orders))
         {
             return;
         }
 
-        await RefreshCurrentReportAsync();
+        await RefreshCurrentReportAsync(loadHistory: false);
     }
 
-    private async Task RefreshCurrentReportAsync()
+    private async Task RefreshCurrentReportAsync(bool loadHistory)
     {
         await LoadReportAsync();
-        if (CanUseFullReportTools)
-        {
-            await LoadHistoricalReportsAsync(updateStatusText: false);
-        }
+        _ = LoadReportSupportDataInBackgroundAsync(loadHistory && CanUseFullReportTools);
+    }
 
-        await RefreshOrderWebUploadStateAsync();
+    private async Task LoadReportSupportDataInBackgroundAsync(bool loadHistory)
+    {
+        try
+        {
+            if (loadHistory)
+            {
+                await LoadHistoricalReportsAsync(updateStatusText: false);
+            }
+
+            await RefreshOrderWebUploadStateAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Report support data refresh failed: {ex.Message}");
+        }
     }
 
     private async void OnPresetClicked(object sender, EventArgs e)

@@ -44,6 +44,7 @@ public class NetworkPrintQueueService : IDisposable
     private readonly NetworkPrinterDatabaseService _dbService;
     private readonly NetworkPrinterService _printerService;
     private readonly DatabaseService _databaseService;
+    private readonly BackgroundSyncManager? _backgroundSyncManager;
     private Timer? _processTimer;
     private bool _isRunning = false;
     private bool _isProcessing = false;
@@ -66,11 +67,13 @@ public class NetworkPrintQueueService : IDisposable
     public NetworkPrintQueueService(
         NetworkPrinterDatabaseService dbService,
         NetworkPrinterService printerService,
-        DatabaseService databaseService)
+        DatabaseService databaseService,
+        BackgroundSyncManager? backgroundSyncManager = null)
     {
         _dbService = dbService;
         _printerService = printerService;
         _databaseService = databaseService;
+        _backgroundSyncManager = backgroundSyncManager;
         Debug.WriteLine(" NetworkPrintQueueService initialized");
     }
 
@@ -192,6 +195,7 @@ public class NetworkPrintQueueService : IDisposable
             var jobId = Convert.ToInt32(result);
             
             Debug.WriteLine($" Print job #{jobId} enqueued for printer #{printerId}");
+            _backgroundSyncManager?.RequestRunSoon("network-print-queue");
             return jobId;
         }
         catch (Exception ex)
@@ -204,7 +208,7 @@ public class NetworkPrintQueueService : IDisposable
     /// <summary>
     /// Process pending jobs in the queue
     /// </summary>
-    private async Task ProcessQueueAsync()
+    public async Task ProcessQueueAsync()
     {
         // Prevent overlapping processing
         if (_isProcessing)

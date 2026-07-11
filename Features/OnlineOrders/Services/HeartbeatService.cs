@@ -12,11 +12,14 @@ public class HeartbeatService
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
     private readonly OrderWebApiClient _orderWebApiClient;
-    private Timer? _heartbeatTimer;
     private string? _deviceId;
     private bool _isRunning = false;
+    private DateTime _lastHeartbeatAt = DateTime.MinValue;
+    private string _lastHeartbeatStatus = "Not started";
 
     public bool IsRunning => _isRunning;
+    public DateTime LastHeartbeatAt => _lastHeartbeatAt;
+    public string LastHeartbeatStatus => _lastHeartbeatStatus;
     
     public HeartbeatService(DatabaseService databaseService, OrderWebApiClient orderWebApiClient)
     {
@@ -29,31 +32,21 @@ public class HeartbeatService
     }
     
     /// <summary>
-    /// Start sending heartbeats every 30 seconds
+    /// Mark heartbeat as active and send one heartbeat. The BackgroundSyncManager owns the repeat interval.
     /// </summary>
-    public async Task StartAsync()
+    public async Task<bool> StartAsync()
     {
         if (_isRunning)
         {
             System.Diagnostics.Debug.WriteLine(" Heartbeat already running");
-            return;
+            return true;
         }
         
         _deviceId = await _orderWebApiClient.GetDeviceIdAsync();
         _isRunning = true;
         
-        System.Diagnostics.Debug.WriteLine(" Starting heartbeat service (30s interval)");
-        
-        // Send immediate heartbeat
-        _ = Task.Run(async () => await SendHeartbeatAsync());
-        
-        // Start timer for recurring heartbeats
-        _heartbeatTimer = new Timer(
-            async _ => await SendHeartbeatAsync(),
-            null,
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(30)
-        );
+        System.Diagnostics.Debug.WriteLine(" Starting heartbeat service (managed by background sync)");
+        return await SendHeartbeatAsync();
     }
     
     /// <summary>
@@ -61,8 +54,6 @@ public class HeartbeatService
     /// </summary>
     public void Stop()
     {
-        _heartbeatTimer?.Dispose();
-        _heartbeatTimer = null;
         _isRunning = false;
         System.Diagnostics.Debug.WriteLine(" Heartbeat service stopped");
     }
@@ -70,21 +61,25 @@ public class HeartbeatService
     /// <summary>
     /// Send single heartbeat to OrderWeb.net
     /// </summary>
-    private async Task SendHeartbeatAsync()
+    public async Task<bool> SendHeartbeatAsync()
     {
         try
         {
             var roleCheck = await _orderWebApiClient.CanRunCloudJobsAsync();
             if (!roleCheck.Allowed)
             {
-                return;
+                _lastHeartbeatStatus = roleCheck.Reason;
+                return true;
             }
 
             var config = await _orderWebApiClient.GetConfigAsync();
             if (config == null)
             {
-                return; // Silently skip if not configured
+                _lastHeartbeatStatus = "OrderWeb API is not configured or disabled.";
+                return true; // Silently skip if not configured
             }
+
+            _deviceId ??= await _orderWebApiClient.GetDeviceIdAsync();
 
             var url = OrderWebApiClient.BuildUrl(config, "/pos/heartbeat");
             
@@ -118,17 +113,26 @@ public class HeartbeatService
             {
                 System.Diagnostics.Debug.WriteLine($" Heartbeat sent: {stats.PendingOrders} orders, {stats.PendingAcks} ACKs");
                 await LogHeartbeatAsync(stats, true);
+                _lastHeartbeatAt = DateTime.Now;
+                _lastHeartbeatStatus = "Online";
+                return true;
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($" Heartbeat failed: {response.StatusCode}");
                 await LogHeartbeatAsync(stats, false);
+                _lastHeartbeatAt = DateTime.Now;
+                _lastHeartbeatStatus = $"HTTP {(int)response.StatusCode}: {errorBody}";
+                return false;
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($" Heartbeat error: {ex.Message}");
+            _lastHeartbeatAt = DateTime.Now;
+            _lastHeartbeatStatus = ex.Message;
+            return false;
         }
     }
     
@@ -236,7 +240,7 @@ public class HeartbeatService
     public void Dispose()
     {
         Stop();
-        _httpClient?.Dispose();
+        _httpClient.Dispose();
     }
 }
 

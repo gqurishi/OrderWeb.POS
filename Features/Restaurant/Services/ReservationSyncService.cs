@@ -15,8 +15,6 @@ public sealed partial class ReservationSyncService : IDisposable
     private readonly OrderWebApiClient? _orderWebApiClient;
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
-    private PeriodicTimer? _timer;
-    private CancellationTokenSource? _timerCts;
     private bool _isStarted;
 
     public event EventHandler<ReservationSyncCompletedEventArgs>? SyncCompleted;
@@ -51,16 +49,11 @@ public sealed partial class ReservationSyncService : IDisposable
 
         await EnsureSchemaAsync();
 
-        var seconds = Math.Clamp(ParseInt(config.GetValueOrDefault("reservation_poll_seconds"), 5), 5, 900);
-        _timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
-        _timerCts = new CancellationTokenSource();
         _isStarted = true;
 
-        _ = Task.Run(() => RunTimerAsync(_timerCts.Token));
-        _ = Task.Run(() => SyncTodayAsync(includeCancelled: true));
-        StartMaintenanceTimers();
+        await SyncTodayAsync(includeCancelled: true);
 
-        AppDiagnostics.Log($"Reservation sync started, backup polling every {seconds}s.");
+        AppDiagnostics.Log("Reservation sync started (managed by background sync).");
     }
 
     public async Task<ReservationSyncResult> SyncTodayAsync(bool includeCancelled = true)
@@ -204,25 +197,6 @@ public sealed partial class ReservationSyncService : IDisposable
         {
             AppDiagnostics.Log($"Reservation ACK failed: {ex.Message}");
             return false;
-        }
-    }
-
-    private async Task RunTimerAsync(CancellationToken cancellationToken)
-    {
-        if (_timer == null)
-        {
-            return;
-        }
-
-        try
-        {
-            while (await _timer.WaitForNextTickAsync(cancellationToken))
-            {
-                await SyncTodayAsync(includeCancelled: true);
-            }
-        }
-        catch (OperationCanceledException)
-        {
         }
     }
 
@@ -668,7 +642,7 @@ public sealed partial class ReservationSyncService : IDisposable
             baseUrl = $"{baseUrl}/api";
         }
 
-        return baseUrl.TrimEnd('/');
+        return OrderWebApiClient.NormalizeApiBaseUrl(baseUrl);
     }
 
     private static void AddAuthHeaders(HttpRequestMessage request, string apiKey)
@@ -727,9 +701,6 @@ public sealed partial class ReservationSyncService : IDisposable
     public void Dispose()
     {
         StopMaintenanceTimers();
-        _timerCts?.Cancel();
-        _timer?.Dispose();
-        _timerCts?.Dispose();
         _httpClient.Dispose();
         _syncLock.Dispose();
     }

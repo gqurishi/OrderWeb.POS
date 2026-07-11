@@ -25,6 +25,7 @@ namespace POS_in_NET.Pages
         private List<Floor> _floors = new();
         private Floor? _currentFloor;
         private Dictionary<int, Border> _tableViews = new();
+        private Dictionary<int, RestaurantTable> _currentTablesById = new();
         private bool _isAdmin;
         private bool _hasUnsavedChanges = false;
         private bool _isSubscribedToRefreshEvents;
@@ -32,6 +33,7 @@ namespace POS_in_NET.Pages
         private bool _isLoadingFloorsAndTables;
         private bool _hasBackfilledTableSessions;
         private DateTime _lastSuccessfulLayoutLoadAt = DateTime.MinValue;
+        private DateTime _lastSuccessfulTableStateRefreshAt = DateTime.MinValue;
         private DateTime? _lastSyncAt;
         private IDispatcherTimer? _autoRefreshTimer;
         private IDispatcherTimer? _basicUserIdleTimer;
@@ -39,6 +41,7 @@ namespace POS_in_NET.Pages
         private bool _isBasicUserIdleNavigating;
         private const int GRID_SIZE = 20; // 20px snap grid
         private static readonly TimeSpan BasicUserIdleTimeout = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan TableStateRefreshMinGap = TimeSpan.FromMilliseconds(1200);
         private const string SelectedFloorPreferenceKey = "visual_layout_selected_floor_id";
 
         public VisualTablePage()
@@ -209,18 +212,19 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            if (e.Kind == AppDataChangeKind.Orders)
+            if (e.HasKind(AppDataChangeKind.TableLayout))
+            {
+                await OnMainThreadRefreshLayoutAsync();
+                return;
+            }
+
+            if (e.HasKind(AppDataChangeKind.Orders))
             {
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
                 });
-                return;
-            }
-
-            if (e.Kind == AppDataChangeKind.TableLayout || e.Kind == AppDataChangeKind.All)
-            {
-                await OnMainThreadRefreshLayoutAsync();
+                await RefreshCurrentFloorTableStatesAsync();
             }
         }
 
@@ -248,7 +252,7 @@ namespace POS_in_NET.Pages
             }
 
             _autoRefreshTimer = Dispatcher.CreateTimer();
-            _autoRefreshTimer.Interval = TimeSpan.FromSeconds(8);
+            _autoRefreshTimer.Interval = TimeSpan.FromSeconds(30);
             _autoRefreshTimer.Tick += OnAutoRefreshTick;
             _autoRefreshTimer.Start();
         }
@@ -272,12 +276,12 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            if ((DateTime.UtcNow - _lastSuccessfulLayoutLoadAt).TotalMilliseconds < 1200)
+            if ((DateTime.UtcNow - _lastSuccessfulTableStateRefreshAt) < TableStateRefreshMinGap)
             {
                 return;
             }
 
-            await LoadFloorsAndTables(showLoading: false);
+            await RefreshCurrentFloorTableStatesAsync();
         }
 
         private void UpdateAdminToolsVisibility()
@@ -427,6 +431,7 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"Tables loaded: {tables.Count}");
                 
                 ClearTableViews();
+                _currentTablesById = tables.ToDictionary(table => table.Id);
                 
                 if (tables.Count == 0)
                 {
@@ -490,6 +495,81 @@ namespace POS_in_NET.Pages
                     await ToastNotification.ShowAsync("Warning", "Fallback mode active for table layout loading.", NotificationType.Warning);
                 }
                 return (plainTables, true);
+            }
+        }
+
+        private async Task RefreshCurrentFloorTableStatesAsync()
+        {
+            if (_currentFloor == null || _isLoadingFloorsAndTables)
+            {
+                return;
+            }
+
+            if ((DateTime.UtcNow - _lastSuccessfulTableStateRefreshAt) < TableStateRefreshMinGap)
+            {
+                return;
+            }
+
+            try
+            {
+                var (tables, usedFallback) = await LoadTablesForFloorWithFallbackAsync(_currentFloor.Id, showWarnings: false);
+                var incomingIds = tables.Select(table => table.Id).ToHashSet();
+                var canPatchInPlace = _tableViews.Count == tables.Count
+                    && _tableViews.Keys.All(incomingIds.Contains);
+
+                if (!canPatchInPlace)
+                {
+                    await SelectFloor(_currentFloor, showLoading: false, showWarnings: false);
+                    _lastSuccessfulTableStateRefreshAt = DateTime.UtcNow;
+                    return;
+                }
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    foreach (var table in tables)
+                    {
+                        if (_tableViews.TryGetValue(table.Id, out var tableView))
+                        {
+                            UpdateTableViewState(tableView, table);
+                            _currentTablesById[table.Id] = table;
+                        }
+                    }
+
+                    _lastSyncAt = DateTime.Now;
+                    UpdateLastSyncLabel(usedFallback);
+                });
+
+                _lastSuccessfulTableStateRefreshAt = DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VisualTable] Table state refresh skipped: {ex.Message}");
+            }
+        }
+
+        private void UpdateTableViewState(Border tableView, RestaurantTable table)
+        {
+            var (bgColor, borderColor, textColor) = GetTableColors(table);
+            tableView.BindingContext = table;
+            tableView.BackgroundColor = bgColor;
+            tableView.Stroke = borderColor;
+
+            if (tableView.Content is not VerticalStackLayout stack)
+            {
+                return;
+            }
+
+            foreach (var child in stack.Children)
+            {
+                if (child is Label label)
+                {
+                    label.Text = table.TableNumber;
+                    label.TextColor = textColor;
+                }
+                else if (child is Ellipse statusDot)
+                {
+                    statusDot.Fill = borderColor;
+                }
             }
         }
 
@@ -663,7 +743,8 @@ namespace POS_in_NET.Pages
             tapGesture.Tapped += async (s, e) =>
             {
                 ResetBasicUserIdle();
-                await SelectTableAsync(table, tableBorder);
+                var currentTable = tableBorder.BindingContext as RestaurantTable ?? table;
+                await SelectTableAsync(currentTable, tableBorder);
             };
             tableBorder.GestureRecognizers.Add(tapGesture);
 

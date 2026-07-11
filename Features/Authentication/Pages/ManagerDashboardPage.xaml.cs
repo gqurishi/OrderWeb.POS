@@ -100,19 +100,19 @@ public partial class ManagerDashboardPage : ContentPage
             double scaleFactor = 1.0;
             
             if (minDimension < 600)
-                scaleFactor = 0.75;
+                scaleFactor = 0.78;
             else if (minDimension < 768)
-                scaleFactor = 0.85;
-            else if (minDimension < 834)
+                scaleFactor = 0.88;
+            else if (minDimension < 900)
                 scaleFactor = 1.0;
-            else if (minDimension < 1024)
-                scaleFactor = 1.2;
-            else if (minDimension < 1366)
-                scaleFactor = 1.4;
+            else if (minDimension < 1080)
+                scaleFactor = 1.05;
+            else if (minDimension < 1400)
+                scaleFactor = 1.1;
             else
-                scaleFactor = 1.7;
+                scaleFactor = 1.2;
 
-            double iconSize = 190 * scaleFactor;
+            double iconSize = 150 * scaleFactor;
 
             var restaurantIcon = this.FindByName<Image>("RestaurantIcon");
             if (restaurantIcon != null) { restaurantIcon.WidthRequest = iconSize; restaurantIcon.HeightRequest = iconSize; }
@@ -142,16 +142,16 @@ public partial class ManagerDashboardPage : ContentPage
             if (orderHistoryIcon != null) { orderHistoryIcon.WidthRequest = iconSize; orderHistoryIcon.HeightRequest = iconSize; }
 
             var restaurantLabel = this.FindByName<Label>("RestaurantLabel");
-            if (restaurantLabel != null) restaurantLabel.FontSize = 18 * scaleFactor;
+            if (restaurantLabel != null) restaurantLabel.FontSize = 20 * scaleFactor;
 
             var deliveryLabel = this.FindByName<Label>("DeliveryLabel");
-            if (deliveryLabel != null) deliveryLabel.FontSize = 18 * scaleFactor;
+            if (deliveryLabel != null) deliveryLabel.FontSize = 20 * scaleFactor;
 
             var collectionLabel = this.FindByName<Label>("CollectionLabel");
-            if (collectionLabel != null) collectionLabel.FontSize = 18 * scaleFactor;
+            if (collectionLabel != null) collectionLabel.FontSize = 20 * scaleFactor;
 
             var liveOrderLabel = this.FindByName<Label>("LiveOrderLabel");
-            if (liveOrderLabel != null) liveOrderLabel.FontSize = 18 * scaleFactor;
+            if (liveOrderLabel != null) liveOrderLabel.FontSize = 20 * scaleFactor;
 
             var webOrdersLabel = this.FindByName<Label>("WebOrdersLabel");
             if (webOrdersLabel != null) webOrdersLabel.FontSize = 16 * scaleFactor;
@@ -169,29 +169,29 @@ public partial class ManagerDashboardPage : ContentPage
             if (orderHistoryLabel != null) orderHistoryLabel.FontSize = 16 * scaleFactor;
 
             var welcomeLabel = this.FindByName<Label>("WelcomeLabel");
-            if (welcomeLabel != null) welcomeLabel.FontSize = 14 * scaleFactor;
+            if (welcomeLabel != null) welcomeLabel.FontSize = 12 * scaleFactor;
 
             var headerTitleLabel = this.FindByName<Label>("HeaderTitleLabel");
-            if (headerTitleLabel != null) headerTitleLabel.FontSize = 24 * scaleFactor;
+            if (headerTitleLabel != null) headerTitleLabel.FontSize = 21 * scaleFactor;
 
             var dateLabel = this.FindByName<Label>("DateLabel");
-            if (dateLabel != null) dateLabel.FontSize = 13 * scaleFactor;
+            if (dateLabel != null) dateLabel.FontSize = 12 * scaleFactor;
 
             var timeLabel = this.FindByName<Label>("TimeLabel");
-            if (timeLabel != null) timeLabel.FontSize = 18 * scaleFactor;
+            if (timeLabel != null) timeLabel.FontSize = 16 * scaleFactor;
 
             var grid = this.FindByName<Grid>("ButtonGrid");
             if (grid != null)
             {
-                grid.RowSpacing = 60 * scaleFactor;
-                grid.ColumnSpacing = 60 * scaleFactor;
+                grid.RowSpacing = 38 * scaleFactor;
+                grid.ColumnSpacing = 80 * scaleFactor;
             }
 
             var mainStack = this.FindByName<StackLayout>("MainStackLayout");
             if (mainStack != null)
             {
-                mainStack.Padding = new Thickness(30 * scaleFactor);
-                mainStack.Margin = new Thickness(0, 40 * scaleFactor, 0, 40 * scaleFactor);
+                mainStack.Padding = new Thickness(18 * scaleFactor);
+                mainStack.Margin = new Thickness(0, 14 * scaleFactor, 0, 14 * scaleFactor);
             }
 
             System.Diagnostics.Debug.WriteLine($"Manager dashboard responsive sizing: Scale={scaleFactor:F2}");

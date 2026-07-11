@@ -40,7 +40,6 @@ public class OrderWebConnectionKeeperService
     private readonly ReservationSyncService _reservationSyncService;
 
     private readonly SemaphoreSlim _connectLock = new(1, 1);
-    private Timer? _healthMonitorTimer;
     private string? _activeConfigFingerprint;
     private bool _isStarted;
     private bool _webSocketHandlerAttached;
@@ -284,8 +283,6 @@ public class OrderWebConnectionKeeperService
 
     public void Stop()
     {
-        _healthMonitorTimer?.Dispose();
-        _healthMonitorTimer = null;
         _heartbeatService.Stop();
         _cloudOrderService.StopPolling();
         _cloudOrderService.StopAckRetryService();
@@ -295,22 +292,7 @@ public class OrderWebConnectionKeeperService
 
     private void StartHealthMonitor()
     {
-        _healthMonitorTimer?.Dispose();
-        _healthMonitorTimer = new Timer(
-            async _ =>
-            {
-                try
-                {
-                    await EnsureHealthyAsync();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"OrderWeb keeper monitor error: {ex.Message}");
-                }
-            },
-            null,
-            TimeSpan.FromSeconds(60),
-            TimeSpan.FromSeconds(90));
+        System.Diagnostics.Debug.WriteLine("OrderWeb keeper health monitor is managed by background sync");
     }
 
     private void AttachWebSocketHandlers()
@@ -350,7 +332,7 @@ public class OrderWebConnectionKeeperService
             IsWebSocketConnected = _webSocketService.IsConnected,
             IsPollingActive = _cloudOrderService.IsPolling,
             IsHeartbeatActive = _heartbeatService.IsRunning,
-            IsAckRetryActive = true,
+            IsAckRetryActive = _cloudOrderService.IsAckRetryActive,
             IsApiHealthy = apiHealthy,
             LastHealthCheckUtc = DateTime.UtcNow,
             LastSuccessfulConnectUtc = apiHealthy ? DateTime.UtcNow : _status.LastSuccessfulConnectUtc,
@@ -401,7 +383,7 @@ public class OrderWebConnectionKeeperService
             baseUrl = baseUrl[..^"/pos/pull-orders".Length].TrimEnd('/');
         }
 
-        return baseUrl;
+        return OrderWebApiClient.NormalizeApiBaseUrl(baseUrl);
     }
 
     private static string NormalizeWebSocketUrl(string? websocketUrl, string tenantSlug)

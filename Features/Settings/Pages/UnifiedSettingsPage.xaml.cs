@@ -21,7 +21,6 @@ namespace POS_in_NET.Pages
         // Services
         private readonly BusinessSettingsService _businessService;
         private readonly DatabaseService _databaseService;
-        private readonly CloudSyncService _cloudService;
         private readonly OnlineOrderApiService _orderWebService;
         private readonly AuthenticationService _authService;
         private readonly OrderNumberService _orderNumberService;
@@ -46,6 +45,11 @@ namespace POS_in_NET.Pages
         private ObservableCollection<DatabaseBackupFileInfo> _backupHistory;
         private UserRole? _selectedRole;
         private bool _hasLoadedInitialData;
+        private bool _hasLoadedUsers;
+        private bool _hasLoadedCloudSettings;
+        private bool _hasLoadedOrderWebAddressSettings;
+        private bool _hasLoadedDeliveryZones;
+        private bool _hasLoadedBackupSection;
         private string _initialTab = "BusinessInfo";
 
         public UnifiedSettingsPage()
@@ -56,7 +60,6 @@ namespace POS_in_NET.Pages
             // Initialize services
             _businessService = new BusinessSettingsService();
             _databaseService = new DatabaseService();
-            _cloudService = new CloudSyncService(_databaseService);
             _orderWebService = new OnlineOrderApiService();
             _authService = AuthenticationService.Instance;
             _orderNumberService = new OrderNumberService(_databaseService);
@@ -236,7 +239,7 @@ namespace POS_in_NET.Pages
                 PostcodeToggleIcon.Text = isVisible ? "▶" : "▼";
                 if (!isVisible)
                 {
-                    _ = LoadOrderWebAddressSettingsAsync();
+                    _ = EnsureOrderWebAddressSettingsLoadedAsync();
                 }
             }
             catch (Exception ex)
@@ -349,7 +352,7 @@ namespace POS_in_NET.Pages
                         UserInfoContent.IsVisible = true;
                         currentActiveContent = UserInfoContent;
 
-                        _ = LoadUsersAsync();
+                        _ = EnsureUsersLoadedAsync();
                         
                         // Debug: Check if Name entry is properly loaded
                         System.Diagnostics.Debug.WriteLine($"NameEntry visibility: {NameEntry?.IsVisible}");
@@ -361,21 +364,21 @@ namespace POS_in_NET.Pages
                         currentActiveContent = OrderWebContent;
 
                         InitializeCloudServices();
-                        _ = LoadCloudSettingsAsync();
-                        _ = LoadOrderWebAddressSettingsAsync();
+                        _ = EnsureCloudSettingsLoadedAsync();
+                        _ = EnsureOrderWebAddressSettingsLoadedAsync();
                         
                         System.Diagnostics.Debug.WriteLine("OrderWeb content set to visible");
                         break;
                     case "DeliveryZone":
                         DeliveryZoneContent.IsVisible = true;
                         currentActiveContent = DeliveryZoneContent;
-                        _ = LoadDeliveryZonesAsync();
+                        _ = EnsureDeliveryZonesLoadedAsync();
                         System.Diagnostics.Debug.WriteLine("Delivery Zone content set to visible");
                         break;
                     case "Backup":
                         BackupContent.IsVisible = true;
                         currentActiveContent = BackupContent;
-                        _ = LoadBackupSectionAsync();
+                        _ = EnsureBackupSectionLoadedAsync();
                         System.Diagnostics.Debug.WriteLine("Backup content set to visible");
                         break;
                     default:
@@ -417,6 +420,61 @@ namespace POS_in_NET.Pages
                 "backup" => "Backup",
                 _ => "BusinessInfo"
             };
+        }
+
+        private async Task EnsureUsersLoadedAsync()
+        {
+            if (_hasLoadedUsers)
+            {
+                return;
+            }
+
+            await LoadUsersAsync();
+            _hasLoadedUsers = true;
+        }
+
+        private async Task EnsureCloudSettingsLoadedAsync()
+        {
+            if (_hasLoadedCloudSettings)
+            {
+                return;
+            }
+
+            await LoadCloudSettingsAsync();
+            _hasLoadedCloudSettings = true;
+        }
+
+        private async Task EnsureOrderWebAddressSettingsLoadedAsync()
+        {
+            if (_hasLoadedOrderWebAddressSettings)
+            {
+                return;
+            }
+
+            await LoadOrderWebAddressSettingsAsync();
+            _hasLoadedOrderWebAddressSettings = true;
+        }
+
+        private async Task EnsureDeliveryZonesLoadedAsync()
+        {
+            if (_hasLoadedDeliveryZones)
+            {
+                return;
+            }
+
+            await LoadDeliveryZonesAsync();
+            _hasLoadedDeliveryZones = true;
+        }
+
+        private async Task EnsureBackupSectionLoadedAsync()
+        {
+            if (_hasLoadedBackupSection)
+            {
+                return;
+            }
+
+            await LoadBackupSectionAsync();
+            _hasLoadedBackupSection = true;
         }
         #endregion
 

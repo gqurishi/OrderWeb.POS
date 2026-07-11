@@ -83,6 +83,8 @@ public sealed class OrderWebApiClient
             }
         }
 
+        baseUrl = StripTenantSegmentFromApiBase(baseUrl);
+
         if (!baseUrl.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
         {
             baseUrl = $"{baseUrl}/api";
@@ -91,6 +93,34 @@ public sealed class OrderWebApiClient
         return string.IsNullOrWhiteSpace(baseUrl)
             ? "https://orderweb.net/api"
             : baseUrl;
+    }
+
+    private static string StripTenantSegmentFromApiBase(string baseUrl)
+    {
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            return baseUrl;
+        }
+
+        var pathSegments = uri.AbsolutePath
+            .Trim('/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (pathSegments.Length == 2 &&
+            pathSegments[0].Equals("api", StringComparison.OrdinalIgnoreCase) &&
+            !pathSegments[1].Equals("pos", StringComparison.OrdinalIgnoreCase))
+        {
+            var builder = new UriBuilder(uri)
+            {
+                Path = "api",
+                Query = string.Empty,
+                Fragment = string.Empty
+            };
+
+            return builder.Uri.ToString().TrimEnd('/');
+        }
+
+        return baseUrl;
     }
 
     public static string BuildUrl(OrderWebApiConfig config, string path)

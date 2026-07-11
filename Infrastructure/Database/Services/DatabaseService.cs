@@ -438,6 +438,7 @@ public class DatabaseService
             var apiBaseUrl = !string.IsNullOrEmpty(config.RestApiBaseUrl) 
                 ? config.RestApiBaseUrl 
                 : config.ApiBaseUrl;
+            apiBaseUrl = OrderWebApiClient.NormalizeApiBaseUrl(apiBaseUrl);
 
             var existingMasterTerminalName = await GetExistingCloudConfigValueAsync(connection, "online_order_master_terminal_name");
             var onlineOrderMasterTerminalName = !string.IsNullOrWhiteSpace(config.OnlineOrderMasterTerminalName)

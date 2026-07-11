@@ -19,15 +19,17 @@ namespace POS_in_NET.Services
     {
         private readonly DatabaseService _db;
         private readonly HttpClient _httpClient;
+        private readonly BackgroundSyncManager? _backgroundSyncManager;
         private Timer? _processingTimer;
         private bool _isProcessing = false;
         private readonly SemaphoreSlim _processingLock = new SemaphoreSlim(1, 1);
         
         public event EventHandler<QueueProcessedEventArgs>? QueueProcessed;
         
-        public OfflineQueueService(DatabaseService dbService)
+        public OfflineQueueService(DatabaseService dbService, BackgroundSyncManager? backgroundSyncManager = null)
         {
             _db = dbService;
+            _backgroundSyncManager = backgroundSyncManager;
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
@@ -88,6 +90,7 @@ namespace POS_in_NET.Services
                 await cmd.ExecuteNonQueryAsync();
                 
                 System.Diagnostics.Debug.WriteLine($" Queued operation: {operationType} -> {endpoint}");
+                _backgroundSyncManager?.RequestRunSoon("offline-api-queue-flush");
                 return true;
             }
             catch (Exception ex)
@@ -151,6 +154,7 @@ namespace POS_in_NET.Services
                         {
                             // Mark as sent
                             await MarkAsSentAsync(item.Id, result.StatusCode, result.ResponseBody);
+                            await MarkRelatedOperationAsSentAsync(item, result.StatusCode, result.ResponseBody);
                             sent++;
                             System.Diagnostics.Debug.WriteLine($" Sent: {item.OperationType} -> {item.Endpoint}");
                         }
@@ -255,6 +259,62 @@ namespace POS_in_NET.Services
                     Error = ex.Message 
                 };
             }
+        }
+
+        private async Task MarkRelatedOperationAsSentAsync(OfflineQueueItem item, int statusCode, string? responseBody)
+        {
+            if (!string.Equals(item.OperationType, "order_settlement", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(item.Payload);
+                var root = document.RootElement;
+                var orderId = TryGetJsonString(root, "order_id");
+                var idempotencyKey = TryGetJsonString(root, "idempotency_key");
+
+                if (string.IsNullOrWhiteSpace(orderId) && string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    return;
+                }
+
+                using var conn = await _db.GetConnectionAsync();
+                using var cmd = new MySqlCommand(@"
+                    UPDATE orderweb_order_settlements
+                    SET sent_to_cloud = 1,
+                        queued_for_retry = 0,
+                        sent_at = NOW(),
+                        last_attempt_at = NOW(),
+                        response_status = @responseStatus,
+                        response_body = @responseBody,
+                        last_error = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE (@idempotencyKey IS NOT NULL AND idempotency_key = @idempotencyKey)
+                       OR (@orderId IS NOT NULL AND cloud_order_id = @orderId)", conn);
+                cmd.Parameters.AddWithValue("@responseStatus", statusCode);
+                cmd.Parameters.AddWithValue("@responseBody", string.IsNullOrWhiteSpace(responseBody) ? (object)DBNull.Value : responseBody);
+                cmd.Parameters.AddWithValue("@idempotencyKey", string.IsNullOrWhiteSpace(idempotencyKey) ? (object)DBNull.Value : idempotencyKey);
+                cmd.Parameters.AddWithValue("@orderId", string.IsNullOrWhiteSpace(orderId) ? (object)DBNull.Value : orderId);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($" Failed to update related operation status: {ex.Message}");
+            }
+        }
+
+        private static string? TryGetJsonString(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            return value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : value.GetRawText();
         }
         
         /// <summary>

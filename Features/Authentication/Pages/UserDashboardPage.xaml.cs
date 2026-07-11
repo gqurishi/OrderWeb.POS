@@ -310,53 +310,53 @@ public partial class UserDashboardPage : ContentPage
             if (screenWidth <= 0 || screenHeight <= 0)
                 return;
 
-            // Calculate screen size category (smallest dimension matters for iPad Mini compatibility)
+            // Calculate screen size category. A 1366x768 POS display should stay compact.
             double minDimension = Math.Min(screenWidth, screenHeight);
 
-            // iPad Mini: ~768px | iPad: ~834px | iPad Pro: ~1024px | Desktop 17-19": ~1366-1536px
             double scaleFactor = 1.0;
             
-            if (minDimension < 600)          // Small phones
-                scaleFactor = 0.75;
-            else if (minDimension < 768)     // Large phones
-                scaleFactor = 0.85;
-            else if (minDimension < 834)     // iPad Mini
+            if (minDimension < 600)
+                scaleFactor = 0.78;
+            else if (minDimension < 768)
+                scaleFactor = 0.88;
+            else if (minDimension < 900)
                 scaleFactor = 1.0;
-            else if (minDimension < 1024)    // iPad
+            else if (minDimension < 1080)
+                scaleFactor = 1.05;
+            else if (minDimension < 1400)
+                scaleFactor = 1.1;
+            else
                 scaleFactor = 1.2;
-            else if (minDimension < 1366)    // iPad Pro
-                scaleFactor = 1.4;
-            else                              // Large desktops (17-19")
-                scaleFactor = 1.7;
 
             // Update header sizes using FindByName
             var headerTitle = this.FindByName<Label>("HeaderTitleLabel");
             if (headerTitle != null)
-                headerTitle.FontSize = 24 * scaleFactor;
+                headerTitle.FontSize = 21 * scaleFactor;
 
             var headerSubtitle = this.FindByName<Label>("HeaderSubtitleLabel");
             if (headerSubtitle != null)
-                headerSubtitle.FontSize = 14 * scaleFactor;
+                headerSubtitle.FontSize = 12 * scaleFactor;
 
             var dateLabel = this.FindByName<Label>("DateLabel");
             if (dateLabel != null)
-                dateLabel.FontSize = 13 * scaleFactor;
+                dateLabel.FontSize = 12 * scaleFactor;
 
             var timeLabel = this.FindByName<Label>("TimeLabel");
             if (timeLabel != null)
-                timeLabel.FontSize = 18 * scaleFactor;
+                timeLabel.FontSize = 16 * scaleFactor;
 
             // Update title
             var titleLabel = this.FindByName<Label>("TitleLabel");
             if (titleLabel != null)
             {
                 titleLabel.FontSize = 28 * scaleFactor;
-                titleLabel.Margin = new Thickness(0, 0, 0, 60 * scaleFactor);
+                titleLabel.Margin = new Thickness(0, 0, 0, 28 * scaleFactor);
             }
 
             // Calculate responsive icon and spacing sizes
-            double iconSize = 190 * scaleFactor;
-            double spacing = 60 * scaleFactor;
+            double iconSize = 150 * scaleFactor;
+            double rowSpacing = 38 * scaleFactor;
+            double columnSpacing = 80 * scaleFactor;
 
             // Update icons using FindByName
             var restaurantIcon = this.FindByName<Image>("RestaurantIcon");
@@ -373,31 +373,31 @@ public partial class UserDashboardPage : ContentPage
 
             // Update icon labels
             var restaurantLabel = this.FindByName<Label>("RestaurantLabel");
-            if (restaurantLabel != null) restaurantLabel.FontSize = 18 * scaleFactor;
+            if (restaurantLabel != null) restaurantLabel.FontSize = 20 * scaleFactor;
 
             var deliveryLabel = this.FindByName<Label>("DeliveryLabel");
-            if (deliveryLabel != null) deliveryLabel.FontSize = 18 * scaleFactor;
+            if (deliveryLabel != null) deliveryLabel.FontSize = 20 * scaleFactor;
 
             var collectionLabel = this.FindByName<Label>("CollectionLabel");
-            if (collectionLabel != null) collectionLabel.FontSize = 18 * scaleFactor;
+            if (collectionLabel != null) collectionLabel.FontSize = 20 * scaleFactor;
 
             var liveOrderLabel = this.FindByName<Label>("LiveOrderLabel");
-            if (liveOrderLabel != null) liveOrderLabel.FontSize = 18 * scaleFactor;
+            if (liveOrderLabel != null) liveOrderLabel.FontSize = 20 * scaleFactor;
 
             // Update button grid spacing
             var grid = this.FindByName<Grid>("ButtonGrid");
             if (grid != null)
             {
-                grid.RowSpacing = spacing;
-                grid.ColumnSpacing = spacing;
+                grid.RowSpacing = rowSpacing;
+                grid.ColumnSpacing = columnSpacing;
             }
 
             // Update main stack layout padding and margins
             var mainStack = this.FindByName<StackLayout>("MainStackLayout");
             if (mainStack != null)
             {
-                mainStack.Padding = new Thickness(30 * scaleFactor);
-                mainStack.Margin = new Thickness(0, 40 * scaleFactor, 0, 40 * scaleFactor);
+                mainStack.Padding = new Thickness(18 * scaleFactor);
+                mainStack.Margin = new Thickness(0, 14 * scaleFactor, 0, 14 * scaleFactor);
             }
 
             System.Diagnostics.Debug.WriteLine($"Responsive sizing updated: Scale={scaleFactor:F2}, MinDim={minDimension}, Screen={screenWidth}x{screenHeight}");

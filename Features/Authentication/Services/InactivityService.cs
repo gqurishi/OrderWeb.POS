@@ -19,6 +19,7 @@ public sealed class InactivityService
     private int _criticalActivityDepth;
     private bool _isHandlingIdle;
     private bool _hasReturnedToDashboardForIdlePeriod;
+    private BackgroundSyncManager? _backgroundSyncManager;
 
     public InactivityService(AuthenticationService authService, RoleAccessService roleAccessService)
     {
@@ -68,6 +69,8 @@ public sealed class InactivityService
             _lastActivityAt = DateTime.Now;
             _hasReturnedToDashboardForIdlePeriod = false;
         }
+
+        GetBackgroundSyncManager()?.NotifyUserActivity();
     }
 
     public IDisposable BeginCriticalActivity()
@@ -79,7 +82,13 @@ public sealed class InactivityService
             _hasReturnedToDashboardForIdlePeriod = false;
         }
 
-        return new CriticalActivityScope(this);
+        var backgroundSyncScope = GetBackgroundSyncManager()?.BeginCriticalActivity();
+        return new CriticalActivityScope(this, backgroundSyncScope);
+    }
+
+    private BackgroundSyncManager? GetBackgroundSyncManager()
+    {
+        return _backgroundSyncManager ??= ServiceHelper.GetService<BackgroundSyncManager>();
     }
 
     public IDisposable RegisterBeforeIdleReturnHandler(Func<Task> handler)
@@ -565,11 +574,13 @@ public sealed class InactivityService
     private sealed class CriticalActivityScope : IDisposable
     {
         private readonly InactivityService _service;
+        private readonly IDisposable? _backgroundSyncScope;
         private bool _disposed;
 
-        public CriticalActivityScope(InactivityService service)
+        public CriticalActivityScope(InactivityService service, IDisposable? backgroundSyncScope)
         {
             _service = service;
+            _backgroundSyncScope = backgroundSyncScope;
         }
 
         public void Dispose()
@@ -581,6 +592,7 @@ public sealed class InactivityService
 
             _disposed = true;
             _service.EndCriticalActivity();
+            _backgroundSyncScope?.Dispose();
         }
     }
 

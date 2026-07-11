@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace POS_in_NET.Pages
@@ -23,13 +24,19 @@ namespace POS_in_NET.Pages
         private Timer? _refreshTimer;
         private bool _isLoadingWebOrders;
         private bool _hasPendingWebOrdersRefresh;
+        private bool _hasLoadedInitialData;
+        private bool _isPageActive;
+        private bool _isSubscribedToLiveOrderEvents;
+        private bool _isBackgroundRecentSyncRunning;
+        private bool _hasPendingForcedWebOrdersReload;
+        private List<Order> _cachedLocalOrders = new();
+        private CancellationTokenSource? _searchDebounceCts;
         private DateTime _lastWebOrdersRefreshAt = DateTime.MinValue;
+        private DateTime _lastBackgroundRecentSyncAt = DateTime.MinValue;
         private static readonly TimeSpan MinRefreshGap = TimeSpan.FromMilliseconds(400);
-#if DEBUG
-        private const bool EnableVerboseOrderDump = true;
-#else
-        private const bool EnableVerboseOrderDump = false;
-#endif
+        private static readonly TimeSpan SearchDebounceDelay = TimeSpan.FromMilliseconds(250);
+        private static readonly bool EnableVerboseOrderDump = false;
+        private static readonly TimeSpan BackgroundRecentSyncCooldown = TimeSpan.FromMinutes(1);
         
         // Pagination
         private int _currentPage = 0;
@@ -72,61 +79,9 @@ namespace POS_in_NET.Pages
             // Set BindingContext for data binding
             BindingContext = this;
             
-            //  CRITICAL: Subscribe to WebSocket order updates for REAL-TIME delivery
-            var wsService = ServiceHelper.GetService<OrderWebWebSocketService>();
-            if (wsService != null)
-            {
-                wsService.NewOrderReceived += (sender, args) => {
-                    System.Diagnostics.Debug.WriteLine($" WEBSOCKET ORDER RECEIVED: {args.OrderNumber} - {args.CustomerName} - £{args.TotalAmount}");
-                    RefreshWebOrders();
-                };
-                System.Diagnostics.Debug.WriteLine(" WebSocket event subscription active!");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine(" WebSocket service not found!");
-            }
-            
-            //  Subscribe to CloudService.OnOrdersUpdated for automatic polling updates
-            var cloudService = ServiceHelper.GetService<CloudOrderService>();
-            if (cloudService != null)
-            {
-                cloudService.OnOrdersUpdated += () => {
-                    System.Diagnostics.Debug.WriteLine(" CloudService detected new orders - refreshing UI!");
-                    RefreshWebOrders();
-                };
-                System.Diagnostics.Debug.WriteLine(" CloudService polling event subscription active!");
-            }
-            
-            // Now link WebSocket to CloudService
-            if (cloudService != null && wsService != null)
-            {
-                // Keep WebSocket and polling on the same order-processing path.
-                cloudService.SetWebSocketService(wsService);
-                wsService.SetCloudOrderService(cloudService);
-                System.Diagnostics.Debug.WriteLine(" CloudService and WebSocket linked for shared order processing");
-            }
-            
-            // Start status update timer (every 10 seconds)
-            _refreshTimer = new Timer(_ => 
-            {
-                MainThread.BeginInvokeOnMainThread(() => UpdateConnectionStatus());
-            }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
-
-            // Subscribe to direct database order updates for INSTANT 0.5s delivery
-            var directDbService = ServiceHelper.GetService<OrderWebDirectDatabaseService>();
-            if (directDbService != null)
-            {
-                directDbService.OnNewOrdersDetected += () => {
-                    System.Diagnostics.Debug.WriteLine(" INSTANT UPDATE: New orders detected via direct database - refreshing UI immediately!");
-                    RefreshWebOrders();
-                };
-            }
-
-            LoadPageAsync();
         }
 
-        protected override void OnAppearing()
+        protected override async void OnAppearing()
         {
             base.OnAppearing();
             if (!_roleAccessService.IsManagerOrAdmin(_authService?.CurrentUser?.Role))
@@ -139,20 +94,34 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            //  NO AUTO-REFRESH TIMER - Page only refreshes from:
-            // 1. WebSocket messages (real-time)
-            // 2. Manual "Sync Now" button
-            // 3. Initial page load
-            System.Diagnostics.Debug.WriteLine(" OnAppearing - Web Orders page opened (NO auto-refresh timer)");
+            _isPageActive = true;
+            SubscribeToLiveOrderEvents();
+            StartStatusRefreshTimer();
+
+            if (_hasLoadedInitialData)
+            {
+                await LoadWebOrdersAsync(forceLocalReload: false);
+                _ = LoadWebOrdersAsync(forceLocalReload: true);
+                StartBackgroundRecentSync("page-reopen");
+            }
+            else
+            {
+                await LoadPageAsync();
+            }
         }
 
         protected override void OnDisappearing()
         {
             base.OnDisappearing();
-            _refreshTimer?.Dispose();
+            _isPageActive = false;
+            StopStatusRefreshTimer();
+            UnsubscribeFromLiveOrderEvents();
+            _searchDebounceCts?.Cancel();
+            _searchDebounceCts?.Dispose();
+            _searchDebounceCts = null;
         }
 
-        private async void LoadPageAsync()
+        private async Task LoadPageAsync()
         {
             try
             {
@@ -186,32 +155,11 @@ namespace POS_in_NET.Pages
                 DateDisplayLabel.Text = _selectedDate.ToString("dd MMM yyyy");
                 System.Diagnostics.Debug.WriteLine($" Date picker initialized to: {_selectedDate:MMM dd, yyyy}");
                 
-                // Smart Auto-sync: Always backfill the last 7 days so missed OrderWeb orders are saved locally.
-                var cloudService = ServiceHelper.GetService<CloudOrderService>();
-                if (cloudService != null)
-                {
-                    try
-                    {
-                        System.Diagnostics.Debug.WriteLine(" Smart Auto-sync: Syncing last 7 days of OrderWeb orders...");
-                        var syncResult = await cloudService.SyncLastSevenDaysAsync();
-                        System.Diagnostics.Debug.WriteLine($" Smart sync complete: {syncResult.Message}");
-                        System.Diagnostics.Debug.WriteLine($" Found {syncResult.OrdersFound} orders from API");
-                        
-                        if (syncResult.OrdersFound > 0)
-                        {
-                            System.Diagnostics.Debug.WriteLine($" Reloading orders after syncing {syncResult.OrdersFound} new orders...");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($" Smart sync error: {ex.Message}");
-                    }
-                }
-                
-                // Load web orders from database (after smart sync completes)
+                // Load cached/local orders first so the page opens immediately.
                 System.Diagnostics.Debug.WriteLine(" About to call LoadWebOrdersAsync...");
-                await LoadWebOrdersAsync().ConfigureAwait(false);
+                await LoadWebOrdersAsync(forceLocalReload: true).ConfigureAwait(false);
                 System.Diagnostics.Debug.WriteLine(" LoadWebOrdersAsync completed");
+                _hasLoadedInitialData = true;
                 
                 // Update connection status on main thread
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -226,6 +174,8 @@ namespace POS_in_NET.Pages
                         System.Diagnostics.Debug.WriteLine($" Error in UpdateConnectionStatus: {ex.Message}");
                     }
                 });
+
+                StartBackgroundRecentSync("page-open");
             }
             catch (Exception ex)
             {
@@ -247,6 +197,134 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private void SubscribeToLiveOrderEvents()
+        {
+            if (_isSubscribedToLiveOrderEvents)
+            {
+                return;
+            }
+
+            var wsService = ServiceHelper.GetService<OrderWebWebSocketService>();
+            var cloudService = ServiceHelper.GetService<CloudOrderService>();
+            if (cloudService != null && wsService != null)
+            {
+                cloudService.SetWebSocketService(wsService);
+                wsService.SetCloudOrderService(cloudService);
+            }
+
+            if (wsService != null)
+            {
+                wsService.NewOrderReceived += OnWebSocketOrderReceived;
+            }
+
+            if (cloudService != null)
+            {
+                cloudService.OnOrdersUpdated += OnCloudOrdersUpdated;
+            }
+
+            var directDbService = ServiceHelper.GetService<OrderWebDirectDatabaseService>();
+            if (directDbService != null)
+            {
+                directDbService.OnNewOrdersDetected += OnDirectDbOrdersDetected;
+            }
+
+            _isSubscribedToLiveOrderEvents = true;
+        }
+
+        private void UnsubscribeFromLiveOrderEvents()
+        {
+            if (!_isSubscribedToLiveOrderEvents)
+            {
+                return;
+            }
+
+            var wsService = ServiceHelper.GetService<OrderWebWebSocketService>();
+            if (wsService != null)
+            {
+                wsService.NewOrderReceived -= OnWebSocketOrderReceived;
+            }
+
+            var cloudService = ServiceHelper.GetService<CloudOrderService>();
+            if (cloudService != null)
+            {
+                cloudService.OnOrdersUpdated -= OnCloudOrdersUpdated;
+            }
+
+            var directDbService = ServiceHelper.GetService<OrderWebDirectDatabaseService>();
+            if (directDbService != null)
+            {
+                directDbService.OnNewOrdersDetected -= OnDirectDbOrdersDetected;
+            }
+
+            _isSubscribedToLiveOrderEvents = false;
+        }
+
+        private void StartStatusRefreshTimer()
+        {
+            StopStatusRefreshTimer();
+            _refreshTimer = new Timer(
+                _ => MainThread.BeginInvokeOnMainThread(UpdateConnectionStatus),
+                null,
+                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(10));
+        }
+
+        private void StopStatusRefreshTimer()
+        {
+            _refreshTimer?.Dispose();
+            _refreshTimer = null;
+        }
+
+        private void OnWebSocketOrderReceived(object? sender, OrderReceivedEventArgs args)
+        {
+            RefreshWebOrders();
+        }
+
+        private void OnCloudOrdersUpdated()
+        {
+            RefreshWebOrders();
+        }
+
+        private void OnDirectDbOrdersDetected()
+        {
+            RefreshWebOrders();
+        }
+
+        private void StartBackgroundRecentSync(string reason)
+        {
+            if (_isBackgroundRecentSyncRunning ||
+                DateTime.UtcNow - _lastBackgroundRecentSyncAt < BackgroundRecentSyncCooldown)
+            {
+                return;
+            }
+
+            var cloudService = ServiceHelper.GetService<CloudOrderService>();
+            if (cloudService == null)
+            {
+                return;
+            }
+
+            _isBackgroundRecentSyncRunning = true;
+            _lastBackgroundRecentSyncAt = DateTime.UtcNow;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var syncResult = await cloudService.SyncLastSevenDaysAsync();
+                    System.Diagnostics.Debug.WriteLine($"Web Orders background sync ({reason}): {syncResult.Message}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Web Orders background sync failed: {ex.Message}");
+                }
+                finally
+                {
+                    _isBackgroundRecentSyncRunning = false;
+                }
+            });
+        }
+
         private void UpdateUIForUserRole()
         {
             // Always show web orders - no authentication restriction
@@ -256,11 +334,12 @@ namespace POS_in_NET.Pages
             StatsSection.IsVisible = true; // This now includes Today's Orders + Filter + Search
         }
 
-        private async Task LoadWebOrdersAsync()
+        private async Task LoadWebOrdersAsync(bool forceLocalReload = true)
         {
             if (_isLoadingWebOrders)
             {
                 _hasPendingWebOrdersRefresh = true;
+                _hasPendingForcedWebOrdersReload = _hasPendingForcedWebOrdersReload || forceLocalReload;
                 return;
             }
 
@@ -277,7 +356,15 @@ namespace POS_in_NET.Pages
                     return;
                 }
                 
-                var allOrders = await orderService.GetOrdersAsync().ConfigureAwait(false);
+                var allOrders = forceLocalReload || _cachedLocalOrders.Count == 0
+                    ? await orderService.GetOrdersAsync().ConfigureAwait(false)
+                    : _cachedLocalOrders.ToList();
+
+                if (forceLocalReload || _cachedLocalOrders.Count == 0)
+                {
+                    _cachedLocalOrders = allOrders.ToList();
+                }
+
                 System.Diagnostics.Debug.WriteLine($" Total orders in database: {allOrders.Count}");
                 
                 if (EnableVerboseOrderDump)
@@ -439,10 +526,17 @@ namespace POS_in_NET.Pages
                 _isLoadingWebOrders = false;
                 _lastWebOrdersRefreshAt = DateTime.UtcNow;
 
-                if (_hasPendingWebOrdersRefresh)
+                if (_hasPendingWebOrdersRefresh && _isPageActive)
+                {
+                    var forcePendingReload = _hasPendingForcedWebOrdersReload;
+                    _hasPendingWebOrdersRefresh = false;
+                    _hasPendingForcedWebOrdersReload = false;
+                    _ = MainThread.InvokeOnMainThreadAsync(async () => await LoadWebOrdersAsync(forcePendingReload));
+                }
+                else if (!_isPageActive)
                 {
                     _hasPendingWebOrdersRefresh = false;
-                    _ = MainThread.InvokeOnMainThreadAsync(async () => await LoadWebOrdersAsync());
+                    _hasPendingForcedWebOrdersReload = false;
                 }
             }
         }
@@ -583,38 +677,23 @@ namespace POS_in_NET.Pages
                 LoadingIndicator.IsVisible = true;
                 LoadingIndicator.IsRunning = true;
                 
-                // Get cloud order service and sync orders
-                var cloudService = ServiceHelper.GetService<CloudOrderService>();
-                if (cloudService != null)
-                {
-                    System.Diagnostics.Debug.WriteLine($" Refresh: Syncing last 30 days with single API call...");
-                    
-                    // Use 'since' parameter - one API call for all orders in last 30 days
-                    var thirtyDaysAgo = DateTime.Today.AddDays(-30);
-                    var syncResult = await cloudService.SyncOrdersByDateAsync(thirtyDaysAgo);
-                    
-                    System.Diagnostics.Debug.WriteLine($" Refresh complete: {syncResult.Message}");
-                }
+                // Local refresh only. Use "Sync Now" for an explicit cloud pull.
+                await LoadWebOrdersAsync(forceLocalReload: true);
+                UpdateConnectionStatus();
                 
-                // Reload orders from database
-                await LoadWebOrdersAsync();
-                
-                // Count actual orders in database
-                var orderService = ServiceHelper.GetService<OrderService>();
-                if (orderService != null)
+                if (_cachedLocalOrders.Count > 0)
                 {
-                    var allOrders = await orderService.GetOrdersAsync();
-                    var webOrders = allOrders.Where(IsWebOrder).ToList();
+                    var webOrders = _cachedLocalOrders.Where(IsWebOrder).ToList();
                     var orderDates = webOrders.GroupBy(o => o.CreatedAt.Date).OrderByDescending(g => g.Key).Take(5);
                     
-                    var datesSummary = string.Join("\n", orderDates.Select(g => $"• {g.Key:MMM dd}: {g.Count()} orders"));
+                    var datesSummary = string.Join("\n", orderDates.Select(g => $"- {g.Key:MMM dd}: {g.Count()} orders"));
                     
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Refresh Complete", 
-                        $"Database has {webOrders.Count} web orders\n\nRecent dates:\n{datesSummary}\n\nShowing: {_selectedDate:MMM dd, yyyy}");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Refresh Complete",
+                        $"Loaded {webOrders.Count} cached web orders.\n\nRecent dates:\n{datesSummary}\n\nUse Sync Now to pull from OrderWeb.");
                 }
                 else
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Orders refreshed! Found orders from last 30 days.");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Refresh Complete", "Cached web orders reloaded.");
                 }
             }
             catch (Exception ex)
@@ -656,7 +735,7 @@ namespace POS_in_NET.Pages
                 var syncResult = await cloudService.SyncOrdersByDateAsync(targetDate);
                 
                 // Refresh the UI with new data
-                await LoadWebOrdersAsync();
+                await LoadWebOrdersAsync(forceLocalReload: true);
 
                 if (syncResult.Success)
                 {
@@ -681,6 +760,11 @@ namespace POS_in_NET.Pages
 
         private void RefreshWebOrders()
         {
+            if (!_isPageActive)
+            {
+                return;
+            }
+
             if ((DateTime.UtcNow - _lastWebOrdersRefreshAt) < MinRefreshGap)
             {
                 _hasPendingWebOrdersRefresh = true;
@@ -693,7 +777,7 @@ namespace POS_in_NET.Pages
                 try
                 {
                     var refreshStart = DateTime.Now;
-                    await LoadWebOrdersAsync();
+                    await LoadWebOrdersAsync(forceLocalReload: true);
                     var refreshDuration = (DateTime.Now - refreshStart).TotalMilliseconds;
                     System.Diagnostics.Debug.WriteLine($" UI SPEED: Orders refreshed in {refreshDuration:F0}ms");
                 }
@@ -722,7 +806,7 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($" Date filter changed to: {_selectedDate:MMM dd, yyyy}");
                 
                 // Refresh orders with new date filter
-                await LoadWebOrdersAsync();
+                await LoadWebOrdersAsync(forceLocalReload: false);
             }
             catch (Exception ex)
             {
@@ -959,7 +1043,7 @@ namespace POS_in_NET.Pages
                 {
                     _searchText = normalized;
                     _currentPage = 0;
-                    await LoadWebOrdersAsync();
+                    await LoadWebOrdersAsync(forceLocalReload: false);
                 }
             }
             finally
@@ -1005,7 +1089,7 @@ namespace POS_in_NET.Pages
                     var result = await cloudService.QueueWebOrderPrintAsync(order);
                     if (result.Success)
                     {
-                        await LoadWebOrdersAsync();
+                        await LoadWebOrdersAsync(forceLocalReload: true);
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Queued", result.Message);
                     }
                     else
@@ -1076,11 +1160,18 @@ namespace POS_in_NET.Pages
 
                     if (updated)
                     {
+                        order.LocalLifecycleState = LocalLifecycleState.Paid;
+                        order.IsOpen = false;
+                        order.PaymentStatus = PaymentStatus.Paid;
+                        order.PaidAt = DateTime.Now;
+
+                        await SendOrderWebCompletionAckAsync(order);
+
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Order Completed", 
                             $"Order {order.OrderNumber} has been marked as completed!");
                         
                         // Refresh the orders list
-                        await LoadWebOrdersAsync();
+                        await LoadWebOrdersAsync(forceLocalReload: true);
                     }
                     else
                     {
@@ -1096,6 +1187,40 @@ namespace POS_in_NET.Pages
                     LoadingIndicator.IsVisible = false;
                     LoadingIndicator.IsRunning = false;
                 }
+            }
+        }
+
+        private async Task SendOrderWebCompletionAckAsync(Order order)
+        {
+            if (!IsWebOrder(order))
+            {
+                return;
+            }
+
+            try
+            {
+                var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                if (cloudService == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("OrderWeb completion ACK skipped: CloudOrderService unavailable");
+                    return;
+                }
+
+                var user = _authService?.CurrentUser;
+                var sentOrQueued = await cloudService.SendOrderSettlementAsync(
+                    order,
+                    status: "paid",
+                    staffId: user?.Id.ToString(),
+                    staffName: user?.Name ?? user?.Username,
+                    notes: $"POS tender: {order.PaymentMethod}");
+
+                System.Diagnostics.Debug.WriteLine(sentOrQueued
+                    ? $"OrderWeb completion ACK sent/queued for {order.OrderId}"
+                    : $"OrderWeb completion ACK not sent for {order.OrderId}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OrderWeb completion ACK warning: {ex.Message}");
             }
         }
 
@@ -1177,7 +1302,7 @@ namespace POS_in_NET.Pages
             if (_currentPage > 0)
             {
                 _currentPage--;
-                await LoadWebOrdersAsync();
+                await LoadWebOrdersAsync(forceLocalReload: false);
             }
         }
 
@@ -1186,7 +1311,7 @@ namespace POS_in_NET.Pages
             if (_currentPage < _totalPages - 1)
             {
                 _currentPage++;
-                await LoadWebOrdersAsync();
+                await LoadWebOrdersAsync(forceLocalReload: false);
             }
         }
 
@@ -1194,7 +1319,27 @@ namespace POS_in_NET.Pages
         {
             _searchText = e.NewTextValue ?? "";
             _currentPage = 0; // Reset to first page
-            await LoadWebOrdersAsync();
+            await DebounceWebOrderSearchAsync();
+        }
+
+        private async Task DebounceWebOrderSearchAsync()
+        {
+            _searchDebounceCts?.Cancel();
+            _searchDebounceCts?.Dispose();
+            var cts = new CancellationTokenSource();
+            _searchDebounceCts = cts;
+
+            try
+            {
+                await Task.Delay(SearchDebounceDelay, cts.Token);
+                if (!cts.IsCancellationRequested && _isPageActive)
+                {
+                    await LoadWebOrdersAsync(forceLocalReload: false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
         /// <summary>
@@ -1227,17 +1372,23 @@ namespace POS_in_NET.Pages
                 
                 // Refresh UI to show all orders
                 System.Diagnostics.Debug.WriteLine(" Refreshing UI after sync...");
-                await LoadWebOrdersAsync();
+                await LoadWebOrdersAsync(forceLocalReload: true);
                 
                 // Update status
                 UpdateConnectionStatus();
                 
-                // Show success message with order count
-                var message = result.OrdersFound > 0 
-                    ? $"Synced {result.OrdersFound} orders from OrderWeb.net\n{result.Message}"
-                    : $"No new orders found.\n{result.Message}";
-                    
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Complete", message);
+                if (result.Success)
+                {
+                    var message = result.OrdersFound > 0
+                        ? $"Synced {result.OrdersFound} orders from OrderWeb.net\n{result.Message}"
+                        : $"No new orders found.\n{result.Message}";
+
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Complete", message);
+                }
+                else
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Sync Failed", result.Message);
+                }
                 
                 System.Diagnostics.Debug.WriteLine($" Manual sync complete: {result.Message}");
             }
@@ -1396,7 +1547,7 @@ namespace POS_in_NET.Pages
                         ? "Showing: Today"
                         : $"Showing: {_selectedDate:MMM dd, yyyy}";
 
-                    await LoadWebOrdersAsync();
+                    await LoadWebOrdersAsync(forceLocalReload: true);
 
                     if (!syncResult.Success)
                     {
@@ -1431,7 +1582,7 @@ namespace POS_in_NET.Pages
                 SelectedDateLabel.Text = $"Showing: {_selectedDate:MMM dd, yyyy}";
             }
             
-            await LoadWebOrdersAsync();
+            await LoadWebOrdersAsync(forceLocalReload: false);
         }
 
         public sealed record PrintJobStatusRow(string JobType, string Status, int RetryCount, int MaxRetries, string? ErrorMessage);

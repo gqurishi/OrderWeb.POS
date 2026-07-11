@@ -86,7 +86,7 @@ public class ReportSchedulerService
     /// <summary>
     /// Check if it's time to generate reports and run them
     /// </summary>
-    private async Task CheckAndGenerateReportsAsync()
+    public async Task CheckAndGenerateReportsAsync()
     {
         try
         {

@@ -294,7 +294,21 @@ public class OrderWebWebSocketService
                     break;
                 }
 
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                using var messageStream = new MemoryStream();
+                do
+                {
+                    messageStream.Write(buffer, 0, result.Count);
+
+                    if (result.EndOfMessage)
+                    {
+                        break;
+                    }
+
+                    result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                }
+                while (result.MessageType == WebSocketMessageType.Text);
+
+                var message = Encoding.UTF8.GetString(messageStream.ToArray());
                 AppDiagnostics.Log($"WebSocket message received (length: {message.Length})");
 #if DEBUG
                 AppDiagnostics.Log($"Message content: {message}");
@@ -396,17 +410,19 @@ public class OrderWebWebSocketService
             var jsonDoc = JsonDocument.Parse(message);
             var root = jsonDoc.RootElement;
 
-            if (!root.TryGetProperty("type", out var typeElement))
+            if (!root.TryGetProperty("type", out var typeElement) &&
+                !root.TryGetProperty("event", out typeElement))
             {
-                System.Diagnostics.Debug.WriteLine(" Message missing 'type' field");
+                System.Diagnostics.Debug.WriteLine(" Message missing 'type'/'event' field");
                 return;
             }
 
-            var messageType = typeElement.GetString();
+            var messageType = typeElement.GetString()?.Trim();
 
             switch (messageType)
             {
                 case "new_order":
+                case "order_created":
                     HandleNewOrder(root);
                     break;
 
@@ -483,45 +499,88 @@ public class OrderWebWebSocketService
             System.Diagnostics.Debug.WriteLine($" HandleNewOrder called!");
             System.Diagnostics.Debug.WriteLine($" Full data: {data.GetRawText()}");
             
-            // OrderWeb.net sends order data in "data" field, not "order"
-            if (!data.TryGetProperty("data", out var orderElement))
+            if (!TryGetOrderElement(data, out var orderElement))
             {
-                System.Diagnostics.Debug.WriteLine(" New order message missing 'data' field");
+                System.Diagnostics.Debug.WriteLine(" New order message missing order payload");
                 System.Diagnostics.Debug.WriteLine($"Available properties: {string.Join(", ", data.EnumerateObject().Select(p => p.Name))}");
                 return;
             }
 
             // Parse basic order data (OrderWeb.net WebSocket format)
-            var cloudOrderId = orderElement.GetProperty("orderId").GetString() ?? "";
-            var orderNumber = orderElement.GetProperty("orderNumber").GetString() ?? cloudOrderId.Substring(0, Math.Min(8, cloudOrderId.Length));
-            var customerName = orderElement.TryGetProperty("customerName", out var cnElem) ? cnElem.GetString() ?? "Guest" : "Guest";
-            var customerPhone = orderElement.TryGetProperty("customerPhone", out var phoneElem) ? phoneElem.GetString() ?? "" : "";
-            var customerEmail = orderElement.TryGetProperty("customerEmail", out var emailElem) ? emailElem.GetString() ?? "" : "";
-            var customerAddress = orderElement.TryGetProperty("deliveryAddress", out var addrElem) ? addrElem.GetString() ?? "" : "";
+            var cloudOrderId = GetStringProperty(orderElement, "orderId")
+                ?? GetStringProperty(orderElement, "order_id")
+                ?? GetStringProperty(orderElement, "id")
+                ?? GetStringProperty(data, "order_id")
+                ?? "";
+            var orderNumber = GetStringProperty(orderElement, "orderNumber")
+                ?? GetStringProperty(orderElement, "order_number")
+                ?? GetStringProperty(data, "order_number")
+                ?? cloudOrderId.Substring(0, Math.Min(8, cloudOrderId.Length));
+            var customerName = GetStringProperty(orderElement, "customerName")
+                ?? GetStringProperty(orderElement, "customer_name")
+                ?? GetNestedStringProperty(orderElement, "customer", "name")
+                ?? "Guest";
+            var customerPhone = GetStringProperty(orderElement, "customerPhone")
+                ?? GetStringProperty(orderElement, "customer_phone")
+                ?? GetNestedStringProperty(orderElement, "customer", "phone")
+                ?? "";
+            var customerEmail = GetStringProperty(orderElement, "customerEmail")
+                ?? GetStringProperty(orderElement, "customer_email")
+                ?? GetNestedStringProperty(orderElement, "customer", "email")
+                ?? "";
+            var customerAddress = GetStringProperty(orderElement, "deliveryAddress")
+                ?? GetStringProperty(orderElement, "delivery_address")
+                ?? GetNestedStringProperty(orderElement, "customer", "address")
+                ?? "";
             
             // Financial data - WebSocket sends totalAmount directly
-            var totalAmount = orderElement.TryGetProperty("totalAmount", out var totElem) ? totElem.GetDecimal() : 0m;
-            var subtotal = orderElement.TryGetProperty("subtotal", out var subElem) ? subElem.GetDecimal() : totalAmount;
-            var deliveryFee = orderElement.TryGetProperty("deliveryFee", out var delElem) ? delElem.GetDecimal() : 0m;
-            var discount = orderElement.TryGetProperty("discount", out var discElem) ? discElem.GetDecimal() : 0m;
-            var taxAmount = orderElement.TryGetProperty("tax", out var taxElem) ? taxElem.GetDecimal() : 0m;
+            var totalAmount = GetDecimalProperty(orderElement, "totalAmount", decimal.MinValue);
+            if (totalAmount == decimal.MinValue)
+            {
+                totalAmount = GetDecimalProperty(orderElement, "total_amount", decimal.MinValue);
+            }
+            if (totalAmount == decimal.MinValue)
+            {
+                totalAmount = GetNestedDecimalProperty(orderElement, "payment", "total", 0m);
+            }
+
+            var subtotal = GetDecimalProperty(orderElement, "subtotal", totalAmount);
+            var deliveryFee = GetDecimalProperty(orderElement, "deliveryFee", decimal.MinValue);
+            if (deliveryFee == decimal.MinValue)
+            {
+                deliveryFee = GetDecimalProperty(orderElement, "delivery_fee", 0m);
+            }
+            var taxAmount = GetDecimalProperty(orderElement, "tax", decimal.MinValue);
+            if (taxAmount == decimal.MinValue)
+            {
+                taxAmount = GetDecimalProperty(orderElement, "tax_amount", 0m);
+            }
             
             // Order details
-            var orderType = orderElement.TryGetProperty("orderType", out var otElem) ? otElem.GetString() ?? "pickup" : "pickup";
-            var orderSource = orderElement.TryGetProperty("orderSource", out var osElem) ? osElem.GetString() ?? "online" : "online";
-            var paymentMethod = orderElement.TryGetProperty("paymentMethod", out var pmElem) ? pmElem.GetString() ?? "online" : "online";
+            var orderType = GetStringProperty(orderElement, "orderType")
+                ?? GetStringProperty(orderElement, "order_type")
+                ?? "pickup";
+            var paymentMethod = GetStringProperty(orderElement, "paymentMethod")
+                ?? GetStringProperty(orderElement, "payment_method")
+                ?? GetNestedStringProperty(orderElement, "payment", "method")
+                ?? "online";
             var paymentStatus = GetStringProperty(orderElement, "paymentStatus")
                 ?? GetStringProperty(orderElement, "payment_status")
+                ?? GetNestedStringProperty(orderElement, "payment", "status")
                 ?? (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(paymentMethod) ? "pending" : "paid");
-            var specialInstructions = orderElement.TryGetProperty("notes", out var instElem) ? instElem.GetString() ?? "" : "";
-            var scheduledTime = orderElement.TryGetProperty("scheduledTime", out var stElem) && stElem.ValueKind != JsonValueKind.Null 
-                ? DateTime.Parse(stElem.GetString() ?? "") 
-                : (DateTime?)null;
+            var specialInstructions = GetStringProperty(orderElement, "notes")
+                ?? GetStringProperty(orderElement, "specialInstructions")
+                ?? GetStringProperty(orderElement, "special_instructions")
+                ?? "";
+            var scheduledTime = ParseOptionalDate(
+                GetStringProperty(orderElement, "scheduledTime")
+                ?? GetStringProperty(orderElement, "scheduled_time")
+                ?? GetStringProperty(orderElement, "scheduled_for"));
             
             // Get createdAt from order (OrderWeb.net format)
-            var createdAt = orderElement.TryGetProperty("createdAt", out var caElem) && caElem.ValueKind != JsonValueKind.Null
-                ? DateTime.Parse(caElem.GetString() ?? DateTime.Now.ToString())
-                : DateTime.Now;
+            var createdAt = ParseOptionalDate(
+                GetStringProperty(orderElement, "createdAt")
+                ?? GetStringProperty(orderElement, "created_at")) ?? DateTime.Now;
 
             System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber} - {customerName} - £{totalAmount}");
 
@@ -553,32 +612,39 @@ public class OrderWebWebSocketService
                 foreach (var itemElem in itemsElement.EnumerateArray())
                 {
                     // Get item name from items[].name field (as per OrderWeb.net structure)
-                    var itemName = itemElem.TryGetProperty("name", out var nameElem) ? nameElem.GetString() ?? "Unknown Item" : "Unknown Item";
+                    var itemName = GetStringProperty(itemElem, "name")
+                        ?? GetStringProperty(itemElem, "item_name")
+                        ?? GetStringProperty(itemElem, "displayName")
+                        ?? GetStringProperty(itemElem, "display_name")
+                        ?? "Unknown Item";
                     
                     var item = new Models.Api.CloudOrderItem
                     {
-                        Id = itemElem.TryGetProperty("id", out var idElem) && idElem.ValueKind == JsonValueKind.Number ? idElem.GetInt32() : 0,
-                        MenuItemId = itemElem.TryGetProperty("menuItemId", out var menuIdElem) ? menuIdElem.GetString() : null,
+                        Id = GetIntProperty(itemElem, "id", 0),
+                        MenuItemId = GetStringProperty(itemElem, "menuItemId") ?? GetStringProperty(itemElem, "menu_item_id"),
                         VariantId = GetStringProperty(itemElem, "variantId") ?? GetStringProperty(itemElem, "variant_id"),
                         VariantName = GetStringProperty(itemElem, "variantName") ?? GetStringProperty(itemElem, "variant_name"),
                         DisplayName = GetStringProperty(itemElem, "displayName") ?? GetStringProperty(itemElem, "display_name"),
                         Name = itemName,
-                        Quantity = itemElem.TryGetProperty("quantity", out var qtyElem) ? qtyElem.GetInt32() : 1,
+                        Quantity = GetIntProperty(itemElem, "quantity", 1),
                         Price = GetDecimalProperty(itemElem, "price", 0m),
-                        SpecialInstructions = itemElem.TryGetProperty("specialInstructions", out var siElem) ? siElem.GetString() : null
+                        SpecialInstructions = GetStringProperty(itemElem, "specialInstructions")
+                            ?? GetStringProperty(itemElem, "special_instructions")
                     };
 
                     System.Diagnostics.Debug.WriteLine($"   Item: {itemName} x{item.Quantity}");
 
                     // Parse selectedAddons (JSON array in OrderWeb.net structure)
-                    if (itemElem.TryGetProperty("selectedAddons", out var addonsElem) && addonsElem.ValueKind == JsonValueKind.Array)
+                    if (TryGetAddonArray(itemElem, out var addonsElem))
                     {
                         foreach (var addonElem in addonsElem.EnumerateArray())
                         {
                             var addon = new Models.Api.CloudOrderAddon
                             {
-                                Id = addonElem.TryGetProperty("addon_id", out var aidElem) ? aidElem.GetString() : null,
-                                Name = addonElem.TryGetProperty("name", out var addonNameElem) ? addonNameElem.GetString() ?? "Unknown Addon" : "Unknown Addon",
+                                Id = GetStringProperty(addonElem, "addon_id") ?? GetStringProperty(addonElem, "id"),
+                                Name = GetStringProperty(addonElem, "name")
+                                    ?? GetStringProperty(addonElem, "modifier_name")
+                                    ?? "Unknown Addon",
                                 Price = GetDecimalProperty(addonElem, "price", 0m)
                             };
                             item.SelectedAddons.Add(addon);
@@ -635,6 +701,60 @@ public class OrderWebWebSocketService
         return false;
     }
 
+    private static bool TryGetAddonArray(JsonElement itemElement, out JsonElement addonsElement)
+    {
+        foreach (var propertyName in new[] { "selectedAddons", "selected_addons", "addons", "modifiers" })
+        {
+            if (itemElement.TryGetProperty(propertyName, out addonsElement) &&
+                addonsElement.ValueKind == JsonValueKind.Array)
+            {
+                return true;
+            }
+        }
+
+        addonsElement = default;
+        return false;
+    }
+
+    private static bool TryGetOrderElement(JsonElement messageRoot, out JsonElement orderElement)
+    {
+        foreach (var wrapperName in new[] { "data", "order", "payload" })
+        {
+            if (messageRoot.TryGetProperty(wrapperName, out var wrapper) && wrapper.ValueKind == JsonValueKind.Object)
+            {
+                if (LooksLikeOrder(wrapper))
+                {
+                    orderElement = wrapper;
+                    return true;
+                }
+
+                if (TryGetOrderElement(wrapper, out orderElement))
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (LooksLikeOrder(messageRoot))
+        {
+            orderElement = messageRoot;
+            return true;
+        }
+
+        orderElement = default;
+        return false;
+    }
+
+    private static bool LooksLikeOrder(JsonElement element)
+    {
+        return element.ValueKind == JsonValueKind.Object &&
+            (element.TryGetProperty("orderId", out _) ||
+             element.TryGetProperty("order_id", out _) ||
+             element.TryGetProperty("orderNumber", out _) ||
+             element.TryGetProperty("order_number", out _) ||
+             element.TryGetProperty("items", out _));
+    }
+
     private static decimal GetDecimalProperty(JsonElement element, string propertyName, decimal fallback)
     {
         if (!element.TryGetProperty(propertyName, out var value))
@@ -650,10 +770,61 @@ public class OrderWebWebSocketService
         };
     }
 
+    private static decimal GetNestedDecimalProperty(JsonElement element, string parentName, string propertyName, decimal fallback)
+    {
+        return element.TryGetProperty(parentName, out var parent) && parent.ValueKind == JsonValueKind.Object
+            ? GetDecimalProperty(parent, propertyName, fallback)
+            : fallback;
+    }
+
+    private static int GetIntProperty(JsonElement element, string propertyName, int fallback)
+    {
+        if (!element.TryGetProperty(propertyName, out var value))
+        {
+            return fallback;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => fallback
+        };
+    }
+
     private static string? GetStringProperty(JsonElement element, string propertyName)
     {
-        return element.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null
-            ? value.GetString()
+        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
+    private static string? GetNestedStringProperty(JsonElement element, string parentName, string propertyName)
+    {
+        return element.TryGetProperty(parentName, out var parent) && parent.ValueKind == JsonValueKind.Object
+            ? GetStringProperty(parent, propertyName)
+            : null;
+    }
+
+    private static DateTime? ParseOptionalDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateTime.TryParse(value, out var parsed)
+            ? parsed
             : null;
     }
 
@@ -723,6 +894,8 @@ public class OrderWebWebSocketService
             order.Items.Add(item);
         }
 
+        ApplyOrderTotalFallback(order);
+
         var (success, message) = await _orderService.SaveOrderAsync(order);
         if (!success)
         {
@@ -730,6 +903,25 @@ public class OrderWebWebSocketService
         }
 
         return success;
+    }
+
+    private static void ApplyOrderTotalFallback(Models.Order order)
+    {
+        var itemTotal = order.Items.Sum(item => item.TotalPrice);
+        if (itemTotal <= 0)
+        {
+            return;
+        }
+
+        if (order.SubtotalAmount <= 0)
+        {
+            order.SubtotalAmount = itemTotal;
+        }
+
+        if (order.TotalAmount <= 0)
+        {
+            order.TotalAmount = itemTotal + Math.Max(0, order.DeliveryFee);
+        }
     }
 
     private static async Task<MyFirstMauiApp.Models.FoodMenu.MenuItemVariant?> InferVariantAsync(string? menuItemId, decimal? price)

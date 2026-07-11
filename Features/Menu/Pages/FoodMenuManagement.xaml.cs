@@ -31,6 +31,9 @@ namespace POS_in_NET.Pages
         private string _currentTab = "Items";
         private string _searchText = "";
         private bool _hasInitialLoad;
+        private bool _hasLoadedMealDeals;
+        private bool _hasLoadedTastingMenus;
+        private bool _isLoadingSecondaryMenuData;
         private bool _isSavingSubCategory;
         private TaskCompletionSource<bool>? _deleteConfirmTaskSource;
         
@@ -73,6 +76,7 @@ namespace POS_in_NET.Pages
                 await LoadAllDataAsync();
                 SelectTab("Items");
                 _hasInitialLoad = true;
+                _ = LoadSecondaryMenuDataInBackgroundAsync();
                 return;
             }
 
@@ -88,8 +92,16 @@ namespace POS_in_NET.Pages
             {
                 await LoadCategoriesAsync();
                 _allItems = await _menuItemService.GetAllItemsAsync();
-                _allMealDeals = await _mealDealService.GetAllDealsAsync();
-                _allTastingMenus = await _tastingMenuService.GetAllAsync();
+                if (_hasLoadedMealDeals)
+                {
+                    _allMealDeals = await _mealDealService.GetAllDealsAsync();
+                }
+
+                if (_hasLoadedTastingMenus)
+                {
+                    _allTastingMenus = await _tastingMenuService.GetAllAsync();
+                }
+
                 RefreshCurrentTab();
             }
             catch (Exception ex)
@@ -115,7 +127,64 @@ namespace POS_in_NET.Pages
 
         private async Task LoadAllDataAsync()
         {
-            await RefreshMenuDataAsync();
+            await LoadCategoriesAsync();
+            _allItems = await _menuItemService.GetAllItemsAsync();
+            RefreshCurrentTab();
+        }
+
+        private async Task LoadSecondaryMenuDataInBackgroundAsync()
+        {
+            if (_isLoadingSecondaryMenuData)
+            {
+                return;
+            }
+
+            try
+            {
+                _isLoadingSecondaryMenuData = true;
+                _allMealDeals = await _mealDealService.GetAllDealsAsync();
+                _hasLoadedMealDeals = true;
+                _allTastingMenus = await _tastingMenuService.GetAllAsync();
+                _hasLoadedTastingMenus = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Secondary menu data load skipped: {ex.Message}");
+            }
+            finally
+            {
+                _isLoadingSecondaryMenuData = false;
+            }
+        }
+
+        private async Task EnsureMealDealsLoadedAsync()
+        {
+            if (_hasLoadedMealDeals)
+            {
+                return;
+            }
+
+            _allMealDeals = await _mealDealService.GetAllDealsAsync();
+            _hasLoadedMealDeals = true;
+            if (_currentTab == "MealDeals")
+            {
+                BuildMealDealsList();
+            }
+        }
+
+        private async Task EnsureTastingMenusLoadedAsync()
+        {
+            if (_hasLoadedTastingMenus)
+            {
+                return;
+            }
+
+            _allTastingMenus = await _tastingMenuService.GetAllAsync();
+            _hasLoadedTastingMenus = true;
+            if (_currentTab == "TastingMenus")
+            {
+                BuildTastingMenusList();
+            }
         }
 
         private void RefreshCurrentTab()
@@ -201,6 +270,7 @@ namespace POS_in_NET.Pages
                     MealDealsTabLabel.FontAttributes = FontAttributes.Bold;
                     MealDealsContent.IsVisible = true;
                     BuildMealDealsList();
+                    _ = EnsureMealDealsLoadedAsync();
                     break;
 
                 case "TastingMenus":
@@ -209,6 +279,7 @@ namespace POS_in_NET.Pages
                     TastingMenusTabLabel.FontAttributes = FontAttributes.Bold;
                     TastingMenusContent.IsVisible = true;
                     BuildTastingMenusList();
+                    _ = EnsureTastingMenusLoadedAsync();
                     break;
             }
         }

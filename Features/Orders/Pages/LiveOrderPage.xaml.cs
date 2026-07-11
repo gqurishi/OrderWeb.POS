@@ -22,6 +22,7 @@ namespace POS_in_NET.Pages
         private readonly SemaphoreSlim _ordersReloadGate = new(1, 1);
         private bool _tableBackfillCompleted;
         private bool _isSubscribedToLiveUpdates;
+        private bool _webOrderTotalsRepairCompleted;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
 
         private List<Order> _allOrders = new();
@@ -120,15 +121,12 @@ namespace POS_in_NET.Pages
 
         private void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
         {
-            if (e.Kind != AppDataChangeKind.Manual &&
-                e.Kind != AppDataChangeKind.Orders &&
-                e.Kind != AppDataChangeKind.TableLayout &&
-                e.Kind != AppDataChangeKind.All)
+            if (!e.HasAny(AppDataChangeKind.Orders, AppDataChangeKind.TableLayout))
             {
                 return;
             }
 
-            if (e.Kind == AppDataChangeKind.Orders && !e.IsFromCurrentTerminal)
+            if (e.HasKind(AppDataChangeKind.Orders) && !e.IsFromCurrentTerminal)
             {
                 _ = MainThread.InvokeOnMainThreadAsync(async () =>
                 {
@@ -158,6 +156,7 @@ namespace POS_in_NET.Pages
                     _pendingReload = false;
                     reloadPasses++;
                     await EnsureRolloutConfigAsync();
+                    await RepairOpenWebOrderTotalsAsync();
 
                     await LoadAllOpenOrdersAsync();
                     await LoadCollectionOrdersAsync();
@@ -537,6 +536,62 @@ namespace POS_in_NET.Pages
             catch
             {
                 _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
+            }
+        }
+
+        private async Task RepairOpenWebOrderTotalsAsync()
+        {
+            if (_webOrderTotalsRepairCompleted)
+            {
+                return;
+            }
+
+            try
+            {
+                using var connection = await _databaseService.GetConnectionAsync();
+                await EnsureOrderLifecycleSchemaAsync(connection);
+
+                const string repairSql = @"
+                    UPDATE orders o
+                    INNER JOIN (
+                        SELECT oi.order_id AS order_db_id,
+                               SUM((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) AS item_total
+                        FROM order_items oi
+                        LEFT JOIN (
+                            SELECT order_item_id,
+                                   SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+                            FROM order_item_addons
+                            GROUP BY order_item_id
+                        ) addons ON addons.order_item_id = oi.id
+                        GROUP BY oi.order_id
+                    ) totals ON totals.order_db_id = o.id
+                    SET o.subtotal_amount = CASE
+                            WHEN COALESCE(o.subtotal_amount, 0.00) = 0.00 THEN totals.item_total
+                            ELSE o.subtotal_amount
+                        END,
+                        o.total_amount = CASE
+                            WHEN COALESCE(o.total_amount, 0.00) = 0.00 THEN totals.item_total + COALESCE(o.delivery_fee, 0.00)
+                            ELSE o.total_amount
+                        END,
+                        o.updated_at = CURRENT_TIMESTAMP
+                    WHERE LOWER(COALESCE(o.source_channel, '')) = 'web'
+                      AND COALESCE(o.is_open, 1) = 1
+                      AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) NOT IN ('paid', 'voided')
+                      AND COALESCE(o.total_amount, 0.00) = 0.00
+                      AND totals.item_total > 0.00";
+
+                using var command = new MySqlCommand(repairSql, connection);
+                var repaired = await command.ExecuteNonQueryAsync();
+                if (repaired > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LiveOrder] Repaired {repaired} open web order totals from item rows.");
+                }
+
+                _webOrderTotalsRepairCompleted = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LiveOrder] Open web order total repair skipped: {ex.Message}");
             }
         }
 

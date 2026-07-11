@@ -92,7 +92,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
 
     private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
     {
-        if (e.Kind != AppDataChangeKind.Orders || e.IsFromCurrentTerminal)
+        if (!e.HasKind(AppDataChangeKind.Orders) || e.IsFromCurrentTerminal)
         {
             return;
         }

@@ -15,6 +15,7 @@ public static class MauiProgram
 		try
 		{
 			AppDiagnostics.Log("=== MAUI PROGRAM START ===");
+			Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjGyl/VkJ+XU9Gf1RLVGpAY1J0WGBYb1xzflBPallYT3RfQFtjTn9Td0RnUHtbcH1XQmtfVQ==");
 
 			var builder = MauiApp.CreateBuilder();
 			AppDiagnostics.Log("MauiApp.CreateBuilder() completed");
@@ -49,6 +50,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<RoleAccessService>();
 		builder.Services.AddSingleton<PermissionService>();
 		builder.Services.AddSingleton<InactivityService>();
+		builder.Services.AddSingleton<BackgroundSyncManager>();
 		builder.Services.AddSingleton<BusinessSettingsService>();
 		builder.Services.AddSingleton<TerminalHealthService>();
 		builder.Services.AddSingleton<DatabaseBackupService>();
@@ -184,139 +186,14 @@ public static class MauiProgram
 				await Task.Delay(3000);
 				TerminalPowerSafetyService.Apply();
 
-				var terminalHealthService = app.Services.GetRequiredService<TerminalHealthService>();
-				terminalHealthService.Start();
-				System.Diagnostics.Debug.WriteLine("Terminal health heartbeat started");
-
-				await Task.Delay(2000);
-				DatabaseChangeMonitorService.Start();
-				System.Diagnostics.Debug.WriteLine("Live database change monitor started");
+				var backgroundSyncManager = app.Services.GetRequiredService<BackgroundSyncManager>();
+				await BackgroundSyncJobRegistrar.RegisterDefaultJobsAsync(app.Services);
+				backgroundSyncManager.Start();
+				System.Diagnostics.Debug.WriteLine("Background sync manager started");
 			}
 			catch (Exception ex)
 			{
-				System.Diagnostics.Debug.WriteLine($" Live database change monitor warning: {ex.Message}");
-			}
-		});
-
-		Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalRoleService.CanRunMotherJobs)
-				{
-					System.Diagnostics.Debug.WriteLine("Database backup scheduler skipped on unconfigured/child terminal");
-					return;
-				}
-
-				await Task.Delay(3000);
-				var backupService = app.Services.GetRequiredService<DatabaseBackupService>();
-				backupService.Start();
-				System.Diagnostics.Debug.WriteLine(" Database backup scheduler started");
-			}
-			catch (Exception ex)
-			{
-				System.Diagnostics.Debug.WriteLine($" Database backup scheduler warning: {ex.Message}");
-			}
-		});
-
-		//  Initialize Database Cleanup System
-		Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalRoleService.CanRunMotherJobs)
-				{
-					System.Diagnostics.Debug.WriteLine("Cleanup scheduler skipped on unconfigured/child terminal");
-					return;
-				}
-
-				await Task.Delay(8000);
-				var cleanupScheduler = app.Services.GetRequiredService<CleanupSchedulerService>();
-				
-				// Create database indexes for faster queries (first run only)
-				await cleanupScheduler.InitializeDatabaseAsync();
-				
-				// Start automatic cleanup scheduler (checks every hour, cleans every 24h)
-				cleanupScheduler.Start();
-				
-				System.Diagnostics.Debug.WriteLine(" Database cleanup system initialized");
-			}
-			catch (Exception ex)
-			{
-				System.Diagnostics.Debug.WriteLine($" Cleanup initialization warning: {ex.Message}");
-			}
-		});
-
-		//  Initialize Report Generation Scheduler
-		Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalRoleService.CanRunMotherJobs)
-				{
-					System.Diagnostics.Debug.WriteLine("Report scheduler skipped on unconfigured/child terminal");
-					return;
-				}
-
-				// Small delay to let database initialize
-				await Task.Delay(2000);
-				
-				var reportScheduler = app.Services.GetRequiredService<ReportSchedulerService>();
-				
-				// Start automatic report generation scheduler (runs nightly at 2:00 AM)
-				reportScheduler.Start();
-				
-				System.Diagnostics.Debug.WriteLine(" Report generation scheduler initialized");
-			}
-			catch (Exception ex)
-			{
-				System.Diagnostics.Debug.WriteLine($" Report scheduler initialization warning: {ex.Message}");
-			}
-		});
-
-		//  Initialize Network Printer Services
-		Task.Run(async () =>
-		{
-			try
-			{
-				if (!TerminalConfigurationService.IsConfigured)
-				{
-					System.Diagnostics.Debug.WriteLine("Printer services skipped until terminal setup is complete");
-					return;
-				}
-
-				// Small delay to let database initialize
-				await Task.Delay(1500);
-				
-				var printerDbService = app.Services.GetRequiredService<NetworkPrinterDatabaseService>();
-				var cashDrawerService = app.Services.GetRequiredService<CashDrawerService>();
-				var healthService = app.Services.GetRequiredService<PrinterHealthService>();
-				var queueService = app.Services.GetRequiredService<NetworkPrintQueueService>();
-				var printingPolicyService = app.Services.GetRequiredService<PrintingPolicyService>();
-				
-				// Ensure printer tables exist
-				await printerDbService.EnsureTablesExistAsync();
-				await cashDrawerService.EnsureTableExistsAsync();
-				await printingPolicyService.EnsureDefaultsAsync();
-				
-				// Start health monitoring (checks every 30 seconds)
-				healthService.Start();
-				System.Diagnostics.Debug.WriteLine(" Printer health monitoring started");
-				
-				var queueOwnership = await printingPolicyService.CanProcessSharedQueueAsync();
-				if (queueOwnership.Allowed)
-				{
-					await queueService.StartAsync();
-					System.Diagnostics.Debug.WriteLine($" Print queue processor started: {queueOwnership.Reason}");
-				}
-				else
-				{
-					System.Diagnostics.Debug.WriteLine($"Info: Print queue processor skipped: {queueOwnership.Reason}");
-				}
-			}
-			catch (Exception ex)
-			{
-				System.Diagnostics.Debug.WriteLine($" Printer services initialization warning: {ex.Message}");
+				System.Diagnostics.Debug.WriteLine($" Background sync manager warning: {ex.Message}");
 			}
 		});
 

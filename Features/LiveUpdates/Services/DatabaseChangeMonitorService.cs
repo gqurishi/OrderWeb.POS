@@ -32,7 +32,7 @@ public static class DatabaseChangeMonitorService
                     {
                         try
                         {
-                            await PollAsync();
+                            await PollOnceAsync();
                         }
                         catch (Exception ex)
                         {
@@ -57,7 +57,7 @@ public static class DatabaseChangeMonitorService
         }
     }
 
-    private static async Task PollAsync()
+    public static async Task PollOnceAsync()
     {
         if (_isPolling || !TerminalConfigurationService.IsConfigured)
         {
@@ -99,7 +99,9 @@ public static class DatabaseChangeMonitorService
                     AppDataRefreshService.RequestRefresh(
                         terminalEvent.Kind,
                         terminalEvent.SourceTerminalName,
-                        terminalEvent.OrderNumber));
+                        terminalEvent.OrderNumber,
+                        terminalEvent.EntityType,
+                        terminalEvent.EntityId));
             }
         }
         catch (Exception ex)

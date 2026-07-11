@@ -351,7 +351,7 @@ namespace POS_in_NET.Pages
             }
 
             // Force subscribers (layout/live pages) to reload when user leaves edit screen.
-            AppDataRefreshService.RequestRefresh();
+            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
 
             _idleDraftSaveRegistration?.Dispose();
             _idleDraftSaveRegistration = null;
@@ -381,7 +381,7 @@ namespace POS_in_NET.Pages
 
         private async void OnLiveOrderDataChanged(object? sender, AppDataChangedEventArgs e)
         {
-            if ((e.Kind != AppDataChangeKind.Orders && e.Kind != AppDataChangeKind.All) || e.IsFromCurrentTerminal)
+            if (!e.HasKind(AppDataChangeKind.Orders) || e.IsFromCurrentTerminal)
             {
                 return;
             }
@@ -2582,7 +2582,7 @@ namespace POS_in_NET.Pages
                 }
             }
 
-            AppDataRefreshService.RequestRefresh();
+            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
         }
 
         private async void OnSearchBarTapped(object? sender, TappedEventArgs e)
@@ -2790,7 +2790,7 @@ namespace POS_in_NET.Pages
                     _ = ToastNotification.ShowAsync("Success", toastMessage, NotificationType.Success, 1000);
                 }
 
-                AppDataRefreshService.RequestRefresh();
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
                 return true;
             }
             finally
@@ -2849,7 +2849,7 @@ namespace POS_in_NET.Pages
                 }
 
                 await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
-                AppDataRefreshService.RequestRefresh();
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
             }
             catch (Exception ex)
             {
@@ -2980,7 +2980,7 @@ namespace POS_in_NET.Pages
                     });
                 }
 
-                AppDataRefreshService.RequestRefresh();
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
             }
             catch (Exception ex)
             {
@@ -3175,7 +3175,7 @@ namespace POS_in_NET.Pages
                 _ = ToastNotification.ShowAsync("Success", toastMessage, NotificationType.Success, 1200);
             }
 
-            AppDataRefreshService.RequestRefresh();
+            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
             System.Diagnostics.Debug.WriteLine($"⏱ [SEND] About to call NavigateToRoleDashboardAsync");
             var navStartTime = DateTime.Now;
             await NavigateToRoleDashboardAsync(fastExit);
@@ -4342,7 +4342,7 @@ namespace POS_in_NET.Pages
                 var actor = ResolveCurrentActor();
                 var sentOrQueued = await cloudService.SendOrderSettlementAsync(
                     order,
-                    status: "completed",
+                    status: "paid",
                     staffId: actor.ActorId,
                     staffName: actor.ActorName,
                     notes: BuildOrderWebSettlementNotes(order));

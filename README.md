@@ -54,7 +54,7 @@ POS-in-NET is a .NET MAUI point-of-sale application with a separate database set
 
 ### Syncfusion Packages
 
-All Syncfusion UI and PDF packages are pinned to `33.2.15`:
+All Syncfusion UI and PDF packages are pinned to `34.1.29`:
 
 - `Syncfusion.Maui.Core`
 - `Syncfusion.Maui.DataGrid`

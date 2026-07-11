@@ -15,12 +15,16 @@ public sealed class GiftCardActivationQueueService : IDisposable
     };
 
     private readonly OrderWebGiftCardApiService _giftCardApiService;
+    private readonly BackgroundSyncManager? _backgroundSyncManager;
     private readonly SemaphoreSlim _queueLock = new(1, 1);
     private Timer? _flushTimer;
 
-    public GiftCardActivationQueueService(OrderWebGiftCardApiService giftCardApiService)
+    public GiftCardActivationQueueService(
+        OrderWebGiftCardApiService giftCardApiService,
+        BackgroundSyncManager? backgroundSyncManager = null)
     {
         _giftCardApiService = giftCardApiService;
+        _backgroundSyncManager = backgroundSyncManager;
     }
 
     public void StartAutoFlush()
@@ -55,6 +59,7 @@ public sealed class GiftCardActivationQueueService : IDisposable
                 existing.LastError = lastError;
                 existing.LastUpdatedAtUtc = DateTime.UtcNow;
                 SaveQueue(queued);
+                _backgroundSyncManager?.RequestRunSoon("gift-card-activate-flush");
 
                 return GiftCardActivationQueueResult.Queued(
                     queued.Count,
@@ -80,6 +85,7 @@ public sealed class GiftCardActivationQueueService : IDisposable
             SaveQueue(queued);
 
             AppDiagnostics.Log($"Gift card activation queued: {request.CardNumber} ({queued.Count}/{MaxQueuedActivations})");
+            _backgroundSyncManager?.RequestRunSoon("gift-card-activate-flush");
             return GiftCardActivationQueueResult.Queued(
                 queued.Count,
                 $"Activation queued for retry ({queued.Count}/{MaxQueuedActivations}).");

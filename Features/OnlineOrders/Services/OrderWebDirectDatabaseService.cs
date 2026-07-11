@@ -11,6 +11,7 @@ namespace POS_in_NET.Services;
 /// </summary>
 public class OrderWebDirectDatabaseService
 {
+    private static readonly TimeSpan DirectDatabasePollInterval = TimeSpan.FromSeconds(5);
     private readonly DatabaseService _localDatabase;
     private readonly OrderService _orderService;
     private readonly ReceiptService _receiptService;
@@ -200,7 +201,7 @@ public class OrderWebDirectDatabaseService
     }
 
     /// <summary>
-    /// Start real-time order monitoring with ultra-fast database polling
+    /// Start real-time order monitoring with backup database polling
     /// </summary>
     public async Task StartRealTimeMonitoringAsync()
     {
@@ -222,15 +223,13 @@ public class OrderWebDirectDatabaseService
         // Reset monitoring state
         _lastOrderCheck = DateTime.UtcNow.AddMinutes(-5); // Check last 5 minutes initially
 
-        System.Diagnostics.Debug.WriteLine(" Starting REAL-TIME database monitoring (0.5 second intervals)!");
-        System.Diagnostics.Debug.WriteLine(" Orders will appear INSTANTLY when customers place them!");
+        System.Diagnostics.Debug.WriteLine($" Starting direct database monitoring ({DirectDatabasePollInterval.TotalSeconds:F0}s interval)");
 
-        // Start immediate check, then ultra-fast monitoring
+        // Start immediate check, then backup monitoring.
         _ = Task.Run(async () => await MonitorForNewOrdersAsync());
 
-        // Ultra-fast 500ms monitoring for real-time performance
         _realTimeMonitorTimer = new Timer(async _ => await MonitorForNewOrdersAsync(),
-            null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+            null, DirectDatabasePollInterval, DirectDatabasePollInterval);
 
         ConnectionStatus = "Real-time monitoring active";
         System.Diagnostics.Debug.WriteLine(" Real-time order monitoring started successfully!");
@@ -737,7 +736,27 @@ public class OrderWebDirectDatabaseService
             }
         }
 
+        ApplyOrderTotalFallback(localOrder);
         return localOrder;
+    }
+
+    private static void ApplyOrderTotalFallback(Order order)
+    {
+        var itemTotal = order.Items.Sum(item => item.TotalPrice);
+        if (itemTotal <= 0)
+        {
+            return;
+        }
+
+        if (order.SubtotalAmount <= 0)
+        {
+            order.SubtotalAmount = itemTotal;
+        }
+
+        if (order.TotalAmount <= 0)
+        {
+            order.TotalAmount = itemTotal + Math.Max(0, order.DeliveryFee);
+        }
     }
 
     /// <summary>

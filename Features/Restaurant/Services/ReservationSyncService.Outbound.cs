@@ -160,6 +160,13 @@ public sealed partial class ReservationSyncService
         return sent;
     }
 
+    public async Task<(int Uploaded, int AcksSent)> RunMaintenanceOnceAsync()
+    {
+        var uploaded = await UploadPendingReservationsAsync();
+        var acksSent = await ProcessPendingAcksAsync();
+        return (uploaded, acksSent);
+    }
+
     private async Task<(bool Success, string? Message, CloudReservation? Reservation)> TryUploadReservationAsync(
         CloudReservation reservation)
     {

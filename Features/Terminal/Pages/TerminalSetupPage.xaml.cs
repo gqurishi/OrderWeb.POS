@@ -214,8 +214,12 @@ public partial class TerminalSetupPage : ContentPage
         StatusLabel.TextColor = Color.FromArgb("#059669");
         StatusLabel.Text = testResult.Message;
         TerminalPowerSafetyService.Apply();
-        ServiceHelper.GetService<TerminalHealthService>()?.Start();
-        DatabaseChangeMonitorService.Start();
+        var services = ServiceHelper.Services;
+        if (services != null)
+        {
+            await BackgroundSyncJobRegistrar.RegisterDefaultJobsAsync(services);
+            ServiceHelper.GetService<BackgroundSyncManager>()?.Start();
+        }
 
         var nextRoute = await StartupNavigationService.GetPostSetupRouteAsync();
         await Shell.Current.GoToAsync(nextRoute, false);

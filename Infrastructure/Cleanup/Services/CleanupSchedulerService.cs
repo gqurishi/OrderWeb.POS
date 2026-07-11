@@ -60,7 +60,7 @@ public class CleanupSchedulerService
     /// <summary>
     /// Check if cleanup is needed and run it
     /// </summary>
-    private async Task CheckAndRunCleanupAsync()
+    public async Task CheckAndRunCleanupAsync()
     {
         try
         {

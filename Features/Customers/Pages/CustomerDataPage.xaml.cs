@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using System.Threading;
 
 namespace POS_in_NET.Pages;
 
@@ -7,25 +8,71 @@ public partial class CustomerDataPage : ContentPage
 {
     private readonly CustomerDataService _customerDataService = new();
     private string _filter = "all";
+    private bool _isLoading;
+    private bool _hasPendingLoad;
+    private DateTime _lastCachePurgeAt = DateTime.MinValue;
+    private CancellationTokenSource? _searchDebounceCts;
+    private static readonly TimeSpan SearchDebounceDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan CachePurgeInterval = TimeSpan.FromMinutes(5);
 
     public CustomerDataPage()
     {
         InitializeComponent();
         TopBar.SetPageTitle("Recent Customers");
-        SearchEntry.TextChanged += (_, _) => _ = LoadAsync();
+        SearchEntry.TextChanged += (_, _) => _ = DebounceLoadAsync();
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        _ = LoadAsync();
+        _ = LoadAsync(forceCachePurge: true);
     }
 
-    private async Task LoadAsync()
+    protected override void OnDisappearing()
     {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _searchDebounceCts = null;
+        base.OnDisappearing();
+    }
+
+    private async Task DebounceLoadAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+
         try
         {
-            await _customerDataService.PurgeExpiredCacheAsync();
+            await Task.Delay(SearchDebounceDelay, cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                await LoadAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LoadAsync(bool forceCachePurge = false)
+    {
+        if (_isLoading)
+        {
+            _hasPendingLoad = true;
+            return;
+        }
+
+        try
+        {
+            _isLoading = true;
+
+            if (forceCachePurge || DateTime.UtcNow - _lastCachePurgeAt > CachePurgeInterval)
+            {
+                await _customerDataService.PurgeExpiredCacheAsync();
+                _lastCachePurgeAt = DateTime.UtcNow;
+            }
 
             var summary = await _customerDataService.GetSyncSummaryAsync();
             SyncedCountLabel.Text = summary.SyncedCount.ToString();
@@ -41,11 +88,20 @@ public partial class CustomerDataPage : ContentPage
         {
             await AppAlertService.ShowAlertAsync("Recent Customers", $"Could not load cache: {ex.Message}");
         }
+        finally
+        {
+            _isLoading = false;
+            if (_hasPendingLoad)
+            {
+                _hasPendingLoad = false;
+                _ = LoadAsync();
+            }
+        }
     }
 
     private async void OnRefreshClicked(object sender, EventArgs e)
     {
-        await LoadAsync();
+        await LoadAsync(forceCachePurge: true);
     }
 
     private async void OnRetrySyncClicked(object sender, EventArgs e)
@@ -54,7 +110,7 @@ public partial class CustomerDataPage : ContentPage
         {
             var result = await _customerDataService.RetrySyncAsync();
             await AppAlertService.ShowAlertAsync("Customer Sync", result.Message ?? "Sync complete.");
-            await LoadAsync();
+            await LoadAsync(forceCachePurge: true);
         }
         catch (Exception ex)
         {

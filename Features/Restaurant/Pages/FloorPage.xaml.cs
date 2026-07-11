@@ -73,7 +73,7 @@ namespace POS_in_NET.Pages
 
         private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
         {
-            if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.TableLayout && e.Kind != AppDataChangeKind.All))
+            if (e.IsFromCurrentTerminal || !e.HasKind(AppDataChangeKind.TableLayout))
             {
                 return;
             }

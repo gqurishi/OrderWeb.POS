@@ -20,8 +20,8 @@
                 <Shadow Brush="#E5E7EB" Radius="4" Opacity="0.1" Offset="0,2"/>
             </Border.Shadow>
 
-            <Grid Padding="20"
-                  HeightRequest="90">
+            <Grid Padding="16"
+                  HeightRequest="78">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -32,9 +32,9 @@
 
                 <Image Grid.Column="0"
                        Source="mian.png"
-                       WidthRequest="36"
-                       HeightRequest="36"
-                       Margin="0,0,18,0"
+                       WidthRequest="32"
+                       HeightRequest="32"
+                       Margin="0,0,14,0"
                        HorizontalOptions="Start"
                        VerticalOptions="Center">
                     <Image.GestureRecognizers>
@@ -47,51 +47,54 @@
                     <Label x:Name="WelcomeLabel"
                            Text="Welcome to"
                            FontFamily="InterMedium"
-                           FontSize="14"
+                           FontSize="12"
                            TextColor="#6B7280"/>
                     <Label x:Name="HeaderTitleLabel"
                            Text="Dashboard"
                            FontFamily="InterBold"
-                           FontSize="24"
+                           FontSize="21"
                            TextColor="#1F2937"/>
                 </StackLayout>
 
                 <StackLayout Grid.Column="2"
                              VerticalOptions="Center"
                              HorizontalOptions="End"
-                             Margin="0,0,20,0">
+                             Margin="0,0,14,0">
                     <Label x:Name="DateLabel"
                            Text="Monday, December 29, 2025"
                            FontFamily="InterMedium"
-                           FontSize="13"
+                           FontSize="12"
                            TextColor="#374151"
                            HorizontalOptions="End"/>
                     <Label x:Name="TimeLabel"
                            Text="12:43 AM"
                            FontFamily="InterBold"
-                           FontSize="18"
+                           FontSize="16"
                            TextColor="#3B82F6"
                            HorizontalOptions="End"/>
                 </StackLayout>
 
                 <Button Grid.Column="3"
                         Text="-"
-                        WidthRequest="42"
-                        HeightRequest="42"
+                        WidthRequest="34"
+                        HeightRequest="34"
+                        MinimumWidthRequest="34"
                         Padding="0"
-                        CornerRadius="21"
-                        BackgroundColor="#E5E7EB"
-                        TextColor="#1F2937"
-                        FontSize="22"
+                        CornerRadius="17"
+                        BackgroundColor="#F3F4F6"
+                        BorderColor="#CBD5E1"
+                        BorderWidth="1"
+                        TextColor="#111827"
+                        FontSize="18"
                         FontAttributes="Bold"
-                        Margin="0,0,12,0"
+                        Margin="0,0,10,0"
                         Clicked="OnMinimizeClicked"
                         ToolTipProperties.Text="Minimize POS" />
 
                 <Image Grid.Column="4"
                        Source="outred.png"
-                       WidthRequest="42"
-                       HeightRequest="42"
+                       WidthRequest="36"
+                       HeightRequest="36"
                        Margin="0,0,6,0"
                        HorizontalOptions="End"
                        VerticalOptions="Center">
@@ -108,12 +111,12 @@
             <StackLayout Spacing="0"
                          VerticalOptions="Center"
                          x:Name="MainStackLayout"
-                         Padding="30"
+                         Padding="18"
                          HorizontalOptions="Center"
                          MaximumWidthRequest="900">
 
-                <Grid RowSpacing="80"
-                      ColumnSpacing="150"
+                <Grid RowSpacing="38"
+                      ColumnSpacing="80"
                       x:Name="ButtonGrid"
                       Padding="0"
                       HorizontalOptions="Center">
@@ -131,7 +134,7 @@
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
-                            Padding="24"
+                            Padding="14"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
@@ -142,17 +145,18 @@
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnRestaurantClicked"/>
                         </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                        <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                             <Image Source="restaurant.png"
                                    x:Name="RestaurantIcon"
-                                   WidthRequest="190"
-                                   HeightRequest="190"
+                                   WidthRequest="150"
+                                   HeightRequest="150"
                                    HorizontalOptions="Center"/>
                             <Label Text="Restaurant"
                                    FontFamily="InterBold"
                                    x:Name="RestaurantLabel"
-                                   FontSize="18"
-                                   TextColor="#1D4ED8"
+                                   FontSize="21"
+                                   FontAttributes="Bold"
+                                   TextColor="#111827"
                                    HorizontalOptions="Center"/>
                         </VerticalStackLayout>
                     </Border>
@@ -161,7 +165,7 @@
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
-                            Padding="24"
+                            Padding="14"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
@@ -172,17 +176,18 @@
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnDeliveryClicked"/>
                         </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                        <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                             <Image Source="delivery.png"
                                    x:Name="DeliveryIcon"
-                                   WidthRequest="190"
-                                   HeightRequest="190"
+                                   WidthRequest="150"
+                                   HeightRequest="150"
                                    HorizontalOptions="Center"/>
                             <Label Text="Delivery"
                                    FontFamily="InterBold"
                                    x:Name="DeliveryLabel"
-                                   FontSize="18"
-                                   TextColor="#1D4ED8"
+                                   FontSize="21"
+                                   FontAttributes="Bold"
+                                   TextColor="#111827"
                                    HorizontalOptions="Center"/>
                         </VerticalStackLayout>
                     </Border>
@@ -191,7 +196,7 @@
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
-                            Padding="24"
+                            Padding="14"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
@@ -202,17 +207,18 @@
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnCollectionClicked"/>
                         </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                        <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                             <Image Source="collection.png"
                                    x:Name="CollectionIcon"
-                                   WidthRequest="190"
-                                   HeightRequest="190"
+                                   WidthRequest="150"
+                                   HeightRequest="150"
                                    HorizontalOptions="Center"/>
                             <Label Text="Collection"
                                    FontFamily="InterBold"
                                    x:Name="CollectionLabel"
-                                   FontSize="18"
-                                   TextColor="#1D4ED8"
+                                   FontSize="21"
+                                   FontAttributes="Bold"
+                                   TextColor="#111827"
                                    HorizontalOptions="Center"/>
                         </VerticalStackLayout>
                     </Border>
@@ -221,7 +227,7 @@
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
-                            Padding="24"
+                            Padding="14"
                             HorizontalOptions="Center">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="28"/>
@@ -232,17 +238,18 @@
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnLiveOrderClicked"/>
                         </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                        <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
                             <Image Source="liveorder.png"
                                    x:Name="LiveOrderIcon"
-                                   WidthRequest="190"
-                                   HeightRequest="190"
+                                   WidthRequest="150"
+                                   HeightRequest="150"
                                    HorizontalOptions="Center"/>
                             <Label Text="Live Order"
                                    FontFamily="InterBold"
                                    x:Name="LiveOrderLabel"
-                                   FontSize="18"
-                                   TextColor="#1D4ED8"
+                                   FontSize="21"
+                                   FontAttributes="Bold"
+                                   TextColor="#111827"
                                    HorizontalOptions="Center"/>
                         </VerticalStackLayout>
                     </Border>

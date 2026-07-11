@@ -2,7 +2,7 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.TopBar"
-             HeightRequest="150">
+             HeightRequest="112">
 
     <Grid RowDefinitions="Auto,*">
         <Border x:Name="MotherDisconnectedBanner"
@@ -24,7 +24,7 @@
             BackgroundColor="#F6F9FC"
             StrokeThickness="0">
         
-        <Grid Padding="20,0">
+        <Grid Padding="16,0">
             
             <!-- Left Side - Hamburger Menu (Z-Index on top) -->
             <HorizontalStackLayout Grid.Column="0" 
@@ -34,8 +34,8 @@
                                    ZIndex="2">
                 <!-- Hamburger Menu Button -->
                 <ImageButton Source="mian.png"
-                             WidthRequest="35"
-                             HeightRequest="35"
+                             WidthRequest="32"
+                             HeightRequest="32"
                              BackgroundColor="Transparent"
                              Clicked="OnMenuClicked"
                              ToolTipProperties.Text="Open Menu"/>
@@ -47,7 +47,7 @@
                                  ZIndex="1">
                 <Label x:Name="PageTitleLabel"
                        Text=""
-                       FontSize="32" 
+                       FontSize="28"
                        FontAttributes="Bold"
                        TextColor="#1F2937"
                        HorizontalOptions="Center"/>
@@ -56,51 +56,57 @@
             <!-- Right Side - Date/Time (Z-Index on top) -->
             <HorizontalStackLayout HorizontalOptions="End"
                                    VerticalOptions="Center"
-                                   Spacing="15"
+                                   Spacing="10"
                                    ZIndex="2">
-
-                <Button Text="-"
-                        WidthRequest="44"
-                        HeightRequest="44"
-                        Padding="0"
-                        CornerRadius="22"
-                        BackgroundColor="#E5E7EB"
-                        TextColor="#1F2937"
-                        FontSize="24"
-                        FontAttributes="Bold"
-                        Clicked="OnMinimizeClicked"
-                        ToolTipProperties.Text="Minimize POS"/>
                 
                 <!-- Custom Content Placeholder (for Web Orders page) -->
                 <ContentPresenter x:Name="CustomContentPresenter" 
                                   VerticalOptions="Center"
                                   IsVisible="False" />
                 
-                <VerticalStackLayout Spacing="5">
+                <VerticalStackLayout Spacing="2">
                     <!-- Date and Time -->
                     <Label x:Name="DateTimeLabel"
                            Text="Wednesday, October 15, 2025"
-                           FontSize="18" 
+                           FontSize="15"
                            FontAttributes="Bold"
                            TextColor="#1F2937"
                            HorizontalOptions="End"/>
                     
                     <Label x:Name="TimeLabel"
                            Text="23:47:54"
-                           FontSize="28" 
+                           FontSize="24"
                            FontAttributes="Bold"
                            TextColor="#0369A1"
                            HorizontalOptions="End"/>
                     
-                    <!-- Logout Icon Button -->
-                    <ImageButton Source="outred.png"
-                                 WidthRequest="40"
-                                 HeightRequest="40"
-                                 BackgroundColor="Transparent"
-                                 Margin="0,10,0,0"
-                                 HorizontalOptions="End"
-                                 Clicked="OnLogoutClicked"
-                                 ToolTipProperties.Text="Logout"/>
+                    <HorizontalStackLayout HorizontalOptions="End"
+                                           Spacing="8"
+                                           Margin="0,4,0,0">
+                        <Button Text="-"
+                                WidthRequest="34"
+                                HeightRequest="34"
+                                MinimumWidthRequest="34"
+                                Padding="0"
+                                CornerRadius="17"
+                                BackgroundColor="#F3F4F6"
+                                BorderColor="#CBD5E1"
+                                BorderWidth="1"
+                                TextColor="#111827"
+                                FontSize="18"
+                                FontAttributes="Bold"
+                                Clicked="OnMinimizeClicked"
+                                ToolTipProperties.Text="Minimize POS"/>
+
+                        <!-- Logout Icon Button -->
+                        <ImageButton Source="outred.png"
+                                     WidthRequest="36"
+                                     HeightRequest="36"
+                                     BackgroundColor="Transparent"
+                                     HorizontalOptions="End"
+                                     Clicked="OnLogoutClicked"
+                                     ToolTipProperties.Text="Logout"/>
+                    </HorizontalStackLayout>
                 </VerticalStackLayout>
             </HorizontalStackLayout>
             

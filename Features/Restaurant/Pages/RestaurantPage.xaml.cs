@@ -22,18 +22,13 @@ namespace POS_in_NET.Pages
             
             _floorService = new FloorService();
             _tableService = new RestaurantTableService();
-
-            // Start status update timer (every 10 seconds)
-            _statusUpdateTimer = new Timer(_ => 
-            {
-                MainThread.BeginInvokeOnMainThread(() => UpdateConnectionStatus());
-            }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
         }
 
         protected override async void OnAppearing()
         {
             base.OnAppearing();
             SubscribeToRefreshEvents();
+            StartStatusUpdateTimer();
             await LoadRestaurantStatsAsync();
             UpdateConnectionStatus();
         }
@@ -41,7 +36,23 @@ namespace POS_in_NET.Pages
         protected override void OnDisappearing()
         {
             UnsubscribeFromRefreshEvents();
+            StopStatusUpdateTimer();
             base.OnDisappearing();
+        }
+
+        private void StartStatusUpdateTimer()
+        {
+            StopStatusUpdateTimer();
+            _statusUpdateTimer = new Timer(_ =>
+            {
+                MainThread.BeginInvokeOnMainThread(UpdateConnectionStatus);
+            }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        }
+
+        private void StopStatusUpdateTimer()
+        {
+            _statusUpdateTimer?.Dispose();
+            _statusUpdateTimer = null;
         }
 
         private void SubscribeToRefreshEvents()
@@ -76,7 +87,7 @@ namespace POS_in_NET.Pages
 
         private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
         {
-            if (e.IsFromCurrentTerminal || (e.Kind != AppDataChangeKind.TableLayout && e.Kind != AppDataChangeKind.All))
+            if (e.IsFromCurrentTerminal || !e.HasKind(AppDataChangeKind.TableLayout))
             {
                 return;
             }

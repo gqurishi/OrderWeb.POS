@@ -210,7 +210,7 @@ namespace POS_in_NET.Services
                     connection,
                     newFloorId.ToString(),
                     new { action = "created", floorName });
-                AppDataRefreshService.RequestRefresh();
+                AppDataRefreshService.RequestRefresh(AppDataChangeKind.TableLayout);
                 
                 return (true, $"Floor '{floorName}' created successfully", newFloorId);
             }
@@ -303,7 +303,7 @@ namespace POS_in_NET.Services
                         Name = string.Empty,
                         IsActive = false
                     });
-                    AppDataRefreshService.RequestRefresh();
+                    AppDataRefreshService.RequestRefresh(AppDataChangeKind.TableLayout);
 
                     string message = tableCount > 0 
                         ? $"Floor and {tableCount} table(s) permanently deleted" 
@@ -317,7 +317,7 @@ namespace POS_in_NET.Services
                     Name = string.Empty,
                     IsActive = false
                 });
-                AppDataRefreshService.RequestRefresh();
+                AppDataRefreshService.RequestRefresh(AppDataChangeKind.TableLayout);
 
                 return (true, "Floor already deleted");
             }
@@ -709,7 +709,7 @@ namespace POS_in_NET.Services
             await PublishFloorChangeSafelyAsync(
                 floorId.ToString(),
                 new { action = "updated", floorName });
-            AppDataRefreshService.RequestRefresh();
+            AppDataRefreshService.RequestRefresh(AppDataChangeKind.TableLayout);
 
             return (true, $"Floor '{floorName}' updated successfully");
         }

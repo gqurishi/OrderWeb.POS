@@ -680,6 +680,15 @@ public sealed class ReservationRow
     public string PromoCodeDisplay => string.IsNullOrWhiteSpace(PromoCode) ? "No promocode" : PromoCode;
     public string AllergiesDisplay => string.IsNullOrWhiteSpace(Allergies) ? "No allergies or dietary notes" : Allergies;
     public string SpecialRequestsDisplay => HasSpecialRequests ? SpecialRequests.Trim() : string.Empty;
+    public string SourceDisplay => Source.Trim().ToLowerInvariant() switch
+    {
+        "online" => "Online",
+        "walk_in" or "walkin" or "walk-in" => "Walk-in",
+        "phone" => "Phone",
+        "pos" => "POS",
+        _ => string.IsNullOrWhiteSpace(Source) ? "Booking" : Source
+    };
+    public bool HasNote => !string.IsNullOrWhiteSpace(Note);
     public bool HasPromoCode => !string.IsNullOrWhiteSpace(PromoCode);
     public bool HasAllergies => !string.IsNullOrWhiteSpace(Allergies);
     public bool HasSpecialRequests => !string.IsNullOrWhiteSpace(SpecialRequests)
@@ -688,6 +697,27 @@ public sealed class ReservationRow
     public string PromoBadgeText => HasPromoCode ? $"Promo: {PromoCode}" : string.Empty;
     public string PromoColumnText => HasPromoCode ? PromoCode : "-";
     public Color PromoColumnTextColor => HasPromoCode ? Color.FromArgb("#1D4ED8") : Color.FromArgb("#94A3B8");
+    public Color StatusBadgeBackground => NormalizedStatus switch
+    {
+        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#DCFCE7"),
+        "no_show" or "noshow" => Color.FromArgb("#FFF1F2"),
+        "cancelled" or "canceled" => Color.FromArgb("#F1F5F9"),
+        _ => Color.FromArgb("#EFF6FF")
+    };
+    public Color StatusBadgeBorder => NormalizedStatus switch
+    {
+        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#86EFAC"),
+        "no_show" or "noshow" => Color.FromArgb("#FECDD3"),
+        "cancelled" or "canceled" => Color.FromArgb("#CBD5E1"),
+        _ => Color.FromArgb("#BFDBFE")
+    };
+    public Color StatusBadgeTextColor => NormalizedStatus switch
+    {
+        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#047857"),
+        "no_show" or "noshow" => Color.FromArgb("#E11D48"),
+        "cancelled" or "canceled" => Color.FromArgb("#475569"),
+        _ => Color.FromArgb("#1D4ED8")
+    };
 
     private static bool IsUploadDiagnostic(string value)
     {

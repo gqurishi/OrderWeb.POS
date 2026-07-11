@@ -2,12 +2,26 @@ namespace POS_in_NET.Services;
 
 public static class ServiceHelper
 {
+    public static IServiceProvider? Services
+    {
+        get
+        {
+            try
+            {
+                return Application.Current?.Handler?.MauiContext?.Services;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
     public static T? GetService<T>() where T : class
     {
         try
         {
-            var services = Application.Current?.Handler?.MauiContext?.Services;
-            return services?.GetService(typeof(T)) as T;
+            return Services?.GetService(typeof(T)) as T;
         }
         catch
         {

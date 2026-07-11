@@ -24,6 +24,9 @@ public static class PosWindowService
 
         window.Activated -= OnWindowActivated;
         window.Activated += OnWindowActivated;
+
+        HideBuiltInShellMenuButton(window);
+        _ = HideBuiltInShellMenuButtonWithRetriesAsync(window);
 #endif
     }
 
@@ -63,6 +66,67 @@ public static class PosWindowService
         {
             ApplyLockedFullscreen(window);
         }
+    }
+
+    private static async Task HideBuiltInShellMenuButtonWithRetriesAsync(Microsoft.UI.Xaml.Window window)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            await Task.Delay(100 + attempt * 100);
+            window.DispatcherQueue.TryEnqueue(() => HideBuiltInShellMenuButton(window));
+        }
+    }
+
+    private static void HideBuiltInShellMenuButton(Microsoft.UI.Xaml.Window window)
+    {
+        if (window.Content is Microsoft.UI.Xaml.DependencyObject root)
+        {
+            HideBuiltInShellMenuButton(root);
+        }
+    }
+
+    private static void HideBuiltInShellMenuButton(Microsoft.UI.Xaml.DependencyObject element)
+    {
+        if (element is Microsoft.UI.Xaml.FrameworkElement frameworkElement &&
+            IsBuiltInShellMenuElement(frameworkElement))
+        {
+            frameworkElement.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+            frameworkElement.IsHitTestVisible = false;
+            frameworkElement.Opacity = 0;
+            frameworkElement.Width = 0;
+            frameworkElement.MinWidth = 0;
+            frameworkElement.MaxWidth = 0;
+            frameworkElement.Height = 0;
+            frameworkElement.MinHeight = 0;
+            frameworkElement.MaxHeight = 0;
+        }
+
+        var childCount = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(element);
+        for (var index = 0; index < childCount; index++)
+        {
+            HideBuiltInShellMenuButton(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(element, index));
+        }
+    }
+
+    private static bool IsBuiltInShellMenuElement(Microsoft.UI.Xaml.FrameworkElement element)
+    {
+        var name = element.Name ?? string.Empty;
+        if (name.Equals("TogglePaneButton", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("PaneToggleButton", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("PaneToggleButtonGrid", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (element is not Microsoft.UI.Xaml.Controls.Button)
+        {
+            return false;
+        }
+
+        var automationName = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(element) ?? string.Empty;
+        return automationName.Contains("navigation", StringComparison.OrdinalIgnoreCase) &&
+               (automationName.Contains("menu", StringComparison.OrdinalIgnoreCase) ||
+                automationName.Contains("pane", StringComparison.OrdinalIgnoreCase));
     }
 #endif
 }
