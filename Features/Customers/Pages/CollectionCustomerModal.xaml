@@ -56,6 +56,9 @@
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 14"
                             Padding="0">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCustomerNameFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="CustomerNameEntry"
                                Placeholder="e.g., John Smith"
                                FontFamily="OpenSansRegular"
@@ -64,6 +67,8 @@
                                PlaceholderColor="#94A3B8"
                                BackgroundColor="Transparent"
                                ClearButtonVisibility="Never"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="58"
                                Margin="18,0" />
                     </Border>
@@ -79,6 +84,9 @@
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 14"
                             Padding="0">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPhoneNumberFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="PhoneNumberEntry"
                                Placeholder="e.g., 07123 456789"
                                Keyboard="Telephone"
@@ -88,6 +96,8 @@
                                PlaceholderColor="#94A3B8"
                                BackgroundColor="Transparent"
                                ClearButtonVisibility="Never"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="58"
                                Margin="18,0" />
                     </Border>

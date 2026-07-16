@@ -14,6 +14,8 @@ public partial class PrinterSetupPage : ContentPage
     private PrinterHealthService? _healthService;
     private NetworkPrintQueueService? _queueService;
     private PrintGroupService? _printGroupService;
+    private PrinterRoutingService? _routingService;
+    private List<NetworkPrinter> _routingPrinters = new();
     private NetworkPrinter? _editingPrinter;
     private bool _isInitialized = false;
     private Timer? _refreshTimer;
@@ -43,6 +45,7 @@ public partial class PrinterSetupPage : ContentPage
             }
 
             await LoadPrintersAsync();
+            await LoadRoutingSettingsAsync();
             await UpdateStatusAsync();
             
             // Auto-refresh every 10 seconds
@@ -76,17 +79,128 @@ public partial class PrinterSetupPage : ContentPage
             _healthService = ServiceHelper.GetService<PrinterHealthService>();
             _queueService = ServiceHelper.GetService<NetworkPrintQueueService>();
             _printGroupService = ServiceHelper.GetService<PrintGroupService>() ?? new PrintGroupService();
+            _routingService = ServiceHelper.GetService<PrinterRoutingService>();
             
             if (_dbService != null)
             {
                 await _dbService.EnsureTablesExistAsync();
             }
+
+            RoutingModePicker.ItemsSource = new[] { "Dedicated Printers", "One Printer For All" };
             
             System.Diagnostics.Debug.WriteLine(" Printer services initialized");
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($" Error initializing services: {ex.Message}");
+        }
+    }
+
+    private async Task LoadRoutingSettingsAsync()
+    {
+        if (_dbService == null || _routingService == null)
+        {
+            return;
+        }
+
+        _routingPrinters = (await _dbService.GetAllPrintersAsync())
+            .Where(printer => printer.IsEnabled && printer.PrinterType != NetworkPrinterType.Label)
+            .ToList();
+        AllJobsPrinterPicker.ItemsSource = _routingPrinters;
+
+        var settings = await _routingService.GetSettingsAsync();
+        RoutingModePicker.SelectedIndex = settings.UseAllJobsPrinter ? 1 : 0;
+        AllJobsPrinterPicker.SelectedItem = settings.AllJobsPrinterId.HasValue
+            ? _routingPrinters.FirstOrDefault(printer => printer.Id == settings.AllJobsPrinterId.Value)
+            : null;
+        UpdateRoutingControls();
+    }
+
+    private void UpdateRoutingControls()
+    {
+        var useAllJobsPrinter = RoutingModePicker.SelectedIndex == 1;
+        AllJobsPrinterPicker.IsEnabled = useAllJobsPrinter;
+        TestRoutingPrinterButton.IsEnabled = useAllJobsPrinter && AllJobsPrinterPicker.SelectedItem is NetworkPrinter;
+
+        if (!useAllJobsPrinter)
+        {
+            RoutingStatusLabel.Text = "Dedicated printers";
+            RoutingStatusLabel.TextColor = Color.FromArgb("#64748B");
+            return;
+        }
+
+        if (AllJobsPrinterPicker.SelectedItem is NetworkPrinter printer)
+        {
+            RoutingStatusLabel.Text = $"All jobs: {printer.IpAddress}:{printer.Port}";
+            RoutingStatusLabel.TextColor = printer.IsOnline
+                ? Color.FromArgb("#16A34A")
+                : Color.FromArgb("#D97706");
+        }
+        else
+        {
+            RoutingStatusLabel.Text = "Select a printer";
+            RoutingStatusLabel.TextColor = Color.FromArgb("#DC2626");
+        }
+    }
+
+    private void OnRoutingModeChanged(object? sender, EventArgs e) => UpdateRoutingControls();
+
+    private void OnAllJobsPrinterChanged(object? sender, EventArgs e) => UpdateRoutingControls();
+
+    private async void OnSaveRoutingClicked(object? sender, EventArgs e)
+    {
+        if (_routingService == null)
+        {
+            await AppAlertService.ShowAlertAsync("Error", "Printer routing service is unavailable.");
+            return;
+        }
+
+        var useAllJobsPrinter = RoutingModePicker.SelectedIndex == 1;
+        var selectedPrinter = AllJobsPrinterPicker.SelectedItem as NetworkPrinter;
+        if (useAllJobsPrinter && selectedPrinter == null)
+        {
+            await AppAlertService.ShowAlertAsync("Required", "Select the printer that will receive all jobs.");
+            return;
+        }
+
+        try
+        {
+            SaveRoutingButton.IsEnabled = false;
+            await _routingService.SaveSettingsAsync(useAllJobsPrinter, selectedPrinter?.Id);
+            UpdateRoutingControls();
+            var message = useAllJobsPrinter
+                ? $"All print jobs will use '{selectedPrinter!.Name}'."
+                : "Dedicated printer routing is active.";
+            await AppAlertService.ShowAlertAsync("Success", message);
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Error", $"Failed to save print routing: {ex.Message}");
+        }
+        finally
+        {
+            SaveRoutingButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnTestRoutingPrinterClicked(object? sender, EventArgs e)
+    {
+        if (_printerService == null || AllJobsPrinterPicker.SelectedItem is not NetworkPrinter printer)
+        {
+            return;
+        }
+
+        TestRoutingPrinterButton.IsEnabled = false;
+        try
+        {
+            var success = await _printerService.SendTestPrintAsync(printer);
+            await AppAlertService.ShowAlertAsync(
+                success ? "Success" : "Error",
+                success ? $"Test print sent to '{printer.Name}'." : $"Failed to print to '{printer.Name}'.");
+        }
+        finally
+        {
+            UpdateRoutingControls();
         }
     }
 
@@ -497,6 +611,18 @@ public partial class PrinterSetupPage : ContentPage
         {
             SavePrinterButton.IsEnabled = false;
 
+            if (_editingPrinter != null && _selectedType == NetworkPrinterType.Label && _routingService != null)
+            {
+                var routingSettings = await _routingService.GetSettingsAsync();
+                if (routingSettings.UseAllJobsPrinter && routingSettings.AllJobsPrinterId == _editingPrinter.Id)
+                {
+                    await AppAlertService.ShowAlertAsync(
+                        "Error",
+                        "Switch to Dedicated Printers or select another all-jobs printer before changing this printer to Label.");
+                    return;
+                }
+            }
+
             var previousPrintGroupId = _editingPrinter?.PrintGroupId;
             var printer = _editingPrinter ?? new NetworkPrinter();
             printer.Name = name;
@@ -552,6 +678,7 @@ public partial class PrinterSetupPage : ContentPage
             FormPanel.IsVisible = false;
             _editingPrinter = null;
             await LoadPrintersAsync();
+            await LoadRoutingSettingsAsync();
         }
         catch (Exception ex)
         {
@@ -704,6 +831,7 @@ public partial class PrinterSetupPage : ContentPage
     private async void OnRefreshClicked(object? sender, EventArgs e)
     {
         await LoadPrintersAsync();
+        await LoadRoutingSettingsAsync();
     }
 
     private async void OnTestAllClicked(object? sender, EventArgs e)
@@ -769,8 +897,22 @@ public partial class PrinterSetupPage : ContentPage
     {
         if (_dbService == null || _printerService == null) return;
 
-        var receiptPrinters = await _dbService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
-        var drawerPrinter = receiptPrinters.FirstOrDefault(p => p.HasCashDrawer && p.IsEnabled);
+        NetworkPrinter? drawerPrinter = null;
+        if (_routingService != null)
+        {
+            var settings = await _routingService.GetSettingsAsync();
+            if (settings.UseAllJobsPrinter)
+            {
+                var allJobsPrinter = await _routingService.GetAllJobsPrinterAsync();
+                drawerPrinter = allJobsPrinter is { HasCashDrawer: true } ? allJobsPrinter : null;
+            }
+        }
+
+        if (drawerPrinter == null && (_routingService == null || !(await _routingService.GetSettingsAsync()).UseAllJobsPrinter))
+        {
+            var receiptPrinters = await _dbService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
+            drawerPrinter = receiptPrinters.FirstOrDefault(p => p.HasCashDrawer && p.IsEnabled);
+        }
 
         if (drawerPrinter == null)
         {
@@ -793,6 +935,74 @@ public partial class PrinterSetupPage : ContentPage
     private async void OnPrintDesignClicked(object? sender, EventArgs e)
     {
         await Navigation.PushAsync(new PrintTemplatesPage());
+    }
+
+    private async void OnManageQueueClicked(object? sender, EventArgs e)
+    {
+        if (_queueService == null || _dbService == null)
+        {
+            await AppAlertService.ShowAlertAsync("Error", "Print queue service is unavailable.");
+            return;
+        }
+
+        var currentUser = AuthenticationService.Instance.CurrentUser;
+        if (currentUser == null || currentUser.Role is not (UserRole.Manager or UserRole.Admin))
+        {
+            await AppAlertService.ShowAlertAsync("Denied", "Manager or admin access is required to manage the print queue.");
+            return;
+        }
+
+        var printers = await _dbService.GetAllPrintersAsync();
+        var dialog = new PrintQueueManagementDialog(_queueService, printers);
+        var selection = await dialog.ShowAsync();
+        if (selection.Action == PrintQueueManagementAction.Close)
+        {
+            return;
+        }
+
+        if (selection.Action == PrintQueueManagementAction.RetryFailed)
+        {
+            var retried = await _queueService.RetryAllFailedJobsAsync(selection.PrinterId);
+            await AppAlertService.ShowAlertAsync("Complete", $"{retried} failed print job(s) queued for retry.");
+            await UpdateStatusAsync();
+            return;
+        }
+
+        var cutoff = selection.Action == PrintQueueManagementAction.CancelPreviousDays
+            ? DateTime.Today.AddMilliseconds(-1)
+            : DateTime.Now;
+        var candidateCount = selection.Action == PrintQueueManagementAction.CancelPreviousDays
+            ? selection.Snapshot.PreviousDayJobs
+            : selection.Snapshot.WaitingJobs;
+        var actionName = selection.Action == PrintQueueManagementAction.CancelPreviousDays
+            ? "previous-day"
+            : "waiting";
+
+        var confirm = new ModernConfirmDialog();
+        confirm.SetConfirm(
+            "Cancel Print Jobs",
+            $"Cancel {candidateCount} {actionName} print job(s) for {selection.ScopeName}? Jobs already printing and jobs created after this confirmation started will not be cancelled.",
+            "Cancel Jobs",
+            "Keep Jobs",
+            "!",
+            "#DC2626");
+        if (!await confirm.ShowAsync())
+        {
+            return;
+        }
+
+        var result = await _queueService.CancelWaitingJobsAsync(
+            cutoff,
+            selection.PrinterId,
+            currentUser.Id,
+            string.IsNullOrWhiteSpace(currentUser.Name) ? currentUser.Username : currentUser.Name,
+            $"Cancelled by {currentUser.Username} from Printer Setup ({actionName})",
+            selection.PrinterId.HasValue ? "printer" : "all_printers");
+
+        await AppAlertService.ShowAlertAsync(
+            "Complete",
+            $"{result.CancelledJobs} print job(s) cancelled. Completed jobs, active printing, and newer jobs were left unchanged.");
+        await UpdateStatusAsync();
     }
 
     private async Task OnTestPrinterClicked(NetworkPrinter printer)
@@ -854,9 +1064,14 @@ public partial class PrinterSetupPage : ContentPage
         if (confirm)
         {
             var printGroupId = printer.PrintGroupId;
+            if (_routingService != null)
+            {
+                await _routingService.DisableIfSelectedAsync(printer.Id);
+            }
             await _dbService.DeletePrinterAsync(printer.Id);
             await ClearPrintGroupPrinterIfUnusedAsync(printGroupId, printer.Id);
             await LoadPrintersAsync();
+            await LoadRoutingSettingsAsync();
         }
     }
 

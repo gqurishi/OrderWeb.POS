@@ -42,7 +42,7 @@
                         <Border.Shadow>
                             <Shadow Brush="#0F172A" Opacity="0.12" Radius="12" Offset="0,4"/>
                         </Border.Shadow>
-                        <Image Source="companylogo.png"
+                        <Image Source="companymark.png"
                                Aspect="AspectFit"
                                HorizontalOptions="Center"
                                VerticalOptions="Center"/>

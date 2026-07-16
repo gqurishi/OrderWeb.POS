@@ -369,6 +369,12 @@ public class OnlineOrderAutoPrintService
     {
         try
         {
+            var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+            if (routingService != null)
+            {
+                return await routingService.ResolvePrinterAsync(type);
+            }
+
             var printers = await _printerDbService.GetPrintersByTypeAsync(type);
             // Return first enabled printer of this type
             return printers.FirstOrDefault(p => p.IsEnabled);

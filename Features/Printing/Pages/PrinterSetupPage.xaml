@@ -54,6 +54,58 @@
                         </HorizontalStackLayout>
                     </Grid>
 
+                    <!-- Print Routing -->
+                    <Border BackgroundColor="White" Padding="20" Stroke="#CBD5E1" StrokeThickness="1">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="14">
+                            <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                                <Label Text="Print Routing" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <Label x:Name="RoutingStatusLabel" Text="Dedicated printers" FontSize="13" TextColor="#64748B"/>
+                            </VerticalStackLayout>
+
+                            <Button Grid.Column="1"
+                                    x:Name="TestRoutingPrinterButton"
+                                    Text="Test"
+                                    BackgroundColor="#E2E8F0"
+                                    TextColor="#334155"
+                                    CornerRadius="8"
+                                    Padding="18,12"
+                                    VerticalOptions="Center"
+                                    Clicked="OnTestRoutingPrinterClicked"/>
+
+                            <Button Grid.Column="2"
+                                    x:Name="SaveRoutingButton"
+                                    Text="Save"
+                                    BackgroundColor="#0F172A"
+                                    TextColor="White"
+                                    CornerRadius="8"
+                                    Padding="18,12"
+                                    VerticalOptions="Center"
+                                    Clicked="OnSaveRoutingClicked"/>
+
+                            <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="220,*" ColumnSpacing="14">
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Mode" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                    <Picker x:Name="RoutingModePicker"
+                                            BackgroundColor="#F8FAFC"
+                                            TextColor="#0F172A"
+                                            SelectedIndexChanged="OnRoutingModeChanged"/>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                    <Label Text="All-jobs printer" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                    <Picker x:Name="AllJobsPrinterPicker"
+                                            BackgroundColor="#F8FAFC"
+                                            TextColor="#0F172A"
+                                            ItemDisplayBinding="{Binding Name}"
+                                            SelectedIndexChanged="OnAllJobsPrinterChanged"/>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
                     <!-- Status Cards -->
                     <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="16">
                         <!-- Online -->
@@ -163,6 +215,14 @@
                                     Padding="20,12"
                                     FontAttributes="Bold"
                                     Clicked="OnPrintDesignClicked"/>
+                            <Button x:Name="ManageQueueButton"
+                                    Text="Manage Queue"
+                                    BackgroundColor="#334155"
+                                    TextColor="White"
+                                    CornerRadius="8"
+                                    Padding="20,12"
+                                    FontAttributes="Bold"
+                                    Clicked="OnManageQueueClicked"/>
                         </HorizontalStackLayout>
                     </Border>
 

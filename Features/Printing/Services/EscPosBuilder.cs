@@ -20,6 +20,7 @@ public enum TextAlign
 public class EscPosBuilder
 {
     private readonly List<byte> _buffer = new();
+    private static readonly Encoding PrinterEncoding = CreatePrinterEncoding();
     private readonly PrinterBrand _brand;
     private readonly PaperWidth _paperWidth;
     private readonly int _lineWidth;
@@ -126,6 +127,12 @@ public class EscPosBuilder
         return this;
     }
 
+    private static Encoding CreatePrinterEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(437);
+    }
+
     /// <summary>
     /// Set text alignment
     /// </summary>
@@ -147,7 +154,7 @@ public class EscPosBuilder
     /// </summary>
     public EscPosBuilder PrintText(string text)
     {
-        var bytes = Encoding.GetEncoding("IBM437").GetBytes(text);
+        var bytes = PrinterEncoding.GetBytes(text);
         _buffer.AddRange(bytes);
         return this;
     }

@@ -35,6 +35,24 @@ public class NetworkPrintQueueStats
     public DateTime LastProcessed { get; set; }
 }
 
+public sealed class PrintQueueManagementSnapshot
+{
+    public int PendingJobs { get; init; }
+    public int FailedJobs { get; init; }
+    public int PrintingJobs { get; init; }
+    public int PreviousDayJobs { get; init; }
+    public DateTime? OldestWaitingJob { get; init; }
+    public DateTime? LastCancellationAt { get; init; }
+    public int LastCancellationCount { get; init; }
+    public int WaitingJobs => PendingJobs + FailedJobs;
+}
+
+public sealed class PrintQueueCancellationResult
+{
+    public int CancelledJobs { get; init; }
+    public DateTime Cutoff { get; init; }
+}
+
 /// <summary>
 /// Background service that processes the print queue.
 /// Retries failed jobs automatically with exponential backoff.
@@ -571,10 +589,176 @@ public class NetworkPrintQueueService : IDisposable
         return stats;
     }
 
+    public async Task<PrintQueueManagementSnapshot> GetManagementSnapshotAsync(int? printerId = null)
+    {
+        await EnsureTableExistsAsync();
+
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+                SUM(CASE WHEN status = 'printing' THEN 1 ELSE 0 END) AS printing_count,
+                SUM(CASE WHEN status IN ('pending', 'failed') AND created_at < CURDATE() THEN 1 ELSE 0 END) AS previous_day_count,
+                MIN(CASE WHEN status IN ('pending', 'failed') THEN created_at END) AS oldest_waiting
+            FROM network_print_queue
+            WHERE (@printerId IS NULL OR printer_id = @printerId);
+
+            SELECT cancelled_at, job_count
+            FROM print_queue_cancellation_audit
+            WHERE (@printerId IS NULL OR printer_id = @printerId OR printer_id IS NULL)
+            ORDER BY cancelled_at DESC
+            LIMIT 1;";
+        command.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+
+        using var reader = await command.ExecuteReaderAsync();
+        var pending = 0;
+        var failed = 0;
+        var printing = 0;
+        var previousDay = 0;
+        DateTime? oldest = null;
+        DateTime? lastCancellationAt = null;
+        var lastCancellationCount = 0;
+
+        if (await reader.ReadAsync())
+        {
+            pending = reader.IsDBNull(0) ? 0 : Convert.ToInt32(reader.GetValue(0));
+            failed = reader.IsDBNull(1) ? 0 : Convert.ToInt32(reader.GetValue(1));
+            printing = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2));
+            previousDay = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3));
+            oldest = reader.IsDBNull(4) ? null : reader.GetDateTime(4);
+        }
+
+        if (await reader.NextResultAsync() && await reader.ReadAsync())
+        {
+            lastCancellationAt = reader.IsDBNull(0) ? null : reader.GetDateTime(0);
+            lastCancellationCount = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+        }
+
+        return new PrintQueueManagementSnapshot
+        {
+            PendingJobs = pending,
+            FailedJobs = failed,
+            PrintingJobs = printing,
+            PreviousDayJobs = previousDay,
+            OldestWaitingJob = oldest,
+            LastCancellationAt = lastCancellationAt,
+            LastCancellationCount = lastCancellationCount
+        };
+    }
+
+    public async Task<PrintQueueCancellationResult> CancelWaitingJobsAsync(
+        DateTime cutoff,
+        int? printerId,
+        int cancelledByUserId,
+        string cancelledByName,
+        string reason,
+        string scope)
+    {
+        await EnsureTableExistsAsync();
+
+        var cancelledOnlineJobs = new List<(int JobId, string OrderId, string JobType, string PrinterName)>();
+        await using var connection = await _databaseService.GetConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        await using (var selectCommand = connection.CreateCommand())
+        {
+            selectCommand.Transaction = transaction;
+            selectCommand.CommandText = @"
+                SELECT q.id, q.order_id, q.job_type, p.name
+                FROM network_print_queue q
+                JOIN network_printers p ON p.id = q.printer_id
+                WHERE q.status IN ('pending', 'failed')
+                  AND q.created_at <= @cutoff
+                  AND (@printerId IS NULL OR q.printer_id = @printerId)
+                FOR UPDATE";
+            selectCommand.Parameters.AddWithValue("@cutoff", cutoff);
+            selectCommand.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+
+            await using var reader = await selectCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var orderId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var jobType = reader.GetString(2);
+                if (!string.IsNullOrWhiteSpace(orderId) && IsOnlineOrderJob(jobType))
+                {
+                    cancelledOnlineJobs.Add((reader.GetInt32(0), orderId, jobType, reader.GetString(3)));
+                }
+            }
+        }
+
+        int cancelledCount;
+        await using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText = @"
+                UPDATE network_print_queue
+                SET status = 'cancelled',
+                    cancelled_at = NOW(),
+                    cancelled_by_user_id = @userId,
+                    cancelled_by_name = @userName,
+                    cancellation_reason = @reason,
+                    error_message = @reason,
+                    claimed_by_terminal_name = NULL,
+                    claimed_at = NULL
+                WHERE status IN ('pending', 'failed')
+                  AND created_at <= @cutoff
+                  AND (@printerId IS NULL OR printer_id = @printerId)";
+            updateCommand.Parameters.AddWithValue("@userId", cancelledByUserId);
+            updateCommand.Parameters.AddWithValue("@userName", cancelledByName);
+            updateCommand.Parameters.AddWithValue("@reason", reason);
+            updateCommand.Parameters.AddWithValue("@cutoff", cutoff);
+            updateCommand.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+            cancelledCount = await updateCommand.ExecuteNonQueryAsync();
+        }
+
+        await using (var auditCommand = connection.CreateCommand())
+        {
+            auditCommand.Transaction = transaction;
+            auditCommand.CommandText = @"
+                INSERT INTO print_queue_cancellation_audit
+                    (cutoff_at, scope, printer_id, job_count, cancelled_by_user_id, cancelled_by_name, reason)
+                VALUES
+                    (@cutoff, @scope, @printerId, @jobCount, @userId, @userName, @reason)";
+            auditCommand.Parameters.AddWithValue("@cutoff", cutoff);
+            auditCommand.Parameters.AddWithValue("@scope", scope);
+            auditCommand.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+            auditCommand.Parameters.AddWithValue("@jobCount", cancelledCount);
+            auditCommand.Parameters.AddWithValue("@userId", cancelledByUserId);
+            auditCommand.Parameters.AddWithValue("@userName", cancelledByName);
+            auditCommand.Parameters.AddWithValue("@reason", reason);
+            await auditCommand.ExecuteNonQueryAsync();
+        }
+
+        await transaction.CommitAsync();
+
+        foreach (var job in cancelledOnlineJobs
+                     .GroupBy(item => item.OrderId, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.First()))
+        {
+            JobFailed?.Invoke(this, new PrintJobFailedEventArgs
+            {
+                JobId = job.JobId,
+                PrinterName = job.PrinterName,
+                OrderId = job.OrderId,
+                JobType = job.JobType,
+                ErrorMessage = reason
+            });
+        }
+
+        Debug.WriteLine($" Cancelled {cancelledCount} queued print job(s) through {cutoff:O}");
+        return new PrintQueueCancellationResult
+        {
+            CancelledJobs = cancelledCount,
+            Cutoff = cutoff
+        };
+    }
+
     /// <summary>
     /// Retry all failed jobs manually
     /// </summary>
-    public async Task<int> RetryAllFailedJobsAsync()
+    public async Task<int> RetryAllFailedJobsAsync(int? printerId = null)
     {
         try
         {
@@ -584,11 +768,18 @@ public class NetworkPrintQueueService : IDisposable
             command.CommandText = @"
                 UPDATE network_print_queue 
                 SET status = 'pending', retry_count = 0, error_message = NULL
-                WHERE status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries)";
+                WHERE status = 'failed'
+                  AND retry_count >= COALESCE(max_retries, @maxRetries)
+                  AND (@printerId IS NULL OR printer_id = @printerId)";
             
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
+            command.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
             
             var affected = await command.ExecuteNonQueryAsync();
+            if (affected > 0)
+            {
+                _backgroundSyncManager?.RequestRunSoon("network-print-queue");
+            }
             
             Debug.WriteLine($" Reset {affected} failed jobs for retry");
             return affected;
@@ -630,6 +821,10 @@ public class NetworkPrintQueueService : IDisposable
     }
 
     public bool IsRunning => _isRunning;
+
+    private static bool IsOnlineOrderJob(string jobType) =>
+        string.Equals(jobType, "online_receipt", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(jobType, "takeaway_ticket", StringComparison.OrdinalIgnoreCase);
 
     private static async Task MigrateQueueTableAsync(MySqlConnection connection)
     {

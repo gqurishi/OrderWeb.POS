@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
 
 namespace POS_in_NET.Pages;
 
@@ -14,6 +15,7 @@ public partial class DeliveryCustomerModal : ContentPage
     private readonly DeliveryZoneService _deliveryZoneService;
     private readonly CustomerDataService _customerDataService = new();
     private DeliveryCustomer? _selectedCustomer;
+    private bool _isOpeningKeyboard;
 
     public DeliveryCustomerModal()
     {
@@ -22,6 +24,109 @@ public partial class DeliveryCustomerModal : ContentPage
         _postcodeLookupService = ServiceHelper.GetService<PostcodeLookupService>()
             ?? new PostcodeLookupService(new DatabaseService());
         _deliveryZoneService = new DeliveryZoneService(new DatabaseService());
+    }
+
+    private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(CustomerNameEntry);
+    }
+
+    private async void OnPhoneNumberFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(PhoneNumberEntry);
+    }
+
+    private async void OnPostcodeFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(PostcodeEntry);
+    }
+
+    private async void OnAddressLine1FieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(AddressLine1Entry);
+    }
+
+    private async void OnCityFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(CityEntry);
+    }
+
+    private async void OnCountyFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(CountyEntry);
+    }
+
+    private async void OnPostcodeResultFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(PostcodeResultEntry);
+    }
+
+    private async Task OpenKeyboardForEntryAsync(Entry entry)
+    {
+        if (_isOpeningKeyboard)
+        {
+            return;
+        }
+
+        _isOpeningKeyboard = true;
+        try
+        {
+            entry.Unfocus();
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(GetKeyboardTitle(entry), "DONE");
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+
+            var result = await keyboard.ShowAsync(this);
+            if (result != null)
+            {
+                entry.Text = result.Trim();
+            }
+        }
+        finally
+        {
+            _isOpeningKeyboard = false;
+        }
+    }
+
+    private string GetKeyboardTitle(Entry entry)
+    {
+        if (entry == CustomerNameEntry)
+        {
+            return "Customer name";
+        }
+
+        if (entry == PhoneNumberEntry)
+        {
+            return "Phone number";
+        }
+
+        if (entry == PostcodeEntry)
+        {
+            return "Address search";
+        }
+
+        if (entry == AddressLine1Entry)
+        {
+            return "Street address";
+        }
+
+        if (entry == CityEntry)
+        {
+            return "City";
+        }
+
+        if (entry == CountyEntry)
+        {
+            return "County";
+        }
+
+        if (entry == PostcodeResultEntry)
+        {
+            return "Postcode";
+        }
+
+        return "Keyboard";
     }
 
     private async void OnSearchPostcodeClicked(object sender, EventArgs e)

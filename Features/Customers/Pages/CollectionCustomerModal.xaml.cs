@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
 
 namespace POS_in_NET.Pages;
 
@@ -8,11 +9,65 @@ public partial class CollectionCustomerModal : ContentPage
     private readonly CollectionCustomerService _customerService;
     private readonly CustomerDataService _customerDataService = new();
     private CollectionCustomer? _selectedCustomer;
+    private bool _isOpeningKeyboard;
 
     public CollectionCustomerModal()
     {
         InitializeComponent();
         _customerService = new CollectionCustomerService();
+    }
+
+    private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(CustomerNameEntry);
+    }
+
+    private async void OnPhoneNumberFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(PhoneNumberEntry);
+    }
+
+    private async Task OpenKeyboardForEntryAsync(Entry entry)
+    {
+        if (_isOpeningKeyboard)
+        {
+            return;
+        }
+
+        _isOpeningKeyboard = true;
+        try
+        {
+            entry.Unfocus();
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(GetKeyboardTitle(entry), "DONE");
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+
+            var result = await keyboard.ShowAsync(this);
+            if (result != null)
+            {
+                entry.Text = result.Trim();
+            }
+        }
+        finally
+        {
+            _isOpeningKeyboard = false;
+        }
+    }
+
+    private string GetKeyboardTitle(Entry entry)
+    {
+        if (entry == CustomerNameEntry)
+        {
+            return "Customer name";
+        }
+
+        if (entry == PhoneNumberEntry)
+        {
+            return "Phone number";
+        }
+
+        return "Keyboard";
     }
 
     private async void OnSearchClicked(object sender, EventArgs e)

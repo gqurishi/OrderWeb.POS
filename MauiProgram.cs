@@ -29,6 +29,13 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 				// Legacy alias — some screens historically referenced OpenSansBold
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansBold");
+
+				// Keep older page aliases on the same real font files so every screen renders consistently.
+				fonts.AddFont("OpenSans-Regular.ttf", "InterRegular");
+				fonts.AddFont("OpenSans-Semibold.ttf", "InterMedium");
+				fonts.AddFont("OpenSans-Semibold.ttf", "InterBold");
+				fonts.AddFont("OpenSans-Regular.ttf", "AlegreyaRegular");
+				fonts.AddFont("OpenSans-Semibold.ttf", "AlegreyaBold");
 			})
 			.ConfigureLifecycleEvents(events =>
 			{
@@ -109,6 +116,7 @@ public static class MauiProgram
 		// Register Network Printer Services
 		builder.Services.AddSingleton<NetworkPrinterDatabaseService>();
 		builder.Services.AddSingleton<NetworkPrinterService>();
+		builder.Services.AddSingleton<PrinterRoutingService>();
 		builder.Services.AddSingleton<CashDrawerService>();
 		builder.Services.AddSingleton<TillExpenseService>();
 		builder.Services.AddSingleton<CashDrawerFlowService>();
@@ -119,6 +127,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PrintGroupService>();
 		builder.Services.AddSingleton<PrintingPolicyService>();
 		builder.Services.AddSingleton<KitchenTemplateSettingsService>();
+		builder.Services.AddSingleton<KitchenOrderRevisionService>();
 		builder.Services.AddSingleton<CollectionReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<DeliveryReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<TableBillReceiptTemplateSettingsService>();

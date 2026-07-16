@@ -106,6 +106,14 @@ public sealed class ZReportPrintService
     {
         await _printerDatabaseService.EnsureTablesExistAsync();
 
+        var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+        if (routingService != null)
+        {
+            return await routingService.ResolvePrinterAsync(
+                NetworkPrinterType.Receipt,
+                NetworkPrinterType.Online);
+        }
+
         var receiptPrinters = await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
         var printer = receiptPrinters.FirstOrDefault(p => p.IsEnabled);
         if (printer != null)

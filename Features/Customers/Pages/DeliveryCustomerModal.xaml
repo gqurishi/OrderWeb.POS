@@ -50,11 +50,16 @@
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="12"/>
                         </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCustomerNameFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="CustomerNameEntry"
                                Placeholder="e.g., John Smith"
                                FontSize="16"
                                TextColor="#1A202C"
                                PlaceholderColor="#A0AEC0"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="56"
                                Margin="16,0"/>
                     </Border>
@@ -73,12 +78,17 @@
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="12"/>
                         </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPhoneNumberFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="PhoneNumberEntry"
                                Placeholder="e.g., 07123 456789"
                                Keyboard="Telephone"
                                FontSize="16"
                                TextColor="#1A202C"
                                PlaceholderColor="#A0AEC0"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="56"
                                Margin="16,0"/>
                     </Border>
@@ -101,11 +111,16 @@
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="12"/>
                             </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnPostcodeFieldTapped" />
+                            </Border.GestureRecognizers>
                             <Entry x:Name="PostcodeEntry"
                                    Placeholder="Enter address or postcode..."
                                    FontSize="16"
                                    TextColor="#1A202C"
                                    PlaceholderColor="#A0AEC0"
+                                   IsReadOnly="True"
+                                   InputTransparent="True"
                                    HeightRequest="56"
                                    Margin="16,0"/>
                         </Border>
@@ -174,11 +189,16 @@
                                 <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="12"/>
                                 </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnAddressLine1FieldTapped" />
+                                </Border.GestureRecognizers>
                                 <Entry x:Name="AddressLine1Entry"
                                        Placeholder="Street address"
                                        FontSize="16"
                                        TextColor="#1A202C"
                                        PlaceholderColor="#A0AEC0"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
                                        HeightRequest="56"
                                        Margin="16,0"/>
                             </Border>
@@ -197,11 +217,16 @@
                                 <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="12"/>
                                 </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCityFieldTapped" />
+                                </Border.GestureRecognizers>
                                 <Entry x:Name="CityEntry"
                                        Placeholder="City"
                                        FontSize="16"
                                        TextColor="#1A202C"
                                        PlaceholderColor="#A0AEC0"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
                                        HeightRequest="56"
                                        Margin="16,0"/>
                             </Border>
@@ -222,11 +247,16 @@
                                     <Border.StrokeShape>
                                         <RoundRectangle CornerRadius="12"/>
                                     </Border.StrokeShape>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnCountyFieldTapped" />
+                                    </Border.GestureRecognizers>
                                     <Entry x:Name="CountyEntry"
                                            Placeholder="County"
                                            FontSize="16"
                                            TextColor="#1A202C"
                                            PlaceholderColor="#A0AEC0"
+                                           IsReadOnly="True"
+                                           InputTransparent="True"
                                            HeightRequest="56"
                                            Margin="16,0"/>
                                 </Border>
@@ -245,11 +275,16 @@
                                     <Border.StrokeShape>
                                         <RoundRectangle CornerRadius="12"/>
                                     </Border.StrokeShape>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnPostcodeResultFieldTapped" />
+                                    </Border.GestureRecognizers>
                                     <Entry x:Name="PostcodeResultEntry"
                                            Placeholder="Postcode"
                                            FontSize="16"
                                            TextColor="#1A202C"
                                            PlaceholderColor="#A0AEC0"
+                                           IsReadOnly="True"
+                                           InputTransparent="True"
                                            HeightRequest="56"
                                            Margin="16,0"/>
                                 </Border>

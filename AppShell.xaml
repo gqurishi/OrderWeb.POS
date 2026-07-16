@@ -18,7 +18,7 @@
             <!-- HEADER - Clean & Elegant -->
             <VerticalStackLayout Grid.Row="0" Spacing="16" Padding="20,32,20,28" BackgroundColor="White">
                 <!-- Logo -->
-                <Image Source="companylogo.png"
+                <Image Source="companymark.png"
                        WidthRequest="100"
                        HeightRequest="100"
                        Aspect="AspectFit"
@@ -56,22 +56,13 @@
                             <TapGestureRecognizer Tapped="OnMenuItemTapped" CommandParameter="cashdrawer" />
                         </StackLayout.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="20">
-                            <Border Grid.Column="0"
-                                    WidthRequest="32"
-                                    HeightRequest="32"
-                                    Stroke="#000000"
-                                    StrokeThickness="2"
-                                    StrokeShape="RoundRectangle 8"
-                                    BackgroundColor="Transparent"
-                                    HorizontalOptions="Start"
-                                    VerticalOptions="Center">
-                                <Label Text="£"
-                                       FontFamily="OpenSansBold"
-                                       FontSize="20"
-                                       TextColor="#000000"
-                                       HorizontalTextAlignment="Center"
-                                       VerticalTextAlignment="Center" />
-                            </Border>
+                            <Image Grid.Column="0"
+                                   Source="cashdrawer.png"
+                                   WidthRequest="32"
+                                   HeightRequest="32"
+                                   Aspect="AspectFit"
+                                   HorizontalOptions="Start"
+                                   VerticalOptions="Center"/>
                             <Label Grid.Column="1" Text="Cash Drawer" FontFamily="OpenSansBold"
                                    FontSize="16" TextColor="#1E293B" VerticalOptions="Center"/>
                         </Grid>

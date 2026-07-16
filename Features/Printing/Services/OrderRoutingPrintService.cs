@@ -58,6 +58,31 @@ public sealed class OrderRoutingPrintService
     /// </summary>
     private async Task<(PrintingMode Mode, PrintGroup? SinglePrinter, string Status)> DetectPrintingModeAsync()
     {
+        var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+        if (routingService != null)
+        {
+            var settings = await routingService.GetSettingsAsync();
+            if (settings.UseAllJobsPrinter)
+            {
+                var printer = await routingService.GetAllJobsPrinterAsync();
+                if (printer == null)
+                {
+                    return (PrintingMode.MissingAllJobsPrinter, null, "The all-jobs printer is unavailable");
+                }
+
+                var destination = new PrintGroup
+                {
+                    Id = $"all-jobs-{printer.Id}",
+                    Name = printer.Name,
+                    PrinterIp = printer.IpAddress,
+                    PrinterPort = printer.Port,
+                    PrinterType = "kitchen",
+                    IsActive = true
+                };
+                return (PrintingMode.SinglePrinterCatchAll, destination, $"All jobs printer - {printer.Name}");
+            }
+        }
+
         var activeGroups = await _printGroupService.GetActivePrintGroupsAsync();
         var groupsWithIp = activeGroups.Where(g => !string.IsNullOrWhiteSpace(g.PrinterIp)).ToList();
 
@@ -76,6 +101,7 @@ public sealed class OrderRoutingPrintService
 
     private enum PrintingMode
     {
+        MissingAllJobsPrinter,
         PdfFallback,           // No printers - save as PDF
         SinglePrinterCatchAll, // 1 printer - catch all items
         NormalRouting          // 2+ printers - route per group
@@ -85,6 +111,16 @@ public sealed class OrderRoutingPrintService
     {
         var issues = new List<RouteValidationIssue>();
         var (mode, _, _) = await DetectPrintingModeAsync();
+
+        if (mode == PrintingMode.MissingAllJobsPrinter)
+        {
+            issues.Add(new RouteValidationIssue
+            {
+                Code = "all_jobs_printer_unavailable",
+                Message = "The selected all-jobs printer is unavailable or disabled"
+            });
+            return issues;
+        }
 
         // PDF fallback mode - no hard blocks, just informational
         if (mode == PrintingMode.PdfFallback)
@@ -205,6 +241,12 @@ public sealed class OrderRoutingPrintService
         var (mode, singlePrinter, modeStatus) = await DetectPrintingModeAsync();
         System.Diagnostics.Debug.WriteLine($" Printing mode: {modeStatus}");
 
+        if (mode == PrintingMode.MissingAllJobsPrinter)
+        {
+            result.FailedRoutes.Add("The selected all-jobs printer is unavailable or disabled");
+            return result;
+        }
+
         var itemsToPrint = order.Items
             .Where(item => item.SendStatus == ItemSendStatus.NotSent)
             .Where(item => string.IsNullOrWhiteSpace(routeTarget) || string.Equals(item.PrintGroupId, routeTarget, StringComparison.OrdinalIgnoreCase))
@@ -257,8 +299,11 @@ public sealed class OrderRoutingPrintService
             return result;
         }
 
-        var takeawayPrinter = (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Takeaway))
-            .FirstOrDefault(printer => printer.IsEnabled);
+        var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+        var takeawayPrinter = routingService != null
+            ? await routingService.ResolvePrinterAsync(NetworkPrinterType.Takeaway)
+            : (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Takeaway))
+                .FirstOrDefault(printer => printer.IsEnabled);
 
         if (takeawayPrinter == null)
         {
@@ -686,6 +731,14 @@ public sealed class OrderRoutingPrintService
             "receipt" => "RECEIPT",
             _ => "KITCHEN"
         };
+        var revisionHeader = order.KitchenTicketType?.Trim().ToUpperInvariant() switch
+        {
+            "ADDITION" => "ADDITION",
+            "VOID" => "VOID",
+            "CHANGE" => "CHANGE",
+            "MIXED" => "ORDER CHANGE",
+            _ => order.KitchenRevisionNumber > 0 ? "NEW ORDER" : null
+        };
 
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80);
         var lineWidth = 48;
@@ -699,20 +752,28 @@ public sealed class OrderRoutingPrintService
         builder.SetAlign(TextAlign.Center)
                .SetFontSize(2, 2)
                .SetBold(true)
-               .PrintLine(headerText)
+               .PrintLine(string.IsNullOrWhiteSpace(revisionHeader) ? headerText : $"{headerText} - {revisionHeader}")
                .SetNormalSize()
                .SetBold(false)
                .PrintLine(group.Name)
                .PrintLine($"Order #{(string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber)}")
                .PrintLine($"Table {order.TableNumber}")
                .PrintLine(DateTime.Now.ToString("dd/MM/yyyy HH:mm"))
+               .PrintLine(order.KitchenRevisionNumber > 0 ? $"Revision {order.KitchenRevisionNumber}" : string.Empty)
                .PrintLine(new string('=', lineWidth))
                .SetAlign(TextAlign.Left);
 
         foreach (var item in items)
         {
+            var actionPrefix = item.KitchenAction switch
+            {
+                KitchenChangeAction.Add => "+ ADD ",
+                KitchenChangeAction.Void => "- VOID ",
+                KitchenChangeAction.Change => "* CHANGE ",
+                _ => string.Empty
+            };
             builder.SetBold(true)
-                   .PrintLine($"{item.Quantity}x {item.DisplayName}")
+                   .PrintLine($"{actionPrefix}{item.Quantity}x {item.DisplayName}")
                    .SetBold(false);
 
             foreach (var addon in item.SelectedAddons)

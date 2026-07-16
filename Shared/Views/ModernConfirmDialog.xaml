@@ -38,7 +38,7 @@
                     </Border.StrokeShape>
                     <Grid>
                         <Image x:Name="IconImage"
-                               Source="companylogo.png"
+                               Source="companymark.png"
                                IsVisible="False"
                                Aspect="AspectFit"
                                Margin="8" />

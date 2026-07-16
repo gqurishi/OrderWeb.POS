@@ -191,6 +191,17 @@ public sealed class CashDrawerService
 
     private async Task<NetworkPrinter?> GetConfiguredReceiptDrawerAsync()
     {
+        var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+        if (routingService != null)
+        {
+            var settings = await routingService.GetSettingsAsync();
+            if (settings.UseAllJobsPrinter)
+            {
+                var allJobsPrinter = await routingService.GetAllJobsPrinterAsync();
+                return allJobsPrinter is { HasCashDrawer: true } ? allJobsPrinter : null;
+            }
+        }
+
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = @"

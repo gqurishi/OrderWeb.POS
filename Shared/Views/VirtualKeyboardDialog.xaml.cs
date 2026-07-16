@@ -12,6 +12,9 @@ namespace POS_in_NET.Views
         private TaskCompletionSource<string?>? _tcs;
         private string _searchText = string.Empty;
         private ContentPage? _hostPage;
+        private Grid? _hostGrid;
+        private bool _isClosed;
+        private bool _isCompleting;
 
         public VirtualKeyboardDialog()
         {
@@ -25,10 +28,18 @@ namespace POS_in_NET.Views
             UpdateDisplay();
         }
 
+        public void SetPrompt(string title, string actionText = "ENTER")
+        {
+            KeyboardTitleLabel.Text = string.IsNullOrWhiteSpace(title) ? "Keyboard" : title.Trim();
+            EnterButton.Text = string.IsNullOrWhiteSpace(actionText) ? "ENTER" : actionText.Trim().ToUpperInvariant();
+        }
+
         public async Task<string?> ShowAsync(Page? hostPage = null)
         {
             using var idleGuard = ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();
             _tcs = new TaskCompletionSource<string?>();
+            _isClosed = false;
+            _isCompleting = false;
 
             var page = hostPage as ContentPage
                 ?? Shell.Current?.CurrentPage as ContentPage
@@ -53,6 +64,8 @@ namespace POS_in_NET.Views
 
             if (DialogOverlayHelper.TryAttachOverlay(this, out var hostGrid))
             {
+                _hostGrid = hostGrid;
+                ZIndex = 10000;
                 IsVisible = true;
                 page.SizeChanged += OnHostPageSizeChanged;
                 ApplyResponsiveLayout(page.Width, page.Height);
@@ -67,6 +80,7 @@ namespace POS_in_NET.Views
                 newGrid.Children.Add(existingContent);
                 newGrid.Children.Add(this);
                 page.Content = newGrid;
+                _hostGrid = newGrid;
             }
             else
             {
@@ -81,6 +95,7 @@ namespace POS_in_NET.Views
 
                 newGrid.Children.Add(this);
                 page.Content = newGrid;
+                _hostGrid = newGrid;
             }
 
             IsVisible = true;
@@ -90,16 +105,26 @@ namespace POS_in_NET.Views
 
         private void CloseDialog()
         {
+            if (_isClosed)
+            {
+                return;
+            }
+
+            _isClosed = true;
             if (_hostPage != null)
             {
                 _hostPage.SizeChanged -= OnHostPageSizeChanged;
                 _hostPage = null;
             }
 
-            if (Parent is Grid grid)
+            DialogOverlayHelper.DetachOverlay(this, _hostGrid);
+            if (Parent is Layout parentLayout && parentLayout.Children.Contains(this))
             {
-                DialogOverlayHelper.DetachOverlay(this, grid);
+                parentLayout.Children.Remove(this);
             }
+
+            _hostGrid = null;
+            IsVisible = false;
         }
 
         private void OnHostPageSizeChanged(object? sender, EventArgs e)
@@ -131,8 +156,9 @@ namespace POS_in_NET.Views
 
             foreach (var button in GetButtons(KeyboardRowsContainer))
             {
+                var isActionButton = button == EnterButton || button.Text is "CANCEL" or "CLEAR" or "ENTER" or "DONE" or "DEL";
                 button.HeightRequest = keyHeight;
-                button.FontSize = button.Text is "CLEAR" or "ENTER" or "DEL" ? actionFont : keyFont;
+                button.FontSize = isActionButton ? actionFont : keyFont;
             }
 
             SearchTextLabel.FontSize = isSmall ? 17 : isMedium ? 18 : 21;
@@ -211,16 +237,32 @@ namespace POS_in_NET.Views
             UpdateDisplay();
         }
 
+        private void CompleteDialog(string? result)
+        {
+            if (_isCompleting)
+            {
+                return;
+            }
+
+            _isCompleting = true;
+            try
+            {
+                CloseDialog();
+            }
+            finally
+            {
+                _tcs?.TrySetResult(result);
+            }
+        }
+
         private void OnSearchPressed(object? sender, EventArgs e)
         {
-            CloseDialog();
-            _tcs?.TrySetResult(_searchText);
+            CompleteDialog(_searchText);
         }
 
         private void OnCancelClicked(object? sender, EventArgs e)
         {
-            CloseDialog();
-            _tcs?.TrySetResult(null);
+            CompleteDialog(null);
         }
     }
 }

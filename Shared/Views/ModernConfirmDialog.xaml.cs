@@ -45,7 +45,7 @@ namespace POS_in_NET.Views
 
             var loweredTitle = _title.ToLowerInvariant();
             var loweredYesText = _yesText.ToLowerInvariant();
-            var isDestructive = loweredTitle.Contains("danger") || loweredTitle.Contains("delete") || loweredTitle.Contains("void") || loweredYesText.Contains("delete") || loweredYesText.Contains("void");
+            var isDestructive = loweredTitle.Contains("danger") || loweredTitle.Contains("delete") || loweredTitle.Contains("void") || loweredTitle.Contains("cancel") || loweredYesText.Contains("delete") || loweredYesText.Contains("void") || loweredYesText.Contains("cancel");
             if (isDestructive)
             {
                 YesButton.BackgroundColor = Color.FromArgb("#DC2626");

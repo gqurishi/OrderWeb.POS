@@ -392,11 +392,17 @@ public class ReceiptService
             await _printerDatabaseService.EnsureTablesExistAsync();
             await _printQueueService.EnsureTableExistsAsync();
 
-            var receiptPrinter = (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt))
-                .FirstOrDefault(printer => printer.IsEnabled);
+            var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+            var receiptPrinter = routingService != null
+                ? await routingService.ResolvePrinterAsync(NetworkPrinterType.Receipt, NetworkPrinterType.Online)
+                : (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Receipt))
+                    .FirstOrDefault(printer => printer.IsEnabled);
 
-            receiptPrinter ??= (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Online))
-                .FirstOrDefault(printer => printer.IsEnabled);
+            if (routingService == null && receiptPrinter == null)
+            {
+                receiptPrinter = (await _printerDatabaseService.GetPrintersByTypeAsync(NetworkPrinterType.Online))
+                    .FirstOrDefault(printer => printer.IsEnabled);
+            }
 
             if (receiptPrinter == null)
             {

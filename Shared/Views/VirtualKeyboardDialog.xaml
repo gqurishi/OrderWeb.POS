@@ -2,16 +2,27 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.VirtualKeyboardDialog"
-             IsVisible="False">
+             IsVisible="False"
+             ZIndex="10000">
     
     <!-- Full Screen Overlay -->
     <Grid x:Name="OverlayGrid"
           BackgroundColor="{StaticResource DialogOverlayColor}"
           HorizontalOptions="Fill"
-          VerticalOptions="Fill">
+          VerticalOptions="Fill"
+          RowDefinitions="*,Auto"
+          ZIndex="10000">
+
+        <BoxView Grid.Row="0"
+                 BackgroundColor="Transparent">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnCancelClicked"/>
+            </BoxView.GestureRecognizers>
+        </BoxView>
 
         <!-- Dialog Container -->
         <Border x:Name="KeyboardCard"
+                Grid.Row="1"
                 BackgroundColor="White"
                 Stroke="#DCE3EE"
                 StrokeThickness="1"
@@ -30,18 +41,19 @@
                 
                 <!-- Header -->
                 <Grid BackgroundColor="#2563EB" Padding="18,12" ColumnDefinitions="*,Auto">
-                    <Label Text="Search"
+                    <Label x:Name="KeyboardTitleLabel"
+                           Text="Search"
                            FontSize="17"
                            FontAttributes="Bold"
                            TextColor="White"
                            VerticalOptions="Center"/>
                     <Button Grid.Column="1"
-                            Text="Close"
+                            Text="Cancel"
                             FontSize="13"
                             FontAttributes="Bold"
                             TextColor="#1D4ED8"
                             BackgroundColor="White"
-                            WidthRequest="76"
+                            WidthRequest="92"
                             HeightRequest="34"
                             CornerRadius="17"
                             Clicked="OnCancelClicked"/>
@@ -128,11 +140,24 @@
                         <Button Grid.Column="8" Grid.ColumnSpan="2" Text="DEL" Style="{x:Null}" BackgroundColor="#EF4444" TextColor="White" FontSize="15" FontAttributes="Bold" HeightRequest="46" CornerRadius="14" Clicked="OnBackspacePressed"/>
                     </Grid>
                     
-                    <!-- Row 5: Space and Action Buttons -->
-                    <Grid ColumnDefinitions="2*,6*,2*" ColumnSpacing="6">
-                        <Button Grid.Column="0" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
-                        <Button Grid.Column="1" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="15" HeightRequest="42" CornerRadius="14" Clicked="OnSpacePressed"/>
-                        <Button Grid.Column="2" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>
+                    <!-- Row 5: Common punctuation -->
+                    <Grid ColumnDefinitions="*,*,*,*,*,*,*,*" ColumnSpacing="5">
+                        <Button Grid.Column="0" Text="+" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="1" Text="-" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="2" Text="/" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="3" Text="." Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="4" Text="," Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="5" Text="#" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="6" Text="&amp;" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="7" Text="'" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                    </Grid>
+
+                    <!-- Row 6: Space and Action Buttons -->
+                    <Grid ColumnDefinitions="1.5*,1.5*,5*,2*" ColumnSpacing="6">
+                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnCancelClicked"/>
+                        <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
+                        <Button Grid.Column="2" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="15" HeightRequest="42" CornerRadius="14" Clicked="OnSpacePressed"/>
+                        <Button x:Name="EnterButton" Grid.Column="3" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>
                     </Grid>
                     
                 </VerticalStackLayout>

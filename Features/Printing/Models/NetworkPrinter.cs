@@ -135,7 +135,8 @@ public enum PrintJobStatus
     Pending,
     Printing,
     Completed,
-    Failed
+    Failed,
+    Cancelled
 }
 
 /// <summary>

@@ -40,6 +40,10 @@ namespace POS_in_NET.Models
         private DateTime _createdAt;
         private DateTime _updatedAt;
 
+        public int KitchenRevisionNumber { get; set; }
+        public string? KitchenTicketType { get; set; }
+        public string? KitchenRevisionReason { get; set; }
+
         public string Id
         {
             get => _id;
@@ -327,6 +331,11 @@ namespace POS_in_NET.Models
         private string? _voidReason;
         private string? _failureReason;
         private bool _isVoided;
+
+        public KitchenChangeAction KitchenAction { get; set; } = KitchenChangeAction.New;
+        public int PreviousQuantity { get; set; }
+        public string? PreviousNotes { get; set; }
+        public string? SourceItemId { get; set; }
 
         public string Id
         {
@@ -674,6 +683,14 @@ namespace POS_in_NET.Models
         Ready,       // Ready to serve
         Served,      // Served to customer
         Failed       // Send failed for this route
+    }
+
+    public enum KitchenChangeAction
+    {
+        New,
+        Add,
+        Void,
+        Change
     }
 
     public enum PaymentMethodType

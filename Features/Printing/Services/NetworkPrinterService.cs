@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -12,6 +13,7 @@ public class NetworkPrinterService
 {
     private const int DefaultTimeout = 5000; // 5 seconds
     private const int MaxSendAttempts = 3;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> EndpointLocks = new();
 
     /// <summary>
     /// Test if a printer is reachable at the given IP and port
@@ -111,50 +113,61 @@ public class NetworkPrinterService
     /// </summary>
     public async Task<bool> SendRawDataAsync(string ipAddress, int port, byte[] data)
     {
-        for (var attempt = 1; attempt <= MaxSendAttempts; attempt++)
+        var endpointKey = $"{ipAddress}:{port}";
+        var endpointLock = EndpointLocks.GetOrAdd(endpointKey, _ => new SemaphoreSlim(1, 1));
+        await endpointLock.WaitAsync();
+
+        try
         {
-            try
+            for (var attempt = 1; attempt <= MaxSendAttempts; attempt++)
             {
-                using var client = new TcpClient();
-                client.SendTimeout = DefaultTimeout;
-                client.ReceiveTimeout = DefaultTimeout;
-
-                var connectTask = client.ConnectAsync(ipAddress, port);
-                if (await Task.WhenAny(connectTask, Task.Delay(DefaultTimeout)) != connectTask)
+                try
                 {
-                    Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} timed out: {ipAddress}:{port}");
-                    continue;
+                    using var client = new TcpClient();
+                    client.SendTimeout = DefaultTimeout;
+                    client.ReceiveTimeout = DefaultTimeout;
+
+                    var connectTask = client.ConnectAsync(ipAddress, port);
+                    if (await Task.WhenAny(connectTask, Task.Delay(DefaultTimeout)) != connectTask)
+                    {
+                        Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} timed out: {ipAddress}:{port}");
+                        continue;
+                    }
+
+                    if (!client.Connected)
+                    {
+                        Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} failed to connect: {ipAddress}:{port}");
+                        continue;
+                    }
+
+                    var stream = client.GetStream();
+                    await stream.WriteAsync(data);
+                    await stream.FlushAsync();
+
+                    // Brief delay to ensure data is sent
+                    await Task.Delay(50);
+
+                    Debug.WriteLine($" Sent {data.Length} bytes to printer: {ipAddress}:{port} (attempt {attempt})");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($" Error sending to printer {ipAddress}:{port} on attempt {attempt}/{MaxSendAttempts}: {ex.Message}");
                 }
 
-                if (!client.Connected)
+                if (attempt < MaxSendAttempts)
                 {
-                    Debug.WriteLine($" Send attempt {attempt}/{MaxSendAttempts} failed to connect: {ipAddress}:{port}");
-                    continue;
+                    await Task.Delay(150 * attempt);
                 }
-
-                var stream = client.GetStream();
-                await stream.WriteAsync(data);
-                await stream.FlushAsync();
-
-                // Brief delay to ensure data is sent
-                await Task.Delay(50);
-
-                Debug.WriteLine($" Sent {data.Length} bytes to printer: {ipAddress}:{port} (attempt {attempt})");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($" Error sending to printer {ipAddress}:{port} on attempt {attempt}/{MaxSendAttempts}: {ex.Message}");
             }
 
-            if (attempt < MaxSendAttempts)
-            {
-                await Task.Delay(150 * attempt);
-            }
+            Debug.WriteLine($" Failed to send data after {MaxSendAttempts} attempts: {ipAddress}:{port}");
+            return false;
         }
-
-        Debug.WriteLine($" Failed to send data after {MaxSendAttempts} attempts: {ipAddress}:{port}");
-        return false;
+        finally
+        {
+            endpointLock.Release();
+        }
     }
 
     /// <summary>
@@ -333,35 +346,26 @@ public class NetworkPrinterService
     /// </summary>
     public async Task<bool> SendTestPrintAsync(NetworkPrinter printer)
     {
-        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
-        
-        builder.Initialize()
-               .SetAlign(TextAlign.Center)
-               .SetBold(true)
-               .SetFontSize(2, 2)
-               .PrintLine("TEST PRINT")
-               .SetFontSize(1, 1)
-               .SetBold(false)
-               .FeedLines(1)
-               .PrintLine($"Printer: {printer.Name}")
-               .PrintLine($"IP: {printer.IpAddress}:{printer.Port}")
-               .PrintLine($"Brand: {printer.Brand}")
-               .PrintLine($"Type: {printer.PrinterType}")
-               .FeedLines(1)
-               .PrintDivider()
-               .PrintLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}")
-               .PrintLine("Connection: OK")
-               .PrintDivider()
-               .FeedLines(2);
-
-        if (printer.HasBuzzer)
+        try
         {
-            builder.Buzzer();
+            var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth);
+
+            builder.Initialize()
+                   .SetAlign(TextAlign.Center)
+                   .SetBold(true)
+                   .SetFontSize(2, 2)
+                   .PrintLine("TEST DONE")
+                   .SetBold(false)
+                   .SetNormalSize()
+                   .FeedLines(4)
+                   .Cut();
+
+            return await SendToPrinterAsync(printer, builder.Build());
         }
-
-        builder.Cut();
-
-        var data = builder.Build();
-        return await SendToPrinterAsync(printer, data);
+        catch (Exception ex)
+        {
+            Debug.WriteLine($" Test print failed for {printer.IpAddress}:{printer.Port}: {ex.Message}");
+            return false;
+        }
     }
 }

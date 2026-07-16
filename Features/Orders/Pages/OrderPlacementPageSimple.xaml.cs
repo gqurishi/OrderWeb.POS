@@ -26,6 +26,7 @@ namespace POS_in_NET.Pages
         private OrderService _orderService;
         private TableSessionService _tableSessionService;
         private OrderRoutingPrintService _orderRoutingPrintService;
+        private KitchenOrderRevisionService _kitchenRevisionService;
         private OrderNumberService _orderNumberService;
         private OrderLifecycleRolloutService _orderLifecycleRolloutService;
         private CashDrawerService _cashDrawerService;
@@ -140,6 +141,8 @@ namespace POS_in_NET.Pages
             _orderService = new OrderService();
             _tableSessionService = new TableSessionService();
             _orderRoutingPrintService = new OrderRoutingPrintService();
+            _kitchenRevisionService = ServiceHelper.GetService<KitchenOrderRevisionService>()
+                ?? new KitchenOrderRevisionService(_databaseService);
             _orderNumberService = new OrderNumberService(_databaseService);
             _orderLifecycleRolloutService = new OrderLifecycleRolloutService(_databaseService);
             _cashDrawerService = ServiceHelper.GetService<CashDrawerService>()
@@ -1463,6 +1466,7 @@ namespace POS_in_NET.Pages
             UpdateSavedStatusLabel();
             ApplyLoadedOrderContext(loadedOrder);
             UpdateDisplay();
+            await _kitchenRevisionService.EnsureBaselineAsync(loadedOrder.Id, _currentOrder);
         }
 
         private async Task EnsureTableSessionContextAsync(bool skipOrderLink = false, bool allowSessionOpen = true)
@@ -2097,9 +2101,14 @@ namespace POS_in_NET.Pages
                     VerticalOptions = LayoutOptions.Center
                 };
                 minusBtn.Clicked += async (s, e) => {
+                    var wasSent = HasReachedKitchen(item);
                     if (item.Quantity > 1)
                     {
                         item.Quantity--;
+                        if (wasSent)
+                        {
+                            item.SendStatus = ItemSendStatus.NotSent;
+                        }
                         _currentOrder.RecalculateAll();
                         RefreshOrderItems();
                         await MarkCurrentOrderChangedAsync();
@@ -2141,7 +2150,14 @@ namespace POS_in_NET.Pages
                     VerticalOptions = LayoutOptions.Center
                 };
                 plusBtn.Clicked += async (s, e) => {
-                    item.Quantity++;
+                    if (HasReachedKitchen(item))
+                    {
+                        _currentOrder.Items.Add(CreateAdditionalUnit(item));
+                    }
+                    else
+                    {
+                        item.Quantity++;
+                    }
                     _currentOrder.RecalculateAll();
                     RefreshOrderItems();
                     await MarkCurrentOrderChangedAsync();
@@ -2213,6 +2229,7 @@ namespace POS_in_NET.Pages
         
         private async Task ShowNoteDialog(TableOrderItem item)
         {
+            var originalNote = item.Notes;
             if (!string.IsNullOrWhiteSpace(item.MenuItemId))
             {
                 var quickNotes = await GetQuickNotesForItemAsync(item.MenuItemId);
@@ -2229,6 +2246,7 @@ namespace POS_in_NET.Pages
                     if (selected.Kind == QuickNoteSelectionKind.NoNote)
                     {
                         item.Notes = null;
+                        MarkKitchenChangePending(item, originalNote);
                         RefreshOrderItems();
                         await MarkCurrentOrderChangedAsync();
                         return;
@@ -2237,6 +2255,7 @@ namespace POS_in_NET.Pages
                     if (selected.Kind == QuickNoteSelectionKind.SavedNote)
                     {
                         item.Notes = NormalizeOrderItemNote(selected.NoteText);
+                        MarkKitchenChangePending(item, originalNote);
                         RefreshOrderItems();
                         await MarkCurrentOrderChangedAsync();
                         return;
@@ -2249,6 +2268,7 @@ namespace POS_in_NET.Pages
             if (result != null)
             {
                 item.Notes = string.IsNullOrWhiteSpace(result) ? null : NormalizeOrderItemNote(result);
+                MarkKitchenChangePending(item, originalNote);
                 RefreshOrderItems();
                 await MarkCurrentOrderChangedAsync();
             }
@@ -2537,6 +2557,7 @@ namespace POS_in_NET.Pages
                     _isFinalizingOrder = false;
                     return;
                 }
+                await PrintFullOrderVoidAsync(reason);
                 var voidedDialog = new ModernAlertDialog();
                 voidedDialog.SetAlert("Voided", $"Order has been voided.\nReason: {reason}", "", "#10B981", "White");
                 await voidedDialog.ShowAsync();
@@ -2752,53 +2773,6 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task<bool> SendUnsentItemsInlineForPaymentAsync()
-        {
-            if (_isUltraFastSendInProgress)
-            {
-                return false;
-            }
-
-            var pendingSendCount = _currentOrder.Items.Count(i => i.SendStatus == ItemSendStatus.NotSent);
-            if (pendingSendCount == 0)
-            {
-                return true;
-            }
-
-            EnsureCurrentOrderIdentity();
-            _isUltraFastSendInProgress = true;
-            try
-            {
-                var printSnapshot = CloneOrderForSend(_currentOrder);
-
-                foreach (var item in _currentOrder.Items.Where(i => i.SendStatus == ItemSendStatus.NotSent))
-                {
-                    item.SendStatus = ItemSendStatus.Sent;
-                    item.SentAt = DateTime.Now;
-                    item.FailureReason = null;
-                }
-
-                _currentOrder.Status = TableOrderStatus.Sent;
-                _currentOrder.UpdatedAt = DateTime.Now;
-
-                _ = ProcessUltraFastSendPipelineAsync(printSnapshot);
-                _ = Task.Run(async () => await FinalizeTableSessionAfterSendAsync());
-
-                if (ToastNotification != null)
-                {
-                    var toastMessage = $"Order sent  ({pendingSendCount} item{(pendingSendCount == 1 ? string.Empty : "s")})";
-                    _ = ToastNotification.ShowAsync("Success", toastMessage, NotificationType.Success, 1000);
-                }
-
-                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
-                return true;
-            }
-            finally
-            {
-                _isUltraFastSendInProgress = false;
-            }
-        }
-
         private async Task ProcessUltraFastSendPipelineAsync(TableOrder printSnapshot)
         {
             try
@@ -2828,23 +2802,52 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                if (_rolloutConfig.EnableSendDurability)
+                var actor = ResolveCurrentActor();
+                var revisions = await _kitchenRevisionService.GetRetryableRevisionsAsync(persistedOrder.Id);
+                var newRevision = await _kitchenRevisionService.CreateRevisionAsync(
+                    persistedOrder.Id,
+                    printSnapshot,
+                    actor.ActorName);
+                if (newRevision != null)
                 {
-                    var batchId = await _orderService.CreateSendBatchAsync(persistedOrder.Id, persistedOrder.Items);
-                    await ProcessDurableSendInBackgroundAsync(persistedOrder, batchId, printSnapshot);
+                    revisions.Add(newRevision);
                 }
-                else
+
+                if (revisions.Count == 0)
                 {
-                    var legacyPrint = IsTakeawayStyleOrder()
-                        ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(printSnapshot, GetCanonicalOrderType())
-                        : await _orderRoutingPrintService.PrintOrderAsync(printSnapshot);
-                    if (!legacyPrint.AnyPrinted)
+                    await LogOperationalEventAsync("send_failed", new { reason = "no_kitchen_changes" });
+                    return;
+                }
+
+                foreach (var revision in revisions.OrderBy(item => item.RevisionNumber))
+                {
+                    var revisionPrintOrder = _kitchenRevisionService.BuildPrintOrder(printSnapshot, revision);
+                    if (_rolloutConfig.EnableSendDurability)
                     {
-                        await LogOperationalEventAsync("send_failed", new
+                        var affectedClientIds = revision.Lines
+                            .Select(line => line.ClientItemId)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        var affectedItems = persistedOrder.Items
+                            .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && affectedClientIds.Contains(item.ClientItemId!))
+                            .ToList();
+                        var batchId = await _orderService.CreateSendBatchAsync(persistedOrder.Id, affectedItems);
+                        await ProcessDurableSendInBackgroundAsync(persistedOrder, batchId, revisionPrintOrder, revision);
+                    }
+                    else
+                    {
+                        var legacyPrint = IsTakeawayStyleOrder()
+                            ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(revisionPrintOrder, GetCanonicalOrderType())
+                            : await _orderRoutingPrintService.PrintOrderAsync(revisionPrintOrder);
+                        await _kitchenRevisionService.MarkPrintResultAsync(revision, legacyPrint);
+                        if (!legacyPrint.AnyPrinted)
                         {
-                            reason = "legacy_no_routes_printed",
-                            failedRoutes = legacyPrint.FailedRoutes
-                        });
+                            await LogOperationalEventAsync("send_failed", new
+                            {
+                                reason = "legacy_no_routes_printed",
+                                kitchenRevision = revision.RevisionNumber,
+                                failedRoutes = legacyPrint.FailedRoutes
+                            });
+                        }
                     }
                 }
 
@@ -2871,9 +2874,13 @@ namespace POS_in_NET.Pages
                 CreatedAt = source.CreatedAt,
                 UpdatedAt = source.UpdatedAt,
                 Notes = source.Notes,
+                OrderMode = source.OrderMode,
                 ServiceChargePercent = source.ServiceChargePercent,
                 FixedServiceCharge = source.FixedServiceCharge,
-                Status = source.Status
+                Status = source.Status,
+                KitchenRevisionNumber = source.KitchenRevisionNumber,
+                KitchenTicketType = source.KitchenTicketType,
+                KitchenRevisionReason = source.KitchenRevisionReason
             };
 
             foreach (var item in source.Items)
@@ -2892,9 +2899,15 @@ namespace POS_in_NET.Pages
                     VatCategory = item.VatCategory,
                     PrintGroupId = item.PrintGroupId,
                     Notes = item.Notes,
+                    Modifiers = item.Modifiers,
+                    CourseType = item.CourseType,
                     SendStatus = item.SendStatus,
                     SentAt = item.SentAt,
                     FailureReason = item.FailureReason,
+                    KitchenAction = item.KitchenAction,
+                    PreviousQuantity = item.PreviousQuantity,
+                    PreviousNotes = item.PreviousNotes,
+                    SourceItemId = item.SourceItemId,
                     CreatedAt = item.CreatedAt,
                     SelectedAddons = new ObservableCollection<SelectedAddon>(item.SelectedAddons ?? new ObservableCollection<SelectedAddon>())
                 });
@@ -2904,7 +2917,11 @@ namespace POS_in_NET.Pages
             return clone;
         }
 
-        private async Task ProcessDurableSendInBackgroundAsync(Order persistedOrder, string batchId, TableOrder? printSourceOrder = null)
+        private async Task ProcessDurableSendInBackgroundAsync(
+            Order persistedOrder,
+            string batchId,
+            TableOrder? printSourceOrder = null,
+            KitchenOrderRevision? revision = null)
         {
             try
             {
@@ -2912,10 +2929,29 @@ namespace POS_in_NET.Pages
                 var printResult = IsTakeawayStyleOrder()
                     ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(printOrder, GetCanonicalOrderType())
                     : await _orderRoutingPrintService.PrintOrderAsync(printOrder);
+                if (revision != null)
+                {
+                    await _kitchenRevisionService.MarkPrintResultAsync(revision, printResult);
+                }
                 var labelResult = await PrintLabelsForPrintedItemsAsync(printOrder, printResult.PrintedItemIds);
 
-                var printedDbItemIds = persistedOrder.Items
-                    .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && printResult.PrintedItemIds.Contains(item.ClientItemId!))
+                var printedSourceIds = revision == null
+                    ? printResult.PrintedItemIds
+                    : revision.Lines
+                        .GroupBy(line => line.ClientItemId, StringComparer.OrdinalIgnoreCase)
+                        .Where(group => group.All(line => printResult.PrintedItemIds.Contains(line.LineId)))
+                        .Select(group => group.Key)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var affectedSourceIds = revision?.Lines
+                    .Select(line => line.ClientItemId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var affectedPersistedItems = revision == null
+                    ? persistedOrder.Items
+                    : persistedOrder.Items
+                        .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && affectedSourceIds!.Contains(item.ClientItemId!))
+                        .ToList();
+                var printedDbItemIds = affectedPersistedItems
+                    .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && printedSourceIds.Contains(item.ClientItemId!))
                     .Select(item => item.Id)
                     .ToList();
 
@@ -2924,7 +2960,7 @@ namespace POS_in_NET.Pages
                 {
                     foreach (var failure in printResult.FailedRouteDetails)
                     {
-                        var routeItems = persistedOrder.Items
+                        var routeItems = affectedPersistedItems
                             .Where(item => string.IsNullOrWhiteSpace(failure.RouteTarget)
                                 ? !printedDbItemIds.Contains(item.Id)
                                 : string.Equals(item.PrintGroupId, failure.RouteTarget, StringComparison.OrdinalIgnoreCase))
@@ -2941,7 +2977,7 @@ namespace POS_in_NET.Pages
                 }
                 else if (!printResult.AnyPrinted)
                 {
-                    foreach (var item in persistedOrder.Items)
+                    foreach (var item in affectedPersistedItems)
                     {
                         failedItems.Add((item.Id, "No active print groups could be used."));
                     }
@@ -3007,7 +3043,9 @@ namespace POS_in_NET.Pages
             var labelService = new LabelPrintingService(labelTarget.IpAddress, labelTarget.Port, enabled: true);
             var labelContext = BuildLabelPrintContext(printOrder);
 
-            foreach (var orderItem in printOrder.Items.Where(item => printedItemIds.Contains(item.Id)))
+            foreach (var orderItem in printOrder.Items.Where(item =>
+                         printedItemIds.Contains(item.Id)
+                         && item.KitchenAction is KitchenChangeAction.New or KitchenChangeAction.Add))
             {
                 var menuItem = await ResolveMenuItemForLabelAsync(orderItem.MenuItemId);
                 if (menuItem == null || !ShouldPrintLabel(menuItem))
@@ -3441,25 +3479,6 @@ namespace POS_in_NET.Pages
                 return;
             }
             
-            // Phase 6: Smart Prompts - Unsent Items Check
-            if (_currentOrder.Items.Any(i => i.SendStatus == ItemSendStatus.NotSent))
-            {
-                var sendFirstDialog = new ModernConfirmDialog();
-                sendFirstDialog.SetConfirm(
-                    "Unsent Items",
-                    "You have items that haven't been sent to the kitchen yet.\nDo you want to send them before paying?",
-                    "Send & Pay",
-                    "Pay Anyway",
-                    ""
-                );
-                
-                var sendFirst = await sendFirstDialog.ShowAsync();
-                if (sendFirst)
-                {
-                    await SendUnsentItemsInlineForPaymentAsync();
-                }
-            }
-
             decimal tip = 0;
             decimal totalDue = _currentOrder.Total;
             
@@ -4323,6 +4342,88 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async Task PrintFullOrderVoidAsync(string reason)
+        {
+            try
+            {
+                var persistedOrder = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
+                if (persistedOrder == null)
+                {
+                    return;
+                }
+
+                var actor = ResolveCurrentActor();
+                var revision = await _kitchenRevisionService.CreateFullVoidRevisionAsync(
+                    persistedOrder.Id,
+                    CloneOrderForSend(_currentOrder),
+                    actor.ActorName,
+                    reason);
+                if (revision == null)
+                {
+                    return;
+                }
+
+                var printOrder = _kitchenRevisionService.BuildPrintOrder(_currentOrder, revision);
+                var result = IsTakeawayStyleOrder()
+                    ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(printOrder, GetCanonicalOrderType())
+                    : await _orderRoutingPrintService.PrintOrderAsync(printOrder);
+                await _kitchenRevisionService.MarkPrintResultAsync(revision, result);
+                await LogOperationalEventAsync("resend", new
+                {
+                    kitchenRevision = revision.RevisionNumber,
+                    ticketType = revision.TicketType,
+                    reason,
+                    printedCount = result.PrintedItemIds.Count,
+                    failedRoutes = result.FailedRoutes
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[KITCHEN REVISION] Full void print failed: {ex.Message}");
+            }
+        }
+
+        private static bool HasReachedKitchen(TableOrderItem item) =>
+            item.SendStatus is ItemSendStatus.Sent or ItemSendStatus.Preparing or ItemSendStatus.Ready or ItemSendStatus.Served;
+
+        private static void MarkKitchenChangePending(TableOrderItem item, string? originalNote)
+        {
+            if (HasReachedKitchen(item)
+                && !string.Equals(originalNote?.Trim(), item.Notes?.Trim(), StringComparison.Ordinal))
+            {
+                item.SendStatus = ItemSendStatus.NotSent;
+            }
+        }
+
+        private static TableOrderItem CreateAdditionalUnit(TableOrderItem source)
+        {
+            return new TableOrderItem
+            {
+                Id = Guid.NewGuid().ToString(),
+                OrderId = source.OrderId,
+                MenuItemId = source.MenuItemId,
+                VariantId = source.VariantId,
+                VariantName = source.VariantName,
+                DisplayName = source.DisplayName,
+                Name = source.Name,
+                Quantity = 1,
+                UnitPrice = source.UnitPrice,
+                VatCategory = source.VatCategory,
+                PrintGroupId = source.PrintGroupId,
+                Notes = source.Notes,
+                Modifiers = source.Modifiers,
+                CourseType = source.CourseType,
+                SendStatus = ItemSendStatus.NotSent,
+                CreatedAt = DateTime.Now,
+                SelectedAddons = new ObservableCollection<SelectedAddon>(source.SelectedAddons.Select(addon => new SelectedAddon
+                {
+                    Id = addon.Id,
+                    Name = addon.Name,
+                    Price = addon.Price
+                }))
+            };
+        }
+
         private async Task SendOrderWebSettlementIfNeededAsync(Order order)
         {
             if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
@@ -4520,6 +4621,14 @@ namespace POS_in_NET.Pages
             if (printerDb == null)
             {
                 return null;
+            }
+
+            var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+            if (routingService != null)
+            {
+                return await routingService.ResolvePrinterAsync(
+                    NetworkPrinterType.Receipt,
+                    NetworkPrinterType.Online);
             }
 
             var receiptPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
