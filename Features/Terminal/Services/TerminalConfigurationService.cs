@@ -16,6 +16,7 @@ public static class TerminalConfigurationService
     private const string DatabaseNameKey = Prefix + "database_name";
     private const string DatabaseUserKey = Prefix + "database_user";
     private const string DatabasePasswordKey = Prefix + "database_password";
+    private const string DatabaseSslModeKey = Prefix + "database_ssl_mode";
     private const string InstallerConfigAppliedKey = Prefix + "installer_db_applied";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -45,7 +46,8 @@ public static class TerminalConfigurationService
             DatabasePort = Preferences.Default.Get(DatabasePortKey, 3306),
             DatabaseName = Preferences.Default.Get(DatabaseNameKey, PosDatabaseDefaults.ProductionDatabaseName),
             DatabaseUser = Preferences.Default.Get(DatabaseUserKey, PosDatabaseDefaults.ProductionDatabaseUser),
-            DatabasePassword = Preferences.Default.Get(DatabasePasswordKey, string.Empty)
+            DatabasePassword = Preferences.Default.Get(DatabasePasswordKey, string.Empty),
+            DatabaseSslMode = Preferences.Default.Get(DatabaseSslModeKey, nameof(MySqlSslMode.Preferred))
         };
     }
 
@@ -103,7 +105,10 @@ public static class TerminalConfigurationService
                     DatabaseUser = string.IsNullOrWhiteSpace(installerConfig.DatabaseUser)
                         ? PosDatabaseDefaults.ProductionDatabaseUser
                         : installerConfig.DatabaseUser.Trim(),
-                    DatabasePassword = databasePassword
+                    DatabasePassword = databasePassword,
+                    DatabaseSslMode = string.IsNullOrWhiteSpace(installerConfig.DatabaseSslMode)
+                        ? nameof(MySqlSslMode.Preferred)
+                        : installerConfig.DatabaseSslMode
                 });
 
                 Preferences.Default.Set(InstallerConfigAppliedKey, true);
@@ -126,13 +131,10 @@ public static class TerminalConfigurationService
             : configuration.DatabaseUser.Trim();
         var databasePassword = configuration.DatabasePassword ?? string.Empty;
 
-        if (configuration.IsMother)
+        var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
+        if (!validation.IsValid)
         {
-            var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
-            if (!validation.IsValid)
-            {
-                throw new InvalidOperationException(validation.Message);
-            }
+            throw new InvalidOperationException(validation.Message);
         }
 
         var host = configuration.IsMother ? "localhost" : configuration.DatabaseHost.Trim();
@@ -152,6 +154,9 @@ public static class TerminalConfigurationService
             ? PosDatabaseDefaults.ProductionDatabaseUser
             : configuration.DatabaseUser.Trim());
         Preferences.Default.Set(DatabasePasswordKey, configuration.DatabasePassword ?? string.Empty);
+        Preferences.Default.Set(DatabaseSslModeKey, string.IsNullOrWhiteSpace(configuration.DatabaseSslMode)
+            ? nameof(MySqlSslMode.Preferred)
+            : configuration.DatabaseSslMode);
     }
 
     public static void SetConfigured(bool isConfigured)
@@ -179,7 +184,10 @@ public static class TerminalConfigurationService
             ConnectionTimeout = (uint)Math.Max(1, connectionTimeoutSeconds),
             DefaultCommandTimeout = (uint)Math.Max(1, defaultCommandTimeoutSeconds),
             Pooling = pooled,
-            AllowUserVariables = true
+            AllowUserVariables = true,
+            SslMode = Enum.TryParse<MySqlSslMode>(config.DatabaseSslMode, true, out var sslMode)
+                ? sslMode
+                : MySqlSslMode.Preferred
         };
 
         if (includeDatabase)
@@ -209,6 +217,7 @@ public static class TerminalConfigurationService
         Preferences.Default.Remove(DatabaseNameKey);
         Preferences.Default.Remove(DatabaseUserKey);
         Preferences.Default.Remove(DatabasePasswordKey);
+        Preferences.Default.Remove(DatabaseSslModeKey);
         Preferences.Default.Remove(InstallerConfigAppliedKey);
     }
 

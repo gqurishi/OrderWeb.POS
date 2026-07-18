@@ -72,6 +72,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     public ReservationPage()
     {
         InitializeComponent();
+        SizeChanged += OnReservationPageSizeChanged;
         TopBar.SetPageTitle("Reservation");
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
@@ -79,6 +80,27 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         AttachReservationSyncHandler();
         BindingContext = this;
         RefreshView();
+    }
+
+    private void OnReservationPageSizeChanged(object? sender, EventArgs e)
+    {
+        if (Width <= 0 || MainLayoutGrid.ColumnDefinitions.Count < 2)
+        {
+            return;
+        }
+
+        if (Width < 1000)
+        {
+            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(250);
+        }
+        else if (Width < 1250)
+        {
+            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(280);
+        }
+        else
+        {
+            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(340);
+        }
     }
 
     protected override async void OnAppearing()

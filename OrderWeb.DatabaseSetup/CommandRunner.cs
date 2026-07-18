@@ -25,6 +25,8 @@ public sealed class CommandRunner
             "restore" => await RestoreAsync(cancellationToken),
             "check-version" => await CheckVersionAsync(cancellationToken),
             "migration-status" => await MigrationStatusAsync(cancellationToken),
+            "set-child-access" => await SetChildAccessAsync(cancellationToken),
+            "connection-security" => await ConnectionSecurityAsync(cancellationToken),
             _ => InvalidCommand(command)
         };
     }
@@ -45,7 +47,7 @@ public sealed class CommandRunner
         var provision = await MotherInstaller.ProvisionAsync(
             _options.RootUser,
             _options.RootPassword,
-            _options.LanSubnet,
+            _options.ChildHosts,
             _options.DatabasePassword,
             cancellationToken);
 
@@ -164,6 +166,81 @@ public sealed class CommandRunner
         await migrationEngine.SyncSchemaVersionFromHistoryAsync(config, cancellationToken);
         WriteInfo($"Migration complete. Schema version {migrationResult.LatestSchemaVersion}.");
         return ExitCodes.Success;
+    }
+
+    private async Task<int> SetChildAccessAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.RootUser) || string.IsNullOrWhiteSpace(_options.RootPassword))
+        {
+            WriteError("set-child-access requires --root-user and --root-password (or ORDERWEB_ROOT_USER / ORDERWEB_ROOT_PASSWORD).");
+            return ExitCodes.InvalidArguments;
+        }
+
+        DatabaseConfig config;
+        try
+        {
+            config = ConfigStore.Load(_options.ConfigPath);
+            await MotherInstaller.ConfigureChildAccessAsync(
+                _options.RootUser,
+                _options.RootPassword,
+                config,
+                _options.ChildHosts,
+                _options.RequireTls,
+                cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            WriteError(ex.Message);
+            return ExitCodes.InvalidArguments;
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Could not configure Child database access: {ex.Message}");
+            return ExitCodes.ConnectionFailed;
+        }
+
+        WriteInfo(_options.ChildHosts.Count == 0
+            ? "Removed all remote orderweb_app grants; local Mother access remains."
+            : $"Restricted orderweb_app access to {string.Join(", ", _options.ChildHosts)}. TLS required={_options.RequireTls}.");
+        return ExitCodes.Success;
+    }
+
+    private async Task<int> ConnectionSecurityAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var config = ConfigStore.Load(_options.ConfigPath);
+            await using var connection = new MySqlConnector.MySqlConnection(ConfigStore.BuildConnectionString(config));
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new MySqlConnector.MySqlCommand("SHOW SESSION STATUS LIKE 'Ssl_cipher'", connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var cipher = await reader.ReadAsync(cancellationToken) ? reader.GetString(1) : string.Empty;
+            var tlsActive = !string.IsNullOrWhiteSpace(cipher);
+
+            if (_options.Json)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    success = true,
+                    tlsActive,
+                    sslMode = config.DatabaseSslMode,
+                    cipher = tlsActive ? cipher : null
+                }));
+            }
+            else
+            {
+                Console.WriteLine($"TLS_ACTIVE={tlsActive}");
+                Console.WriteLine($"SSL_MODE={config.DatabaseSslMode}");
+                Console.WriteLine($"TLS_CIPHER={(tlsActive ? cipher : "none")}");
+            }
+
+            return ExitCodes.Success;
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Could not inspect MariaDB connection security: {ex.Message}");
+            return ExitCodes.ConnectionFailed;
+        }
     }
 
     private async Task<int> VerifyAsync(CancellationToken cancellationToken)
@@ -383,6 +460,8 @@ public sealed class CommandRunner
               restore            Restore from .orderwebbackup package
               check-version      Compare DB schema version with bundled/required version
               migration-status   Show applied vs expected migrations
+              set-child-access   Replace remote orderweb_app grants with exact Child IPs
+              connection-security Show whether this MariaDB session negotiated TLS
 
             Common options:
               --config-path <path>       Path to orderweb-database.json
@@ -394,7 +473,7 @@ public sealed class CommandRunner
               --root-user <user>         MariaDB admin user (default env ORDERWEB_ROOT_USER)
               --root-password <pwd>      MariaDB admin password (default env ORDERWEB_ROOT_PASSWORD)
               --database-password <pwd>  App user password (default: random; env ORDERWEB_APP_PASSWORD)
-              --lan-subnet <pattern>     Child LAN grant host pattern (default 192.168.%)
+              --child-ips <ip,ip>        Exact private Child IPv4 addresses (default: none)
               Writes orderweb-database.json to ProgramData\OrderWebPOS on Windows.
 
             migrate options:
@@ -408,6 +487,12 @@ public sealed class CommandRunner
 
             check-version options:
               --required <number>        Required schema version (default: bundled latest)
+
+            set-child-access options:
+              --root-user <user>         MariaDB admin user
+              --root-password <pwd>      MariaDB admin password (prefer ORDERWEB_ROOT_PASSWORD)
+              --child-ips <ip,ip>        Exact private Child IPv4 allow-list; empty removes remote grants
+              --require-tls              Reject non-TLS Child database sessions
 
             Exit codes:
               0 success, 1 invalid args, 2 config error, 3 connection failed,

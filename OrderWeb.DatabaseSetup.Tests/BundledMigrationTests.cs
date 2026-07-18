@@ -13,6 +13,7 @@ public class BundledMigrationTests
 
         var engine = new MigrationEngine(migrationsPath!, "1.0.0");
         Assert.Equal(26, engine.GetBundledSchemaVersion());
+        Assert.Equal(26, OrderWeb.DatabaseSetup.Models.PosDefaults.RequiredSchemaVersion);
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "026_manual_refund_audit");
     }
 

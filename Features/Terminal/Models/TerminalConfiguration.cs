@@ -16,6 +16,7 @@ public sealed class TerminalConfiguration
     public string DatabaseName { get; init; } = PosDatabaseDefaults.ProductionDatabaseName;
     public string DatabaseUser { get; init; } = PosDatabaseDefaults.ProductionDatabaseUser;
     public string DatabasePassword { get; init; } = string.Empty;
+    public string DatabaseSslMode { get; init; } = nameof(MySqlConnector.MySqlSslMode.Preferred);
 
     public bool IsMother => Mode == TerminalMode.Mother;
     public bool IsChild => Mode == TerminalMode.Child;

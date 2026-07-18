@@ -22,6 +22,7 @@ This is the first production-labelled release of OrderWeb POS.
 
 ### Production hardening
 
+- Windows 10 22H2/build 19045 and Windows 11 are supported on Pro, Enterprise, and Education editions; Windows 10 requires active ESU or another applicable supported servicing programme.
 - PIN authentication now verifies stored BCrypt hashes and temporarily locks repeated failures.
 - Manager actions require a valid Manager or Admin PIN and record approver details.
 - Manual refunds record the administrator, reason, terminal, and external reference and cannot exceed the original order total.

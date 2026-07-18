@@ -10,7 +10,7 @@
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
 
         <ScrollView Grid.Row="1"
-                    Orientation="Vertical"
+                    Orientation="Both"
                     VerticalScrollBarVisibility="Always">
             <Grid Padding="32"
                   ColumnDefinitions="*,420"

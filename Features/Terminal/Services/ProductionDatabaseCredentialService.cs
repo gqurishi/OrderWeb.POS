@@ -84,11 +84,19 @@ public static class ProductionDatabaseCredentialService
 
     public static string GeneratePassword(int byteCount = 32)
     {
-        var bytes = RandomNumberGenerator.GetBytes(Math.Max(24, byteCount));
-        return Convert.ToBase64String(bytes)
-            .Replace("+", "A", StringComparison.Ordinal)
-            .Replace("/", "b", StringComparison.Ordinal)
-            .Replace("=", "9", StringComparison.Ordinal);
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*-_";
+        var length = Math.Max(24, byteCount);
+        var bytes = RandomNumberGenerator.GetBytes(length);
+        var builder = new StringBuilder(length);
+        for (var index = 0; index < bytes.Length; index++)
+        {
+            builder.Append(alphabet[bytes[index] % alphabet.Length]);
+        }
+
+        var password = builder.ToString();
+        return ProductionDatabaseCredentialPolicy.Validate(PosDatabaseDefaults.ProductionDatabaseUser, password).IsValid
+            ? password
+            : GeneratePassword(byteCount + 4);
     }
 
     private static void WriteConfigFile(string path, InstallerDatabaseConfig config)
@@ -119,11 +127,9 @@ public static class ProductionDatabaseCredentialService
 
             CREATE USER IF NOT EXISTS '{user}'@'localhost' IDENTIFIED BY '{password}';
             CREATE USER IF NOT EXISTS '{user}'@'127.0.0.1' IDENTIFIED BY '{password}';
-            CREATE USER IF NOT EXISTS '{user}'@'192.168.%' IDENTIFIED BY '{password}';
 
             ALTER USER '{user}'@'localhost' IDENTIFIED BY '{password}';
             ALTER USER '{user}'@'127.0.0.1' IDENTIFIED BY '{password}';
-            ALTER USER '{user}'@'192.168.%' IDENTIFIED BY '{password}';
 
             GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
               ON `{databaseName}`.*
@@ -132,10 +138,6 @@ public static class ProductionDatabaseCredentialService
             GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
               ON `{databaseName}`.*
               TO '{user}'@'127.0.0.1';
-
-            GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
-              ON `{databaseName}`.*
-              TO '{user}'@'192.168.%';
 
             FLUSH PRIVILEGES;
             """;

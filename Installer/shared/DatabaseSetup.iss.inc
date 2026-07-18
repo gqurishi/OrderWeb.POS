@@ -145,6 +145,27 @@ begin
     AppendSetupLog('[Config] Warning: could not apply ACL to ' + FilePath + '. icacls exit code: ' + IntToStr(ResultCode));
 end;
 
+function ApplyDatabaseConfigDirectoryAcl(const DirectoryPath: String): Boolean;
+var
+  ResultCode: Integer;
+  Params: String;
+begin
+  Params :=
+    '"' + DirectoryPath + '" ' +
+    '/inheritance:r ' +
+    '/grant:r "*S-1-5-32-544:(OI)(CI)F" ' +
+    '/grant:r "*S-1-5-18:(OI)(CI)F" ' +
+    '/grant:r "*S-1-5-32-545:(OI)(CI)RX"';
+
+  Result := Exec(ExpandConstant('{sys}\icacls.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    and (ResultCode = 0);
+
+  if Result then
+    AppendSetupLog('[Config] Restricted ProgramData directory to Administrators/System full control and Users read-only.')
+  else
+    AppendSetupLog('[Config] Error: could not restrict ' + DirectoryPath + '. icacls exit code: ' + IntToStr(ResultCode));
+end;
+
 function MariaDbServiceName(): String;
 begin
   if RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\OrderWebMariaDB') then
@@ -170,6 +191,14 @@ begin
   ServiceName := MariaDbServiceName();
   if ServiceName = '' then
   begin
+    Result := False;
+    Exit;
+  end;
+
+  if not Exec(ExpandConstant('{sys}\sc.exe'), 'config ' + ServiceName + ' start= auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    or (ResultCode <> 0) then
+  begin
+    AppendSetupLog('[MariaDB] Could not set ' + ServiceName + ' startup type to Automatic.');
     Result := False;
     Exit;
   end;
@@ -365,8 +394,8 @@ begin
   SafeLogArgs := '--root-user root --root-password "********" --quiet';
   if LanSubnet <> '' then
   begin
-    ExtraArgs := ExtraArgs + ' --lan-subnet "' + EscapeCliPassword(LanSubnet) + '"';
-    SafeLogArgs := SafeLogArgs + ' --lan-subnet "' + EscapeCliPassword(LanSubnet) + '"';
+    ExtraArgs := ExtraArgs + ' --child-ips "' + EscapeCliPassword(LanSubnet) + '"';
+    SafeLogArgs := SafeLogArgs + ' --child-ips "' + EscapeCliPassword(LanSubnet) + '"';
   end;
 
   ResultCode := RunDatabaseSetupLogged('install-mother', ExtraArgs, SafeLogArgs, Output);
@@ -440,12 +469,18 @@ begin
   TargetPath := GetProductionConfigPath();
   ForceDirectories(ExtractFilePath(TargetPath));
 
+  if not ApplyDatabaseConfigDirectoryAcl(RemoveBackslashUnlessRoot(ExtractFilePath(TargetPath))) then
+  begin
+    Result := False;
+    Exit;
+  end;
+
   if (SourcePath <> '') and FileExists(SourcePath) then
   begin
     AppendSetupLog('[Config] Copying child database config from ' + SourcePath);
     Result := CopyFile(SourcePath, TargetPath, False);
     if Result then
-      ApplyDatabaseConfigAcl(TargetPath)
+      Result := ApplyDatabaseConfigAcl(TargetPath)
     else
       MsgBox('Could not copy orderweb-database.json to ' + TargetPath, mbError, MB_OK);
   end

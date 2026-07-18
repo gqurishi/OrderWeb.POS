@@ -7,7 +7,8 @@ public sealed class CommandLineOptions
     public string? RootUser { get; init; }
     public string? RootPassword { get; init; }
     public string? DatabasePassword { get; init; }
-    public string LanSubnet { get; init; } = "192.168.%";
+    public IReadOnlyList<string> ChildHosts { get; init; } = [];
+    public bool RequireTls { get; init; }
     public string? OutputPath { get; init; }
     public string? InputPath { get; init; }
     public int? RequiredSchemaVersion { get; init; }
@@ -47,7 +48,8 @@ public sealed class CommandLineOptions
             RootUser = map.GetValueOrDefault("root-user") ?? Environment.GetEnvironmentVariable("ORDERWEB_ROOT_USER"),
             RootPassword = map.GetValueOrDefault("root-password") ?? Environment.GetEnvironmentVariable("ORDERWEB_ROOT_PASSWORD"),
             DatabasePassword = map.GetValueOrDefault("database-password") ?? Environment.GetEnvironmentVariable("ORDERWEB_APP_PASSWORD"),
-            LanSubnet = map.GetValueOrDefault("lan-subnet") ?? "192.168.%",
+            ChildHosts = ParseChildHosts(map.GetValueOrDefault("child-ips")),
+            RequireTls = flags.Contains("require-tls"),
             OutputPath = map.GetValueOrDefault("output"),
             InputPath = map.GetValueOrDefault("input"),
             RequiredSchemaVersion = int.TryParse(map.GetValueOrDefault("required"), out var required) ? required : null,
@@ -56,4 +58,11 @@ public sealed class CommandLineOptions
             Json = flags.Contains("json")
         };
     }
+
+    private static IReadOnlyList<string> ParseChildHosts(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 }

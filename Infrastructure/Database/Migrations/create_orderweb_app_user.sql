@@ -8,7 +8,7 @@
 --
 -- That command will:
 --   1. Generate a random password for orderweb_app
---   2. Create orderweb_pos + orderweb_app@localhost/127.0.0.1/192.168.%
+--   2. Create orderweb_pos + local-only orderweb_app accounts
 --   3. Write C:\ProgramData\OrderWebPOS\orderweb-database.json (no root/root)
 --   4. Run migrations and verify schema
 --
@@ -21,11 +21,10 @@ CREATE DATABASE IF NOT EXISTS orderweb_pos
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
--- BEFORE running manually: replace CHANGE_ME_STRONG_PASSWORD with a strong password (20+ chars).
+-- BEFORE running manually: replace CHANGE_ME_STRONG_PASSWORD with a generated strong password (24+ chars).
 
 CREATE USER IF NOT EXISTS 'orderweb_app'@'localhost' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
 CREATE USER IF NOT EXISTS 'orderweb_app'@'127.0.0.1' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
-CREATE USER IF NOT EXISTS 'orderweb_app'@'192.168.%' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
 
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
   ON orderweb_pos.*
@@ -34,10 +33,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CR
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
   ON orderweb_pos.*
   TO 'orderweb_app'@'127.0.0.1';
-
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER
-  ON orderweb_pos.*
-  TO 'orderweb_app'@'192.168.%';
 
 FLUSH PRIVILEGES;
 
@@ -48,5 +43,4 @@ FLUSH PRIVILEGES;
 -- If user already existed and you only need to rotate password:
 --   ALTER USER 'orderweb_app'@'localhost' IDENTIFIED BY 'NEW_PASSWORD';
 --   ALTER USER 'orderweb_app'@'127.0.0.1' IDENTIFIED BY 'NEW_PASSWORD';
---   ALTER USER 'orderweb_app'@'192.168.%' IDENTIFIED BY 'NEW_PASSWORD';
 --   FLUSH PRIVILEGES;

@@ -9,6 +9,7 @@ namespace POS_in_NET.Views
     {
         public bool Success { get; set; }
         public decimal AmountPaid { get; set; }
+        public string? TerminalReference { get; set; }
     }
 
     public partial class CardPaymentDialog : ContentView
@@ -26,6 +27,9 @@ namespace POS_in_NET.Views
         {
             _amount = amount;
             AmountLabel.Text = $"£{amount:F2}";
+            ApprovalCheckBox.IsChecked = false;
+            TerminalReferenceEntry.Text = string.Empty;
+            UpdateConfirmationState();
         }
 
         public async Task<CardPaymentResult> ShowAsync()
@@ -67,12 +71,31 @@ namespace POS_in_NET.Views
 
         private void OnYesClicked(object sender, EventArgs e)
         {
+            var terminalReference = TerminalReferenceEntry.Text?.Trim();
+            if (!ApprovalCheckBox.IsChecked || string.IsNullOrWhiteSpace(terminalReference))
+            {
+                StatusLabel.Text = "Confirm the approved matching amount and enter the card receipt/reference.";
+                StatusLabel.TextColor = Color.FromArgb("#B91C1C");
+                UpdateConfirmationState();
+                return;
+            }
+
             _taskCompletionSource?.TrySetResult(new CardPaymentResult
             {
                 Success = true,
-                AmountPaid = _amount
+                AmountPaid = _amount,
+                TerminalReference = terminalReference
             });
             CloseDialog();
+        }
+
+        private void OnConfirmationChanged(object? sender, EventArgs e) => UpdateConfirmationState();
+
+        private void UpdateConfirmationState()
+        {
+            YesButton.IsEnabled = ApprovalCheckBox.IsChecked
+                && !string.IsNullOrWhiteSpace(TerminalReferenceEntry.Text);
+            YesButton.Opacity = YesButton.IsEnabled ? 1 : 0.5;
         }
 
         private void OnNoClicked(object sender, EventArgs e)

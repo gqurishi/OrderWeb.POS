@@ -40,10 +40,19 @@ public class PrintingPolicyService
             INSERT INTO settings (setting_key, setting_value)
             VALUES
                 (@configScopeKey, 'shared_database'),
-                (@ownershipKey, 'direct'),
+                (@ownershipKey, 'mother_queue'),
                 (@queueOwnerKey, 'mother'),
-                (@directEnabledKey, 'true')
-            ON DUPLICATE KEY UPDATE setting_key = setting_key";
+                (@directEnabledKey, 'false')
+            ON DUPLICATE KEY UPDATE setting_key = setting_key;
+
+            UPDATE settings
+            SET setting_value = 'mother_queue'
+            WHERE setting_key = @ownershipKey
+              AND LOWER(TRIM(setting_value)) IN ('direct', 'any', 'any_queue_terminal', 'anyqueueterminal');
+
+            UPDATE settings
+            SET setting_value = 'false'
+            WHERE setting_key = @directEnabledKey";
         command.Parameters.AddWithValue("@configScopeKey", ConfigScopeKey);
         command.Parameters.AddWithValue("@ownershipKey", OwnershipKey);
         command.Parameters.AddWithValue("@queueOwnerKey", QueueOwnerKey);
@@ -56,18 +65,18 @@ public class PrintingPolicyService
         await EnsureDefaultsAsync();
 
         var values = await GetSettingsAsync(OwnershipKey, QueueOwnerKey, DirectEnabledKey);
-        var modeValue = values.GetValueOrDefault(OwnershipKey, "direct");
+        var modeValue = values.GetValueOrDefault(OwnershipKey, "mother_queue");
         var ownerValue = values.GetValueOrDefault(QueueOwnerKey, "mother");
-        var directEnabled = ParseBoolean(values.GetValueOrDefault(DirectEnabledKey, "true"), true);
+        var directEnabled = ParseBoolean(values.GetValueOrDefault(DirectEnabledKey, "false"), false);
 
         var ownershipMode = ParseOwnershipMode(modeValue);
         var description = ownershipMode switch
         {
-            PrintOwnershipMode.Direct => "Any terminal can print directly to shared network printers.",
+            PrintOwnershipMode.Direct => "Unsafe direct mode is disabled; Mother terminal owns the shared print queue.",
             PrintOwnershipMode.MotherQueue => "Mother terminal owns the shared print queue.",
             PrintOwnershipMode.NamedQueueTerminal => $"Terminal '{ownerValue}' owns the shared print queue.",
-            PrintOwnershipMode.AnyQueueTerminal => "Any terminal may process the shared print queue.",
-            _ => "Any terminal can print directly to shared network printers."
+            PrintOwnershipMode.AnyQueueTerminal => "Unsafe multi-owner mode is disabled; Mother terminal owns the shared print queue.",
+            _ => "Mother terminal owns the shared print queue."
         };
 
         return new PrintingPolicy(ownershipMode, ownerValue, directEnabled, description);
@@ -86,8 +95,8 @@ public class PrintingPolicyService
         return policy.OwnershipMode switch
         {
             PrintOwnershipMode.Direct => terminalConfig.IsMother
-                ? new PrintQueueOwnershipCheck(true, "Direct print mode: mother processes fallback/online print queue.")
-                : new PrintQueueOwnershipCheck(false, "Direct print mode: child terminals print directly; shared queue is mother-only."),
+                ? new PrintQueueOwnershipCheck(true, "Legacy direct mode is disabled; mother owns the shared queue.")
+                : new PrintQueueOwnershipCheck(false, "Legacy direct mode is disabled; mother owns the shared queue."),
 
             PrintOwnershipMode.MotherQueue => terminalConfig.IsMother
                 ? new PrintQueueOwnershipCheck(true, "Mother terminal owns print queue.")
@@ -100,7 +109,9 @@ public class PrintingPolicyService
                 ? new PrintQueueOwnershipCheck(true, $"This terminal owns print queue: {terminalConfig.TerminalName}.")
                 : new PrintQueueOwnershipCheck(false, $"Print queue owner is {policy.QueueOwnerTerminalName}."),
 
-            PrintOwnershipMode.AnyQueueTerminal => new PrintQueueOwnershipCheck(true, "Any terminal may process print queue."),
+            PrintOwnershipMode.AnyQueueTerminal => terminalConfig.IsMother
+                ? new PrintQueueOwnershipCheck(true, "Unsafe multi-owner mode is disabled; mother owns the shared queue.")
+                : new PrintQueueOwnershipCheck(false, "Unsafe multi-owner mode is disabled; mother owns the shared queue."),
 
             _ => new PrintQueueOwnershipCheck(false, "Unknown print ownership mode.")
         };
@@ -139,12 +150,13 @@ public class PrintingPolicyService
 
     private static PrintOwnershipMode ParseOwnershipMode(string? value)
     {
-        return (value ?? "direct").Trim().ToLowerInvariant() switch
+        return (value ?? "mother_queue").Trim().ToLowerInvariant() switch
         {
             "mother_queue" or "motherqueue" or "mother" => PrintOwnershipMode.MotherQueue,
             "named_queue_terminal" or "namedqueueterminal" or "named_terminal" or "terminal" => PrintOwnershipMode.NamedQueueTerminal,
             "any_queue_terminal" or "anyqueueterminal" or "any" => PrintOwnershipMode.AnyQueueTerminal,
-            _ => PrintOwnershipMode.Direct
+            "direct" => PrintOwnershipMode.Direct,
+            _ => PrintOwnershipMode.MotherQueue
         };
     }
 

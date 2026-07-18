@@ -447,6 +447,8 @@
                                            PlaceholderColor="#94A3B8"
                                            FontSize="15"/>
                                 </Border>
+                                <Label Text="Use a private static IP or DHCP reservation. The app rejects public printer addresses."
+                                       FontSize="12" TextColor="#B45309"/>
                             </VerticalStackLayout>
 
                             <!-- Port -->

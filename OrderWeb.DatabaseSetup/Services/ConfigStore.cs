@@ -110,6 +110,7 @@ public static class ConfigStore
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
+            RestrictProductionDirectoryAccess(directory);
         }
 
         var json = JsonSerializer.Serialize(config, JsonOptions);
@@ -128,6 +129,7 @@ public static class ConfigStore
     {
         var path = ResolveInstallManifestPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        RestrictProductionDirectoryAccess(Path.GetDirectoryName(path)!);
         var json = JsonSerializer.Serialize(manifest, JsonOptions);
         File.WriteAllText(path, json);
         RestrictConfigFileAccess(path);
@@ -146,6 +148,7 @@ public static class ConfigStore
             Password = config.DatabasePassword,
             ConnectionTimeout = (uint)connectionTimeoutSeconds,
             AllowUserVariables = true,
+            SslMode = ParseSslMode(config.DatabaseSslMode),
             Pooling = false
         };
 
@@ -171,8 +174,47 @@ public static class ConfigStore
             UserID = rootUser,
             Password = rootPassword,
             ConnectionTimeout = (uint)connectionTimeoutSeconds,
+            SslMode = MySqlSslMode.Preferred,
             Pooling = false
         }.ConnectionString;
+    }
+
+    private static MySqlSslMode ParseSslMode(string? value) =>
+        Enum.TryParse<MySqlSslMode>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : MySqlSslMode.Preferred;
+
+    private static void RestrictProductionDirectoryAccess(string directory)
+    {
+        if (!OperatingSystem.IsWindows() || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            FileSystemRights.FullControl,
+            inheritance,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            FileSystemRights.FullControl,
+            inheritance,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+            FileSystemRights.ReadAndExecute,
+            inheritance,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+
+        new DirectoryInfo(directory).SetAccessControl(security);
     }
 
     private static void RestrictConfigFileAccess(string path)
@@ -207,9 +249,9 @@ public static class ConfigStore
 
             fileInfo.SetAccessControl(security);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best effort — installer still wrote the file.
+            throw new InvalidOperationException($"Could not secure production database config '{path}'.", ex);
         }
     }
 }

@@ -2,6 +2,8 @@
 
 Production installers call `OrderWeb.DatabaseSetup.exe` for all database work. The MAUI app never runs DDL on mother terminals.
 
+Before go-live, complete `Hardware/PRODUCTION-CHECKLIST.md` with the production printers and manual card terminal.
+
 ## Main Setup
 
 Use one setup for every PC. The wizard asks whether this PC is the Mother terminal or a Child terminal.
@@ -30,7 +32,7 @@ Shared Pascal helpers live in `shared/DatabaseSetup.iss.inc`.
    - If missing, install bundled MariaDB LTS MSI as `OrderWebMariaDB`
    - Use the installer-entered password as the new MariaDB root password
 3. Prompt for MariaDB root/admin password on first Mother install
-4. `install-mother` creates `orderweb_pos`, `orderweb_app`, and a random app password
+4. `install-mother` creates `orderweb_pos`, local/exact-IP `orderweb_app` accounts, and a generated 24+ character app password
 5. Writes `C:\ProgramData\OrderWebPOS\orderweb-database.json`
 6. `verify`
 7. `check-version`
@@ -51,7 +53,7 @@ If a Mother config already exists, the unified setup treats it as a Mother updat
 3. If config exists, run a non-blocking `check-version`
 4. Launch app -> Child pairing in Terminal Setup
 5. Enter Mother IP + pairing code created from Terminal Health on the Mother PC
-6. App blocks login if the Mother DB schema is behind (`ChildSchemaVersionGateService`)
+6. App blocks login if the Mother DB schema is below version `26` (`ChildSchemaVersionGateService`)
 
 ## Build (Windows)
 
@@ -89,7 +91,9 @@ powershell -ExecutionPolicy Bypass -File Installer\compile-installers.ps1 -Inclu
 Mother fresh:
 
 ```bat
-OrderWeb.DatabaseSetup.exe install-mother --root-user root --root-password %MARIA_ROOT_PWD%
+set ORDERWEB_ROOT_PASSWORD=%MARIA_ROOT_PWD%
+OrderWeb.DatabaseSetup.exe install-mother --root-user root --child-ips 192.168.50.21,192.168.50.22
+set ORDERWEB_ROOT_PASSWORD=
 OrderWeb.DatabaseSetup.exe verify
 OrderWeb.DatabaseSetup.exe check-version
 ```
@@ -109,6 +113,14 @@ Child, when config exists:
 OrderWeb.DatabaseSetup.exe check-version
 ```
 
+Replace the remote database allow-list later without changing the generated application password:
+
+```bat
+set ORDERWEB_ROOT_PASSWORD=%MARIA_ROOT_PWD%
+OrderWeb.DatabaseSetup.exe set-child-access --root-user root --child-ips 192.168.50.21,192.168.50.22
+set ORDERWEB_ROOT_PASSWORD=
+```
+
 ## Logs And Config
 
 | Path | Purpose |
@@ -126,3 +138,5 @@ OrderWeb.DatabaseSetup.exe check-version
 - From Mother Terminal Health, create a pairing code for each Child terminal.
 - Install the same setup on each Child PC and choose Child Terminal.
 - Normal POS updates do not upgrade MariaDB. Database engine upgrades must be special, tested installer releases.
+- After installing each till, apply and verify the Windows 10/11 security configuration in [`WindowsTill/README.md`](WindowsTill/README.md).
+- Apply the exact-IP firewall, MariaDB, VLAN, and schema checks in [`Network/README.md`](Network/README.md).

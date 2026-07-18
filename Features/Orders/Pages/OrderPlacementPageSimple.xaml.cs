@@ -3574,7 +3574,10 @@ namespace POS_in_NET.Pages
 
             splitPlan.ApplyExistingPaid(totalPaid);
             decimal currentSplitRemaining = splitPlan.GetNextAmount(remainingBalance);
-            var shouldRecordPaymentLines = _rolloutConfig.EnablePaymentLines || splitPlan.RequiresPaymentLine;
+            // Production payments must always have an auditable payment line. This is
+            // required for manual card-terminal references and daily reconciliation,
+            // including ordinary (non-split) orders.
+            const bool shouldRecordPaymentLines = true;
 
             if (shouldRecordPaymentLines)
             {
@@ -3680,13 +3683,29 @@ namespace POS_in_NET.Pages
                             {
                                 method = "card",
                                 amountPaid = cardResult.AmountPaid,
+                                terminalReference = cardResult.TerminalReference,
                                 remaining = Math.Max(0, remainingBalance - cardResult.AmountPaid),
                                 split = splitPlan.RequiresPaymentLine ? splitPlan.GetPaymentTitle() : null
                             });
                             if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", cardResult.AmountPaid, "approved", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
+                                await _orderService.RecordPaymentLineAsync(
+                                    _currentOrder.Id,
+                                    "card",
+                                    cardResult.AmountPaid,
+                                    "approved",
+                                    0,
+                                    cardResult.TerminalReference,
+                                    actor.ActorName,
+                                    new
+                                    {
+                                        split = splitPlan.ToMetadata(),
+                                        chargeAmount = paymentAmount,
+                                        manualTerminal = true,
+                                        amountMatchConfirmed = true,
+                                        terminalApprovalConfirmed = true
+                                    });
                             }
                         }
                         else

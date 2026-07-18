@@ -12,6 +12,7 @@
                StrokeThickness="1"
                Padding="30"
                MaximumWidthRequest="700"
+               MaximumHeightRequest="760"
                Margin="16"
                HorizontalOptions="Fill"
                VerticalOptions="Center"
@@ -23,6 +24,7 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
+            <ScrollView VerticalScrollBarVisibility="Default">
             <VerticalStackLayout Spacing="25">
                 
                 <!-- Header with Close Button -->
@@ -135,6 +137,7 @@
                 </Border>
                 
             </VerticalStackLayout>
+            </ScrollView>
         </Border>
     </Grid>
     

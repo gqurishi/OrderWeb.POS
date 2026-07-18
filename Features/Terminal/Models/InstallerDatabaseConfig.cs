@@ -10,5 +10,6 @@ public sealed class InstallerDatabaseConfig
     public string DatabaseName { get; set; } = PosDatabaseDefaults.ProductionDatabaseName;
     public string DatabaseUser { get; set; } = PosDatabaseDefaults.ProductionDatabaseUser;
     public string DatabasePassword { get; set; } = string.Empty;
+    public string DatabaseSslMode { get; set; } = nameof(MySqlConnector.MySqlSslMode.Preferred);
     public bool InstalledBySetup { get; set; }
 }

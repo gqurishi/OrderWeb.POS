@@ -17,6 +17,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+MinVersion=10.0.19041
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -59,10 +60,10 @@ begin
   MariaDbRootPasswordPage.Values[0] := '';
 
   LanSubnetPage := CreateInputQueryPage(MariaDbRootPasswordPage.ID,
-    'Child Terminal Network Access', 'Optional LAN grant pattern',
-    'Child terminals connect from your restaurant LAN. Adjust only if your subnet differs.');
-  LanSubnetPage.Add('LAN subnet pattern:', False);
-  LanSubnetPage.Values[0] := '192.168.%';
+    'Child Terminal Network Access', 'Allow only known Child terminals',
+    'Enter exact private Child IP addresses separated by commas, or leave blank until DHCP reservations are ready. Wildcards are rejected.');
+  LanSubnetPage.Add('Child IP addresses:', False);
+  LanSubnetPage.Values[0] := '';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

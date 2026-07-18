@@ -23,7 +23,8 @@ OrderWeb POS is a .NET MAUI point-of-sale application with a separate database s
   - `net10.0-windows10.0.19041.0` on Windows
 - Windows package type: None
 - Minimum platform versions:
-  - Windows: `10.0.17763.0`
+  - Windows API baseline: `10.0.19041.0`
+  - Production tills: Windows 10 22H2/build 19045 with active security servicing, or Windows 11
   - iOS: `15.0`
   - MacCatalyst: `15.0`
   - Tizen: `6.5`

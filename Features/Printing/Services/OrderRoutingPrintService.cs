@@ -43,12 +43,16 @@ public sealed class OrderRoutingPrintService
     private readonly NetworkPrinterService _printerService;
     private readonly PdfPrintService _pdfPrintService;
     private readonly KitchenTemplateSettingsService _kitchenTemplateSettingsService;
+    private readonly NetworkPrinterDatabaseService? _printerDatabaseService;
+    private readonly NetworkPrintQueueService? _printQueueService;
 
     public OrderRoutingPrintService()
     {
         _printGroupService = new PrintGroupService();
         _printerService = new NetworkPrinterService();
         _pdfPrintService = new PdfPrintService();
+        _printerDatabaseService = ServiceHelper.GetService<NetworkPrinterDatabaseService>();
+        _printQueueService = ServiceHelper.GetService<NetworkPrintQueueService>();
         _kitchenTemplateSettingsService = ServiceHelper.GetService<KitchenTemplateSettingsService>()
             ?? new KitchenTemplateSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
     }
@@ -324,7 +328,11 @@ public sealed class OrderRoutingPrintService
 
         var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
         var ticketData = BuildTakeawayTicket(order, takeawayPrinter, itemsToPrint, orderType, printGroupNames, kitchenTemplateSettings);
-        var sent = await _printerService.SendRawDataAsync(takeawayPrinter.IpAddress, takeawayPrinter.Port, ticketData);
+        var sent = await QueueKitchenTicketAsync(
+            takeawayPrinter.Id,
+            ticketData,
+            "kitchen_takeaway",
+            order.Id);
 
         if (sent)
         {
@@ -340,7 +348,7 @@ public sealed class OrderRoutingPrintService
             {
                 RouteTarget = string.Empty,
                 RouteName = takeawayPrinter.Name,
-                Reason = "print failed"
+                Reason = "could not add ticket to the durable print queue"
             });
         }
 
@@ -408,7 +416,12 @@ public sealed class OrderRoutingPrintService
 
         var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
         var ticketData = BuildTicket(order, singlePrinter, itemsToPrint, kitchenTemplateSettings);
-        var sent = await _printerService.SendRawDataAsync(singlePrinter.PrinterIp, singlePrinter.PrinterPort, ticketData);
+        var sent = await QueueKitchenTicketAsync(
+            singlePrinter.PrinterIp,
+            singlePrinter.PrinterPort,
+            ticketData,
+            ResolveKitchenJobType(singlePrinter.PrinterType),
+            order.Id);
 
         if (sent)
         {
@@ -425,7 +438,7 @@ public sealed class OrderRoutingPrintService
             {
                 RouteTarget = singlePrinter.Id,
                 RouteName = singlePrinter.Name,
-                Reason = "TCP send failed"
+                Reason = "printer is not registered or the ticket could not be queued"
             });
         }
 
@@ -495,7 +508,12 @@ public sealed class OrderRoutingPrintService
             }
 
             var ticketData = BuildTicket(order, group, batchItems, kitchenTemplateSettings);
-            var sent = await _printerService.SendRawDataAsync(group.PrinterIp, group.PrinterPort, ticketData);
+            var sent = await QueueKitchenTicketAsync(
+                group.PrinterIp,
+                group.PrinterPort,
+                ticketData,
+                ResolveKitchenJobType(group.PrinterType),
+                order.Id);
 
             if (sent)
             {
@@ -511,7 +529,7 @@ public sealed class OrderRoutingPrintService
                 {
                     RouteTarget = group.Id,
                     RouteName = group.Name,
-                    Reason = "print failed"
+                    Reason = "printer is not registered or the ticket could not be queued"
                 });
             }
         }
@@ -519,6 +537,56 @@ public sealed class OrderRoutingPrintService
         ConsolidateSplitPrintResults(result, splitPrintItemIds);
         return result;
     }
+
+    private async Task<bool> QueueKitchenTicketAsync(
+        string printerIp,
+        int printerPort,
+        byte[] ticketData,
+        string jobType,
+        string? orderId)
+    {
+        if (_printerDatabaseService == null || _printQueueService == null)
+        {
+            return false;
+        }
+
+        var printer = (await _printerDatabaseService.GetAllPrintersAsync())
+            .FirstOrDefault(candidate =>
+                candidate.IsEnabled
+                && string.Equals(candidate.IpAddress?.Trim(), printerIp.Trim(), StringComparison.OrdinalIgnoreCase)
+                && candidate.Port == printerPort);
+
+        return printer != null
+            && await QueueKitchenTicketAsync(printer.Id, ticketData, jobType, orderId);
+    }
+
+    private async Task<bool> QueueKitchenTicketAsync(
+        int printerId,
+        byte[] ticketData,
+        string jobType,
+        string? orderId)
+    {
+        if (_printQueueService == null || printerId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var jobId = await _printQueueService.EnqueueAsync(printerId, ticketData, jobType, orderId);
+            return jobId > 0;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Kitchen ticket queue failed for printer #{printerId}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string ResolveKitchenJobType(string? printerType) =>
+        string.Equals(printerType, "bar", StringComparison.OrdinalIgnoreCase)
+            ? "bar"
+            : "kitchen";
 
     private static IEnumerable<TableOrderItem> ExpandTastingMenuPrintItems(
         TableOrderItem item,

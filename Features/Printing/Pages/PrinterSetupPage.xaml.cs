@@ -614,9 +614,18 @@ public partial class PrinterSetupPage : ContentPage
             return;
         }
 
-        if (!int.TryParse(PortEntry.Text, out int port))
+        if (!IsPrivateIpv4Address(ip))
         {
-            port = 9100;
+            await AppAlertService.ShowAlertAsync(
+                "Private IP Required",
+                "Enter the printer's private static IP or DHCP reservation (10.x.x.x, 172.16-31.x.x, or 192.168.x.x). Public printer addresses are blocked.");
+            return;
+        }
+
+        if (!int.TryParse(PortEntry.Text, out int port) || port is < 1 or > 65535)
+        {
+            await AppAlertService.ShowAlertAsync("Invalid Port", "Enter a TCP port from 1 to 65535 (normally 9100).");
+            return;
         }
 
         TestConnectionButton.IsEnabled = false;
@@ -668,9 +677,18 @@ public partial class PrinterSetupPage : ContentPage
             return;
         }
 
-        if (!int.TryParse(PortEntry.Text, out int port))
+        if (!IsPrivateIpv4Address(ip))
         {
-            port = 9100;
+            await AppAlertService.ShowAlertAsync(
+                "Private IP Required",
+                "Enter the printer's private static IP or DHCP reservation (10.x.x.x, 172.16-31.x.x, or 192.168.x.x). Public printer addresses are blocked.");
+            return;
+        }
+
+        if (!int.TryParse(PortEntry.Text, out int port) || port is < 1 or > 65535)
+        {
+            await AppAlertService.ShowAlertAsync("Invalid Port", "Enter a TCP port from 1 to 65535 (normally 9100).");
+            return;
         }
 
         try
@@ -1001,6 +1019,20 @@ public partial class PrinterSetupPage : ContentPage
     private async void OnPrintDesignClicked(object? sender, EventArgs e)
     {
         await Navigation.PushAsync(new PrintTemplatesPage());
+    }
+
+    private static bool IsPrivateIpv4Address(string value)
+    {
+        if (!System.Net.IPAddress.TryParse(value, out var address)
+            || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10
+            || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
+            || (bytes[0] == 192 && bytes[1] == 168);
     }
 
     private async void OnManageQueueClicked(object? sender, EventArgs e)

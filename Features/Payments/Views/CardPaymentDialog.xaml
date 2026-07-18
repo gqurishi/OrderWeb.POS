@@ -12,6 +12,7 @@
                StrokeThickness="1"
                Padding="30"
                MaximumWidthRequest="600"
+               MaximumHeightRequest="760"
                Margin="16"
                HorizontalOptions="Fill"
                VerticalOptions="Center"
@@ -23,6 +24,7 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
+            <ScrollView VerticalScrollBarVisibility="Default">
             <VerticalStackLayout Spacing="25">
                 
                 <!-- Header with Close Button -->
@@ -86,14 +88,39 @@
                     </VerticalStackLayout>
                 </Border>
                 
-                <!-- Processing Message -->
-                <Label x:Name="StatusLabel"
-                       Text="Has the card payment been completed?"
-                       FontSize="20"
-                       TextColor="#374151"
-                       FontAttributes="Bold"
-                       HorizontalOptions="Center"
-                       HorizontalTextAlignment="Center"/>
+                <!-- Manual terminal confirmation -->
+                <Border BackgroundColor="#FFF7ED" Stroke="#F97316" StrokeThickness="2" Padding="16">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10"/>
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="10">
+                        <Label x:Name="StatusLabel"
+                               Text="Enter this exact amount on the card terminal. Press YES only after the terminal shows APPROVED."
+                               FontSize="18"
+                               TextColor="#9A3412"
+                               FontAttributes="Bold"
+                               HorizontalTextAlignment="Center"/>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <CheckBox x:Name="ApprovalCheckBox" Grid.Column="0" Color="#059669"
+                                      CheckedChanged="OnConfirmationChanged"/>
+                            <Label Grid.Column="1"
+                                   Text="Terminal amount matches and payment is APPROVED"
+                                   FontSize="17" FontAttributes="Bold" TextColor="#374151"
+                                   VerticalOptions="Center"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="CARD RECEIPT / TERMINAL REFERENCE (REQUIRED)"
+                           FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
+                    <Entry x:Name="TerminalReferenceEntry"
+                           Placeholder="Enter reference from approved card receipt"
+                           MaxLength="100" TextChanged="OnConfirmationChanged"
+                           BackgroundColor="#F8FAFC" TextColor="#111827"/>
+                    <Label Text="Keep the printed card receipt for end-of-day reconciliation."
+                           FontSize="13" TextColor="#64748B"/>
+                </VerticalStackLayout>
                 
                 <!-- Action Buttons -->
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
@@ -107,7 +134,8 @@
                             HeightRequest="70"
                             Clicked="OnNoClicked"/>
                     
-                    <Button Grid.Column="1"
+                    <Button x:Name="YesButton"
+                            Grid.Column="1"
                             Text="YES"
                             BackgroundColor="#059669"
                             TextColor="White"
@@ -115,10 +143,12 @@
                             FontAttributes="Bold"
                             CornerRadius="14"
                             HeightRequest="70"
+                            IsEnabled="False"
                             Clicked="OnYesClicked"/>
                 </Grid>
                 
             </VerticalStackLayout>
+            </ScrollView>
         </Border>
     </Grid>
     
