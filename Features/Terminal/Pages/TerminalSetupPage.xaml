@@ -5,8 +5,8 @@
              BackgroundColor="#F8FAFC"
              Shell.NavBarIsVisible="False">
 
-    <Grid RowDefinitions="*,Auto,*" Padding="36">
-        <Button Grid.RowSpan="3"
+    <Grid Padding="24">
+        <Button
                 Text="-"
                 WidthRequest="44"
                 HeightRequest="44"
@@ -25,8 +25,9 @@
                 Clicked="OnMinimizeClicked"
                 ToolTipProperties.Text="Minimize POS" />
 
-        <Border Grid.Row="1"
-                WidthRequest="760"
+        <ScrollView Margin="0,48,0,12"
+                    VerticalScrollBarVisibility="Default">
+        <Border WidthRequest="760"
                 MaximumWidthRequest="760"
                 BackgroundColor="White"
                 Stroke="#E2E8F0"
@@ -260,5 +261,6 @@
                 </Grid>
             </VerticalStackLayout>
         </Border>
+        </ScrollView>
     </Grid>
 </ContentPage>

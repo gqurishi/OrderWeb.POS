@@ -2,7 +2,7 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Views.TopBar"
-             HeightRequest="112">
+             MinimumHeightRequest="82">
 
     <Grid RowDefinitions="Auto,*">
         <Border x:Name="MotherDisconnectedBanner"
@@ -20,11 +20,16 @@
                    HorizontalOptions="Center"/>
         </Border>
 
-    <Border Grid.Row="1"
+    <Border x:Name="HeaderBorder"
+            Grid.Row="1"
             BackgroundColor="#F6F9FC"
-            StrokeThickness="0">
+            StrokeThickness="0"
+            HeightRequest="88">
         
-        <Grid Padding="16,0">
+        <Grid x:Name="HeaderGrid"
+              Padding="16,0"
+              ColumnDefinitions="Auto,*,Auto"
+              ColumnSpacing="12">
             
             <!-- Left Side - Hamburger Menu (Z-Index on top) -->
             <HorizontalStackLayout Grid.Column="0" 
@@ -42,7 +47,8 @@
             </HorizontalStackLayout>
             
             <!-- Center Section - Page Title (Absolutely Centered) -->
-            <VerticalStackLayout HorizontalOptions="Center"
+            <VerticalStackLayout Grid.Column="1"
+                                 HorizontalOptions="Center"
                                  VerticalOptions="Center"
                                  ZIndex="1">
                 <Label x:Name="PageTitleLabel"
@@ -50,11 +56,15 @@
                        FontSize="28"
                        FontAttributes="Bold"
                        TextColor="#1F2937"
-                       HorizontalOptions="Center"/>
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1"/>
             </VerticalStackLayout>
             
             <!-- Right Side - Date/Time (Z-Index on top) -->
-            <HorizontalStackLayout HorizontalOptions="End"
+            <HorizontalStackLayout Grid.Column="2"
+                                   HorizontalOptions="End"
                                    VerticalOptions="Center"
                                    Spacing="10"
                                    ZIndex="2">
@@ -64,7 +74,7 @@
                                   VerticalOptions="Center"
                                   IsVisible="False" />
                 
-                <VerticalStackLayout Spacing="2">
+                <VerticalStackLayout x:Name="ClockLayout" Spacing="1">
                     <!-- Date and Time -->
                     <Label x:Name="DateTimeLabel"
                            Text="Wednesday, October 15, 2025"

@@ -103,16 +103,11 @@ public class OrderWebWebSocketService
             }
 
             System.Diagnostics.Debug.WriteLine(" ConnectAsync() called!");
-            System.Diagnostics.Debug.WriteLine($" API Key Length: {_apiKey?.Length ?? 0} characters");
-            System.Diagnostics.Debug.WriteLine($" API Key starts with: {(_apiKey?.Length >= 8 ? _apiKey.Substring(0, 8) : "too short")}");
-            System.Diagnostics.Debug.WriteLine($" API Key ends with: {(_apiKey?.Length >= 4 ? _apiKey.Substring(_apiKey.Length - 4) : "empty")}");
             
             if (string.IsNullOrEmpty(_websocketUrl) || string.IsNullOrEmpty(_tenantId) || string.IsNullOrEmpty(_apiKey))
             {
                 System.Diagnostics.Debug.WriteLine($" WebSocket configuration missing:");
-                System.Diagnostics.Debug.WriteLine($"   URL: '{_websocketUrl}'");
                 System.Diagnostics.Debug.WriteLine($"   TenantID: '{_tenantId}'");
-                System.Diagnostics.Debug.WriteLine($"   API Key length: {_apiKey?.Length ?? 0}");
                 return false;
             }
 
@@ -237,7 +232,7 @@ public class OrderWebWebSocketService
             // Add API key as query parameter (OrderWeb.net authentication method)
             wsUrl = $"{wsUrl}?apiKey={_apiKey}";
             
-            System.Diagnostics.Debug.WriteLine($" Testing WebSocket connection: {wsUrl.Replace(_apiKey, "***" + _apiKey.Substring(_apiKey.Length - 4))}");
+            System.Diagnostics.Debug.WriteLine(" Testing configured WebSocket connection");
 
             // Also set headers as backup
             testSocket.Options.SetRequestHeader("X-Tenant-ID", _tenantId);
@@ -311,7 +306,7 @@ public class OrderWebWebSocketService
                 var message = Encoding.UTF8.GetString(messageStream.ToArray());
                 AppDiagnostics.Log($"WebSocket message received (length: {message.Length})");
 #if DEBUG
-                AppDiagnostics.Log($"Message content: {message}");
+                AppDiagnostics.Log($"WebSocket message received ({message.Length} characters)");
 
                 try
                 {
@@ -582,7 +577,7 @@ public class OrderWebWebSocketService
                 GetStringProperty(orderElement, "createdAt")
                 ?? GetStringProperty(orderElement, "created_at")) ?? DateTime.Now;
 
-            System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber} - {customerName} - £{totalAmount}");
+            System.Diagnostics.Debug.WriteLine($" NEW ORDER via WebSocket: {orderNumber}");
 
             var cloudOrder = new Models.Api.CloudOrderResponse
             {
@@ -980,7 +975,7 @@ public class OrderWebWebSocketService
             var cardNumber = data.GetProperty("card_number").GetString() ?? "";
             var newBalance = data.GetProperty("balance").GetDecimal();
 
-            System.Diagnostics.Debug.WriteLine($" Gift card updated: {cardNumber} → £{newBalance}");
+            System.Diagnostics.Debug.WriteLine(" Gift card balance update received");
 
             GiftCardUpdated?.Invoke(this, new GiftCardUpdatedEventArgs
             {
@@ -1004,7 +999,7 @@ public class OrderWebWebSocketService
             var customerPhone = data.GetProperty("customer_phone").GetString() ?? "";
             var newPoints = data.GetProperty("points").GetInt32();
 
-            System.Diagnostics.Debug.WriteLine($"⭐ Loyalty updated: {customerPhone} → {newPoints} points");
+            System.Diagnostics.Debug.WriteLine("Loyalty points update received");
 
             LoyaltyUpdated?.Invoke(this, new LoyaltyUpdatedEventArgs
             {

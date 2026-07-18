@@ -226,7 +226,7 @@ public sealed class OrderWebDailyReportSyncService
                 var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("daily-report", payload.Tenant, payload.ReportDateValue);
 
                 System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] POST {url} attempt {attempt}/{MaxAttempts}");
-                System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] Body: {json}");
+                System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] Response received ({json.Length} characters)");
 
                 _httpClient.DefaultRequestHeaders.Remove("Idempotency-Key");
                 _httpClient.DefaultRequestHeaders.Remove("X-Idempotency-Key");

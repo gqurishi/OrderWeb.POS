@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace POS_in_NET.Services;
 
@@ -8,6 +9,12 @@ namespace POS_in_NET.Services;
 public static class AppDiagnostics
 {
     private static readonly object Sync = new();
+    private static readonly Regex SensitiveValuePattern = new(
+        @"(?i)(password|pwd|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|secret)\s*[:=]\s*([^;\s,&]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex BearerTokenPattern = new(
+        @"(?i)\bBearer\s+[^\s,;]+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
 #if DEBUG
     private static string? _debugLogPath;
@@ -23,7 +30,7 @@ public static class AppDiagnostics
             var path = GetDebugLogPath();
             lock (Sync)
             {
-                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}\n");
+                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {Sanitize(message)}\n");
             }
         }
         catch
@@ -42,7 +49,9 @@ public static class AppDiagnostics
             var path = Path.Combine(directory, "pos-error.log");
             lock (Sync)
             {
-                File.AppendAllText(path, $"\n=== {context} {DateTime.Now:u} ===\n{ex.GetType().Name}: {ex.Message}\n");
+                File.AppendAllText(
+                    path,
+                    $"\n=== {Sanitize(context)} {DateTime.Now:u} ===\n{ex.GetType().Name}: {Sanitize(ex.Message)}\n");
             }
         }
         catch
@@ -83,5 +92,16 @@ public static class AppDiagnostics
             Directory.CreateDirectory(path);
             return path;
         }
+    }
+
+    private static string Sanitize(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = SensitiveValuePattern.Replace(value, "$1=[REDACTED]");
+        return BearerTokenPattern.Replace(sanitized, "Bearer [REDACTED]");
     }
 }

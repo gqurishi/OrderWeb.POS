@@ -12,8 +12,8 @@
                 StrokeThickness="2"
                 StrokeShape="Rectangle"
                 Padding="28,22"
-                WidthRequest="820"
-                HorizontalOptions="Center"
+                MaximumWidthRequest="820"
+                HorizontalOptions="Fill"
                 VerticalOptions="Center">
             <Border.Shadow>
                 <Shadow Brush="Black" Radius="8" Opacity="0.10" Offset="0,4" />

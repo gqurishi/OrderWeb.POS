@@ -50,6 +50,7 @@ public sealed class SchemaVerifier
 
         var missingTables = new List<string>();
         var missingViews = new List<string>();
+        var missingColumns = new List<string>();
 
         await using var command = new MySqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -67,12 +68,16 @@ public sealed class SchemaVerifier
                 {
                     missingViews.Add(value);
                 }
+                else if (columnName.Equals("missing_column", StringComparison.OrdinalIgnoreCase))
+                {
+                    missingColumns.Add(value);
+                }
             }
         } while (await reader.NextResultAsync(cancellationToken));
 
-        if (missingTables.Count == 0 && missingViews.Count == 0)
+        if (missingTables.Count == 0 && missingViews.Count == 0 && missingColumns.Count == 0)
         {
-            return VerifyResult.Success("Required tables and views exist.");
+            return VerifyResult.Success("Required tables, views, and columns exist.");
         }
 
         var details = new List<string>();
@@ -86,7 +91,12 @@ public sealed class SchemaVerifier
             details.Add($"missing views: {string.Join(", ", missingViews)}");
         }
 
-        return VerifyResult.Failed(string.Join("; ", details), missingTables, missingViews);
+        if (missingColumns.Count > 0)
+        {
+            details.Add($"missing columns: {string.Join(", ", missingColumns)}");
+        }
+
+        return VerifyResult.Failed(string.Join("; ", details), missingTables, missingViews, missingColumns: missingColumns);
     }
 
     public async Task<VerifyResult> VerifyMigrationHistoryAsync(DatabaseConfig config, CancellationToken cancellationToken = default)
@@ -111,6 +121,7 @@ public sealed class VerifyResult
     public string Message { get; init; } = string.Empty;
     public IReadOnlyList<string> MissingTables { get; init; } = [];
     public IReadOnlyList<string> MissingViews { get; init; } = [];
+    public IReadOnlyList<string> MissingColumns { get; init; } = [];
     public IReadOnlyList<string> MissingMigrations { get; init; } = [];
 
     public static VerifyResult Success(string message) =>
@@ -120,13 +131,15 @@ public sealed class VerifyResult
         string message,
         IReadOnlyList<string>? missingTables = null,
         IReadOnlyList<string>? missingViews = null,
-        IReadOnlyList<string>? missingMigrations = null) =>
+        IReadOnlyList<string>? missingMigrations = null,
+        IReadOnlyList<string>? missingColumns = null) =>
         new()
         {
             IsSuccess = false,
             Message = message,
             MissingTables = missingTables ?? [],
             MissingViews = missingViews ?? [],
+            MissingColumns = missingColumns ?? [],
             MissingMigrations = missingMigrations ?? []
         };
 }

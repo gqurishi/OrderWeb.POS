@@ -12,8 +12,8 @@ public class BundledMigrationTests
         Assert.NotNull(migrationsPath);
 
         var engine = new MigrationEngine(migrationsPath!, "1.0.0");
-        Assert.Equal(25, engine.GetBundledSchemaVersion());
-        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "025_kitchen_order_revisions");
+        Assert.Equal(26, engine.GetBundledSchemaVersion());
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "026_manual_refund_audit");
     }
 
     private static string? FindRepoMigrationsPath()
@@ -22,7 +22,7 @@ public class BundledMigrationTests
         while (dir != null)
         {
             var candidate = Path.Combine(dir.FullName, "Database", "Migrations");
-            if (File.Exists(Path.Combine(candidate, "025_kitchen_order_revisions.sql")))
+            if (File.Exists(Path.Combine(candidate, "026_manual_refund_audit.sql")))
             {
                 return candidate;
             }

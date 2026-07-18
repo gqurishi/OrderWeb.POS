@@ -122,18 +122,35 @@
 
             <!-- Refund Reason -->
             <VerticalStackLayout Spacing="8">
-                <Label Text="Reason for Refund" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
+                <Label Text="Reason for Refund *" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
                 <Frame BackgroundColor="White" 
                        Padding="12"
                        CornerRadius="8"
                        HasShadow="False"
                        BorderColor="#D1D5DB">
                     <Editor x:Name="RefundReasonEditor"
-                            Placeholder="Enter reason (optional)"
+                            Placeholder="Enter the reason for this refund"
                             TextColor="#1F2937"
                             PlaceholderColor="#9CA3AF"
                             FontSize="15"
                             HeightRequest="80"/>
+                </Frame>
+            </VerticalStackLayout>
+
+            <!-- External card terminal / manual refund reference -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Terminal / Refund Reference *" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
+                <Frame BackgroundColor="White"
+                       Padding="12"
+                       CornerRadius="8"
+                       HasShadow="False"
+                       BorderColor="#D1D5DB">
+                    <Entry x:Name="ExternalReferenceEntry"
+                           Placeholder="Card terminal receipt or refund reference"
+                           MaxLength="120"
+                           TextColor="#1F2937"
+                           PlaceholderColor="#9CA3AF"
+                           FontSize="15"/>
                 </Frame>
             </VerticalStackLayout>
 

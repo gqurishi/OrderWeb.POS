@@ -84,7 +84,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/gift-cards/{cardNumber}/balance";
-            System.Diagnostics.Debug.WriteLine($" Checking gift card balance: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine(" Checking gift card balance");
 
             var response = await _httpClient.GetAsync(url);
 
@@ -118,7 +118,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/gift-cards/{cardNumber}/deduct";
-            System.Diagnostics.Debug.WriteLine($" Deducting £{amount} from gift card: {cardNumber}");
+            System.Diagnostics.Debug.WriteLine(" Processing gift card deduction");
 
             var request = new
             {
@@ -165,7 +165,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/loyalty/{customerPhone}/points";
-            System.Diagnostics.Debug.WriteLine($"⭐ Checking loyalty points: {customerPhone}");
+            System.Diagnostics.Debug.WriteLine("Checking loyalty points");
 
             var response = await _httpClient.GetAsync(url);
 
@@ -199,7 +199,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/loyalty/{customerPhone}/redeem";
-            System.Diagnostics.Debug.WriteLine($"⭐ Redeeming {pointsToRedeem} points for: {customerPhone}");
+            System.Diagnostics.Debug.WriteLine("Redeeming loyalty points");
 
             var request = new
             {
@@ -244,7 +244,7 @@ public class OrderWebRestApiService
         try
         {
             var url = $"{_apiBaseUrl}/loyalty/{customerPhone}/add";
-            System.Diagnostics.Debug.WriteLine($"⭐ Adding {pointsToAdd} points for: {customerPhone}");
+            System.Diagnostics.Debug.WriteLine("Adding loyalty points");
 
             var request = new
             {

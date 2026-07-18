@@ -24,7 +24,7 @@ public static class CollectionReceiptTemplateService
         decimal total,
         decimal tip)
     {
-        var builder = new EscPosBuilder(printer.Brand, PaperWidth.Mm80).Initialize();
+        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth).Initialize();
         var templateSettings = receiptKind switch
         {
             CustomerReceiptKind.Collection => await LoadCollectionSettingsAsync(),
@@ -34,7 +34,10 @@ public static class CollectionReceiptTemplateService
             _ => CollectionReceiptTemplateSettings.Default()
         };
 
-        await TryPrintLogoAsync(builder, businessInfo);
+        var logoSettingsService = ServiceHelper.GetService<ReceiptLogoSettingsService>()
+            ?? new ReceiptLogoSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
+        var logoSize = await logoSettingsService.GetLogoSizeAsync();
+        await TryPrintLogoAsync(builder, businessInfo, printer.PaperWidth, logoSize);
         PrintHeader(builder, businessInfo, templateSettings);
         PrintOrderBlock(builder, receiptKind, order, orderReference, DateTime.Now, customerName, customerPhone, deliveryAddress, templateSettings);
         PrintItems(builder, order.Items.Where(item => !item.IsVoided));
@@ -192,7 +195,11 @@ public static class CollectionReceiptTemplateService
         return builder.ToString();
     }
 
-    private static async Task TryPrintLogoAsync(EscPosBuilder builder, BusinessInfo? businessInfo)
+    private static async Task TryPrintLogoAsync(
+        EscPosBuilder builder,
+        BusinessInfo? businessInfo,
+        PaperWidth paperWidth,
+        ReceiptLogoSize logoSize)
     {
 #if WINDOWS
         try
@@ -202,7 +209,7 @@ public static class CollectionReceiptTemplateService
                 return;
             }
 
-            var image = await DecodeLogoAsync(businessInfo.LogoPath);
+            var image = await DecodeLogoAsync(businessInfo.LogoPath, paperWidth, logoSize);
             if (image == null)
             {
                 return;
@@ -222,7 +229,10 @@ public static class CollectionReceiptTemplateService
     }
 
 #if WINDOWS
-    private static async Task<LogoRaster?> DecodeLogoAsync(string path)
+    private static async Task<LogoRaster?> DecodeLogoAsync(
+        string path,
+        PaperWidth paperWidth,
+        ReceiptLogoSize logoSize)
     {
         var storageFile = await StorageFile.GetFileFromPathAsync(path);
         using var stream = await storageFile.OpenReadAsync();
@@ -230,15 +240,16 @@ public static class CollectionReceiptTemplateService
 
         var originalWidth = Math.Max(1, (int)decoder.PixelWidth);
         var originalHeight = Math.Max(1, (int)decoder.PixelHeight);
-        var targetWidth = Math.Min(384, originalWidth);
-        var targetHeight = Math.Max(1, (int)Math.Round(originalHeight * (targetWidth / (double)originalWidth)));
-
-        if (targetHeight > 160)
+        var (maxWidth, maxHeight) = (paperWidth, logoSize) switch
         {
-            targetHeight = 160;
-            targetWidth = Math.Max(1, (int)Math.Round(originalWidth * (targetHeight / (double)originalHeight)));
-            targetWidth = Math.Min(384, targetWidth);
-        }
+            (PaperWidth.Mm80, ReceiptLogoSize.Large) => (560, 280),
+            (PaperWidth.Mm58, ReceiptLogoSize.Large) => (360, 200),
+            (PaperWidth.Mm80, _) => (480, 220),
+            _ => (320, 160)
+        };
+        var scale = Math.Min(maxWidth / (double)originalWidth, maxHeight / (double)originalHeight);
+        var targetWidth = Math.Max(1, (int)Math.Round(originalWidth * scale));
+        var targetHeight = Math.Max(1, (int)Math.Round(originalHeight * scale));
 
         var transform = new BitmapTransform
         {

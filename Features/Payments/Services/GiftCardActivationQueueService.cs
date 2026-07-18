@@ -84,7 +84,7 @@ public sealed class GiftCardActivationQueueService : IDisposable
 
             SaveQueue(queued);
 
-            AppDiagnostics.Log($"Gift card activation queued: {request.CardNumber} ({queued.Count}/{MaxQueuedActivations})");
+            AppDiagnostics.Log($"Gift card activation queued ({queued.Count}/{MaxQueuedActivations})");
             _backgroundSyncManager?.RequestRunSoon("gift-card-activate-flush");
             return GiftCardActivationQueueResult.Queued(
                 queued.Count,

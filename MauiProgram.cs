@@ -70,7 +70,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TableSessionService>();
 		builder.Services.AddSingleton<ReservationSyncService>();
 		builder.Services.AddSingleton<OrderWebWebhookRouterService>();
-		builder.Services.AddSingleton<OrderWebWebhookListenerService>();
+		// Inbound HTTP webhook is intentionally disabled in production.
+		// Web orders and reservations use authenticated outbound WebSocket/polling services.
 		// MenuService and OrderTakingService removed - using FoodMenu system instead
 		
 		// Register Cloud Services (Lazy loaded)
@@ -81,7 +82,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<CloudOrderService>();
 		builder.Services.AddSingleton<ReceiptService>();
 		builder.Services.AddSingleton<CloudSyncService>();
-		builder.Services.AddSingleton<DatabaseMigrationService>();
+		// Legacy restaurant_local runtime migration is not registered. Production schema
+		// changes are applied only by OrderWeb.DatabaseSetup.exe on the Mother terminal.
 		
 		// Register Direct Database & Connection Services
 		builder.Services.AddSingleton<OrderWebDirectDatabaseService>();
@@ -132,6 +134,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<DeliveryReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<TableBillReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<TablePaymentReceiptTemplateSettingsService>();
+		builder.Services.AddSingleton<ReceiptLogoSettingsService>();
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();

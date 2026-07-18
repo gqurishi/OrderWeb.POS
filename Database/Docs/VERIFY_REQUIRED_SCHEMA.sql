@@ -1,5 +1,5 @@
 -- OrderWeb POS production schema verification.
--- Run after 001-010 migrations on the Mother database.
+-- Run after all bundled migrations on the Mother database.
 -- The result set must be empty before the app is considered ready.
 
 SELECT required.table_name AS missing_table
@@ -56,6 +56,10 @@ FROM (
     SELECT 'heartbeat_log' UNION ALL
     SELECT 'order_received_log' UNION ALL
     SELECT 'orderweb_order_settlements' UNION ALL
+    SELECT 'print_queue_cancellation_audit' UNION ALL
+    SELECT 'order_kitchen_item_state' UNION ALL
+    SELECT 'order_kitchen_revisions' UNION ALL
+    SELECT 'order_kitchen_revision_items' UNION ALL
     SELECT 'online_order_print_tracking' UNION ALL
     SELECT 'cloud_reservations' UNION ALL
     SELECT 'reservation_sync_state' UNION ALL
@@ -81,6 +85,24 @@ LEFT JOIN information_schema.tables existing
    AND existing.table_name = required.table_name
 WHERE existing.table_name IS NULL
 ORDER BY required.table_name;
+
+SELECT CONCAT(required.table_name, '.', required.column_name) AS missing_column
+FROM (
+    SELECT 'network_print_queue' AS table_name, 'cancelled_at' AS column_name UNION ALL
+    SELECT 'network_print_queue', 'cancelled_by_user_id' UNION ALL
+    SELECT 'network_print_queue', 'cancelled_by_name' UNION ALL
+    SELECT 'network_print_queue', 'cancellation_reason' UNION ALL
+    SELECT 'order_refunds', 'refunded_by_user_id' UNION ALL
+    SELECT 'order_refunds', 'refunded_by_role' UNION ALL
+    SELECT 'order_refunds', 'terminal_name' UNION ALL
+    SELECT 'order_refunds', 'external_reference'
+) required
+LEFT JOIN information_schema.columns existing
+    ON existing.table_schema = DATABASE()
+   AND existing.table_name = required.table_name
+   AND existing.column_name = required.column_name
+WHERE existing.column_name IS NULL
+ORDER BY required.table_name, required.column_name;
 
 SELECT required.table_name AS missing_view
 FROM (

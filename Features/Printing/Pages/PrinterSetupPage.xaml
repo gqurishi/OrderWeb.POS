@@ -16,10 +16,10 @@
         
         <!-- Content -->
         <ScrollView Grid.Row="1">
-            <Grid Padding="32" ColumnDefinitions="*,Auto" ColumnSpacing="32">
+            <Grid x:Name="PrinterContentGrid" Padding="32" ColumnDefinitions="*,Auto" ColumnSpacing="32">
                 
                 <!-- Left: Printer List -->
-                <VerticalStackLayout Grid.Column="0" Spacing="24">
+                <VerticalStackLayout x:Name="PrinterListLayout" Grid.Column="0" Spacing="24">
                     
                     <!-- Header -->
                     <Grid ColumnDefinitions="*,Auto">
@@ -103,6 +103,47 @@
                                             SelectedIndexChanged="OnAllJobsPrinterChanged"/>
                                 </VerticalStackLayout>
                             </Grid>
+
+                        </Grid>
+                    </Border>
+
+                    <!-- Customer receipt logo -->
+                    <Border BackgroundColor="White" Padding="20" Stroke="#CBD5E1" StrokeThickness="1">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                            <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                                <Label Text="Customer Receipt Logo"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#0F172A"/>
+                                <Label Text="Select the logo size printed at the top of every customer receipt."
+                                       FontSize="13"
+                                       TextColor="#64748B"/>
+                                <Label x:Name="LogoSizeStatusLabel"
+                                       Text="Selected: Medium"
+                                       FontSize="13"
+                                       FontAttributes="Bold"
+                                       TextColor="#15803D"/>
+                            </VerticalStackLayout>
+
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                <Button x:Name="MediumLogoSizeButton"
+                                        Text="Medium Logo"
+                                        MinimumWidthRequest="130"
+                                        CornerRadius="8"
+                                        Padding="18,12"
+                                        FontAttributes="Bold"
+                                        Clicked="OnMediumLogoSizeClicked"/>
+                                <Button x:Name="LargeLogoSizeButton"
+                                        Text="Large Logo"
+                                        MinimumWidthRequest="130"
+                                        CornerRadius="8"
+                                        Padding="18,12"
+                                        FontAttributes="Bold"
+                                        Clicked="OnLargeLogoSizeClicked"/>
+                            </HorizontalStackLayout>
                         </Grid>
                     </Border>
 
@@ -182,7 +223,7 @@
                         <Border.Shadow>
                             <Shadow Brush="#0A000000" Offset="0,2" Radius="8" Opacity="0.08"/>
                         </Border.Shadow>
-                        <HorizontalStackLayout Spacing="12">
+                        <FlexLayout Direction="Row" Wrap="Wrap">
                             <Button x:Name="TestAllButton"
                                     Text="Test All"
                                     BackgroundColor="#3B82F6"
@@ -190,6 +231,7 @@
                                     CornerRadius="8"
                                     Padding="20,12"
                                     FontAttributes="Bold"
+                                    Margin="0,0,12,8"
                                     Clicked="OnTestAllClicked"/>
                             <Button x:Name="CheckStatusButton"
                                     Text="Check Status"
@@ -198,6 +240,7 @@
                                     CornerRadius="8"
                                     Padding="20,12"
                                     FontAttributes="Bold"
+                                    Margin="0,0,12,8"
                                     Clicked="OnCheckStatusClicked"/>
                             <Button x:Name="OpenDrawerButton"
                                     Text="Open Drawer"
@@ -206,6 +249,7 @@
                                     CornerRadius="8"
                                     Padding="20,12"
                                     FontAttributes="Bold"
+                                    Margin="0,0,12,8"
                                     Clicked="OnOpenDrawerClicked"/>
                             <Button x:Name="PrintDesignButton"
                                     Text="Print Templates"
@@ -214,6 +258,7 @@
                                     CornerRadius="8"
                                     Padding="20,12"
                                     FontAttributes="Bold"
+                                    Margin="0,0,12,8"
                                     Clicked="OnPrintDesignClicked"/>
                             <Button x:Name="ManageQueueButton"
                                     Text="Manage Queue"
@@ -222,8 +267,9 @@
                                     CornerRadius="8"
                                     Padding="20,12"
                                     FontAttributes="Bold"
+                                    Margin="0,0,0,8"
                                     Clicked="OnManageQueueClicked"/>
-                        </HorizontalStackLayout>
+                        </FlexLayout>
                     </Border>
 
                     <!-- Receipt Printers Section -->

@@ -295,7 +295,7 @@ public class CloudSyncService
                 return (false, roleCheck.Reason);
             }
 
-            System.Diagnostics.Debug.WriteLine($" Recording gift card transaction: {cardNumber}, Amount: £{amountUsed:F2}");
+            System.Diagnostics.Debug.WriteLine(" Recording gift card transaction");
 
             var transaction = new GiftCardTransactionModel
             {
@@ -362,7 +362,7 @@ public class CloudSyncService
                 return (false, roleCheck.Reason);
             }
 
-            System.Diagnostics.Debug.WriteLine($"⭐ Recording loyalty transaction: {customerPhone}, Used: {pointsUsed}, Earned: {pointsEarned}");
+            System.Diagnostics.Debug.WriteLine("Recording loyalty transaction");
 
             var transaction = new LoyaltyTransactionModel
             {

@@ -173,24 +173,7 @@ public partial class App : Application
 				AppDiagnostics.Log("Reservation sync service started");
 			}
 
-			var webhookListener = serviceProvider.GetService<OrderWebWebhookListenerService>();
-			if (webhookListener != null && reservationSyncService != null)
-			{
-				var databaseService = serviceProvider.GetService<DatabaseService>();
-				var config = databaseService != null
-                    ? await databaseService.GetCloudConfigAsync()
-                    : new Dictionary<string, string>();
-				var port = int.TryParse(config.GetValueOrDefault("webhook_port"), out var parsedPort) ? parsedPort : 8080;
-				try
-				{
-					await webhookListener.StartAsync(port);
-					AppDiagnostics.Log($"OrderWeb webhook listener started on port {port}");
-				}
-				catch (Exception webhookEx)
-				{
-					AppDiagnostics.Log($"Webhook listener could not start: {webhookEx.Message}");
-				}
-			}
+			AppDiagnostics.Log("Inbound HTTP webhook disabled; using authenticated WebSocket/polling sync.");
 
 			var connectionKeeper = serviceProvider.GetService<OrderWebConnectionKeeperService>();
 			if (connectionKeeper != null)

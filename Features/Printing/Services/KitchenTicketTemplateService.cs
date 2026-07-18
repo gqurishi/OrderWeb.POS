@@ -19,7 +19,7 @@ public static class KitchenTicketTemplateService
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
-        var ticketTitle = BuildRevisionTitle(order, order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE");
+        var ticketTitle = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
 
         if (items.Any(item => item.KitchenAction == KitchenChangeAction.Void))
         {
@@ -30,8 +30,6 @@ public static class KitchenTicketTemplateService
         foreach (var section in sections)
         {
             PrintHeader(builder, ticketTitle, orderReference, printedAt, settings, section.Title);
-            PrintRevisionInfo(builder, order);
-
             foreach (var item in section.Items)
             {
                 PrintTableItem(builder, item);
@@ -57,7 +55,7 @@ public static class KitchenTicketTemplateService
         var builder = new EscPosBuilder(printer.Brand, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
-        var ticketTitle = BuildRevisionTitle(order, NormalizeOrderType(orderType, order.TableNumber));
+        var ticketTitle = NormalizeOrderType(orderType, order.TableNumber);
 
         if (printer.HasBuzzer)
         {
@@ -65,8 +63,6 @@ public static class KitchenTicketTemplateService
         }
 
         PrintHeader(builder, ticketTitle, orderReference, printedAt, settings);
-        PrintRevisionInfo(builder, order);
-
         foreach (var section in GroupTakeawayItems(items, printGroupNames))
         {
             PrintSectionTitle(builder, section.Title, settings);
@@ -187,9 +183,7 @@ public static class KitchenTicketTemplateService
         var name = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Name : item.DisplayName;
         var actionPrefix = item.KitchenAction switch
         {
-            KitchenChangeAction.Add => "+ ADD ",
-            KitchenChangeAction.Void => "- VOID ",
-            KitchenChangeAction.Change => "* CHANGE ",
+            KitchenChangeAction.Void => "VOID ",
             _ => string.Empty
         };
 
@@ -197,14 +191,10 @@ public static class KitchenTicketTemplateService
         PrintWrapped(builder, $"{actionPrefix}{Math.Max(1, item.Quantity)}x {name}");
         builder.SetBold(false);
 
-        if (item.KitchenAction == KitchenChangeAction.Change)
+        if (item.KitchenAction == KitchenChangeAction.Void)
         {
-            PrintWrapped(builder, $"Quantity: {item.PreviousQuantity} -> {item.Quantity}", 3);
-            if (!string.Equals(item.PreviousNotes?.Trim(), item.Notes?.Trim(), StringComparison.Ordinal))
-            {
-                PrintWrapped(builder, $"Was: {item.PreviousNotes ?? "No note"}", 3);
-                PrintWrapped(builder, $"Now: {item.Notes ?? "No note"}", 3);
-            }
+            builder.SetNormalSize().FeedLines(1);
+            return;
         }
 
         if (!string.IsNullOrWhiteSpace(item.Modifiers))
@@ -228,42 +218,6 @@ public static class KitchenTicketTemplateService
         }
 
         builder.SetNormalSize().SetBold(false).FeedLines(1);
-    }
-
-    private static string BuildRevisionTitle(TableOrder order, string baseTitle)
-    {
-        if (order.KitchenRevisionNumber <= 0)
-        {
-            return baseTitle;
-        }
-
-        var suffix = order.KitchenTicketType?.Trim().ToUpperInvariant() switch
-        {
-            "ADDITION" => "ADDITION",
-            "VOID" => "VOID",
-            "CHANGE" => "CHANGE",
-            "MIXED" => "ORDER CHANGE",
-            _ => "NEW ORDER"
-        };
-        return $"{baseTitle} - {suffix}";
-    }
-
-    private static void PrintRevisionInfo(EscPosBuilder builder, TableOrder order)
-    {
-        if (order.KitchenRevisionNumber <= 0)
-        {
-            return;
-        }
-
-        builder.SetAlign(TextAlign.Center)
-               .SetBold(true)
-               .PrintLine($"Revision {order.KitchenRevisionNumber}")
-               .SetBold(false);
-        if (!string.IsNullOrWhiteSpace(order.KitchenRevisionReason))
-        {
-            PrintWrapped(builder, $"Reason: {order.KitchenRevisionReason}");
-        }
-        builder.SetAlign(TextAlign.Left).FeedLines(1);
     }
 
     private static void PrintCloudItem(EscPosBuilder builder, CloudOrderItem item)

@@ -58,7 +58,7 @@ public sealed class OrderWebGiftCardApiService
         request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
         request.Headers.Pragma.ParseAdd("no-cache");
 
-        AppDiagnostics.Log($"Gift card lookup endpoint: {OrderWebApiClient.BuildUrl(config, path)}");
+        AppDiagnostics.Log("Gift card lookup requested");
         HttpResponseMessage response;
         string content;
         try
@@ -78,9 +78,6 @@ public sealed class OrderWebGiftCardApiService
         }
 
         AppDiagnostics.Log($"Gift card lookup status: {(int)response.StatusCode} {response.StatusCode}");
-#if DEBUG
-        AppDiagnostics.Log($"Gift card lookup response: {content}");
-#endif
 
         if (!response.IsSuccessStatusCode)
         {
@@ -304,13 +301,10 @@ public sealed class OrderWebGiftCardApiService
             payload,
             idempotencyKey);
 
-        AppDiagnostics.Log($"Gift card redeem endpoint: {httpRequest.RequestUri}");
+        AppDiagnostics.Log("Gift card redeem requested");
         var response = await _orderWebApiClient.SendAsync(httpRequest);
         var content = await response.Content.ReadAsStringAsync();
         AppDiagnostics.Log($"Gift card redeem status: {(int)response.StatusCode} {response.StatusCode}");
-#if DEBUG
-        AppDiagnostics.Log($"Gift card redeem response: {content}");
-#endif
 
         if (!response.IsSuccessStatusCode)
         {
@@ -397,7 +391,7 @@ public sealed class OrderWebGiftCardApiService
 
         using var request = _orderWebApiClient.CreateRequest(config, HttpMethod.Post, path, payload, idempotencyKey);
 
-        AppDiagnostics.Log($"Gift card POST endpoint: {request.RequestUri}");
+        AppDiagnostics.Log("Gift card operation requested");
         HttpResponseMessage response;
         string content;
         try
@@ -417,9 +411,6 @@ public sealed class OrderWebGiftCardApiService
         }
 
         AppDiagnostics.Log($"Gift card POST status: {(int)response.StatusCode} {response.StatusCode}");
-#if DEBUG
-        AppDiagnostics.Log($"Gift card POST response: {content}");
-#endif
 
         if (!response.IsSuccessStatusCode)
         {

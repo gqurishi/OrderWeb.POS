@@ -7,15 +7,16 @@
              HorizontalOptions="Fill">
 
     <Grid VerticalOptions="Center"
-          HorizontalOptions="Center"
+          HorizontalOptions="Fill"
           Padding="36">
         <Border BackgroundColor="White"
                 Stroke="{StaticResource DialogShellStrokeColor}"
                 StrokeThickness="1"
                 Padding="30"
-                WidthRequest="650"
-                VerticalOptions="Center"
-                HorizontalOptions="Center">
+               MaximumWidthRequest="650"
+               Margin="16"
+                HorizontalOptions="Fill"
+                VerticalOptions="Center">
             <Border.StrokeShape>
                 <RoundRectangle CornerRadius="22"/>
             </Border.StrokeShape>

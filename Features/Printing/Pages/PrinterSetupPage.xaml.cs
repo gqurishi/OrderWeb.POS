@@ -15,6 +15,7 @@ public partial class PrinterSetupPage : ContentPage
     private NetworkPrintQueueService? _queueService;
     private PrintGroupService? _printGroupService;
     private PrinterRoutingService? _routingService;
+    private ReceiptLogoSettingsService? _receiptLogoSettingsService;
     private List<NetworkPrinter> _routingPrinters = new();
     private NetworkPrinter? _editingPrinter;
     private bool _isInitialized = false;
@@ -25,10 +26,22 @@ public partial class PrinterSetupPage : ContentPage
     private NetworkPrinterType _selectedType = NetworkPrinterType.Receipt;
     private PaperWidth _selectedWidth = PaperWidth.Mm80;
     private string? _selectedPrintGroupId = null;
+    private ReceiptLogoSize _receiptLogoSize = ReceiptLogoSize.Medium;
 
     public PrinterSetupPage()
     {
         InitializeComponent();
+        SizeChanged += OnPrinterPageSizeChanged;
+    }
+
+    private void OnPrinterPageSizeChanged(object? sender, EventArgs e)
+    {
+        var compact = Width > 0 && (Width < 1450 || Height < 850);
+        PrinterContentGrid.Padding = compact ? new Thickness(20, 16) : new Thickness(32);
+        PrinterContentGrid.ColumnSpacing = compact ? 20 : 32;
+        PrinterListLayout.Spacing = compact ? 16 : 24;
+        FormPanel.WidthRequest = compact ? 360 : 420;
+        FormPanel.Padding = compact ? new Thickness(20) : new Thickness(28);
     }
 
     protected override async void OnAppearing()
@@ -46,6 +59,7 @@ public partial class PrinterSetupPage : ContentPage
 
             await LoadPrintersAsync();
             await LoadRoutingSettingsAsync();
+            await LoadReceiptLogoSizeAsync();
             await UpdateStatusAsync();
             
             // Auto-refresh every 10 seconds
@@ -80,6 +94,8 @@ public partial class PrinterSetupPage : ContentPage
             _queueService = ServiceHelper.GetService<NetworkPrintQueueService>();
             _printGroupService = ServiceHelper.GetService<PrintGroupService>() ?? new PrintGroupService();
             _routingService = ServiceHelper.GetService<PrinterRoutingService>();
+            _receiptLogoSettingsService = ServiceHelper.GetService<ReceiptLogoSettingsService>()
+                ?? new ReceiptLogoSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
             
             if (_dbService != null)
             {
@@ -94,6 +110,56 @@ public partial class PrinterSetupPage : ContentPage
         {
             System.Diagnostics.Debug.WriteLine($" Error initializing services: {ex.Message}");
         }
+    }
+
+    private async Task LoadReceiptLogoSizeAsync()
+    {
+        if (_receiptLogoSettingsService == null)
+        {
+            return;
+        }
+
+        _receiptLogoSize = await _receiptLogoSettingsService.GetLogoSizeAsync();
+        UpdateReceiptLogoSizeControls();
+    }
+
+    private async void OnMediumLogoSizeClicked(object? sender, EventArgs e) =>
+        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Medium);
+
+    private async void OnLargeLogoSizeClicked(object? sender, EventArgs e) =>
+        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Large);
+
+    private async Task SaveReceiptLogoSizeAsync(ReceiptLogoSize size)
+    {
+        if (_receiptLogoSettingsService == null)
+        {
+            return;
+        }
+
+        MediumLogoSizeButton.IsEnabled = false;
+        LargeLogoSizeButton.IsEnabled = false;
+        var saved = await _receiptLogoSettingsService.SaveLogoSizeAsync(size);
+        MediumLogoSizeButton.IsEnabled = true;
+        LargeLogoSizeButton.IsEnabled = true;
+
+        if (!saved)
+        {
+            await AppAlertService.ShowAlertAsync("Logo Size", "The receipt logo size could not be saved.");
+            return;
+        }
+
+        _receiptLogoSize = size;
+        UpdateReceiptLogoSizeControls();
+    }
+
+    private void UpdateReceiptLogoSizeControls()
+    {
+        var isMedium = _receiptLogoSize == ReceiptLogoSize.Medium;
+        MediumLogoSizeButton.BackgroundColor = Color.FromArgb(isMedium ? "#0F172A" : "#E2E8F0");
+        MediumLogoSizeButton.TextColor = Color.FromArgb(isMedium ? "#FFFFFF" : "#334155");
+        LargeLogoSizeButton.BackgroundColor = Color.FromArgb(isMedium ? "#E2E8F0" : "#0F172A");
+        LargeLogoSizeButton.TextColor = Color.FromArgb(isMedium ? "#334155" : "#FFFFFF");
+        LogoSizeStatusLabel.Text = $"Selected: {_receiptLogoSize} (saved automatically)";
     }
 
     private async Task LoadRoutingSettingsAsync()

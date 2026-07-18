@@ -109,7 +109,20 @@ namespace POS_in_NET.Pages
         public OrderPlacementPageSimple()
         {
             InitializeComponent();
+            SizeChanged += OnOrderPageSizeChanged;
             InitializeServices();
+        }
+
+        private void OnOrderPageSizeChanged(object? sender, EventArgs e)
+        {
+            var compact = Width > 0 && (Width < 1450 || Height < 850);
+            MainContentGrid.Padding = compact ? new Thickness(10) : new Thickness(15);
+            MainContentGrid.ColumnSpacing = compact ? 10 : 15;
+            CategoryCarousel.HeightRequest = compact ? 135 : 155;
+            SubCategoryCarousel.HeightRequest = compact ? 118 : 135;
+            OrderActionsCard.Padding = compact ? new Thickness(12) : new Thickness(20);
+            OrderActionsCard.Margin = compact ? new Thickness(0, 8, 0, 0) : new Thickness(0, 15, 0, 0);
+            OrderActionsLayout.Spacing = compact ? 9 : 15;
         }
 
         public OrderPlacementPageSimple(string tableNumber, int coverCount, string staffName, int staffId)
@@ -1426,6 +1439,10 @@ namespace POS_in_NET.Pages
                     Quantity = item.Quantity,
                     UnitPrice = item.ItemPrice ?? 0m,
                     Notes = item.SpecialInstructions,
+                    PrintGroupId = !string.IsNullOrWhiteSpace(item.PrintGroupId)
+                        ? item.PrintGroupId
+                        : _allMenuItems.FirstOrDefault(menuItem =>
+                            string.Equals(menuItem.Id, item.MenuItemId, StringComparison.OrdinalIgnoreCase))?.PrintGroupId,
                     SendStatus = itemTracking?.SendStatus?.ToLowerInvariant() switch
                     {
                         "printed" or "sent" => ItemSendStatus.Sent,
@@ -1744,7 +1761,11 @@ namespace POS_in_NET.Pages
         private (string ActorType, string? ActorId, string? ActorName) ResolveCurrentActor()
         {
             var authService = ServiceHelper.GetService<AuthenticationService>();
-            var currentUser = authService?.CurrentUser;
+            return ResolveActor(authService?.CurrentUser);
+        }
+
+        private static (string ActorType, string? ActorId, string? ActorName) ResolveActor(User? currentUser)
+        {
 
             if (currentUser == null)
             {
@@ -1754,13 +1775,19 @@ namespace POS_in_NET.Pages
             var actorType = currentUser.Role == UserRole.Manager || currentUser.Role == UserRole.Admin
                 ? "manager"
                 : "user";
-            var actorId = string.IsNullOrWhiteSpace(currentUser.Username) ? null : currentUser.Username;
+            var actorId = currentUser.Id > 0
+                ? currentUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : (string.IsNullOrWhiteSpace(currentUser.Username) ? null : currentUser.Username);
             var actorName = !string.IsNullOrWhiteSpace(currentUser.Name) ? currentUser.Name : currentUser.Username;
 
             return (actorType, actorId, actorName);
         }
 
-        private async Task LogOperationalEventAsync(string eventType, object? payload = null, DateTime? eventAt = null)
+        private async Task LogOperationalEventAsync(
+            string eventType,
+            object? payload = null,
+            DateTime? eventAt = null,
+            User? actorOverride = null)
         {
             if (!_rolloutConfig.EnableLifecycleWrites)
             {
@@ -1772,7 +1799,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var actor = ResolveCurrentActor();
+            var actor = actorOverride == null ? ResolveCurrentActor() : ResolveActor(actorOverride);
             await _orderService.LogOrderEventAsync(
                 _currentOrder.Id,
                 eventType,
@@ -2498,13 +2525,22 @@ namespace POS_in_NET.Pages
             if (reason == null)
                 return; // User cancelled
             
-            // Check if PIN required (for voids over £30 and not Manager/Admin)
+            // A logged-in Manager/Admin may approve directly; all other users need a manager PIN.
             var authService = ServiceHelper.GetService<AuthenticationService>();
             var currentUser = authService?.CurrentUser;
-            var requiresPin = _currentOrder.Total > 30 && 
-                             (currentUser == null || currentUser.Role == UserRole.User);
-            
-            if (requiresPin)
+            if (authService == null)
+            {
+                var unavailableDialog = new ModernAlertDialog();
+                unavailableDialog.SetAlert("Approval Unavailable", "Manager approval is unavailable. Please sign in again.", "OK", "#EF4444", "White");
+                await unavailableDialog.ShowAsync();
+                return;
+            }
+
+            User? approvingUser = currentUser is { Role: UserRole.Manager or UserRole.Admin }
+                ? currentUser
+                : null;
+
+            if (approvingUser == null)
             {
                 var pinDialog = new StyledPromptDialog();
                 pinDialog.SetDialog(
@@ -2519,15 +2555,19 @@ namespace POS_in_NET.Pages
                 if (string.IsNullOrEmpty(pin))
                     return; // User cancelled
                 
-                // TODO: Validate manager PIN
-                // For now, accept any 4-digit PIN as placeholder
-                if (pin.Length != 4)
+                var approval = await authService.ValidatePinAsync(pin);
+                if (!approval.Success || approval.User is not { Role: UserRole.Manager or UserRole.Admin })
                 {
                     var errorDialog = new ModernAlertDialog();
-                    errorDialog.SetAlert("Invalid PIN", "Please enter a valid 4-digit PIN.", "", "#EF4444", "White");
+                    var approvalMessage = approval.Success
+                        ? "This PIN does not belong to a Manager or Administrator."
+                        : approval.Message;
+                    errorDialog.SetAlert("Approval Denied", approvalMessage, "OK", "#EF4444", "White");
                     await errorDialog.ShowAsync();
                     return;
                 }
+
+                approvingUser = approval.User;
             }
             
             var confirmDialog = new ModernConfirmDialog();
@@ -2547,17 +2587,21 @@ namespace POS_in_NET.Pages
                 {
                     reason,
                     amount = _currentOrder.Total,
-                    itemCount = _currentOrder.Items.Count
-                });
+                    itemCount = _currentOrder.Items.Count,
+                    requestedByUserId = currentUser?.Id,
+                    requestedByName = currentUser?.Name ?? currentUser?.Username,
+                    approvedByUserId = approvingUser.Id,
+                    approvedByName = approvingUser.Name
+                }, actorOverride: approvingUser);
 
                 _isFinalizingOrder = true;
-                var saved = await SaveVoidedOrderAsync(reason);
+                var saved = await SaveVoidedOrderAsync(reason, approvingUser);
                 if (!saved)
                 {
                     _isFinalizingOrder = false;
                     return;
                 }
-                await PrintFullOrderVoidAsync(reason);
+                await PrintFullOrderVoidAsync(reason, approvingUser);
                 var voidedDialog = new ModernAlertDialog();
                 voidedDialog.SetAlert("Voided", $"Order has been voided.\nReason: {reason}", "", "#10B981", "White");
                 await voidedDialog.ShowAsync();
@@ -4342,7 +4386,7 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task PrintFullOrderVoidAsync(string reason)
+        private async Task PrintFullOrderVoidAsync(string reason, User approvingUser)
         {
             try
             {
@@ -4352,7 +4396,7 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                var actor = ResolveCurrentActor();
+                var actor = ResolveActor(approvingUser);
                 var revision = await _kitchenRevisionService.CreateFullVoidRevisionAsync(
                     persistedOrder.Id,
                     CloneOrderForSend(_currentOrder),
@@ -4375,7 +4419,7 @@ namespace POS_in_NET.Pages
                     reason,
                     printedCount = result.PrintedItemIds.Count,
                     failedRoutes = result.FailedRoutes
-                });
+                }, actorOverride: approvingUser);
             }
             catch (Exception ex)
             {
@@ -4468,16 +4512,20 @@ namespace POS_in_NET.Pages
             return $"POS tender: {order.PaymentMethod}";
         }
 
-        private async Task<bool> SaveVoidedOrderAsync(string reason)
+        private async Task<bool> SaveVoidedOrderAsync(string reason, User approvingUser)
         {
             try
             {
                 var orderService = new OrderService();
 
-                var authService = ServiceHelper.GetService<AuthenticationService>();
-                var currentUser = authService?.CurrentUser;
-
-                var order = await BuildPersistentOrderSnapshotAsync(LocalLifecycleState.Voided, voidReason: reason, voidedBy: currentUser?.Name ?? currentUser?.Username, voidedAt: DateTime.Now);
+                var approverName = !string.IsNullOrWhiteSpace(approvingUser.Name)
+                    ? approvingUser.Name
+                    : approvingUser.Username;
+                var order = await BuildPersistentOrderSnapshotAsync(
+                    LocalLifecycleState.Voided,
+                    voidReason: reason,
+                    voidedBy: approverName,
+                    voidedAt: DateTime.Now);
                 if (order == null)
                 {
                     return false;
@@ -4501,10 +4549,12 @@ namespace POS_in_NET.Pages
                 {
                     reason,
                     itemCount = _currentOrder.Items.Count,
-                    amount = _currentOrder.Total
-                }, DateTime.Now);
+                    amount = _currentOrder.Total,
+                    approvedByUserId = approvingUser.Id,
+                    approvedByName = approverName
+                }, DateTime.Now, approvingUser);
 
-                await EnsureTableReleasedAfterFinalizeAsync("voided", currentUser?.Name ?? currentUser?.Username, new
+                await EnsureTableReleasedAfterFinalizeAsync("voided", approverName, new
                 {
                     orderId = order.OrderId,
                     orderNumber = order.OrderNumber,

@@ -29,8 +29,12 @@ public class AuthenticationService
     private User? _currentUser;
     private readonly SemaphoreSlim _authCacheLock = new(1, 1);
     private readonly Dictionary<string, CachedAuthUser> _authCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _failedAttemptLock = new();
+    private readonly Dictionary<string, FailedAttemptState> _failedAttempts = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _authCacheLoadedAtUtc = DateTime.MinValue;
     private static readonly TimeSpan AuthCacheTtl = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan AuthenticationLockoutDuration = TimeSpan.FromMinutes(2);
+    private const int MaxFailedAuthenticationAttempts = 5;
 
     private sealed class CachedAuthUser
     {
@@ -42,6 +46,12 @@ public class AuthenticationService
         public DateTime CreatedAt { get; init; }
         public DateTime UpdatedAt { get; init; }
         public bool IsActive { get; init; } = true;
+    }
+
+    private sealed class FailedAttemptState
+    {
+        public int Count { get; set; }
+        public DateTime? LockedUntilUtc { get; set; }
     }
 
     // Default constructor for singleton pattern (backward compatibility)
@@ -87,6 +97,13 @@ public class AuthenticationService
                 return (false, "Username and password are required.", null);
             }
 
+            username = username.Trim();
+            password = password.Trim();
+            if (TryGetLockoutMessage(username, out var lockoutMessage))
+            {
+                return (false, lockoutMessage, null);
+            }
+
             // Keep login timeout short for faster feedback
             using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -105,34 +122,30 @@ public class AuthenticationService
             if (authUser is null)
             {
                 _ = LogUserActivityAsync(null, "login_failed", $"Login attempt with non-existent username: {username}");
-                return (false, "Invalid username or password.", null);
+                return (false, RegisterFailedAttempt(username, "Invalid username or password."), null);
             }
 
             if (!authUser.IsActive)
             {
                 _ = LogUserActivityAsync(authUser.Id, "login_failed", $"Inactive user login attempt: {username}");
-                return (false, "This user is inactive. Please contact an administrator.", null);
+                return (false, RegisterFailedAttempt(username, "This user is inactive. Please contact an administrator."), null);
             }
 
-            var isPinLogin = username == password && username.Length == 4 && username.All(char.IsDigit);
-            if (!isPinLogin)
+            bool isValid;
+            try
             {
-                bool isValid;
-                try
-                {
-                    isValid = await Task.Run(() => BCrypt.Net.BCrypt.Verify(password, authUser.PasswordHash), cts.Token);
-                }
-                catch (Exception bcryptEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"BCrypt verify error: {bcryptEx.Message}");
-                    return (false, "Invalid username or password.", null);
-                }
+                isValid = await Task.Run(() => BCrypt.Net.BCrypt.Verify(password, authUser.PasswordHash), cts.Token);
+            }
+            catch (Exception bcryptEx)
+            {
+                AppDiagnostics.LogFatal("Login password verification", bcryptEx);
+                return (false, RegisterFailedAttempt(username, "Invalid username or password."), null);
+            }
 
-                if (!isValid)
-                {
-                    _ = LogUserActivityAsync(null, "login_failed", $"Failed login attempt for username: {username}");
-                    return (false, "Invalid username or password.", null);
-                }
+            if (!isValid)
+            {
+                _ = LogUserActivityAsync(authUser.Id, "login_failed", "Failed login attempt");
+                return (false, RegisterFailedAttempt(username, "Invalid username or password."), null);
             }
 
             var user = new User
@@ -148,6 +161,7 @@ public class AuthenticationService
             };
 
             _currentUser = user;
+            ResetFailedAttempts(username);
 
             // Log successful login (fire and forget - don't block login)
             _ = LogUserActivityAsync(user.Id, "login", "User logged in successfully");
@@ -183,6 +197,12 @@ public class AuthenticationService
                 return (false, "Please enter a 4-digit PIN.", null);
             }
 
+            pin = pin.Trim();
+            if (TryGetLockoutMessage(pin, out var lockoutMessage))
+            {
+                return (false, lockoutMessage, null);
+            }
+
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await EnsureAuthCacheAsync(forceReload: false, cts.Token);
 
@@ -194,12 +214,29 @@ public class AuthenticationService
 
             if (authUser is null)
             {
-                return (false, "Wrong PIN. Try again.", null);
+                return (false, RegisterFailedAttempt(pin, "Wrong PIN. Try again."), null);
             }
 
             if (!authUser.IsActive)
             {
-                return (false, "This staff member is inactive.", null);
+                return (false, RegisterFailedAttempt(pin, "This staff member is inactive."), null);
+            }
+
+            bool isValid;
+            try
+            {
+                isValid = await Task.Run(() => BCrypt.Net.BCrypt.Verify(pin, authUser.PasswordHash), cts.Token);
+            }
+            catch (Exception bcryptEx)
+            {
+                AppDiagnostics.LogFatal("PIN verification", bcryptEx);
+                return (false, RegisterFailedAttempt(pin, "Wrong PIN. Try again."), null);
+            }
+
+            if (!isValid)
+            {
+                _ = LogUserActivityAsync(authUser.Id, "pin_validation_failed", "Failed PIN validation");
+                return (false, RegisterFailedAttempt(pin, "Wrong PIN. Try again."), null);
             }
 
             var user = new User
@@ -214,6 +251,7 @@ public class AuthenticationService
                 IsActive = authUser.IsActive
             };
 
+            ResetFailedAttempts(pin);
             return (true, "PIN accepted.", user);
         }
         catch (Exception ex)
@@ -881,5 +919,57 @@ public class AuthenticationService
         return !string.IsNullOrWhiteSpace(value)
             && value.Length == 4
             && value.All(char.IsDigit);
+    }
+
+    private bool TryGetLockoutMessage(string key, out string message)
+    {
+        lock (_failedAttemptLock)
+        {
+            if (!_failedAttempts.TryGetValue(key, out var state) || state.LockedUntilUtc is null)
+            {
+                message = string.Empty;
+                return false;
+            }
+
+            var remaining = state.LockedUntilUtc.Value - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                _failedAttempts.Remove(key);
+                message = string.Empty;
+                return false;
+            }
+
+            message = $"Too many failed attempts. Try again in {Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds))} seconds.";
+            return true;
+        }
+    }
+
+    private string RegisterFailedAttempt(string key, string failureMessage)
+    {
+        lock (_failedAttemptLock)
+        {
+            if (!_failedAttempts.TryGetValue(key, out var state))
+            {
+                state = new FailedAttemptState();
+                _failedAttempts[key] = state;
+            }
+
+            state.Count++;
+            if (state.Count < MaxFailedAuthenticationAttempts)
+            {
+                return failureMessage;
+            }
+
+            state.LockedUntilUtc = DateTime.UtcNow.Add(AuthenticationLockoutDuration);
+            return $"Too many failed attempts. Try again in {(int)AuthenticationLockoutDuration.TotalSeconds} seconds.";
+        }
+    }
+
+    private void ResetFailedAttempts(string key)
+    {
+        lock (_failedAttemptLock)
+        {
+            _failedAttempts.Remove(key);
+        }
     }
 }

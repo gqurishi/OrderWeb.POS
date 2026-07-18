@@ -96,7 +96,7 @@ public class BackgroundSyncService : IDisposable
                         OnNewOrderReceived(new OrderEventArgs { Order = order });
                         
                         // Log the new order
-                        System.Diagnostics.Debug.WriteLine($"New order received: {order.OrderId} - {order.CustomerName}");
+                        System.Diagnostics.Debug.WriteLine($"New order received: {order.OrderId}");
                     }
                 }
                 

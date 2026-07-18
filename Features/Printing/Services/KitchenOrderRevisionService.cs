@@ -348,9 +348,13 @@ public sealed class KitchenOrderRevisionService
                 continue;
             }
 
-            if (!string.Equals(previous.Fingerprint, item.Fingerprint, StringComparison.Ordinal))
+            if (HasKitchenContentChanged(previous, item))
             {
-                lines.Add(ToLine(item, KitchenChangeAction.Change, Math.Min(previous.Quantity, item.Quantity), previous.Quantity, item.Quantity, previous));
+                // A preparation change is deliberately represented as two simple kitchen
+                // instructions: cancel the old preparation, then make the updated one.
+                lines.Add(ToLine(previous, KitchenChangeAction.Void, previous.Quantity, previous.Quantity, 0, previous));
+                lines.Add(ToLine(item, KitchenChangeAction.Add, item.Quantity, 0, item.Quantity, previous));
+                continue;
             }
 
             if (item.Quantity > previous.Quantity)
@@ -369,6 +373,47 @@ public sealed class KitchenOrderRevisionService
         }
 
         return lines.Where(line => line.Quantity > 0).ToList();
+    }
+
+    private static bool HasKitchenContentChanged(KitchenItemState previous, KitchenItemState current)
+    {
+        // Print-group changes affect routing only. They must never make an already-sent
+        // item appear as a new kitchen change when an order is reopened.
+        // Database hydration can represent the same value as null, empty text, or via
+        // the display-name fallback. Normalize those values before calculating a delta.
+        return !KitchenTextEquals(GetKitchenItemName(previous), GetKitchenItemName(current))
+            || !KitchenTextEquals(previous.MenuItemId, current.MenuItemId)
+            || !KitchenTextEquals(previous.VariantId, current.VariantId)
+            || !KitchenTextEquals(previous.Notes, current.Notes)
+            || !KitchenTextEquals(previous.Modifiers, current.Modifiers)
+            || !AddonsEqual(previous.AddonsJson, current.AddonsJson);
+    }
+
+    private static string GetKitchenItemName(KitchenItemState item) =>
+        string.IsNullOrWhiteSpace(item.DisplayName) ? item.ItemName : item.DisplayName;
+
+    private static bool KitchenTextEquals(string? previous, string? current) =>
+        string.Equals(
+            previous?.Trim() ?? string.Empty,
+            current?.Trim() ?? string.Empty,
+            StringComparison.Ordinal);
+
+    private static bool AddonsEqual(string previousJson, string currentJson)
+    {
+        var previous = DeserializeAddons(previousJson)
+            .OrderBy(addon => addon.Id, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(addon => addon.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var current = DeserializeAddons(currentJson)
+            .OrderBy(addon => addon.Id, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(addon => addon.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return previous.Count == current.Count
+            && previous.Zip(current).All(pair =>
+                string.Equals(pair.First.Id?.Trim(), pair.Second.Id?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(pair.First.Name?.Trim(), pair.Second.Name?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && pair.First.Price == pair.Second.Price);
     }
 
     private static List<KitchenOrderRevisionLine> BuildFullVoidLines(
@@ -416,7 +461,6 @@ public sealed class KitchenOrderRevisionService
         if (fullVoid || lines.All(line => line.Action == KitchenChangeAction.Void)) return "void";
         if (revisionNumber == 1 && lines.All(line => line.Action == KitchenChangeAction.New)) return "initial";
         if (lines.All(line => line.Action is KitchenChangeAction.New or KitchenChangeAction.Add)) return "addition";
-        if (lines.All(line => line.Action == KitchenChangeAction.Change)) return "change";
         return "mixed";
     }
 

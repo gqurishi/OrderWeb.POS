@@ -14,9 +14,10 @@
                HasShadow="False"
                CornerRadius="0">
             
-            <Grid HorizontalOptions="Center"
+            <Grid HorizontalOptions="Fill"
                   VerticalOptions="Center"
-                  WidthRequest="1200"
+                  Margin="16"
+                  MaximumWidthRequest="1200"
                   MaximumHeightRequest="900">
                 
                 <Frame BackgroundColor="White"

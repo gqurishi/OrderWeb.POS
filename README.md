@@ -1,12 +1,12 @@
-# POS-in-NET
+# OrderWeb POS
 
-POS-in-NET is a .NET MAUI point-of-sale application with a separate database setup utility and installer workflow for Mother and Child terminals.
+OrderWeb POS is a .NET MAUI point-of-sale application with a separate database setup utility and installer workflow for Mother and Child terminals.
 
 ## At A Glance
 
-- App title: POS-in-NET
-- App ID: `com.companyname.posinnet`
-- Display version: `1.0`
+- App title: OrderWeb POS
+- App ID: `com.orderweb.pos`
+- Display version: `1.0.0`
 - Build version: `1`
 - Solution projects:
   - `POS-in-NET`

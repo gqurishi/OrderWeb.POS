@@ -15,6 +15,9 @@ public partial class TopBar : ContentView
     {
         InitializeComponent();
 
+        SizeChanged += OnTopBarSizeChanged;
+        ApplyResponsiveLayout(Width);
+
         RegisterForSharedUpdates();
         UpdateDateTime();
 
@@ -125,9 +128,37 @@ public partial class TopBar : ContentView
         }
 
         var now = DateTime.Now;
-        DateTimeLabel.Text = now.ToString("dddd, MMMM dd, yyyy");
+        DateTimeLabel.Text = Width > 0 && Width < 1450
+            ? now.ToString("ddd, dd MMM yyyy")
+            : now.ToString("dddd, MMMM dd, yyyy");
         TimeLabel.Text = now.ToString("HH:mm:ss");
         UpdateMotherDisconnectedBanner();
+    }
+
+    private void OnTopBarSizeChanged(object? sender, EventArgs e)
+    {
+        ApplyResponsiveLayout(Width);
+    }
+
+    private void ApplyResponsiveLayout(double width)
+    {
+        if (HeaderBorder == null || HeaderGrid == null || PageTitleLabel == null)
+        {
+            return;
+        }
+
+        var compact = width > 0 && width < 1450;
+        HeaderBorder.HeightRequest = compact ? 82 : 88;
+        HeaderGrid.Padding = compact ? new Thickness(12, 0) : new Thickness(16, 0);
+        HeaderGrid.ColumnSpacing = compact ? 8 : 12;
+        PageTitleLabel.FontSize = compact ? 23 : 28;
+        DateTimeLabel.FontSize = compact ? 12 : 15;
+        TimeLabel.FontSize = compact ? 20 : 24;
+
+        var now = DateTime.Now;
+        DateTimeLabel.Text = compact
+            ? now.ToString("ddd, dd MMM yyyy")
+            : now.ToString("dddd, MMMM dd, yyyy");
     }
 
     private void OnTerminalConnectionStateChanged(object? sender, TerminalConnectionStateChangedEventArgs e)

@@ -373,7 +373,7 @@ namespace POS_in_NET.Pages
                     System.Diagnostics.Debug.WriteLine(" FULL DATABASE DUMP:");
                     foreach (var order in allOrders.OrderByDescending(o => o.CreatedAt).Take(20))
                     {
-                        System.Diagnostics.Debug.WriteLine($"   ID: {order.Id} | Date: {order.CreatedAt:yyyy-MM-dd HH:mm:ss} | Customer: {order.CustomerName} | Source: {order.SourceChannel} | Sync: {order.SyncStatus}");
+                        System.Diagnostics.Debug.WriteLine($"   ID: {order.Id} | Date: {order.CreatedAt:yyyy-MM-dd HH:mm:ss} | Source: {order.SourceChannel} | Sync: {order.SyncStatus}");
                     }
                     System.Diagnostics.Debug.WriteLine("========================================");
                 }
@@ -426,7 +426,7 @@ namespace POS_in_NET.Pages
                         .Take(5);
                     foreach (var order in closestOrders)
                     {
-                        System.Diagnostics.Debug.WriteLine($"   {order.CreatedAt:yyyy-MM-dd} | {order.CustomerName} | Days diff: {(order.CreatedAt.Date - _selectedDate.Date).TotalDays}");
+                        System.Diagnostics.Debug.WriteLine($"   {order.CreatedAt:yyyy-MM-dd} | Days diff: {(order.CreatedAt.Date - _selectedDate.Date).TotalDays}");
                     }
                 }
                 

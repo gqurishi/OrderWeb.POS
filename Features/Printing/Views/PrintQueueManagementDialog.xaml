@@ -5,8 +5,13 @@
              BackgroundColor="#990F172A"
              HorizontalOptions="Fill"
              VerticalOptions="Fill">
-    <Grid Padding="28" HorizontalOptions="Center" VerticalOptions="Center">
-        <Border WidthRequest="640" BackgroundColor="White" Stroke="#CBD5E1" StrokeThickness="1" Padding="26">
+    <Grid Padding="16" HorizontalOptions="Fill" VerticalOptions="Center">
+        <Border MaximumWidthRequest="640"
+                HorizontalOptions="Fill"
+                BackgroundColor="White"
+                Stroke="#CBD5E1"
+                StrokeThickness="1"
+                Padding="26">
             <Border.StrokeShape>
                 <RoundRectangle CornerRadius="8"/>
             </Border.StrokeShape>

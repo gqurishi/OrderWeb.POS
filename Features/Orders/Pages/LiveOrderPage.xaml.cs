@@ -23,6 +23,10 @@ namespace POS_in_NET.Pages
         private bool _tableBackfillCompleted;
         private bool _isSubscribedToLiveUpdates;
         private bool _webOrderTotalsRepairCompleted;
+        private bool _isPageActive;
+        private bool _isNavigatingAway;
+        private int _pageGeneration;
+        private CancellationTokenSource? _pageRefreshCts;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
 
         private List<Order> _allOrders = new();
@@ -87,12 +91,21 @@ namespace POS_in_NET.Pages
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            _isPageActive = true;
+            _isNavigatingAway = false;
+            _pageGeneration++;
+            _pageRefreshCts?.Cancel();
+            _pageRefreshCts?.Dispose();
+            _pageRefreshCts = new CancellationTokenSource();
             SubscribeToLiveUpdates();
-            _ = LoadAllOrdersAsync();
+            RequestOrdersReload();
         }
 
         protected override void OnDisappearing()
         {
+            _isPageActive = false;
+            _pendingReload = false;
+            _pageRefreshCts?.Cancel();
             base.OnDisappearing();
             UnsubscribeFromLiveUpdates();
         }
@@ -121,24 +134,53 @@ namespace POS_in_NET.Pages
 
         private void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
         {
-            if (!e.HasAny(AppDataChangeKind.Orders, AppDataChangeKind.TableLayout))
+            if (!_isPageActive || _isNavigatingAway
+                || !e.HasAny(AppDataChangeKind.Orders, AppDataChangeKind.TableLayout))
             {
                 return;
             }
 
             if (e.HasKind(AppDataChangeKind.Orders) && !e.IsFromCurrentTerminal)
             {
+                var generation = _pageGeneration;
+                var cancellationToken = _pageRefreshCts?.Token ?? CancellationToken.None;
                 _ = MainThread.InvokeOnMainThreadAsync(async () =>
                 {
-                    await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
+                    if (CanRenderOrders(generation, cancellationToken))
+                    {
+                        await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
+                    }
                 });
             }
 
-            _ = LoadAllOrdersAsync();
+            RequestOrdersReload();
         }
 
-        private async Task LoadAllOrdersAsync()
+        private void RequestOrdersReload()
         {
+            var refreshCts = _pageRefreshCts;
+            if (!_isPageActive || _isNavigatingAway || refreshCts == null || refreshCts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _ = LoadAllOrdersAsync(_pageGeneration, refreshCts.Token);
+        }
+
+        private bool CanRenderOrders(int generation, CancellationToken cancellationToken) =>
+            _isPageActive
+            && !_isNavigatingAway
+            && generation == _pageGeneration
+            && !cancellationToken.IsCancellationRequested
+            && ReferenceEquals(Shell.Current?.CurrentPage, this);
+
+        private async Task LoadAllOrdersAsync(int generation, CancellationToken cancellationToken)
+        {
+            if (!CanRenderOrders(generation, cancellationToken))
+            {
+                return;
+            }
+
             if (!await _ordersReloadGate.WaitAsync(0))
             {
                 _pendingReload = true;
@@ -155,6 +197,7 @@ namespace POS_in_NET.Pages
                 {
                     _pendingReload = false;
                     reloadPasses++;
+                    cancellationToken.ThrowIfCancellationRequested();
                     await EnsureRolloutConfigAsync();
                     await RepairOpenWebOrderTotalsAsync();
 
@@ -163,25 +206,37 @@ namespace POS_in_NET.Pages
                     await LoadDeliveryOrdersAsync();
                     await LoadTableSessionsAsync();
 
-                    await MainThread.InvokeOnMainThreadAsync(RebuildAllGrids);
+                    if (!CanRenderOrders(generation, cancellationToken))
+                    {
+                        return;
+                    }
+
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        if (CanRenderOrders(generation, cancellationToken))
+                        {
+                            RebuildAllGrids();
+                        }
+                    });
                 }
-                while (_pendingReload && reloadPasses < 2);
+                while (_pendingReload && reloadPasses < 2 && CanRenderOrders(generation, cancellationToken));
+            }
+            catch (OperationCanceledException)
+            {
+                // The page was closed or navigation started while data was loading.
             }
             finally
             {
                 _isLoadingOrders = false;
-                scheduleTrailingReload = _pendingReload;
+                scheduleTrailingReload = _pendingReload && _isPageActive && !_isNavigatingAway;
                 _pendingReload = false;
                 _ordersReloadGate.Release();
             }
 
             if (scheduleTrailingReload)
             {
-                _ = Task.Run(async () =>
-                {
-                    await Task.Delay(750);
-                    await LoadAllOrdersAsync();
-                });
+                await Task.Delay(750);
+                RequestOrdersReload();
             }
         }
 
@@ -202,21 +257,40 @@ namespace POS_in_NET.Pages
 
         private void RebuildOrderGrid(FlexLayout grid, IReadOnlyList<Order> orders, Func<Order, Task> onTap)
         {
-            grid.Children.Clear();
+            var cards = orders
+                .Select(order => CreateOrderCard(order, onTap))
+                .ToList();
 
-            foreach (var order in orders)
+            RemoveLayoutChildrenSafely(grid);
+
+            foreach (var card in cards)
             {
-                grid.Children.Add(CreateOrderCard(order, onTap));
+                grid.Children.Add(card);
             }
         }
 
         private void RebuildTableGrid()
         {
-            TableOrdersGrid.Children.Clear();
+            var cards = _tableSessions
+                .Select(CreateTableCard)
+                .ToList();
 
-            foreach (var session in _tableSessions)
+            RemoveLayoutChildrenSafely(TableOrdersGrid);
+
+            foreach (var card in cards)
             {
-                TableOrdersGrid.Children.Add(CreateTableCard(session));
+                TableOrdersGrid.Children.Add(card);
+            }
+        }
+
+        private static void RemoveLayoutChildrenSafely(FlexLayout layout)
+        {
+            // FlexLayout.Children.Clear() maps to WinUI UIElementCollection.Clear(),
+            // which can terminate the process with 0xC0000005 during page transitions.
+            // Removing one child at a time uses the stable native removal path instead.
+            for (var index = layout.Children.Count - 1; index >= 0; index--)
+            {
+                layout.Children.RemoveAt(index);
             }
         }
 
@@ -487,6 +561,11 @@ namespace POS_in_NET.Pages
 
         private async Task NavigateToOrderAsync(Order order)
         {
+            if (_isNavigatingAway)
+            {
+                return;
+            }
+
             if (IsTableOrderType(order.OrderType) && order.TableSessionId.HasValue && order.TableSessionId.Value > 0)
             {
                 var session = _tableSessions.FirstOrDefault(s => s.Id == order.TableSessionId.Value);
@@ -498,7 +577,7 @@ namespace POS_in_NET.Pages
             }
 
             var orderPage = new OrderPlacementPageSimple(existingOrderId: order.OrderId);
-            await Navigation.PushAsync(orderPage, false);
+            await PushOrderPageAsync(orderPage);
         }
 
         private static bool IsTableOrderType(string? orderType)
@@ -508,11 +587,16 @@ namespace POS_in_NET.Pages
 
         private async Task NavigateToTableAsync(TableSession session)
         {
+            if (_isNavigatingAway)
+            {
+                return;
+            }
+
             var tableName = session.Table?.TableNumber ?? session.TableId.ToString();
             var existingOrderId = session.LinkedOrderId ?? session.CurrentOrderId;
             if (session.Id < 0 && !string.IsNullOrWhiteSpace(existingOrderId))
             {
-                await Navigation.PushAsync(new OrderPlacementPageSimple(existingOrderId), false);
+                await PushOrderPageAsync(new OrderPlacementPageSimple(existingOrderId));
                 return;
             }
 
@@ -524,7 +608,30 @@ namespace POS_in_NET.Pages
                 session.Id,
                 existingOrderId);
 
-            await Navigation.PushAsync(orderPage, false);
+            await PushOrderPageAsync(orderPage);
+        }
+
+        private async Task PushOrderPageAsync(Page page)
+        {
+            _isNavigatingAway = true;
+            _pageRefreshCts?.Cancel();
+
+            try
+            {
+                await Navigation.PushAsync(page, false);
+            }
+            catch
+            {
+                _isNavigatingAway = false;
+                if (_isPageActive)
+                {
+                    _pageRefreshCts?.Dispose();
+                    _pageRefreshCts = new CancellationTokenSource();
+                    RequestOrdersReload();
+                }
+
+                throw;
+            }
         }
 
         private async Task EnsureRolloutConfigAsync()

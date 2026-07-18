@@ -20,7 +20,11 @@
                                     Placement="BottomCenter"/>
         
         <!-- Main Content -->
-        <Grid Grid.Row="1" ColumnDefinitions="2*,*" ColumnSpacing="15" Padding="15">
+        <Grid x:Name="MainContentGrid"
+              Grid.Row="1"
+              ColumnDefinitions="2*,*"
+              ColumnSpacing="15"
+              Padding="15">
         
             <!-- LEFT SIDE - Menu Categories and Items -->
             <Border Grid.Column="0" 
@@ -90,8 +94,8 @@
                             <DataTemplate>
                                 <VerticalStackLayout Spacing="12" Padding="0">
                                     <!-- Category Row 1 (5 buttons) -->
-                                    <HorizontalStackLayout Spacing="12"
-                                                         BindableLayout.ItemsSource="{Binding Row1}">
+                                    <FlexLayout Direction="Row"
+                                                BindableLayout.ItemsSource="{Binding Row1}">
                                         <BindableLayout.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Text="{Binding Name}"
@@ -100,18 +104,19 @@
                                                         FontSize="17"
                                                         FontAttributes="Bold"
                                                         CornerRadius="12"
-                                                        Padding="25,15"
-                                                        WidthRequest="200"
+                                                        Padding="10,12"
+                                                        Margin="0,0,8,0"
+                                                        FlexLayout.Basis="19%"
                                                         HeightRequest="70"
                                                         Clicked="OnCategoryButtonClicked"
                                                         CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </BindableLayout.ItemTemplate>
-                                    </HorizontalStackLayout>
+                                    </FlexLayout>
                                     
                                     <!-- Category Row 2 (5 buttons) -->
-                                    <HorizontalStackLayout Spacing="12"
-                                                         BindableLayout.ItemsSource="{Binding Row2}">
+                                    <FlexLayout Direction="Row"
+                                                BindableLayout.ItemsSource="{Binding Row2}">
                                         <BindableLayout.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Text="{Binding Name}"
@@ -120,14 +125,15 @@
                                                         FontSize="17"
                                                         FontAttributes="Bold"
                                                         CornerRadius="12"
-                                                        Padding="25,15"
-                                                        WidthRequest="200"
+                                                        Padding="10,12"
+                                                        Margin="0,0,8,0"
+                                                        FlexLayout.Basis="19%"
                                                         HeightRequest="70"
                                                         Clicked="OnCategoryButtonClicked"
                                                         CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </BindableLayout.ItemTemplate>
-                                    </HorizontalStackLayout>
+                                    </FlexLayout>
                                 </VerticalStackLayout>
                             </DataTemplate>
                         </CarouselView.ItemTemplate>
@@ -157,8 +163,8 @@
                             <DataTemplate>
                                 <VerticalStackLayout Spacing="12" Padding="0">
                                     <!-- Sub-Category Row 1 (5 buttons) -->
-                                    <HorizontalStackLayout Spacing="12"
-                                                         BindableLayout.ItemsSource="{Binding Row1}">
+                                    <FlexLayout Direction="Row"
+                                                BindableLayout.ItemsSource="{Binding Row1}">
                                         <BindableLayout.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Text="{Binding Name}"
@@ -167,18 +173,19 @@
                                                         FontSize="16"
                                                         FontAttributes="Bold"
                                                         CornerRadius="10"
-                                                        Padding="20,12"
-                                                        WidthRequest="190"
+                                                        Padding="8,10"
+                                                        Margin="0,0,8,0"
+                                                        FlexLayout.Basis="19%"
                                                         HeightRequest="60"
                                                         Clicked="OnSubCategoryButtonClicked"
                                                         CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </BindableLayout.ItemTemplate>
-                                    </HorizontalStackLayout>
+                                    </FlexLayout>
                                     
                                     <!-- Sub-Category Row 2 (5 buttons) -->
-                                    <HorizontalStackLayout Spacing="12"
-                                                         BindableLayout.ItemsSource="{Binding Row2}">
+                                    <FlexLayout Direction="Row"
+                                                BindableLayout.ItemsSource="{Binding Row2}">
                                         <BindableLayout.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Text="{Binding Name}"
@@ -187,14 +194,15 @@
                                                         FontSize="16"
                                                         FontAttributes="Bold"
                                                         CornerRadius="10"
-                                                        Padding="20,12"
-                                                        WidthRequest="190"
+                                                        Padding="8,10"
+                                                        Margin="0,0,8,0"
+                                                        FlexLayout.Basis="19%"
                                                         HeightRequest="60"
                                                         Clicked="OnSubCategoryButtonClicked"
                                                         CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </BindableLayout.ItemTemplate>
-                                    </HorizontalStackLayout>
+                                    </FlexLayout>
                                 </VerticalStackLayout>
                             </DataTemplate>
                         </CarouselView.ItemTemplate>
@@ -273,7 +281,8 @@
                 </ScrollView>
                 
                 <!-- Action Buttons Card -->
-                <Border Grid.Row="2" Grid.RowSpan="2"
+                <Border x:Name="OrderActionsCard"
+                        Grid.Row="2" Grid.RowSpan="2"
                         BackgroundColor="White"
                         Stroke="#E5E7EB"
                         StrokeThickness="1"
@@ -286,7 +295,7 @@
                         <Shadow Brush="Black" Opacity="0.05" Radius="8" Offset="0,-2"/>
                     </Border.Shadow>
                     
-                    <VerticalStackLayout Spacing="15">
+                    <VerticalStackLayout x:Name="OrderActionsLayout" Spacing="15">
                         <!-- TOTAL Section -->
                         <Border BackgroundColor="#F9FAFB"
                                 Stroke="Transparent"

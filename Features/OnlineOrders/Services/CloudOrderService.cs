@@ -240,7 +240,6 @@ public class CloudOrderService
             
             System.Diagnostics.Debug.WriteLine($" Backup polling check: {endpoint}");
             System.Diagnostics.Debug.WriteLine($"    Restaurant: {tenantSlug}");
-            System.Diagnostics.Debug.WriteLine($"    API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             
             // CRITICAL: Clear ALL headers first to avoid "multiple values" error
             using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
@@ -272,7 +271,7 @@ public class CloudOrderService
                 System.Diagnostics.Debug.WriteLine($" Polling response in {apiDuration:F0}ms | Content: {jsonContent.Length} chars");
                 if (EnableVerboseCloudPayloadLogging)
                 {
-                    System.Diagnostics.Debug.WriteLine($" API RESPONSE: {jsonContent}");
+                    System.Diagnostics.Debug.WriteLine($" API response received ({jsonContent.Length} characters)");
                 }
                 
                 var parseStart = DateTime.Now;
@@ -985,15 +984,14 @@ public class CloudOrderService
 
         if (!response.IsSuccessStatusCode)
         {
-            System.Diagnostics.Debug.WriteLine($" Sync failed: {response.StatusCode} - {content}");
+            System.Diagnostics.Debug.WriteLine($" Sync failed: {response.StatusCode}");
             return OrderPullResult.Failed(response.StatusCode, BuildPullOrdersError(response.StatusCode, content));
         }
 
         if (EnableVerboseCloudPayloadLogging)
         {
             System.Diagnostics.Debug.WriteLine("========================================");
-            System.Diagnostics.Debug.WriteLine($" API RESPONSE ({content.Length} chars):");
-            System.Diagnostics.Debug.WriteLine($"First 500 chars: {content.Substring(0, Math.Min(500, content.Length))}");
+            System.Diagnostics.Debug.WriteLine($" API response received ({content.Length} characters)");
             System.Diagnostics.Debug.WriteLine("========================================");
         }
 
@@ -1015,7 +1013,7 @@ public class CloudOrderService
             System.Diagnostics.Debug.WriteLine($" First order details:");
             System.Diagnostics.Debug.WriteLine($"   ID: {firstOrder.Id}");
             System.Diagnostics.Debug.WriteLine($"   OrderNumber: {firstOrder.OrderNumber}");
-            System.Diagnostics.Debug.WriteLine($"   Customer: {firstOrder.CustomerName}");
+            System.Diagnostics.Debug.WriteLine("   Order payload received");
             System.Diagnostics.Debug.WriteLine($"   CreatedAt: {firstOrder.CreatedAt}");
             System.Diagnostics.Debug.WriteLine($"   Total: {firstOrder.TotalAmount}");
         }
@@ -1191,7 +1189,6 @@ public class CloudOrderService
             System.Diagnostics.Debug.WriteLine("========================================");
             System.Diagnostics.Debug.WriteLine($" SYNCING ORDERS SINCE: {sinceParam}");
             System.Diagnostics.Debug.WriteLine($" Restaurant: {tenantSlug}");
-            System.Diagnostics.Debug.WriteLine($" API Key: {apiKey.Substring(0, Math.Min(8, apiKey.Length))}...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}");
             System.Diagnostics.Debug.WriteLine($" Pulling OrderWeb orders from {syncRange} onwards (limit {requestLimit})");
             System.Diagnostics.Debug.WriteLine("========================================");
 
@@ -1343,7 +1340,7 @@ public class CloudOrderService
                 var jsonContent = await response.Content.ReadAsStringAsync();
                 if (EnableVerboseCloudPayloadLogging)
                 {
-                    System.Diagnostics.Debug.WriteLine($" CATCH-UP API RESPONSE: {jsonContent}");
+                    System.Diagnostics.Debug.WriteLine($" Catch-up API response received ({jsonContent.Length} characters)");
                 }
                 
                 var apiResponse = JsonSerializer.Deserialize<OrderWebApiResponse>(jsonContent, new JsonSerializerOptions
@@ -1477,7 +1474,7 @@ public class CloudOrderService
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($" Order Received failed: {response.StatusCode} - {errorBody}");
+                System.Diagnostics.Debug.WriteLine($" Order received acknowledgement failed: {response.StatusCode}");
                 await LogOrderReceivedAsync(orderId, deviceId, status, false);
                 return false;
             }
@@ -2097,7 +2094,7 @@ public class CloudOrderService
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($" ACK failed: {response.StatusCode} - {errorBody}");
+                System.Diagnostics.Debug.WriteLine($" ACK failed: {response.StatusCode}");
                 
                 // Queue for retry
                 await QueueFailedAckAsync(orderId, status, errorReason);

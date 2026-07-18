@@ -912,7 +912,7 @@ public class OrderWebDirectDatabaseService
             var json = await response.Content.ReadAsStringAsync();
             
             // DEBUG: Log first 500 characters of JSON to see structure
-            System.Diagnostics.Debug.WriteLine($" API Response (first 500 chars): {json.Substring(0, Math.Min(500, json.Length))}");
+            System.Diagnostics.Debug.WriteLine($" API response received ({json.Length} characters)");
             
             // Try to deserialize - might fail if wrong structure
             List<CloudOrderResponse>? apiOrders = null;

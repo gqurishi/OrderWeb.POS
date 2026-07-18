@@ -731,15 +731,6 @@ public sealed class OrderRoutingPrintService
             "receipt" => "RECEIPT",
             _ => "KITCHEN"
         };
-        var revisionHeader = order.KitchenTicketType?.Trim().ToUpperInvariant() switch
-        {
-            "ADDITION" => "ADDITION",
-            "VOID" => "VOID",
-            "CHANGE" => "CHANGE",
-            "MIXED" => "ORDER CHANGE",
-            _ => order.KitchenRevisionNumber > 0 ? "NEW ORDER" : null
-        };
-
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80);
         var lineWidth = 48;
 
@@ -752,14 +743,13 @@ public sealed class OrderRoutingPrintService
         builder.SetAlign(TextAlign.Center)
                .SetFontSize(2, 2)
                .SetBold(true)
-               .PrintLine(string.IsNullOrWhiteSpace(revisionHeader) ? headerText : $"{headerText} - {revisionHeader}")
+               .PrintLine(headerText)
                .SetNormalSize()
                .SetBold(false)
                .PrintLine(group.Name)
                .PrintLine($"Order #{(string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber)}")
                .PrintLine($"Table {order.TableNumber}")
                .PrintLine(DateTime.Now.ToString("dd/MM/yyyy HH:mm"))
-               .PrintLine(order.KitchenRevisionNumber > 0 ? $"Revision {order.KitchenRevisionNumber}" : string.Empty)
                .PrintLine(new string('=', lineWidth))
                .SetAlign(TextAlign.Left);
 
@@ -767,14 +757,18 @@ public sealed class OrderRoutingPrintService
         {
             var actionPrefix = item.KitchenAction switch
             {
-                KitchenChangeAction.Add => "+ ADD ",
-                KitchenChangeAction.Void => "- VOID ",
-                KitchenChangeAction.Change => "* CHANGE ",
+                KitchenChangeAction.Void => "VOID ",
                 _ => string.Empty
             };
             builder.SetBold(true)
                    .PrintLine($"{actionPrefix}{item.Quantity}x {item.DisplayName}")
                    .SetBold(false);
+
+            if (item.KitchenAction == KitchenChangeAction.Void)
+            {
+                builder.FeedLines(1);
+                continue;
+            }
 
             foreach (var addon in item.SelectedAddons)
             {

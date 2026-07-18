@@ -144,7 +144,7 @@ public class LoyaltyService
 
             AppDiagnostics.Log($"  Response Status: {response.StatusCode}");
 #if DEBUG
-            AppDiagnostics.Log($"  Response Body: {content}");
+            AppDiagnostics.Log($"  Response received ({content.Length} characters)");
 #endif
 
             if (response.IsSuccessStatusCode)
@@ -155,17 +155,17 @@ public class LoyaltyService
                 });
 
                 result = result?.Normalize();
-                System.Diagnostics.Debug.WriteLine($" Customer found: {result?.Customer?.CustomerName} - {result?.Customer?.PointsBalance} pts");
+                System.Diagnostics.Debug.WriteLine(" Customer loyalty record found");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                System.Diagnostics.Debug.WriteLine($" Customer not found: {phone}");
+                System.Diagnostics.Debug.WriteLine(" Customer loyalty record not found");
                 return new LoyaltyLookupResponse { Success = false, Error = "Customer not found" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($" API Error: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" API Error: {response.StatusCode}");
                 return new LoyaltyLookupResponse { Success = false, Error = ParseLoyaltyError(content, $"API Error: {response.StatusCode}") };
             }
         }
@@ -212,7 +212,7 @@ public class LoyaltyService
             var json = JsonSerializer.Serialize(request);
             var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-            System.Diagnostics.Debug.WriteLine($" Creating customer: {name} - {phone}");
+            System.Diagnostics.Debug.WriteLine(" Creating loyalty customer");
             System.Diagnostics.Debug.WriteLine($"   URL: {url}");
             System.Diagnostics.Debug.WriteLine($"   Request: {json}");
 
@@ -220,7 +220,7 @@ public class LoyaltyService
             var content = await response.Content.ReadAsStringAsync();
 
             System.Diagnostics.Debug.WriteLine($"   Response Status: {response.StatusCode}");
-            System.Diagnostics.Debug.WriteLine($"   Response Body: {content}");
+            System.Diagnostics.Debug.WriteLine($"   Response received ({content.Length} characters)");
 
             if (response.IsSuccessStatusCode)
             {
@@ -230,12 +230,12 @@ public class LoyaltyService
                 });
 
                 result = result?.Normalize();
-                System.Diagnostics.Debug.WriteLine($" Customer created: {result?.Customer?.LoyaltyCardNumber}");
+                System.Diagnostics.Debug.WriteLine(" Loyalty customer created");
                 return result ?? new LoyaltyLookupResponse { Success = false, Error = "Invalid response" };
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($" Failed to create customer: {response.StatusCode} - {content}");
+                System.Diagnostics.Debug.WriteLine($" Failed to create customer: {response.StatusCode}");
                 return new LoyaltyLookupResponse { Success = false, Error = ParseLoyaltyError(content, $"Failed to create customer: {response.StatusCode}") };
             }
         }
@@ -501,15 +501,15 @@ public class LoyaltyService
             httpRequest.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
             httpRequest.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
 
-            System.Diagnostics.Debug.WriteLine($" Redeeming £{amount:F2} from gift card: {cardNumber}");
-            AppDiagnostics.Log($"Gift card redeem endpoint: {url}");
+            System.Diagnostics.Debug.WriteLine(" Redeeming gift card balance");
+            AppDiagnostics.Log("Gift card redeem requested");
             AppDiagnostics.Log($"  Request: {json}");
 
             var response = await SendAsync(httpRequest);
             var content = await response.Content.ReadAsStringAsync();
             AppDiagnostics.Log($"  Response Status: {(int)response.StatusCode} {response.StatusCode}");
 #if DEBUG
-            AppDiagnostics.Log($"  Response Body: {content}");
+            AppDiagnostics.Log($"  Response received ({content.Length} characters)");
 #endif
 
             if (response.IsSuccessStatusCode)
@@ -563,18 +563,18 @@ public class LoyaltyService
         request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
         request.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
 
-        System.Diagnostics.Debug.WriteLine($" Loyalty {action} endpoint: {endpoint}");
+        System.Diagnostics.Debug.WriteLine($" Loyalty {action} requested");
         System.Diagnostics.Debug.WriteLine($"   Request: {json}");
-        AppDiagnostics.Log($"Loyalty {action} endpoint: {endpoint}");
+        AppDiagnostics.Log($"Loyalty {action} requested");
         AppDiagnostics.Log($"  Request: {json}");
 
         var response = await SendAsync(request);
         var responseBody = await response.Content.ReadAsStringAsync();
 
         System.Diagnostics.Debug.WriteLine($"   Response Status: {response.StatusCode}");
-        System.Diagnostics.Debug.WriteLine($"   Response Body: {responseBody}");
+        System.Diagnostics.Debug.WriteLine($"   Response received ({responseBody.Length} characters)");
         AppDiagnostics.Log($"  Response Status: {(int)response.StatusCode} {response.StatusCode}");
-        AppDiagnostics.Log($"  Response Body: {responseBody}");
+        AppDiagnostics.Log($"  Response received ({responseBody.Length} characters)");
 
         if (response.IsSuccessStatusCode)
         {
@@ -609,7 +609,7 @@ public class LoyaltyService
 
     private async Task<GiftCardLookupResponse> SendGiftCardLookupAsync(string url, string cardNumber)
     {
-        AppDiagnostics.Log($"Checking gift card: {cardNumber}");
+        AppDiagnostics.Log("Checking gift card");
         AppDiagnostics.Log($"  URL: {url}");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -620,7 +620,7 @@ public class LoyaltyService
 
         AppDiagnostics.Log($"  Response Status: {(int)response.StatusCode} {response.StatusCode}");
 #if DEBUG
-        AppDiagnostics.Log($"  Response Body: {content}");
+        AppDiagnostics.Log($"  Response received ({content.Length} characters)");
 #endif
 
         if (response.IsSuccessStatusCode)
