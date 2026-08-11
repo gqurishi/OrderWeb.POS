@@ -413,7 +413,9 @@ public class OrderWebDirectDatabaseService
                 {
                     var item = new CloudOrderItem
                     {
-                        Id = reader["item_id"] == DBNull.Value ? 0 : Convert.ToInt32(reader["item_id"]),
+                        Id = reader["item_id"] == DBNull.Value
+                            ? null
+                            : Convert.ToString(reader["item_id"], System.Globalization.CultureInfo.InvariantCulture),
                         Name = reader["item_name"] == DBNull.Value ? "Unknown Item" : Convert.ToString(reader["item_name"]),
                         Price = reader["item_price"] == DBNull.Value ? 0 : Convert.ToDecimal(reader["item_price"]),
                         Quantity = Convert.ToInt32(reader["quantity"]),
@@ -468,10 +470,13 @@ public class OrderWebDirectDatabaseService
             // Check if we already have this order locally
             if (await OrderExistsLocallyAsync(order.Id))
             {
-                System.Diagnostics.Debug.WriteLine($" Order {order.OrderNumber} already exists - updating payment info");
+                System.Diagnostics.Debug.WriteLine($" Order {order.OrderNumber} already exists - enriching cloud details");
                 
-                // Update existing order with latest payment information from OrderWeb.net
-                await UpdateOrderPaymentInfoAsync(order);
+                var enrichment = await _orderService.EnrichCloudOrderAsync(ConvertCloudOrderToLocal(order));
+                if (!enrichment.Success)
+                {
+                    System.Diagnostics.Debug.WriteLine($" Cloud enrichment warning: {enrichment.Message}");
+                }
                 return;
             }
             
@@ -513,11 +518,20 @@ public class OrderWebDirectDatabaseService
 
             command.CommandText = @"
                 UPDATE orders 
-                SET payment_method = @paymentMethod
+                SET payment_method = @paymentMethod,
+                    payment_status = @paymentStatus,
+                    amount_paid = @amountPaid,
+                    voucher_code = @voucherCode
                 WHERE (cloud_order_id = @cloudOrderId OR order_number = @orderNumber)
                   AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided')";
 
             command.Parameters.AddWithValue("@paymentMethod", OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod ?? "cash"));
+            command.Parameters.AddWithValue("@paymentStatus", cloudOrder.PaymentStatus ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@amountPaid",
+                OnlineOrderPaymentHelper.IsPaidFromSource(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus)
+                    ? cloudOrder.TotalAmount
+                    : (object)DBNull.Value);
+            command.Parameters.AddWithValue("@voucherCode", cloudOrder.VoucherCode ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@cloudOrderId", cloudOrder.Id);
             command.Parameters.AddWithValue("@orderNumber", cloudOrder.OrderNumber);
 
@@ -656,7 +670,13 @@ public class OrderWebDirectDatabaseService
         // Parse financial data
         decimal.TryParse(cloudOrder.Total, out var total);
         decimal.TryParse(cloudOrder.Subtotal, out var subtotal);
+        decimal.TryParse(cloudOrder.DiscountAmount, out var discount);
         decimal.TryParse(cloudOrder.DeliveryFee, out var deliveryFee);
+        decimal.TryParse(cloudOrder.ServiceChargePercentage, out var serviceChargePercentage);
+        decimal.TryParse(cloudOrder.ServiceChargeBasis, out var serviceChargeBasis);
+        decimal.TryParse(cloudOrder.ServiceChargeAmount, out var serviceChargeAmount);
+        decimal.TryParse(cloudOrder.CashTips, out var cashTips);
+        decimal.TryParse(cloudOrder.CardTips, out var cardTips);
         decimal.TryParse(cloudOrder.Tax, out var tax);
 
         var localOrder = new Order
@@ -675,13 +695,38 @@ public class OrderWebDirectDatabaseService
             // Financial information
             TotalAmount = total,
             SubtotalAmount = subtotal,
+            DiscountAmount = discount,
             DeliveryFee = deliveryFee,
+            ServiceChargePercentage = serviceChargePercentage,
+            ServiceChargeBasis = serviceChargeBasis,
+            ServiceChargeAmount = serviceChargeAmount,
+            ServiceChargeStatus = cloudOrder.ServiceChargeStatus,
+            ServiceChargeClassification = cloudOrder.ServiceChargeClassification,
+            CashTipAmount = cashTips,
+            CardTipAmount = cardTips,
             TaxAmount = tax,
 
             // Order details
             OrderType = cloudOrder.OrderType,
             SourceChannel = "web",
             PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod),
+            PaymentStatusRaw = cloudOrder.PaymentStatus,
+            AmountPaid = decimal.TryParse(cloudOrder.AmountPaid, out var amountPaid)
+                ? amountPaid
+                : OnlineOrderPaymentHelper.IsPaidFromSource(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus) ? total : null,
+            PaymentProvider = cloudOrder.PaymentProvider,
+            TransactionId = cloudOrder.PaymentReference,
+            CurrencyCode = string.IsNullOrWhiteSpace(cloudOrder.CurrencyCode) ? "GBP" : cloudOrder.CurrencyCode,
+            VoucherCode = OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card" ? cloudOrder.VoucherCode : null,
+            PromoCode = cloudOrder.PromoCode ??
+                (OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card" ? null : cloudOrder.VoucherCode),
+            GiftCardNumberMasked = OnlineOrderPaymentHelper.MaskVoucherCode(cloudOrder.GiftCard?.CardNumberMasked),
+            GiftCardAmountPaid = decimal.TryParse(cloudOrder.GiftCard?.AmountPaid, out var giftCardAmountPaid) ? giftCardAmountPaid : null,
+            GiftCardRemainingBalance = decimal.TryParse(cloudOrder.GiftCard?.RemainingBalance, out var giftCardBalance) ? giftCardBalance : null,
+            LoyaltyPointsEarned = cloudOrder.Loyalty?.PointsEarned ?? 0,
+            LoyaltyPointsRedeemed = cloudOrder.Loyalty?.PointsRedeemed ?? 0,
+            LoyaltyPointsDiscount = decimal.TryParse(cloudOrder.Loyalty?.PointsDiscount, out var loyaltyDiscount) ? loyaltyDiscount : 0m,
+            LoyaltyBalanceAfter = cloudOrder.Loyalty?.BalanceAfter,
             ScheduledTime = cloudOrder.ScheduledTime,
             SpecialInstructions = cloudOrder.SpecialInstructions,
 
@@ -694,6 +739,7 @@ public class OrderWebDirectDatabaseService
             UpdatedAt = DateTime.Now,
             KitchenTime = DateTime.Now,
             PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus),
+            OrderData = JsonSerializer.Serialize(cloudOrder),
 
             // Initialize items list
             Items = new List<Models.OrderItem>()
@@ -707,7 +753,8 @@ public class OrderWebDirectDatabaseService
                 var localItem = new Models.OrderItem
                 {
                     OrderId = cloudOrder.Id,
-                    CloudItemId = cloudItem.Id,
+                    CloudItemId = int.TryParse(cloudItem.Id, out var numericCloudItemId) ? numericCloudItemId : null,
+                    CloudItemExternalId = cloudItem.Id,
                     ItemName = cloudItem.Name ?? "Unknown Item",
                     Quantity = cloudItem.Quantity,
                     ItemPrice = cloudItem.Price,

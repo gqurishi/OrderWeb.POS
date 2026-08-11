@@ -32,6 +32,8 @@ public partial class AddEditItemPage : ContentPage
     private string _selectedItemType = "Food";
     private string _selectedVatCategory = "HotFood";
     private bool _isMixedVatSelected = false;
+    private Task _initializationTask = Task.CompletedTask;
+    private bool _isApplyingSavedCategory;
 
     // Constructor for Add Mode
     public AddEditItemPage()
@@ -43,21 +45,7 @@ public partial class AddEditItemPage : ContentPage
         _noteService = new CommentNoteService();
         _printGroupService = new PrintGroupService();
         
-        // Use proper async initialization with error handling
-        Dispatcher.Dispatch(async () =>
-        {
-            try
-            {
-                await LoadDataAsync();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[FATAL] Page initialization failed: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[FATAL] Stack trace: {ex.StackTrace}");
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Initialization Error", $"Failed to load page: {ex.Message}");
-                await Navigation.PopAsync();
-            }
-        });
+        _initializationTask = LoadDataAsync();
     }
 
     // Constructor for Edit Mode
@@ -69,7 +57,7 @@ public partial class AddEditItemPage : ContentPage
         PageTitle.Text = "Edit Item";
         SaveButton.Text = "Update Item";
         
-        LoadItemDataAsync();
+        _ = LoadItemDataAsync();
     }
 
     private async Task LoadDataAsync()
@@ -96,7 +84,7 @@ public partial class AddEditItemPage : ContentPage
             
             // Get only top-level categories (no parent) and cache them
             _topLevelCategories = allCategories
-                .Where(c => string.IsNullOrEmpty(c.ParentId) || c.ParentId == "NULL")
+                .Where(IsTopLevelCategory)
                 .OrderBy(c => c.DisplayOrder)
                 .ThenBy(c => c.Name)
                 .ToList();
@@ -138,17 +126,13 @@ public partial class AddEditItemPage : ContentPage
         }
     }
 
-    private async void LoadItemDataAsync()
+    private async Task LoadItemDataAsync()
     {
         if (_editingItem == null) return;
 
         try
         {
-            // Wait for initial data load (already started in constructor)
-            while (_allCategories.Count == 0)
-            {
-                await Task.Delay(50); // Wait for data to load
-            }
+            await _initializationTask;
             
             // Basic info
             ItemNameEntry.Text = _editingItem.Name;
@@ -162,31 +146,23 @@ public partial class AddEditItemPage : ContentPage
             CustomColorEntry.Text = _selectedColor;
             
             // Set category - find by ID first
-            var category = _allCategories.FirstOrDefault(c => c.Id == _editingItem.CategoryId);
+            var category = _allCategories.FirstOrDefault(c => CategoryIdsEqual(c.Id, _editingItem.CategoryId));
             if (category != null)
             {
                 // Check if this is a sub-category (has parent)
-                if (!string.IsNullOrEmpty(category.ParentId))
+                if (!IsTopLevelCategory(category))
                 {
                     // This is a sub-category, find parent first
-                    var parentCategory = _allCategories.FirstOrDefault(c => c.Id == category.ParentId);
+                    var parentCategory = _allCategories.FirstOrDefault(c => CategoryIdsEqual(c.Id, category.ParentId));
                     if (parentCategory != null)
                     {
-                        CategoryComboBox.SelectedItem = parentCategory.Name;
-                        _selectedCategoryId = parentCategory.Id;
-                        
-                        // Wait a moment for sub-categories to load
-                        await Task.Delay(100);
-                        
-                        SubCategoryComboBox.SelectedItem = category.Name;
-                        _selectedSubCategoryId = category.Id;
+                        ApplySavedCategorySelection(parentCategory, category);
                     }
                 }
                 else
                 {
                     // This is a top-level category
-                    CategoryComboBox.SelectedItem = category.Name;
-                    _selectedCategoryId = category.Id;
+                    ApplySavedCategorySelection(category, null);
                 }
             }
             
@@ -282,6 +258,7 @@ public partial class AddEditItemPage : ContentPage
             // Load label print settings
             LabelTextEntry.Text = _editingItem.LabelText;
             PrintComponentLabelsSwitch.IsToggled = _editingItem.PrintComponentLabels;
+            PrintInRedSwitch.IsToggled = _editingItem.PrintInRed;
             LoadComponentLabels(_editingItem.ComponentLabelsJson);
             
             System.Diagnostics.Debug.WriteLine($"[DEBUG] Loaded print settings - LabelText: {_editingItem.LabelText}, PrintComponentLabels: {_editingItem.PrintComponentLabels}");
@@ -338,6 +315,11 @@ public partial class AddEditItemPage : ContentPage
     {
         try
         {
+            if (_isApplyingSavedCategory)
+            {
+                return;
+            }
+
             var selectedCategoryName = e.AddedItems?.FirstOrDefault()?.ToString();
             System.Diagnostics.Debug.WriteLine($"[DEBUG] Category changed to: {selectedCategoryName}");
             
@@ -348,7 +330,8 @@ public partial class AddEditItemPage : ContentPage
             }
 
             // Find selected category from cached top-level categories
-            var selectedCategory = _topLevelCategories.FirstOrDefault(c => c.Name == selectedCategoryName);
+            var selectedCategory = _topLevelCategories.FirstOrDefault(c =>
+                string.Equals(c.Name, selectedCategoryName, StringComparison.OrdinalIgnoreCase));
             
             if (selectedCategory == null)
             {
@@ -357,45 +340,7 @@ public partial class AddEditItemPage : ContentPage
             }
             
             System.Diagnostics.Debug.WriteLine($"[DEBUG] Found category: {selectedCategory.Name} (ID: {selectedCategory.Id})");
-            _selectedCategoryId = selectedCategory.Id;
-            
-            // Auto-assign category color to item
-            _selectedColor = selectedCategory.Color ?? "#3B82F6";
-            CustomColorEntry.Text = _selectedColor;
-            System.Diagnostics.Debug.WriteLine($"[DEBUG] Assigned color: {_selectedColor}");
-            
-            // Find sub-categories for this category
-            _currentSubCategories = _allCategories
-                .Where(c => c.ParentId == selectedCategory.Id)
-                .OrderBy(c => c.DisplayOrder)
-                .ThenBy(c => c.Name)
-                .ToList();
-            
-            System.Diagnostics.Debug.WriteLine($"[DEBUG] Found {_currentSubCategories.Count} sub-categories");
-            
-            // Always show sub-category section, but populate based on available sub-categories
-            SubCategorySection.IsVisible = true;
-            
-            if (_currentSubCategories.Count > 0)
-            {
-                foreach (var sub in _currentSubCategories)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   Sub-category: {sub.Name} (ID: {sub.Id})");
-                }
-                
-                SubCategoryComboBox.ItemsSource = _currentSubCategories.Select(c => c.Name).ToList();
-                SubCategoryComboBox.IsEnabled = true;
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("[DEBUG] No sub-categories available for this category");
-                SubCategoryComboBox.ItemsSource = new List<string> { "No sub-categories available" };
-                SubCategoryComboBox.IsEnabled = false;
-                SubCategoryComboBox.SelectedIndex = -1;
-            }
-            
-            SubCategoryComboBox.SelectedIndex = -1; // Reset selection
-            _selectedSubCategoryId = null;
+            ApplyCategorySelection(selectedCategory, null, updateItemColor: true);
         }
         catch (Exception ex)
         {
@@ -418,7 +363,8 @@ public partial class AddEditItemPage : ContentPage
             }
 
             // Find selected sub-category from current sub-categories list
-            var selectedSubCategory = _currentSubCategories.FirstOrDefault(c => c.Name == selectedSubCategoryName);
+            var selectedSubCategory = _currentSubCategories.FirstOrDefault(c =>
+                string.Equals(c.Name, selectedSubCategoryName, StringComparison.OrdinalIgnoreCase));
             
             if (selectedSubCategory != null)
             {
@@ -436,6 +382,59 @@ public partial class AddEditItemPage : ContentPage
             System.Diagnostics.Debug.WriteLine($"[ERROR] OnSubCategoryChanged failed: {ex.Message}");
         }
     }
+
+    private void ApplySavedCategorySelection(MenuCategory parentCategory, MenuCategory? subCategory)
+    {
+        _isApplyingSavedCategory = true;
+        try
+        {
+            CategoryComboBox.SelectedItem = parentCategory.Name;
+            ApplyCategorySelection(parentCategory, subCategory?.Id, updateItemColor: false);
+            SubCategoryComboBox.SelectedItem = subCategory?.Name;
+        }
+        finally
+        {
+            _isApplyingSavedCategory = false;
+        }
+    }
+
+    private void ApplyCategorySelection(MenuCategory category, string? selectedSubCategoryId, bool updateItemColor)
+    {
+        _selectedCategoryId = category.Id;
+        if (updateItemColor)
+        {
+            _selectedColor = category.Color ?? "#3B82F6";
+            CustomColorEntry.Text = _selectedColor;
+        }
+
+        _currentSubCategories = _allCategories
+            .Where(candidate => CategoryIdsEqual(candidate.ParentId, category.Id))
+            .OrderBy(candidate => candidate.DisplayOrder)
+            .ThenBy(candidate => candidate.Name)
+            .ToList();
+
+        SubCategorySection.IsVisible = true;
+        SubCategoryComboBox.ItemsSource = _currentSubCategories.Select(candidate => candidate.Name).ToList();
+        SubCategoryComboBox.IsEnabled = _currentSubCategories.Count > 0;
+
+        var selected = _currentSubCategories.FirstOrDefault(candidate =>
+            CategoryIdsEqual(candidate.Id, selectedSubCategoryId));
+        _selectedSubCategoryId = selected?.Id;
+        SubCategoryComboBox.SelectedItem = selected?.Name;
+        if (selected == null)
+        {
+            SubCategoryComboBox.SelectedIndex = -1;
+        }
+    }
+
+    private static bool IsTopLevelCategory(MenuCategory category) =>
+        string.IsNullOrWhiteSpace(category.ParentId)
+        || string.Equals(category.ParentId.Trim(), "NULL", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CategoryIdsEqual(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left)
+        && !string.IsNullOrWhiteSpace(right)
+        && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private void OnColorChipTapped(object sender, EventArgs e)
     {
@@ -965,12 +964,12 @@ public partial class AddEditItemPage : ContentPage
 
     private async void OnBackClicked(object sender, EventArgs e)
     {
-        await Navigation.PopAsync();
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
     }
 
     private async void OnCancelClicked(object sender, EventArgs e)
     {
-        await Navigation.PopAsync();
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
     }
 
     private async void OnSaveClicked(object sender, EventArgs e)
@@ -1090,6 +1089,7 @@ public partial class AddEditItemPage : ContentPage
                 _editingItem.LabelText = string.IsNullOrWhiteSpace(LabelTextEntry.Text) ? null : LabelTextEntry.Text.Trim();
                 _editingItem.PrintComponentLabels = PrintComponentLabelsSwitch.IsToggled;
                 _editingItem.ComponentLabelsJson = GetComponentLabelsJson();
+                _editingItem.PrintInRed = PrintInRedSwitch.IsToggled;
                 
                 System.Diagnostics.Debug.WriteLine($"[DEBUG] Print settings - LabelText: {_editingItem.LabelText}, PrintComponentLabels: {_editingItem.PrintComponentLabels}, ComponentLabels: {_editingItem.ComponentLabelsJson}");
                 
@@ -1182,6 +1182,7 @@ public partial class AddEditItemPage : ContentPage
                     LabelText = string.IsNullOrWhiteSpace(LabelTextEntry.Text) ? null : LabelTextEntry.Text.Trim(),
                     PrintComponentLabels = PrintComponentLabelsSwitch.IsToggled,
                     ComponentLabelsJson = GetComponentLabelsJson(),
+                    PrintInRed = PrintInRedSwitch.IsToggled,
                     
                     // Print group
                     PrintGroupId = GetSelectedPrintGroupId()
@@ -1229,7 +1230,7 @@ public partial class AddEditItemPage : ContentPage
 
             // Go back
             OrderPlacementPageSimple.InvalidateMenuCache();
-            await Navigation.PopAsync();
+            await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
         }
         catch (MySqlConnector.MySqlException mysqlEx)
         {

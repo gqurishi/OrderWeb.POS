@@ -21,6 +21,7 @@ public static class TerminalEventSyncService
 
     public static async Task EnsureSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_schemaEnsured)
         {
             return;

@@ -4,16 +4,20 @@
              xmlns:views="clr-namespace:POS_in_NET.Views"
              x:Class="POS_in_NET.Pages.PrintTemplatesPage"
              BackgroundColor="#F1F5F9"
+             SizeChanged="OnPrintTemplatesPageSizeChanged"
              Shell.NavBarIsVisible="False">
 
     <Grid RowDefinitions="Auto,*">
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
 
         <ScrollView Grid.Row="1"
-                    Orientation="Both"
+                    Orientation="Vertical"
+                    HorizontalScrollBarVisibility="Never"
                     VerticalScrollBarVisibility="Always">
-            <Grid Padding="32"
+            <Grid x:Name="TemplateLayoutGrid"
+                  Padding="32"
                   ColumnDefinitions="*,420"
+                  RowDefinitions="Auto"
                   ColumnSpacing="28">
 
                 <VerticalStackLayout Grid.Column="0" Spacing="18">
@@ -40,59 +44,69 @@
                                 Clicked="OnBackClicked"/>
                     </Grid>
 
-                    <HorizontalStackLayout Spacing="10">
+                    <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="Start"
+                                AlignItems="Center" AlignContent="Start">
                         <Button x:Name="KitchenTemplateButton"
+                                Margin="0,0,10,10"
                                 Text="Kitchen Ticket"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnKitchenTemplateClicked"/>
                         <Button x:Name="CollectionReceiptTemplateButton"
+                                Margin="0,0,10,10"
                                 Text="Collection Receipt"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnCollectionReceiptTemplateClicked"/>
                         <Button x:Name="DeliveryReceiptTemplateButton"
+                                Margin="0,0,10,10"
                                 Text="Delivery Receipt"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnDeliveryReceiptTemplateClicked"/>
                         <Button x:Name="TableBillTemplateButton"
+                                Margin="0,0,10,10"
                                 Text="Table Bill"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnTableBillTemplateClicked"/>
                         <Button x:Name="TablePaymentTemplateButton"
+                                Margin="0,0,10,10"
                                 Text="Table Payment"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnTablePaymentTemplateClicked"/>
-                    </HorizontalStackLayout>
+                    </FlexLayout>
 
-                    <HorizontalStackLayout x:Name="KitchenPreviewModes" Spacing="10">
+                    <FlexLayout x:Name="KitchenPreviewModes" Direction="Row" Wrap="Wrap"
+                                JustifyContent="Start" AlignItems="Center" AlignContent="Start">
                         <Button x:Name="TablePreviewButton"
+                                Margin="0,0,10,10"
                                 Text="Table"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnTablePreviewClicked"/>
                         <Button x:Name="CollectionPreviewButton"
+                                Margin="0,0,10,10"
                                 Text="Collection"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnCollectionPreviewClicked"/>
                         <Button x:Name="DeliveryPreviewButton"
+                                Margin="0,0,10,10"
                                 Text="Delivery"
                                 CornerRadius="8"
                                 Padding="18,10"
                                 FontAttributes="Bold"
                                 Clicked="OnDeliveryPreviewClicked"/>
-                    </HorizontalStackLayout>
+                    </FlexLayout>
 
                     <Border BackgroundColor="#E2E8F0"
                             Padding="24"
@@ -135,7 +149,7 @@
                     </Border>
                 </VerticalStackLayout>
 
-                <VerticalStackLayout Grid.Column="1" Spacing="16">
+                <VerticalStackLayout x:Name="TemplateSettingsPanel" Grid.Column="1" Spacing="16">
                     <Border BackgroundColor="White" Padding="22" StrokeThickness="0">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8"/>

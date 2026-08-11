@@ -16,7 +16,7 @@ using System.Text.Json;
 
 namespace POS_in_NET.Pages
 {
-    public partial class OrderPlacementPageSimple : ContentPage
+    public partial class OrderPlacementPageSimple : ContentPage, INavigationCommitParticipant
     {
         // Services
         private MenuItemService _menuItemService;
@@ -37,6 +37,9 @@ namespace POS_in_NET.Pages
         private InactivityService _inactivityService;
         private RestaurantTableService _restaurantTableService;
         private DatabaseService _databaseService;
+        private TableServiceChargeSettingsService _tableServiceChargeSettingsService;
+        private TableServiceChargeOrderAuditService _tableServiceChargeOrderAuditService;
+        private NavigationCoordinator _navigationCoordinator = NavigationCoordinator.Shared;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
 
         // Model State
@@ -53,6 +56,7 @@ namespace POS_in_NET.Pages
         private MenuCategory? _selectedSubCategory;
         private FoodMenuItem? _modifierPopupItem;
         private string _searchQuery = string.Empty;
+        private bool _isCourseFireInProgress;
 
         // Session/Order State  
         private string? _pendingOrderId;
@@ -81,12 +85,14 @@ namespace POS_in_NET.Pages
         private bool _isLoadingPersistentOrder = false;
         private bool _isFinalizingOrder = false;
         private bool _isUltraFastSendInProgress = false;
-        private bool _isInitialLoadStarted = false;
+        private bool _isPrintInProgress = false;
+        private Task? _initialLoadTask;
         private bool _isRolloutConfigLoaded = false;
         private bool _hasShownConcurrencyConflict = false;
         private bool _isSubscribedToLiveUpdates = false;
         private CancellationTokenSource _draftSaveDelayCts = new();
         private readonly SemaphoreSlim _draftSaveLock = new(1, 1);
+        private readonly SemaphoreSlim _orderNumberLock = new(1, 1);
         private IDisposable? _idleDraftSaveRegistration;
 
         // Menu Caching
@@ -115,14 +121,49 @@ namespace POS_in_NET.Pages
 
         private void OnOrderPageSizeChanged(object? sender, EventArgs e)
         {
-            var compact = Width > 0 && (Width < 1450 || Height < 850);
-            MainContentGrid.Padding = compact ? new Thickness(10) : new Thickness(15);
-            MainContentGrid.ColumnSpacing = compact ? 10 : 15;
-            CategoryCarousel.HeightRequest = compact ? 135 : 155;
-            SubCategoryCarousel.HeightRequest = compact ? 118 : 135;
-            OrderActionsCard.Padding = compact ? new Thickness(12) : new Thickness(20);
-            OrderActionsCard.Margin = compact ? new Thickness(0, 8, 0, 0) : new Thickness(0, 15, 0, 0);
-            OrderActionsLayout.Spacing = compact ? 9 : 15;
+            if (Width <= 0 || Height <= 0)
+            {
+                return;
+            }
+
+            var tablet = Width <= 1280 || Height <= 800;
+            var compactDesktop = !tablet && (Width < 1450 || Height < 850);
+            var compact = tablet || compactDesktop;
+
+            MainContentGrid.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(15);
+            MainContentGrid.ColumnSpacing = tablet ? 8 : compact ? 10 : 15;
+            MainContentGrid.ColumnDefinitions[0].Width = tablet ? new GridLength(1.62, GridUnitType.Star) : new GridLength(2, GridUnitType.Star);
+            MainContentGrid.ColumnDefinitions[1].Width = GridLength.Star;
+
+            MenuPanel.Padding = tablet ? new Thickness(10) : new Thickness(15);
+            OrderPanel.Padding = tablet ? new Thickness(10) : new Thickness(15);
+            CategoryCarousel.HeightRequest = tablet ? 128 : compact ? 135 : 155;
+            SubCategoryCarousel.HeightRequest = tablet ? 112 : compact ? 118 : 135;
+
+            PaymentButton.WidthRequest = tablet ? 112 : 150;
+            PaymentButton.FontSize = tablet ? 13 : 16;
+            PaymentButton.HeightRequest = tablet ? 46 : 50;
+
+            OrderActionsCard.Padding = tablet ? new Thickness(9) : compact ? new Thickness(12) : new Thickness(20);
+            OrderActionsCard.Margin = tablet ? new Thickness(0, 6, 0, 0) : compact ? new Thickness(0, 8, 0, 0) : new Thickness(0, 15, 0, 0);
+            OrderActionsLayout.Spacing = tablet ? 7 : compact ? 9 : 15;
+            QuickActionsGrid.ColumnSpacing = tablet ? 6 : 12;
+            MainActionsGrid.ColumnSpacing = tablet ? 7 : 12;
+
+            var quickFontSize = tablet ? 12d : 16d;
+            foreach (var button in new[] { NotesButton, VoidButton, MoreButton })
+            {
+                button.FontSize = quickFontSize;
+                button.HeightRequest = tablet ? 48 : 55;
+                button.Padding = tablet ? new Thickness(4) : new Thickness(14, 10);
+            }
+
+            foreach (var button in new[] { SendButton, PrintButton })
+            {
+                button.FontSize = tablet ? 14 : 17;
+                button.HeightRequest = tablet ? 56 : 65;
+                button.Padding = tablet ? new Thickness(6) : new Thickness(14, 10);
+            }
         }
 
         public OrderPlacementPageSimple(string tableNumber, int coverCount, string staffName, int staffId)
@@ -147,17 +188,17 @@ namespace POS_in_NET.Pages
         private void InitializeServices()
         {
             _databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
-            _menuItemService = new MenuItemService();
-            _categoryService = new MenuCategoryService();
-            _mealDealService = new MealDealService();
-            _tastingMenuService = new TastingMenuService();
-            _orderService = new OrderService();
-            _tableSessionService = new TableSessionService();
-            _orderRoutingPrintService = new OrderRoutingPrintService();
+            _menuItemService = ServiceHelper.GetService<MenuItemService>() ?? new MenuItemService();
+            _categoryService = ServiceHelper.GetService<MenuCategoryService>() ?? new MenuCategoryService();
+            _mealDealService = ServiceHelper.GetService<MealDealService>() ?? new MealDealService();
+            _tastingMenuService = ServiceHelper.GetService<TastingMenuService>() ?? new TastingMenuService();
+            _orderService = ServiceHelper.GetService<OrderService>() ?? new OrderService();
+            _tableSessionService = ServiceHelper.GetService<TableSessionService>() ?? new TableSessionService();
+            _orderRoutingPrintService = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
             _kitchenRevisionService = ServiceHelper.GetService<KitchenOrderRevisionService>()
                 ?? new KitchenOrderRevisionService(_databaseService);
             _orderNumberService = new OrderNumberService(_databaseService);
-            _orderLifecycleRolloutService = new OrderLifecycleRolloutService(_databaseService);
+            _orderLifecycleRolloutService = ServiceHelper.GetService<OrderLifecycleRolloutService>() ?? new OrderLifecycleRolloutService(_databaseService);
             _cashDrawerService = ServiceHelper.GetService<CashDrawerService>()
                 ?? new CashDrawerService(
                     _databaseService,
@@ -168,26 +209,41 @@ namespace POS_in_NET.Pages
                     _databaseService,
                     ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance);
             _loyaltyService = ServiceHelper.GetService<LoyaltyService>() ?? new LoyaltyService(_databaseService);
-            _roleAccessService = new RoleAccessService();
+            _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
             _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
             _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
-            _restaurantTableService = new RestaurantTableService();
+            _restaurantTableService = ServiceHelper.GetService<RestaurantTableService>() ?? new RestaurantTableService();
+            _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
+            _tableServiceChargeSettingsService = ServiceHelper.GetService<TableServiceChargeSettingsService>()
+                ?? new TableServiceChargeSettingsService(_databaseService, _authService);
+            _tableServiceChargeOrderAuditService = ServiceHelper.GetService<TableServiceChargeOrderAuditService>()
+                ?? new TableServiceChargeOrderAuditService(_databaseService);
         }
 
         private async Task OnInitialLoadAsync()
         {
+            var performance = PosPerformanceMonitor.BeginDataLoad("Order Entry");
+            LoadingOverlay.IsVisible = true;
+            await Task.Yield();
+
             try
             {
-                await RefreshRolloutConfigAsync(forceRefresh: true);
+                await RefreshRolloutConfigAsync();
                 _currentUser = _authService.CurrentUser;
                 EnsureCurrentOrderIdentity();
                 await LoadDataAsync();
                 await LoadExistingOrderIfNeededAsync();
+                await ApplyServiceChargePolicyToNewOrderAsync();
                 await EnsureLocalOrderDraftSavedAsync();
+                PosPerformanceMonitor.MarkDataVisible(performance);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Init error: {ex}");
+            }
+            finally
+            {
+                LoadingOverlay.IsVisible = false;
             }
         }
 
@@ -200,13 +256,69 @@ namespace POS_in_NET.Pages
 
             if (string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase))
             {
-                await EnsureTableSessionContextAsync();
+                // The order row does not exist yet. PersistDraftAsync saves it first,
+                // then creates the foreign-key link to this table session.
+                await EnsureTableSessionContextAsync(skipOrderLink: true);
             }
 
-            await QueueDraftAutosaveAsync(immediate: true);
+            _draftDirty = true;
+            if (!await PersistDraftAsync(force: true, lifecycleOverride: LocalLifecycleState.Active))
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Table Order Not Created",
+                    "The table opened, but its order could not be created. Please close this screen and try the table again.");
+            }
         }
 
-        protected override void OnAppearing()
+        private async Task ApplyServiceChargePolicyToNewOrderAsync()
+        {
+            SyncCurrentOrderMode();
+            if (_isDeliveryOrder || _isCollectionOrder)
+            {
+                if (!string.IsNullOrWhiteSpace(_pendingOrderId))
+                {
+                    return;
+                }
+
+                _currentOrder.ServiceChargePercent = 0m;
+                _currentOrder.ServiceChargeClassification = null;
+                _currentOrder.ServiceChargeStatus = TableServiceChargeStatus.NotConfigured;
+                return;
+            }
+
+            var settings = await _tableServiceChargeSettingsService.GetAsync();
+            var isExistingOrder = !string.IsNullOrWhiteSpace(_pendingOrderId);
+            if (isExistingOrder)
+            {
+                var isModifiable = _currentOrder.Status is TableOrderStatus.Active or TableOrderStatus.Sent;
+                if (!TableOrderFinancialPolicy.ShouldAdoptCurrentServiceCharge(
+                        isTableOrder: true,
+                        settingEnabled: settings.IsEnabled,
+                        savedStatus: _currentOrder.ServiceChargeStatus,
+                        savedPercentage: _currentOrder.ServiceChargePercent,
+                        isOrderModifiable: isModifiable,
+                        totalPaid: _currentOrder.TotalPaid))
+                {
+                    return;
+                }
+            }
+
+            _currentOrder.ServiceChargePercent = settings.IsEnabled ? settings.Percentage : 0m;
+            _currentOrder.ServiceChargeClassification = settings.IsEnabled ? ServiceChargeClassification.Optional : null;
+            _currentOrder.ServiceChargeStatus = settings.IsEnabled
+                ? TableServiceChargeStatus.Applied
+                : TableServiceChargeStatus.NotConfigured;
+            _currentOrder.RecalculateAll();
+            UpdateDisplay();
+
+            if (isExistingOrder)
+            {
+                _draftDirty = true;
+                await PersistDraftAsync(force: true);
+            }
+        }
+
+        protected override async void OnAppearing()
         {
             base.OnAppearing();
             _inactivityService.Start();
@@ -214,7 +326,7 @@ namespace POS_in_NET.Pages
             _inactivityService.TrackPage(this);
             _idleDraftSaveRegistration ??= _inactivityService.RegisterBeforeIdleReturnHandler(SaveDraftBeforeIdleReturnAsync);
             SubscribeToLiveUpdates();
-            StartInitialLoadOnce();
+            await EnsurePageIsCurrentAsync();
         }
 
         private async Task SaveDraftBeforeIdleReturnAsync()
@@ -227,15 +339,54 @@ namespace POS_in_NET.Pages
             await PersistDraftAsync(force: true);
         }
 
-        private void StartInitialLoadOnce()
+        public async Task CommitBeforeNavigationAsync()
         {
-            if (_isInitialLoadStarted)
+            if (_isFinalizingOrder || _isLoadingPersistentOrder || !_draftDirty)
             {
                 return;
             }
 
-            _isInitialLoadStarted = true;
-            _ = OnInitialLoadAsync();
+            await PersistDraftAsync(force: true);
+        }
+
+        private async Task EnsurePageIsCurrentAsync()
+        {
+            if (_initialLoadTask == null)
+            {
+                _initialLoadTask = OnInitialLoadAsync();
+                await _initialLoadTask;
+                return;
+            }
+
+            await _initialLoadTask;
+
+            // A pushed order page can reappear after a dialog or another terminal
+            // changed the order. Refresh only the context that can be stale; the
+            // cached menu remains instant unless it was explicitly invalidated.
+            if (_cachedCategories == null || _cachedMenuItems == null)
+            {
+                await LoadDataAsync();
+            }
+
+            if (_draftDirty || _isLoadingPersistentOrder || _isFinalizingOrder || string.IsNullOrWhiteSpace(_pendingOrderId))
+            {
+                return;
+            }
+
+            try
+            {
+                var latest = await _orderService.GetOrderByExternalIdAsync(_pendingOrderId);
+                if (latest != null && latest.UpdatedAt > _lastSavedAt)
+                {
+                    await ApplyLoadedOrderAsync(latest);
+                    _hasLoadedPersistentOrder = true;
+                    _draftDirty = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Resume refresh warning: {ex.Message}");
+            }
         }
 
         private void InitializeOrderContext(string tableNumber, int coverCount, string staffName, int staffId, int? sessionId, string? existingOrderId)
@@ -275,7 +426,7 @@ namespace POS_in_NET.Pages
             _deliveryCustomerName = customerName;
             _deliveryCustomerPhone = customerPhone;
             _deliveryCustomerAddress = customerAddress;
-            _currentOrder.FixedServiceCharge = Math.Max(0, deliveryFee);
+            _currentOrder.DeliveryFee = Math.Max(0, deliveryFee);
             _draftDirty = true;
             UpdateDisplay();
         }
@@ -361,16 +512,21 @@ namespace POS_in_NET.Pages
         {
             base.OnDisappearing();
             UnsubscribeFromLiveUpdates();
-            if (!_isFinalizingOrder && _draftDirty)
-            {
-                _ = PersistDraftAsync(force: true);
-            }
-
-            // Force subscribers (layout/live pages) to reload when user leaves edit screen.
-            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+            _ = SaveAndPublishOnDisappearingAsync();
 
             _idleDraftSaveRegistration?.Dispose();
             _idleDraftSaveRegistration = null;
+        }
+
+        private async Task SaveAndPublishOnDisappearingAsync()
+        {
+            if (!_isFinalizingOrder && _draftDirty)
+            {
+                await PersistDraftAsync(force: true);
+            }
+
+            // Subscribers are notified only after the final draft write completes.
+            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
         }
 
         private void SubscribeToLiveUpdates()
@@ -926,18 +1082,12 @@ namespace POS_in_NET.Pages
                     continue;
                 }
 
-                if (course.Choices.Count == 0)
+                selections.Add((course, new TastingMenuChoice
                 {
-                    continue;
-                }
-
-                var choice = await PromptTastingMenuCourseChoiceAsync(menu, course);
-                if (choice == null)
-                {
-                    return;
-                }
-
-                selections.Add((course, choice));
+                    Id = course.Id,
+                    Name = course.Name,
+                    SortOrder = 0
+                }));
             }
 
             await AddTastingMenuToOrderAsync(menu, option, selections);
@@ -945,47 +1095,48 @@ namespace POS_in_NET.Pages
 
         private async Task<TastingMenuOption?> PromptTastingMenuOptionAsync(TastingMenu menu)
         {
-            var options = menu.Options
-                .OrderBy(option => option.SortOrder)
-                .Select(option => $"{option.DisplayName} - £{option.Price:F2}")
-                .ToArray();
-
-            var selected = await DisplayActionSheet($"Select package for {menu.Name}", "Cancel", null, options);
-            if (string.IsNullOrWhiteSpace(selected) || selected.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+            var orderedOptions = menu.Options.OrderBy(option => option.SortOrder).ToList();
+            if (orderedOptions.Count == 0)
             {
                 return null;
             }
 
-            var index = Array.IndexOf(options, selected);
-            return index >= 0 ? menu.Options.OrderBy(option => option.SortOrder).ElementAt(index) : null;
-        }
-
-        private async Task<TastingMenuChoice?> PromptTastingMenuCourseChoiceAsync(TastingMenu menu, TastingMenuCourse course)
-        {
-            var choices = course.Choices
-                .OrderBy(choice => choice.SortOrder)
-                .Select(choice => choice.Name)
-                .ToArray();
-
-            var selected = await DisplayActionSheet($"{menu.Name} - {course.Name}", "Cancel", null, choices);
-            if (string.IsNullOrWhiteSpace(selected) || selected.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+            var option = orderedOptions[0];
+            if (orderedOptions.Count > 1)
             {
-                return null;
+                var labels = orderedOptions
+                    .Select(candidate => $"{candidate.DisplayName} - £{candidate.Price:F2}")
+                    .ToList();
+                var optionDialog = new ModernActionSheetDialog();
+                optionDialog.SetActionSheet($"Select package for {menu.Name}", labels, "T", "#0EA5E9");
+                var selected = await optionDialog.ShowAsync();
+                var index = selected == null ? -1 : labels.IndexOf(selected);
+                if (index < 0)
+                {
+                    return null;
+                }
+
+                option = orderedOptions[index];
             }
 
-            return course.Choices.FirstOrDefault(choice => string.Equals(choice.Name, selected, StringComparison.OrdinalIgnoreCase));
+            var confirmation = new TastingMenuConfirmationDialog();
+            return await confirmation.ShowAsync(menu, option) ? option : null;
         }
 
         private async Task AddTastingMenuToOrderAsync(TastingMenu menu, TastingMenuOption option, List<(TastingMenuCourse Course, TastingMenuChoice Choice)> selections)
         {
             SyncCurrentOrderMode();
             var menuItemId = TastingMenuNotesHelper.BuildOrderMenuItemId(menu.Id, option.Id);
-            var notes = TastingMenuNotesHelper.FormatSelections(option, selections);
+            var notes = TastingMenuNotesHelper.FormatPackage(
+                option,
+                menu.FoodPrintGroupId,
+                menu.WinePrintGroupId);
             var wasEmpty = _currentOrder.Items.Count == 0;
+            var packageItemId = Guid.NewGuid().ToString();
 
-            _currentOrder.Items.Add(new TableOrderItem
+            var packageItem = new TableOrderItem
             {
-                Id = Guid.NewGuid().ToString(),
+                Id = packageItemId,
                 MenuItemId = menuItemId,
                 Name = menu.Name,
                 VariantId = option.Id,
@@ -994,10 +1145,40 @@ namespace POS_in_NET.Pages
                 Quantity = 1,
                 UnitPrice = option.Price,
                 VatCategory = string.IsNullOrWhiteSpace(menu.VatCategory) ? "HotFood" : menu.VatCategory,
+                PrintGroupId = menu.FoodPrintGroupId,
                 Notes = notes,
                 SendStatus = ItemSendStatus.NotSent,
                 CreatedAt = DateTime.Now
-            });
+            };
+            _currentOrder.Items.Add(packageItem);
+
+            foreach (var selection in selections.OrderBy(selection => selection.Course.CourseNumber))
+            {
+                var course = selection.Course;
+                var choice = selection.Choice;
+                _currentOrder.Items.Add(new TableOrderItem
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    MenuItemId = TastingMenuNotesHelper.BuildOrderCourseMenuItemId(menu.Id, course.Id),
+                    VariantId = packageItemId,
+                    VariantName = $"{course.CourseNumber}/{option.CourseCount}",
+                    DisplayName = $"Course {course.CourseNumber}: {course.Name}",
+                    Name = course.Name,
+                    Quantity = 1,
+                    UnitPrice = 0m,
+                    VatCategory = string.IsNullOrWhiteSpace(course.VatCategory) ? "HotFood" : course.VatCategory,
+                    PrintGroupId = !string.IsNullOrWhiteSpace(menu.FoodPrintGroupId)
+                        ? menu.FoodPrintGroupId
+                        : choice.PrintGroupId,
+                    Notes = !string.IsNullOrWhiteSpace(course.WineName)
+                        ? $"Wine pairing: {course.WineName.Trim()}"
+                        : string.Equals(choice.Name, course.Name, StringComparison.OrdinalIgnoreCase) ? null : choice.Name,
+                    CourseType = $"Tasting Course {course.CourseNumber}",
+                    // Child courses are held until the waiter explicitly fires one.
+                    SendStatus = ItemSendStatus.Sent,
+                    CreatedAt = DateTime.Now
+                });
+            }
 
             _currentOrder.RecalculateAll();
             RefreshOrderItems();
@@ -1011,20 +1192,28 @@ namespace POS_in_NET.Pages
 
         private async Task OnMealDealTappedAsync(MealDeal deal)
         {
-            if (deal.Choices.Count == 0)
+            try
             {
-                await AppAlertService.ShowAlertAsync("Meal Deal", "This deal has no choices configured.");
-                return;
-            }
+                if (deal.Choices.Count == 0)
+                {
+                    await AppAlertService.ShowAlertAsync("Meal Deal", "This deal has no choices configured.");
+                    return;
+                }
 
-            var picker = new MealDealPickerDialog(deal);
-            var selections = await picker.ShowAsync(this);
-            if (selections == null || selections.Count == 0)
+                var picker = new MealDealPickerDialog(deal);
+                var selections = await picker.ShowAsync(this);
+                if (selections == null || selections.Count == 0)
+                {
+                    return;
+                }
+
+                await AddMealDealToOrderAsync(deal, selections);
+            }
+            catch (Exception ex)
             {
-                return;
+                System.Diagnostics.Debug.WriteLine($"[MealDeal] Could not add deal: {ex}");
+                await AppAlertService.ShowAlertAsync("Meal Deal Error", $"The deal could not be added: {ex.Message}");
             }
-
-            await AddMealDealToOrderAsync(deal, selections);
         }
 
         private async Task AddMealDealToOrderAsync(MealDeal deal, List<string> selections)
@@ -1050,6 +1239,8 @@ namespace POS_in_NET.Pages
                     Id = Guid.NewGuid().ToString(),
                     MenuItemId = menuItemId,
                     Name = deal.Name,
+                    DisplayName = deal.Name,
+                    CategoryColor = string.IsNullOrWhiteSpace(deal.Color) ? "#F59E0B" : deal.Color,
                     Quantity = 1,
                     UnitPrice = deal.Price,
                     VatCategory = string.IsNullOrWhiteSpace(deal.VatCategory) ? "HotFood" : deal.VatCategory,
@@ -1074,6 +1265,16 @@ namespace POS_in_NET.Pages
 
         private static bool IsTastingMenuOrderItem(TableOrderItem item) =>
             item.MenuItemId.StartsWith(TastingMenu.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsTastingMenuCourseItem(TableOrderItem item) =>
+            TastingMenuNotesHelper.IsOrderCourseItem(item.MenuItemId);
+
+        private List<TableOrderItem> GetTastingMenuCourses(TableOrderItem package) =>
+            _currentOrder.Items
+                .Where(IsTastingMenuCourseItem)
+                .Where(course => string.Equals(course.VariantId, package.Id, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(TastingCourseProgressDialog.GetCourseNumber)
+                .ToList();
 
         private Border CreateItemButton(FoodMenuItem item)
         {
@@ -1320,11 +1521,25 @@ namespace POS_in_NET.Pages
                             await Task.Delay(100 * attempt);
                         }
                     }
+
+                    if (!IsUsablePersistentOrder(loadedOrder))
+                    {
+                        AppDiagnostics.Log($"[OrderPlacement] Rejected stale order '{_pendingOrderId}' before opening table {_currentOrder.TableNumber}.");
+                        ActiveTableOrderCacheService.Remove(_pendingOrderId, _tableSessionId, _currentOrder.TableNumber.ToString(CultureInfo.InvariantCulture));
+                        _pendingOrderId = null;
+                        _currentOrder.Id = Guid.NewGuid().ToString("N");
+                        _lastSavedAt = DateTime.MinValue;
+                        loadedOrder = null;
+                    }
                 }
 
                 if (loadedOrder == null && _tableSessionId.HasValue)
                 {
                     loadedOrder = await _orderService.GetOpenOrderByTableSessionIdAsync(_tableSessionId.Value);
+                    if (!IsUsablePersistentOrder(loadedOrder))
+                    {
+                        loadedOrder = null;
+                    }
                 }
 
                 if (loadedOrder == null)
@@ -1370,8 +1585,7 @@ namespace POS_in_NET.Pages
                 var activeSession = await _tableSessionService.GetSessionByIdAsync(resolvedSessionId.Value);
                 if (activeSession != null)
                 {
-                    var tableService = new RestaurantTableService();
-                    var table = await tableService.GetTableByIdAsync(activeSession.TableId);
+                    var table = await _restaurantTableService.GetTableByIdAsync(activeSession.TableId);
                     if (table != null && int.TryParse(table.TableNumber, out var resolvedTableNumber))
                     {
                         _currentOrder.TableNumber = resolvedTableNumber;
@@ -1395,21 +1609,33 @@ namespace POS_in_NET.Pages
             _currentOrder.StartTime = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt;
             _currentOrder.CreatedAt = loadedOrder.CreatedAt == default ? DateTime.Now : loadedOrder.CreatedAt;
             _currentOrder.UpdatedAt = loadedOrder.UpdatedAt == default ? DateTime.Now : loadedOrder.UpdatedAt;
+            _currentOrder.OrderMode = IsTableOrderType(loadedOrder.OrderType) ? "dine_in" : "takeaway";
             _currentOrder.Discount = loadedOrder.DiscountAmount;
-            _currentOrder.FixedServiceCharge = loadedOrder.DeliveryFee;
+            _currentOrder.DeliveryFee = loadedOrder.DeliveryFee;
+            _currentOrder.ServiceChargePercent = loadedOrder.ServiceChargePercentage;
+            _currentOrder.ServiceChargeClassification = ParseServiceChargeClassification(loadedOrder.ServiceChargeClassification);
+            _currentOrder.ServiceChargeStatus = ParseServiceChargeStatus(loadedOrder.ServiceChargeStatus);
+            _currentOrder.ServiceChargeRemovalReason = loadedOrder.ServiceChargeRemovalReason;
+            _currentOrder.ServiceChargeRemovedByUserId = loadedOrder.ServiceChargeRemovedByUserId;
+            _currentOrder.ServiceChargeRemovedByName = loadedOrder.ServiceChargeRemovedByName;
+            _currentOrder.ServiceChargeApprovedByUserId = loadedOrder.ServiceChargeApprovedByUserId;
+            _currentOrder.ServiceChargeApprovedByName = loadedOrder.ServiceChargeApprovedByName;
+            _currentOrder.ServiceChargeRemovedAt = loadedOrder.ServiceChargeRemovedAt;
             _currentOrder.Items.Clear();
             _currentOrder.Payments.Clear();
 
             var payments = await _orderService.GetOrderPaymentsAsync(loadedOrder.Id);
-            foreach (var payment in payments)
+            foreach (var payment in payments.Where(payment =>
+                         string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase)))
             {
                 _currentOrder.Payments.Add(new TableOrderPayment
                 {
                     OrderId = _currentOrder.Id,
                     Method = ParsePaymentMethodType(payment.PaymentMethod),
                     Amount = payment.Amount,
-                    AmountReceived = payment.Amount,
-                    Change = 0m,
+                    AmountReceived = GetPaymentMetadataAmount(payment.MetadataJson, "amountReceived", payment.Amount),
+                    Change = GetPaymentMetadataAmount(payment.MetadataJson, "change", 0m),
+                    TipAmount = payment.TipAmount,
                     Reference = payment.Reference,
                     CreatedAt = payment.CreatedAt,
                     StaffName = payment.CreatedBy ?? string.Empty
@@ -1430,6 +1656,7 @@ namespace POS_in_NET.Pages
                     Id = !string.IsNullOrWhiteSpace(item.ClientItemId)
                         ? item.ClientItemId!
                         : $"db-{item.Id}",
+                    DatabaseId = item.Id,
                     OrderId = _currentOrder.Id,
                     MenuItemId = item.MenuItemId ?? string.Empty,
                     VariantId = item.VariantId,
@@ -1443,6 +1670,12 @@ namespace POS_in_NET.Pages
                         ? item.PrintGroupId
                         : _allMenuItems.FirstOrDefault(menuItem =>
                             string.Equals(menuItem.Id, item.MenuItemId, StringComparison.OrdinalIgnoreCase))?.PrintGroupId,
+                    PrintInRed = item.PrintInRed,
+                    CourseType = !string.IsNullOrWhiteSpace(item.CourseType)
+                        ? item.CourseType
+                        : ResolveCourseType(item.MenuItemId),
+                    FiredAt = item.FiredAt,
+                    FiredBy = item.FiredBy,
                     SendStatus = itemTracking?.SendStatus?.ToLowerInvariant() switch
                     {
                         "printed" or "sent" => ItemSendStatus.Sent,
@@ -1478,6 +1711,7 @@ namespace POS_in_NET.Pages
                 _lastSavedAt,
                 loadedOrder.IsOpen);
             _currentOrder.RecalculateAll();
+            _currentOrder.TipAmount = Math.Max(0m, loadedOrder.TotalAmount - _currentOrder.Total);
             SyncCurrentOrderMode();
             RefreshOrderItems();
             UpdateSavedStatusLabel();
@@ -1499,8 +1733,7 @@ namespace POS_in_NET.Pages
                 if (!_tableSessionId.HasValue)
                 {
                     var tableNumberText = _currentOrder.TableNumber.ToString();
-                    var tableService = new RestaurantTableService();
-                    var table = (await tableService.GetAllTablesAsync())
+                    var table = (await _restaurantTableService.GetAllTablesAsync())
                         .FirstOrDefault(t => string.Equals(t.TableNumber?.Trim(), tableNumberText.Trim(), StringComparison.OrdinalIgnoreCase));
 
                     if (table == null)
@@ -1534,13 +1767,48 @@ namespace POS_in_NET.Pages
                 // Skip link if called from background context (already linked synchronously before background tasks)
                 if (!skipOrderLink && _tableSessionId.HasValue)
                 {
-                    await _tableSessionService.LinkOrderToSessionAsync(_tableSessionId.Value, _currentOrder.Id);
+                    await LinkCurrentOrderToTableSessionAsync();
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[OrderPlacement] EnsureTableSessionContext warning: {ex.Message}");
             }
+        }
+
+        private async Task<bool> LinkCurrentOrderToTableSessionAsync()
+        {
+            if (!string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            EnsureCurrentOrderIdentity();
+            if (!_tableSessionId.HasValue || string.IsNullOrWhiteSpace(_currentOrder.Id))
+            {
+                AppDiagnostics.Log($"[OrderPlacement] Cannot link table order. Session={_tableSessionId?.ToString() ?? "missing"}, Order={_currentOrder.Id ?? "missing"}.");
+                return false;
+            }
+
+            string? lastMessage = null;
+            for (var attempt = 1; attempt <= 2; attempt++)
+            {
+                var result = await _tableSessionService.LinkOrderToSessionAsync(_tableSessionId.Value, _currentOrder.Id);
+                if (result.success)
+                {
+                    AppDiagnostics.Log($"[OrderPlacement] Linked order {_currentOrder.Id} to table session {_tableSessionId.Value}.");
+                    return true;
+                }
+
+                lastMessage = result.message;
+                if (attempt < 2)
+                {
+                    await Task.Delay(120);
+                }
+            }
+
+            AppDiagnostics.Log($"[OrderPlacement] Failed to link order {_currentOrder.Id} to table session {_tableSessionId.Value}: {lastMessage}");
+            return false;
         }
 
         private void ApplyLoadedOrderContext(Order loadedOrder)
@@ -1658,13 +1926,18 @@ namespace POS_in_NET.Pages
                     var result = await _orderService.SaveOrderAsync(order);
                     if (result.Success)
                     {
-                        if (_tableSessionId.HasValue)
-                        {
-                            await _tableSessionService.LinkOrderToSessionAsync(_tableSessionId.Value, order.OrderId);
-                        }
-
+                        _pendingOrderId = order.OrderId;
                         _persistentOrderNumber = order.OrderNumber;
                         _lastSavedAt = order.UpdatedAt == default ? DateTime.Now : order.UpdatedAt;
+
+                        if (string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase)
+                            && !await LinkCurrentOrderToTableSessionAsync())
+                        {
+                            _draftDirty = true;
+                            UpdateSavedStatusLabel("Table link failed", false, true);
+                            return false;
+                        }
+
                         _draftDirty = false;
                         _hasShownConcurrencyConflict = false;
                         ActiveTableOrderCacheService.Upsert(
@@ -1821,9 +2094,9 @@ namespace POS_in_NET.Pages
                 or LocalLifecycleState.Voided
                 || !string.IsNullOrWhiteSpace(_persistentOrderNumber);
 
-            if (shouldAssignOrderNumber && string.IsNullOrWhiteSpace(_persistentOrderNumber))
+            if (shouldAssignOrderNumber)
             {
-                _persistentOrderNumber = await _orderNumberService.GenerateOrderNumberAsync(orderType);
+                await EnsureOrderNumberAssignedAsync();
             }
 
             var customerName = _isDeliveryOrder
@@ -1853,6 +2126,10 @@ namespace POS_in_NET.Pages
                     SpecialInstructions = item.Notes,
                     MenuItemId = item.MenuItemId,
                     PrintGroupId = item.PrintGroupId,
+                    PrintInRed = item.PrintInRed,
+                    CourseType = item.CourseType,
+                    FiredAt = item.FiredAt,
+                    FiredBy = item.FiredBy,
                     Addons = item.SelectedAddons
                         .Select(addon => new OrderItemAddon
                         {
@@ -1876,7 +2153,20 @@ namespace POS_in_NET.Pages
                 TotalAmount = _currentOrder.Total,
                 SubtotalAmount = _currentOrder.Subtotal,
                 DiscountAmount = _currentOrder.Discount,
-                DeliveryFee = _currentOrder.ServiceCharge,
+                DeliveryFee = _currentOrder.DeliveryFee,
+                ServiceChargePercentage = _currentOrder.ServiceChargePercent,
+                ServiceChargeBasis = _currentOrder.ServiceChargeBasis,
+                ServiceChargeAmount = _currentOrder.ServiceCharge,
+                ServiceChargeStatus = ToDatabaseValue(_currentOrder.ServiceChargeStatus),
+                ServiceChargeClassification = ToDatabaseValue(_currentOrder.ServiceChargeClassification),
+                ServiceChargeRemovalReason = _currentOrder.ServiceChargeRemovalReason,
+                ServiceChargeRemovedByUserId = _currentOrder.ServiceChargeRemovedByUserId,
+                ServiceChargeRemovedByName = _currentOrder.ServiceChargeRemovedByName,
+                ServiceChargeApprovedByUserId = _currentOrder.ServiceChargeApprovedByUserId,
+                ServiceChargeApprovedByName = _currentOrder.ServiceChargeApprovedByName,
+                ServiceChargeRemovedAt = _currentOrder.ServiceChargeRemovedAt,
+                CashTipAmount = _currentOrder.Payments.Where(payment => payment.Method == PaymentMethodType.Cash).Sum(payment => payment.TipAmount),
+                CardTipAmount = _currentOrder.Payments.Where(payment => payment.Method == PaymentMethodType.Card).Sum(payment => payment.TipAmount),
                 TaxAmount = _currentOrder.VAT,
                 OrderType = orderType,
                 SourceChannel = _orderSourceChannel,
@@ -1984,6 +2274,8 @@ namespace POS_in_NET.Pages
                     UnitPrice = effectivePrice,
                     VatCategory = string.IsNullOrWhiteSpace(item.VatCategory) ? "HotFood" : item.VatCategory,
                     PrintGroupId = item.PrintGroupId,
+                    PrintInRed = item.PrintInRed,
+                    CourseType = ResolveCourseType(item),
                     Notes = normalizedNote,
                     SendStatus = ItemSendStatus.NotSent,
                     CreatedAt = DateTime.Now
@@ -2056,17 +2348,90 @@ namespace POS_in_NET.Pages
                 IsItemVisibleForCurrentOrderMode(item));
         }
 
+        private string? ResolveCourseType(string? menuItemId)
+        {
+            var menuItem = _allMenuItems.FirstOrDefault(item =>
+                string.Equals(item.Id, menuItemId, StringComparison.OrdinalIgnoreCase));
+            return menuItem == null ? null : ResolveCourseType(menuItem);
+        }
+
+        private string ResolveCourseType(FoodMenuItem item)
+        {
+            var categoryId = item.CategoryId;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (!string.IsNullOrWhiteSpace(categoryId) && visited.Add(categoryId))
+            {
+                var category = _allCategories.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Id, categoryId, StringComparison.OrdinalIgnoreCase));
+                if (category == null)
+                {
+                    break;
+                }
+
+                var course = NormalizeCourseType(category.Name);
+                if (course != null)
+                {
+                    return course;
+                }
+
+                categoryId = category.ParentId;
+            }
+
+            return string.Equals(item.ItemType, "Drink", StringComparison.OrdinalIgnoreCase)
+                ? "Drinks"
+                : "Mains";
+        }
+
+        private static string? NormalizeCourseType(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var normalized = value.Trim().ToLowerInvariant();
+            if (normalized.Contains("starter") || normalized.Contains("appetiser") || normalized.Contains("appetizer"))
+            {
+                return "Starters";
+            }
+            if (normalized.Contains("dessert") || normalized.Contains("pudding") || normalized.Contains("sweet"))
+            {
+                return "Desserts";
+            }
+            if (normalized.Contains("drink") || normalized.Contains("beverage") || normalized.Contains("cocktail")
+                || normalized.Contains("wine") || normalized.Contains("beer") || normalized.Contains("bar"))
+            {
+                return "Drinks";
+            }
+            if (normalized.Contains("main") || normalized.Contains("entree") || normalized.Contains("entrée"))
+            {
+                return "Mains";
+            }
+
+            return normalized switch
+            {
+                "starters" => "Starters",
+                "mains" => "Mains",
+                "desserts" => "Desserts",
+                "drinks" => "Drinks",
+                _ => null
+            };
+        }
+
         private void RefreshOrderItems()
         {
             OrderItemsContainer.Children.Clear();
             
-            foreach (var item in _currentOrder.Items)
+            foreach (var item in _currentOrder.Items.Where(item => !IsTastingMenuCourseItem(item)))
             {
-                var hasNotes = !string.IsNullOrWhiteSpace(item.Notes);
-                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
-                var hasDetails = hasNotes || hasModifiers;
                 var isMealDeal = IsMealDealOrderItem(item);
                 var isTastingMenu = IsTastingMenuOrderItem(item);
+                var visibleItemNote = isTastingMenu
+                    ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
+                    : item.Notes;
+                var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
+                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
+                var hasDetails = hasNotes || hasModifiers || isTastingMenu;
 
                 var itemView = new Border
                 {
@@ -2088,10 +2453,11 @@ namespace POS_in_NET.Pages
                     ColumnDefinitions = new ColumnDefinitionCollection
                     {
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, // Item name
+                        new ColumnDefinition { Width = GridLength.Auto }, // Fire tasting course
                         new ColumnDefinition { Width = GridLength.Auto }, // Minus button
                         new ColumnDefinition { Width = new GridLength(25, GridUnitType.Absolute) }, // Quantity
                         new ColumnDefinition { Width = GridLength.Auto }, // Plus button
-                        new ColumnDefinition { Width = new GridLength(85, GridUnitType.Absolute) }, // Note button
+                        new ColumnDefinition { Width = new GridLength(78, GridUnitType.Absolute) }, // Note button
                         new ColumnDefinition { Width = new GridLength(65, GridUnitType.Absolute) } // Price
                     },
                     ColumnSpacing = 6,
@@ -2111,7 +2477,55 @@ namespace POS_in_NET.Pages
                     VerticalOptions = LayoutOptions.Center,
                     LineBreakMode = LineBreakMode.TailTruncation
                 };
-                mainGrid.Add(nameLabel, 0, 0);
+                if (item.IsCourseFired)
+                {
+                    var firedBadge = new Border
+                    {
+                        BackgroundColor = Color.FromArgb("#FEF3C7"),
+                        Stroke = Color.FromArgb("#F59E0B"),
+                        StrokeThickness = 1,
+                        Padding = new Thickness(7, 2),
+                        StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                        VerticalOptions = LayoutOptions.Center,
+                        Content = new Label
+                        {
+                            Text = $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}",
+                            FontSize = 9,
+                            FontAttributes = FontAttributes.Bold,
+                            TextColor = Color.FromArgb("#B45309")
+                        }
+                    };
+
+                    mainGrid.Add(new HorizontalStackLayout
+                    {
+                        Spacing = 7,
+                        VerticalOptions = LayoutOptions.Center,
+                        Children = { nameLabel, firedBadge }
+                    }, 0, 0);
+                }
+                else
+                {
+                    mainGrid.Add(nameLabel, 0, 0);
+                }
+
+                if (isTastingMenu)
+                {
+                    var fireCoursesBtn = new Button
+                    {
+                        Text = "Fire",
+                        BackgroundColor = Color.FromArgb("#F59E0B"),
+                        TextColor = Colors.White,
+                        FontSize = 11,
+                        FontAttributes = FontAttributes.Bold,
+                        HeightRequest = 32,
+                        CornerRadius = 6,
+                        Padding = new Thickness(10, 0),
+                        VerticalOptions = LayoutOptions.Center
+                    };
+                    fireCoursesBtn.Clicked += async (_, _) => await ShowTastingCourseProgressAsync(item);
+                    SemanticProperties.SetDescription(fireCoursesBtn, "Select a tasting-menu course to fire to the kitchen");
+                    mainGrid.Add(fireCoursesBtn, 1, 0);
+                }
                 
                 // Minus button
                 var minusBtn = new Button
@@ -2132,6 +2546,10 @@ namespace POS_in_NET.Pages
                     if (item.Quantity > 1)
                     {
                         item.Quantity--;
+                        if (isTastingMenu)
+                        {
+                            foreach (var course in GetTastingMenuCourses(item)) course.Quantity = item.Quantity;
+                        }
                         if (wasSent)
                         {
                             item.SendStatus = ItemSendStatus.NotSent;
@@ -2142,13 +2560,17 @@ namespace POS_in_NET.Pages
                     }
                     else
                     {
+                        if (isTastingMenu)
+                        {
+                            foreach (var course in GetTastingMenuCourses(item)) _currentOrder.Items.Remove(course);
+                        }
                         _currentOrder.Items.Remove(item);
                         _currentOrder.RecalculateAll();
                         RefreshOrderItems();
                         await MarkCurrentOrderChangedAsync();
                     }
                 };
-                mainGrid.Add(minusBtn, 1, 0);
+                mainGrid.Add(minusBtn, 2, 0);
                 
                 // Quantity label
                 var qtyLabel = new Label
@@ -2160,7 +2582,7 @@ namespace POS_in_NET.Pages
                     VerticalOptions = LayoutOptions.Center,
                     HorizontalOptions = LayoutOptions.Center
                 };
-                mainGrid.Add(qtyLabel, 2, 0);
+                mainGrid.Add(qtyLabel, 3, 0);
                 
                 // Plus button
                 var plusBtn = new Button
@@ -2179,23 +2601,34 @@ namespace POS_in_NET.Pages
                 plusBtn.Clicked += async (s, e) => {
                     if (HasReachedKitchen(item))
                     {
-                        _currentOrder.Items.Add(CreateAdditionalUnit(item));
+                        if (isTastingMenu)
+                        {
+                            AddAdditionalTastingMenuUnit(item);
+                        }
+                        else
+                        {
+                            _currentOrder.Items.Add(CreateAdditionalUnit(item));
+                        }
                     }
                     else
                     {
                         item.Quantity++;
+                        if (isTastingMenu)
+                        {
+                            foreach (var course in GetTastingMenuCourses(item)) course.Quantity = item.Quantity;
+                        }
                     }
                     _currentOrder.RecalculateAll();
                     RefreshOrderItems();
                     await MarkCurrentOrderChangedAsync();
                 };
-                mainGrid.Add(plusBtn, 3, 0);
+                mainGrid.Add(plusBtn, 4, 0);
                 
-                if (!isMealDeal && !isTastingMenu)
+                if (!isMealDeal)
                 {
                     var noteBtn = new Button
                     {
-                        Text = item.HasNotes ? "Note Added" : "+ Note",
+                        Text = hasNotes ? "Note Added" : "+ Note",
                         BackgroundColor = Color.FromArgb("#3B82F6"),
                         TextColor = Colors.White,
                         FontSize = 11,
@@ -2206,7 +2639,7 @@ namespace POS_in_NET.Pages
                         VerticalOptions = LayoutOptions.Center
                     };
                     noteBtn.Clicked += async (s, e) => await ShowNoteDialog(item);
-                    mainGrid.Add(noteBtn, 4, 0);
+                    mainGrid.Add(noteBtn, 5, 0);
                 }
                 
                 var priceLabel = new Label
@@ -2218,17 +2651,25 @@ namespace POS_in_NET.Pages
                     VerticalOptions = LayoutOptions.Center,
                     HorizontalOptions = LayoutOptions.End
                 };
-                mainGrid.Add(priceLabel, 5, 0);
+                mainGrid.Add(priceLabel, 6, 0);
 
                 if (hasDetails)
                 {
-                    var detailText = string.Join(
-                        Environment.NewLine,
-                        new[]
-                        {
-                            hasModifiers ? item.ModifiersDisplay : null,
-                            hasNotes ? item.Notes : null
-                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
+                    var detailText = isTastingMenu
+                        ? string.Join(
+                            Environment.NewLine,
+                            new[]
+                            {
+                                BuildTastingCourseStatusText(item),
+                                hasNotes ? $"Note: {visibleItemNote}" : null
+                            }.Where(text => !string.IsNullOrWhiteSpace(text)))
+                        : string.Join(
+                            Environment.NewLine,
+                            new[]
+                            {
+                                hasModifiers ? item.ModifiersDisplay : null,
+                                hasNotes ? item.Notes : null
+                            }.Where(text => !string.IsNullOrWhiteSpace(text)));
 
                     var detailsLabel = new Label
                     {
@@ -2253,10 +2694,105 @@ namespace POS_in_NET.Pages
                 OrderItemsContainer.Children.Add(itemView);
             }
         }
-        
+
+        private bool IsUsablePersistentOrder(Order? order)
+        {
+            if (order == null || !order.IsOpen || order.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided)
+            {
+                return false;
+            }
+
+            if (!string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (_tableSessionId.HasValue && order.TableSessionId.HasValue && order.TableSessionId.Value != _tableSessionId.Value)
+            {
+                return false;
+            }
+
+            return string.Equals(
+                order.CustomerName?.Trim(),
+                $"Table {_currentOrder.TableNumber}",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string BuildTastingCourseStatusText(TableOrderItem package)
+        {
+            var courses = GetTastingMenuCourses(package);
+            if (courses.Count == 0) return "No courses configured";
+
+            return string.Join("  |  ", courses.Select(course =>
+            {
+                var number = TastingCourseProgressDialog.GetCourseNumber(course);
+                var status = course.IsCourseFired ? "FIRED" : "WAITING";
+                return $"{(number == int.MaxValue ? "-" : number)}. {course.Name} {status}";
+            }));
+        }
+
+        private void AddAdditionalTastingMenuUnit(TableOrderItem sourcePackage)
+        {
+            var newPackage = CreateAdditionalUnit(sourcePackage);
+            _currentOrder.Items.Add(newPackage);
+            foreach (var sourceCourse in GetTastingMenuCourses(sourcePackage))
+            {
+                _currentOrder.Items.Add(new TableOrderItem
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    OrderId = sourceCourse.OrderId,
+                    MenuItemId = sourceCourse.MenuItemId,
+                    VariantId = newPackage.Id,
+                    VariantName = sourceCourse.VariantName,
+                    DisplayName = sourceCourse.DisplayName,
+                    Name = sourceCourse.Name,
+                    Quantity = 1,
+                    UnitPrice = 0m,
+                    VatCategory = sourceCourse.VatCategory,
+                    PrintGroupId = sourceCourse.PrintGroupId,
+                    PrintInRed = sourceCourse.PrintInRed,
+                    Notes = sourceCourse.Notes,
+                    CourseType = sourceCourse.CourseType,
+                    SendStatus = ItemSendStatus.Sent,
+                    CreatedAt = DateTime.Now
+                });
+            }
+        }
+
         private async Task ShowNoteDialog(TableOrderItem item)
         {
             var originalNote = item.Notes;
+            if (IsTastingMenuOrderItem(item))
+            {
+                var currentNote = TastingMenuNotesHelper.GetOrderNote(item.Notes);
+                var tastingNoteDialog = new StyledPromptDialog();
+                tastingNoteDialog.SetDialog(
+                    "Tasting Menu Note",
+                    $"Enter a note for {item.DisplayName}:",
+                    "e.g., allergy information or serving instruction",
+                    null,
+                    currentNote ?? string.Empty,
+                    true);
+
+                var tastingNote = await tastingNoteDialog.ShowAsync();
+                if (tastingNote != null)
+                {
+                    item.Notes = TastingMenuNotesHelper.WithOrderNote(
+                        item.Notes,
+                        NormalizeOrderItemNote(tastingNote));
+                    MarkKitchenChangePending(item, originalNote);
+                    RefreshOrderItems();
+                    await MarkCurrentOrderChangedAsync();
+                }
+
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(item.MenuItemId))
             {
                 var quickNotes = await GetQuickNotesForItemAsync(item.MenuItemId);
@@ -2347,14 +2883,23 @@ namespace POS_in_NET.Pages
             SubtotalLabel.Text = $"£{_currentOrder.Subtotal:F2}";
             VATLabel.Text = $"£{_currentOrder.VAT:F2}";
             
-            if (_currentOrder.ServiceCharge > 0)
+            if (_currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied && _currentOrder.ServiceCharge > 0)
             {
                 ServiceChargeRow.IsVisible = true;
                 ServiceChargeLabel.Text = $"£{_currentOrder.ServiceCharge:F2}";
+                ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
+            }
+            else if (_currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Removed)
+            {
+                ServiceChargeRow.IsVisible = true;
+                ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
+                ServiceChargeLabel.Text = "Removed";
             }
             else
             {
-                ServiceChargeRow.IsVisible = false;
+                ServiceChargeRow.IsVisible = !_isCollectionOrder && !_isDeliveryOrder;
+                ServiceChargeDescriptionLabel.Text = "Service charge";
+                ServiceChargeLabel.Text = "Not included";
             }
             
             // Show discount if applied
@@ -2436,46 +2981,6 @@ namespace POS_in_NET.Pages
                 : note.Substring(0, maxChars) + "..";
         }
 
-        private async void OnServiceFeeClicked(object? sender, EventArgs e)
-        {
-            var dialog = new ModernActionSheetDialog();
-            dialog.SetActionSheet(
-                "Service Charge",
-                new List<string> { "None (0%)", "10%", "12.5%", "15%" },
-                ""
-            );
-            
-            var action = await dialog.ShowAsync();
-            
-            if (action == "None (0%)")
-            {
-                _currentOrder.FixedServiceCharge = 0;
-                _currentOrder.ServiceChargePercent = 0;
-            }
-            else if (action == "10%")
-            {
-                _currentOrder.FixedServiceCharge = 0;
-                _currentOrder.ServiceChargePercent = 10;
-            }
-            else if (action == "12.5%")
-            {
-                _currentOrder.FixedServiceCharge = 0;
-                _currentOrder.ServiceChargePercent = 12.5m;
-            }
-            else if (action == "15%")
-            {
-                _currentOrder.FixedServiceCharge = 0;
-                _currentOrder.ServiceChargePercent = 15;
-            }
-            
-            if (action != null)
-            {
-                _currentOrder.RecalculateAll();
-                UpdateDisplay();
-                await MarkCurrentOrderChangedAsync();
-            }
-        }
-
         private async void OnNotesClicked(object? sender, EventArgs e)
         {
             var dialog = new StyledPromptDialog();
@@ -2504,11 +3009,25 @@ namespace POS_in_NET.Pages
 
         private async void OnVoidClicked(object? sender, EventArgs e)
         {
+            if (_isFinalizingOrder)
+            {
+                return;
+            }
+
             if (_currentOrder.Items.Count == 0)
             {
                 var noItemsDialog = new ModernAlertDialog();
                 noItemsDialog.SetAlert("No Items", "There are no items to void.", "i");
                 await noItemsDialog.ShowAsync();
+                return;
+            }
+
+            var approvedPaymentTotal = await GetExistingApprovedPaymentTotalAsync();
+            if (approvedPaymentTotal > 0m)
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Payment Already Taken",
+                    $"£{approvedPaymentTotal:F2} has already been approved for this order. Refund or void the payment before voiding the order so payment and tip reports remain correct.");
                 return;
             }
             
@@ -2599,6 +3118,9 @@ namespace POS_in_NET.Pages
                 if (!saved)
                 {
                     _isFinalizingOrder = false;
+                    await AppAlertService.ShowAlertAsync(
+                        "Void Failed",
+                        "The order could not be voided. It remains open; please try again.");
                     return;
                 }
                 await PrintFullOrderVoidAsync(reason, approvingUser);
@@ -2606,8 +3128,14 @@ namespace POS_in_NET.Pages
                 voidedDialog.SetAlert("Voided", $"Order has been voided.\nReason: {reason}", "", "#10B981", "White");
                 await voidedDialog.ShowAsync();
                 
-                // Navigate back to Visual Table Layout
-                await Shell.Current.GoToAsync("..");
+                if (IsTakeawayStyleOrder())
+                {
+                    await NavigateToRoleDashboardAsync(noAnimation: true);
+                }
+                else
+                {
+                    await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
+                }
             }
         }
 
@@ -2780,6 +3308,16 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] === START ExecuteUltraFastSendAsync at {startTime:HH:mm:ss.fff}");
                 
                 var pendingSendCount = _currentOrder.Items.Count(i => i.SendStatus == ItemSendStatus.NotSent);
+                await RefreshRolloutConfigAsync(forceRefresh: false);
+                await EnsureTableSessionContextAsync(skipOrderLink: true);
+                _draftDirty = true;
+                if (!await PersistDraftAsync(force: true, lifecycleOverride: LocalLifecycleState.Active))
+                {
+                    await AppAlertService.ShowAlertAsync(
+                        "Order Not Sent",
+                        "The order could not be saved and linked to this table. Nothing was sent to the kitchen. Please try again.");
+                    return;
+                }
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] Pending items to send: {pendingSendCount}");
                 
                 var cloneStartTime = DateTime.Now;
@@ -2801,7 +3339,31 @@ namespace POS_in_NET.Pages
                 _currentOrder.UpdatedAt = DateTime.Now;
 
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] Firing background ProcessUltraFastSendPipelineAsync (don't wait)");
-                _ = ProcessUltraFastSendPipelineAsync(printSnapshot);
+                var sent = await ProcessUltraFastSendPipelineAsync(printSnapshot);
+                if (!sent)
+                {
+                    var attemptedIds = printSnapshot.Items
+                        .Where(item => item.SendStatus == ItemSendStatus.NotSent)
+                        .Select(item => item.Id)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in _currentOrder.Items.Where(item => attemptedIds.Contains(item.Id)))
+                    {
+                        item.SendStatus = ItemSendStatus.NotSent;
+                        item.SentAt = null;
+                        item.FailureReason = "Kitchen print was not confirmed.";
+                    }
+
+                    _currentOrder.Status = TableOrderStatus.Active;
+                    _currentOrder.UpdatedAt = DateTime.Now;
+                    _draftDirty = true;
+                    await PersistDraftAsync(force: true, lifecycleOverride: LocalLifecycleState.Active);
+                    RefreshOrderItems();
+                    UpdateDisplay();
+                    await AppAlertService.ShowAlertAsync(
+                        "Kitchen Send Failed",
+                        "The kitchen printer did not confirm this order. The order remains open and can be sent again.");
+                    return;
+                }
                 
                 var navStartTime = DateTime.Now;
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] About to call HandleSuccessfulSendAsync + Navigate");
@@ -2817,21 +3379,12 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task ProcessUltraFastSendPipelineAsync(TableOrder printSnapshot)
+        private async Task<bool> ProcessUltraFastSendPipelineAsync(TableOrder printSnapshot)
         {
             try
             {
-                await RefreshRolloutConfigAsync(forceRefresh: false);
-
-                if (string.IsNullOrWhiteSpace(_persistentOrderNumber))
-                {
-                    _persistentOrderNumber = await _orderNumberService.GenerateOrderNumberAsync(GetCanonicalOrderType());
-                    _currentOrder.OrderNumber = _persistentOrderNumber;
-                }
-
-                // Skip order link (already done synchronously before background tasks started)
-                await EnsureTableSessionContextAsync(skipOrderLink: true);
-                await PersistDraftAsync(force: true, lifecycleOverride: LocalLifecycleState.Active);
+                var orderNumber = await EnsureOrderNumberAssignedAsync();
+                printSnapshot.OrderNumber = orderNumber;
 
                 var persistedOrder = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
                 if (persistedOrder == null)
@@ -2843,7 +3396,7 @@ namespace POS_in_NET.Pages
                 if (persistedOrder == null)
                 {
                     await LogOperationalEventAsync("send_failed", new { reason = "persisted_order_missing" });
-                    return;
+                    return false;
                 }
 
                 var actor = ResolveCurrentActor();
@@ -2860,9 +3413,10 @@ namespace POS_in_NET.Pages
                 if (revisions.Count == 0)
                 {
                     await LogOperationalEventAsync("send_failed", new { reason = "no_kitchen_changes" });
-                    return;
+                    return false;
                 }
 
+                var anyKitchenPrint = false;
                 foreach (var revision in revisions.OrderBy(item => item.RevisionNumber))
                 {
                     var revisionPrintOrder = _kitchenRevisionService.BuildPrintOrder(printSnapshot, revision);
@@ -2875,7 +3429,7 @@ namespace POS_in_NET.Pages
                             .Where(item => !string.IsNullOrWhiteSpace(item.ClientItemId) && affectedClientIds.Contains(item.ClientItemId!))
                             .ToList();
                         var batchId = await _orderService.CreateSendBatchAsync(persistedOrder.Id, affectedItems);
-                        await ProcessDurableSendInBackgroundAsync(persistedOrder, batchId, revisionPrintOrder, revision);
+                        anyKitchenPrint |= await ProcessDurableSendInBackgroundAsync(persistedOrder, batchId, revisionPrintOrder, revision);
                     }
                     else
                     {
@@ -2883,6 +3437,7 @@ namespace POS_in_NET.Pages
                             ? await _orderRoutingPrintService.PrintTakeawayOrderAsync(revisionPrintOrder, GetCanonicalOrderType())
                             : await _orderRoutingPrintService.PrintOrderAsync(revisionPrintOrder);
                         await _kitchenRevisionService.MarkPrintResultAsync(revision, legacyPrint);
+                        anyKitchenPrint |= legacyPrint.AnyPrinted;
                         if (!legacyPrint.AnyPrinted)
                         {
                             await LogOperationalEventAsync("send_failed", new
@@ -2895,12 +3450,23 @@ namespace POS_in_NET.Pages
                     }
                 }
 
-                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+                if (!anyKitchenPrint)
+                {
+                    return false;
+                }
+
+                _draftDirty = true;
+                if (!await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState()))
+                {
+                    return false;
+                }
                 AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+                return true;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Ultra-fast send pipeline error: {ex.Message}");
+                AppDiagnostics.Log($"[OrderPlacement] Kitchen send pipeline failed: {ex}");
+                return false;
             }
         }
 
@@ -2920,7 +3486,15 @@ namespace POS_in_NET.Pages
                 Notes = source.Notes,
                 OrderMode = source.OrderMode,
                 ServiceChargePercent = source.ServiceChargePercent,
-                FixedServiceCharge = source.FixedServiceCharge,
+                ServiceChargeStatus = source.ServiceChargeStatus,
+                ServiceChargeClassification = source.ServiceChargeClassification,
+                ServiceChargeRemovalReason = source.ServiceChargeRemovalReason,
+                ServiceChargeRemovedByUserId = source.ServiceChargeRemovedByUserId,
+                ServiceChargeRemovedByName = source.ServiceChargeRemovedByName,
+                ServiceChargeApprovedByUserId = source.ServiceChargeApprovedByUserId,
+                ServiceChargeApprovedByName = source.ServiceChargeApprovedByName,
+                ServiceChargeRemovedAt = source.ServiceChargeRemovedAt,
+                DeliveryFee = source.DeliveryFee,
                 Status = source.Status,
                 KitchenRevisionNumber = source.KitchenRevisionNumber,
                 KitchenTicketType = source.KitchenTicketType,
@@ -2942,9 +3516,12 @@ namespace POS_in_NET.Pages
                     UnitPrice = item.UnitPrice,
                     VatCategory = item.VatCategory,
                     PrintGroupId = item.PrintGroupId,
+                    PrintInRed = item.PrintInRed,
                     Notes = item.Notes,
                     Modifiers = item.Modifiers,
                     CourseType = item.CourseType,
+                    FiredAt = item.FiredAt,
+                    FiredBy = item.FiredBy,
                     SendStatus = item.SendStatus,
                     SentAt = item.SentAt,
                     FailureReason = item.FailureReason,
@@ -2961,7 +3538,7 @@ namespace POS_in_NET.Pages
             return clone;
         }
 
-        private async Task ProcessDurableSendInBackgroundAsync(
+        private async Task<bool> ProcessDurableSendInBackgroundAsync(
             Order persistedOrder,
             string batchId,
             TableOrder? printSourceOrder = null,
@@ -3061,10 +3638,12 @@ namespace POS_in_NET.Pages
                 }
 
                 AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+                return printResult.AnyPrinted;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Instant durable send error: {ex.Message}");
+                AppDiagnostics.Log($"[OrderPlacement] Durable kitchen send failed: {ex}");
+                return false;
             }
         }
 
@@ -3221,7 +3800,7 @@ namespace POS_in_NET.Pages
             if (fastExit)
             {
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] In fastExit mode - firing background FinalizeTableSessionAfterSendAsync");
-                _ = Task.Run(async () => await FinalizeTableSessionAfterSendAsync());
+                await FinalizeTableSessionAfterSendAsync();
             }
             else
             {
@@ -3320,7 +3899,7 @@ namespace POS_in_NET.Pages
             var route = _roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
             System.Diagnostics.Debug.WriteLine($"⏱ [SEND] Resolved route: //{route} (animate={!noAnimation})");
             
-            await Shell.Current.GoToAsync($"//{route}", !noAnimation);
+            await _navigationCoordinator.NavigateShellAsync(route, animated: !noAnimation);
             
             var navEnd = DateTime.Now;
             System.Diagnostics.Debug.WriteLine($"⏱ [SEND] NavigateToRoleDashboardAsync COMPLETE - Shell.GoToAsync returned in {(navEnd - navStart).TotalMilliseconds:F0}ms");
@@ -3353,7 +3932,7 @@ namespace POS_in_NET.Pages
             }
 
             var chosenRoute = failedRoutes.FirstOrDefault(route => string.Equals(route.RouteName, selected, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(chosenRoute.RouteTarget))
+            if (chosenRoute != null && !string.IsNullOrWhiteSpace(chosenRoute.RouteTarget))
             {
                 await RetrySendRouteAsync(persistedOrder, chosenRoute);
             }
@@ -3442,6 +4021,16 @@ namespace POS_in_NET.Pages
         {
             _inactivityService.ResetActivity();
 
+            if (_isPrintInProgress)
+            {
+                return;
+            }
+
+            _isPrintInProgress = true;
+            PrintButton.IsEnabled = false;
+            try
+            {
+
             if (_currentOrder.Items.Count == 0)
             {
                 var noItemsDialog = new ModernAlertDialog();
@@ -3450,36 +4039,142 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var printed = await PrintReceipt(_currentOrder.Total + _currentOrder.TipAmount, _currentOrder.TipAmount, isFinalPaymentReceipt: false);
-            var printDialog = new ModernAlertDialog();
-            if (printed)
+            var receiptPrinted = await PrintReceipt(
+                _currentOrder.Total + _currentOrder.TipAmount,
+                _currentOrder.TipAmount,
+                isFinalPaymentReceipt: false);
+
+            if (!IsTakeawayStyleOrder())
             {
-                printDialog.SetAlert("Receipt Printed", "Receipt sent to printer.", "", "#10B981", "White");
-            }
-            else
-            {
-                printDialog.SetAlert("Receipt Failed", "Could not print receipt. Please check the receipt printer setup.", "!", "#EF4444", "White");
+                if (!receiptPrinted)
+                {
+                    await ShowPrintCopiesFailureAsync(receiptPrinted: false, kitchenPrinted: true);
+                    return;
+                }
+
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+                await NavigateToRoleDashboardAsync(noAnimation: true);
+                return;
             }
 
+            // PRINT on collection/delivery always produces a complete kitchen
+            // copy as well as the customer bill. Use a snapshot so the live
+            // order changes to sent only after both copies succeed.
+            var kitchenCopy = CloneOrderForSend(_currentOrder);
+            foreach (var item in kitchenCopy.Items.Where(item => !item.IsVoided))
+            {
+                item.SendStatus = ItemSendStatus.NotSent;
+            }
+
+            var kitchenResult = await _orderRoutingPrintService.PrintTakeawayOrderAsync(
+                kitchenCopy,
+                GetCanonicalOrderType());
+            var kitchenPrinted = kitchenResult.AnyPrinted && !kitchenResult.HasFailures;
+
+            await LogOperationalEventAsync(
+                receiptPrinted && kitchenPrinted ? "takeaway_copies_printed" : "takeaway_copies_print_failed",
+                new
+                {
+                    orderType = GetCanonicalOrderType(),
+                    receiptPrinted,
+                    kitchenPrinted,
+                    kitchenFailures = kitchenResult.FailedRoutes
+                });
+
+            if (!receiptPrinted || !kitchenPrinted)
+            {
+                await ShowPrintCopiesFailureAsync(receiptPrinted, kitchenPrinted);
+                return;
+            }
+
+            // A successful takeaway PRINT is also the completion of the send
+            // workflow: both copies have left the POS, so preserve that state
+            // before returning staff to their role-appropriate dashboard.
+            var sentAt = DateTime.Now;
+            foreach (var item in _currentOrder.Items.Where(item => !item.IsVoided))
+            {
+                item.SendStatus = ItemSendStatus.Sent;
+                item.SentAt ??= sentAt;
+                item.FailureReason = null;
+            }
+
+            _currentOrder.Status = TableOrderStatus.Sent;
+            _currentOrder.UpdatedAt = sentAt;
+            _draftDirty = true;
+            await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+            AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+            await NavigateToRoleDashboardAsync(noAnimation: true);
+            }
+            finally
+            {
+                _isPrintInProgress = false;
+                PrintButton.IsEnabled = true;
+            }
+        }
+
+        private static async Task ShowPrintCopiesFailureAsync(bool receiptPrinted, bool kitchenPrinted)
+        {
+            var message = (!receiptPrinted, !kitchenPrinted) switch
+            {
+                (true, true) => "Neither copy printed. Please check the receipt and kitchen printer setup.",
+                (true, false) => "The kitchen copy printed, but the customer bill did not. Please check the receipt printer.",
+                (false, true) => "The customer bill printed, but the kitchen copy did not. Please check the kitchen printer.",
+                _ => "Could not print the receipt. Please check the printer setup."
+            };
+
+            var printDialog = new ModernAlertDialog();
+            printDialog.SetAlert("Print Failed", message, "!", "#EF4444", "White");
             await printDialog.ShowAsync();
+        }
+
+        private async Task<string> EnsureOrderNumberAssignedAsync()
+        {
+            await _orderNumberLock.WaitAsync();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_persistentOrderNumber))
+                {
+                    _persistentOrderNumber = !string.IsNullOrWhiteSpace(_currentOrder.OrderNumber)
+                        ? _currentOrder.OrderNumber
+                        : await _orderNumberService.GenerateOrderNumberAsync(GetCanonicalOrderType());
+                }
+
+                _currentOrder.OrderNumber = _persistentOrderNumber;
+                return _persistentOrderNumber;
+            }
+            finally
+            {
+                _orderNumberLock.Release();
+            }
         }
 
         private async void OnMoreClicked(object? sender, EventArgs e)
         {
             var dialog = new MoreOptionsDialog();
+            var isCollectionOrDelivery = _isCollectionOrder || _isDeliveryOrder;
+            var customerPhone = _isDeliveryOrder ? _deliveryCustomerPhone : _collectionCustomerPhone;
             
             // Check user role for restricted features
             var authService = ServiceHelper.GetService<AuthenticationService>();
             var currentUser = authService?.CurrentUser;
-            var options = new List<(string Text, string Icon, bool IsEnabled)>
+            var options = new List<(string Text, string Icon, bool IsEnabled, bool IsDestructive)>
             {
-                ("Discount", "", true),
-                ("Table Transfer", "", true),
-                ("Merge Tables", "", true),
-                ("Fire Course", "", _currentOrder.Items.Count > 0),
-                ("Loyalty Points", "", true), // Now enabled
-                ("Cash Drawer", "", currentUser != null)
+                ("Discount", "", true, false),
+                ("Table Transfer", "", true, false),
+                ("Merge Tables", "", true, false),
+                isCollectionOrDelivery
+                    ? ("Previous Orders", "", !string.IsNullOrWhiteSpace(customerPhone), false)
+                    : ("Fire Course", "", _currentOrder.Items.Count > 0, false),
+                ("Loyalty Points", "", true, false), // Now enabled
+                ("Cash Drawer", "", currentUser != null, false)
             };
+
+            if (CanChangeServiceCharge())
+            {
+                options.Insert(0, _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied
+                    ? ("REMOVE SERVICE CHARGE", "", true, true)
+                    : ("RESTORE SERVICE CHARGE", "", true, false));
+            }
             
             dialog.SetOptions(options);
             var selected = await dialog.ShowAsync();
@@ -3500,15 +4195,191 @@ namespace POS_in_NET.Pages
                     case "Fire Course":
                         await ShowFireCourseDialog();
                         break;
+                    case "Previous Orders":
+                        await ShowPreviousOrdersDialogAsync();
+                        break;
                     case "Loyalty Points":
                         await ShowLoyaltyPointsDialog();
                         break;
                     case "Cash Drawer":
                         await OpenCashDrawer();
                         break;
+                    case "REMOVE SERVICE CHARGE":
+                        await ChangeServiceChargeStatusAsync(remove: true);
+                        break;
+                    case "RESTORE SERVICE CHARGE":
+                        await ChangeServiceChargeStatusAsync(remove: false);
+                        break;
                 }
             }
         }
+
+        private async Task ShowPreviousOrdersDialogAsync()
+        {
+            if (!_isCollectionOrder && !_isDeliveryOrder)
+            {
+                return;
+            }
+
+            var customerName = _isDeliveryOrder ? _deliveryCustomerName : _collectionCustomerName;
+            var customerPhone = _isDeliveryOrder ? _deliveryCustomerPhone : _collectionCustomerPhone;
+            if (string.IsNullOrWhiteSpace(customerPhone))
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Customer Required",
+                    "Select a saved customer before viewing previous orders.");
+                return;
+            }
+
+            try
+            {
+                var previousOrders = await _orderService.GetPreviousCustomerOrdersAsync(
+                    customerPhone,
+                    maximumOrders: 3,
+                    monthsBack: 12);
+
+                var historyDialog = new PreviousOrdersDialog();
+                historyDialog.SetCustomer(customerName, customerPhone);
+                historyDialog.SetOrders(previousOrders);
+                await historyDialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Previous Orders] Could not load history: {ex.Message}");
+                await AppAlertService.ShowAlertAsync(
+                    "Previous Orders Unavailable",
+                    "The customer order history could not be loaded. The current order has not been changed.");
+            }
+        }
+
+        private bool CanChangeServiceCharge()
+        {
+            var modifiableStatus = _currentOrder.Status is TableOrderStatus.Active or TableOrderStatus.Sent;
+            return TableOrderFinancialPolicy.CanChangeServiceCharge(
+                !_isCollectionOrder && !_isDeliveryOrder,
+                _currentOrder.ServiceChargePercent,
+                _currentOrder.ServiceChargeStatus,
+                modifiableStatus,
+                _currentOrder.TotalPaid);
+        }
+
+        private async Task ChangeServiceChargeStatusAsync(bool remove)
+        {
+            if (!CanChangeServiceCharge())
+            {
+                await AppAlertService.ShowAlertAsync("Service Charge", "This order can no longer change its service charge.");
+                return;
+            }
+
+            var reason = remove ? await SelectServiceChargeRemovalReasonAsync() : "Service charge restored";
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            var pinDialog = new StyledPromptDialog();
+            pinDialog.SetDialog(
+                "Manager Approval",
+                remove ? "Enter a manager PIN to remove the service charge." : "Enter a manager PIN to restore the service charge.",
+                "4-digit manager PIN",
+                Keyboard.Numeric,
+                string.Empty);
+            var pin = await pinDialog.ShowAsync();
+            if (string.IsNullOrWhiteSpace(pin))
+            {
+                return;
+            }
+
+            var approval = await _authService.ValidatePinAsync(pin);
+            if (!approval.Success || approval.User == null || approval.User.Role is not (UserRole.Manager or UserRole.Admin))
+            {
+                await AppAlertService.ShowAlertAsync("Approval Failed", "A valid Manager or Administrator PIN is required.");
+                return;
+            }
+
+            var amount = remove
+                ? _currentOrder.ServiceCharge
+                : TableServiceChargeCalculator.Calculate(
+                    _currentOrder.OrderMode,
+                    _currentOrder.Subtotal,
+                    _currentOrder.Discount,
+                    _currentOrder.ServiceChargePercent).ServiceCharge;
+            var confirmation = new ModernConfirmDialog();
+            confirmation.SetConfirm(
+                remove ? "Remove Service Charge" : "Restore Service Charge",
+                remove
+                    ? $"Remove £{amount:F2} service charge?\nReason: {reason}"
+                    : $"Restore £{amount:F2} service charge?",
+                remove ? "Remove" : "Restore",
+                "Cancel",
+                string.Empty);
+            if (!await confirmation.ShowAsync())
+            {
+                return;
+            }
+
+            var performedBy = _authService.CurrentUser ?? approval.User;
+            var now = DateTime.Now;
+            if (remove)
+            {
+                _currentOrder.ServiceChargeRemovalReason = reason;
+                _currentOrder.ServiceChargeRemovedByUserId = performedBy.Id;
+                _currentOrder.ServiceChargeRemovedByName = GetUserDisplayName(performedBy);
+                _currentOrder.ServiceChargeApprovedByUserId = approval.User.Id;
+                _currentOrder.ServiceChargeApprovedByName = GetUserDisplayName(approval.User);
+                _currentOrder.ServiceChargeRemovedAt = now;
+                _currentOrder.ServiceChargeStatus = TableServiceChargeStatus.Removed;
+            }
+            else
+            {
+                _currentOrder.ServiceChargeRemovalReason = null;
+                _currentOrder.ServiceChargeRemovedByUserId = null;
+                _currentOrder.ServiceChargeRemovedByName = null;
+                _currentOrder.ServiceChargeApprovedByUserId = null;
+                _currentOrder.ServiceChargeApprovedByName = null;
+                _currentOrder.ServiceChargeRemovedAt = null;
+                _currentOrder.ServiceChargeStatus = TableServiceChargeStatus.Applied;
+            }
+
+            await PersistDraftAsync(force: true);
+            await _tableServiceChargeOrderAuditService.RecordAsync(
+                _currentOrder.Id,
+                remove ? "removed" : "restored",
+                _currentOrder.ServiceChargePercent,
+                _currentOrder.ServiceChargeBasis,
+                amount,
+                _currentOrder.ServiceChargeClassification,
+                reason,
+                performedBy,
+                approval.User);
+            UpdateDisplay();
+            _ = ToastNotification.ShowAsync(
+                remove ? "Service charge removed" : "Service charge restored",
+                $"£{amount:F2} {(remove ? "removed" : "restored")}.",
+                NotificationType.Success,
+                1500);
+        }
+
+        private async Task<string?> SelectServiceChargeRemovalReasonAsync()
+        {
+            var dialog = new ModernActionSheetDialog();
+            dialog.SetActionSheet(
+                "Removal Reason",
+                new List<string> { "Customer request", "Service issue", "Manager discretion", "Custom reason" },
+                string.Empty);
+            var selected = await dialog.ShowAsync();
+            if (selected != "Custom reason")
+            {
+                return selected;
+            }
+
+            var customDialog = new StyledPromptDialog();
+            customDialog.SetDialog("Custom Reason", "Enter the reason for removing the service charge:", "Reason", Keyboard.Text, string.Empty);
+            return (await customDialog.ShowAsync())?.Trim();
+        }
+
+        private static string GetUserDisplayName(User user) =>
+            !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
 
         private async void OnPayClicked(object? sender, EventArgs e)
         {
@@ -3523,11 +4394,11 @@ namespace POS_in_NET.Pages
                 return;
             }
             
-            decimal tip = 0;
+            decimal tip = _currentOrder.TipAmount;
             decimal totalDue = _currentOrder.Total;
             
-            // Step 1: Check if TIP should be shown (only if Service Charge = 0)
-            if (_currentOrder.ServiceCharge == 0)
+            // A removed configured charge still suppresses tipping for this table order.
+            if (tip <= 0m && ShouldOfferTip() && _currentOrder.TotalPaid <= 0m)
             {
                 var tipDialog = new TipSelectionDialog();
                 tipDialog.SetOrderTotal(_currentOrder.Total);
@@ -3539,6 +4410,11 @@ namespace POS_in_NET.Pages
                 }
                 
                 totalDue = _currentOrder.Total + tip;
+                _currentOrder.TipAmount = tip;
+            }
+            else
+            {
+                totalDue = _currentOrder.Total + tip;
             }
 
             await EnsureTableSessionContextAsync(skipOrderLink: true, allowSessionOpen: false);
@@ -3549,11 +4425,14 @@ namespace POS_in_NET.Pages
 
             // Track remaining balance for partial payments
             decimal totalPaid = await GetExistingApprovedPaymentTotalAsync();
+            decimal tipRemaining = Math.Max(0m, tip - _currentOrder.Payments
+                .Where(payment => payment.Amount > 0m)
+                .Sum(payment => payment.TipAmount));
             decimal remainingBalance = Math.Max(0, totalDue - totalPaid);
 
             if (remainingBalance <= 0)
             {
-                await CompletePayment(totalDue, tip, totalPaid);
+                await CompletePaymentFromLedgerAsync(totalDue, tip);
                 return;
             }
 
@@ -3566,7 +4445,12 @@ namespace POS_in_NET.Pages
                     1500);
             }
 
-            var splitPlan = await ShowPaymentSplitPlanDialog(totalDue, remainingBalance);
+            // Collection and delivery are single-bill takeaway orders. Send
+            // them directly to full payment; split, item and custom partial
+            // payment choices remain available for table orders only.
+            var splitPlan = IsTakeawayStyleOrder()
+                ? PaymentSplitPlan.Full(totalDue)
+                : await ShowPaymentSplitPlanDialog(totalDue, remainingBalance);
             if (splitPlan == null)
             {
                 return;
@@ -3642,6 +4526,10 @@ namespace POS_in_NET.Pages
                 }
 
                 decimal paidThisAttempt = 0;
+                decimal amountReceivedThisAttempt = 0;
+                decimal changeThisAttempt = 0;
+                decimal tipThisAttempt = 0;
+                string? paymentReferenceThisAttempt = null;
 
                 switch (paymentMethod)
                 {
@@ -3650,6 +4538,10 @@ namespace POS_in_NET.Pages
                         if (cashResult.Success)
                         {
                             paidThisAttempt = cashResult.AmountPaid;
+                            tipThisAttempt = AllocateTipForPayment(tipRemaining, paidThisAttempt, remainingBalance);
+                            paymentReferenceThisAttempt = BuildPaymentTransactionId("cash", paidThisAttempt, totalPaid, splitPlan.GetPaymentTitle());
+                            amountReceivedThisAttempt = cashResult.AmountReceived;
+                            changeThisAttempt = cashResult.Change;
                             await LogOperationalEventAsync("payment_approved", new
                             {
                                 method = "cash",
@@ -3660,7 +4552,18 @@ namespace POS_in_NET.Pages
                             if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", cashResult.AmountPaid, "approved", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount, change = cashResult.Change });
+                                var paymentSaved = await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "cash", cashResult.AmountPaid, "approved", tipThisAttempt, paymentReferenceThisAttempt, actor.ActorName, new
+                                {
+                                    split = splitPlan.ToMetadata(),
+                                    chargeAmount = paymentAmount,
+                                    amountReceived = cashResult.AmountReceived,
+                                    change = cashResult.Change
+                                }, maximumApprovedTotal: totalDue);
+                                if (!paymentSaved)
+                                {
+                                    await ShowPaymentSaveFailureAsync();
+                                    return;
+                                }
                             }
                         }
                         else
@@ -3675,46 +4578,45 @@ namespace POS_in_NET.Pages
                         break;
                         
                     case PaymentMethod.Card:
-                        var cardResult = await ProcessCardPayment(paymentAmount);
-                        if (cardResult.Success)
+                        // Card tender is recorded immediately when the operator selects
+                        // CARD. The separate manual terminal confirmation dialog is no
+                        // longer part of the POS flow.
+                        var directCardReference = BuildDirectCardReference(paymentAmount);
+                        paidThisAttempt = paymentAmount;
+                        tipThisAttempt = AllocateTipForPayment(tipRemaining, paidThisAttempt, remainingBalance);
+                        amountReceivedThisAttempt = paymentAmount;
+                        paymentReferenceThisAttempt = directCardReference;
+                        await LogOperationalEventAsync("payment_approved", new
                         {
-                            paidThisAttempt = cardResult.AmountPaid;
-                            await LogOperationalEventAsync("payment_approved", new
-                            {
-                                method = "card",
-                                amountPaid = cardResult.AmountPaid,
-                                terminalReference = cardResult.TerminalReference,
-                                remaining = Math.Max(0, remainingBalance - cardResult.AmountPaid),
-                                split = splitPlan.RequiresPaymentLine ? splitPlan.GetPaymentTitle() : null
-                            });
-                            if (shouldRecordPaymentLines)
-                            {
-                                var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(
-                                    _currentOrder.Id,
-                                    "card",
-                                    cardResult.AmountPaid,
-                                    "approved",
-                                    0,
-                                    cardResult.TerminalReference,
-                                    actor.ActorName,
-                                    new
-                                    {
-                                        split = splitPlan.ToMetadata(),
-                                        chargeAmount = paymentAmount,
-                                        manualTerminal = true,
-                                        amountMatchConfirmed = true,
-                                        terminalApprovalConfirmed = true
-                                    });
-                            }
-                        }
-                        else
+                            method = "card",
+                            amountPaid = paymentAmount,
+                            terminalReference = directCardReference,
+                            captureMode = "direct_pos_selection",
+                            remaining = Math.Max(0, remainingBalance - paymentAmount),
+                            split = splitPlan.RequiresPaymentLine ? splitPlan.GetPaymentTitle() : null
+                        });
+                        if (shouldRecordPaymentLines)
                         {
-                            await LogOperationalEventAsync("payment_failed", new { method = "card", amountDue = paymentAmount, split = splitPlan.RequiresPaymentLine ? splitPlan.GetPaymentTitle() : null });
-                            if (shouldRecordPaymentLines)
+                            var actor = ResolveCurrentActor();
+                            var paymentSaved = await _orderService.RecordPaymentLineAsync(
+                                _currentOrder.Id,
+                                "card",
+                                paymentAmount,
+                                "approved",
+                                tipThisAttempt,
+                                directCardReference,
+                                actor.ActorName,
+                                new
+                                {
+                                    split = splitPlan.ToMetadata(),
+                                    chargeAmount = paymentAmount,
+                                    captureMode = "direct_pos_selection"
+                                },
+                                maximumApprovedTotal: totalDue);
+                            if (!paymentSaved)
                             {
-                                var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "card", paymentAmount, "failed", 0, null, actor.ActorName, new { split = splitPlan.ToMetadata(), chargeAmount = paymentAmount });
+                                await ShowPaymentSaveFailureAsync();
+                                return;
                             }
                         }
                         break;
@@ -3725,6 +4627,9 @@ namespace POS_in_NET.Pages
                         if (giftResult.Success)
                         {
                             paidThisAttempt = giftResult.AmountApplied;
+                            tipThisAttempt = AllocateTipForPayment(tipRemaining, paidThisAttempt, remainingBalance);
+                            amountReceivedThisAttempt = giftResult.AmountApplied;
+                            paymentReferenceThisAttempt = MaskGiftCardNumber(giftResult.GiftCardNumber);
                             await LogOperationalEventAsync("payment_approved", new
                             {
                                 method = "gift_card",
@@ -3735,7 +4640,7 @@ namespace POS_in_NET.Pages
                             if (shouldRecordPaymentLines)
                             {
                                 var actor = ResolveCurrentActor();
-                                await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", giftResult.AmountApplied, "approved", 0, MaskGiftCardNumber(giftResult.GiftCardNumber), actor.ActorName, new
+                                var paymentSaved = await _orderService.RecordPaymentLineAsync(_currentOrder.Id, "gift_card", giftResult.AmountApplied, "approved", tipThisAttempt, giftTransactionId, actor.ActorName, new
                                 {
                                     split = splitPlan.ToMetadata(),
                                     chargeAmount = paymentAmount,
@@ -3744,7 +4649,12 @@ namespace POS_in_NET.Pages
                                     newCardBalance = giftResult.NewCardBalance,
                                     orderWebMessage = giftResult.OrderWebMessage,
                                     transactionId = giftTransactionId
-                                });
+                                }, maximumApprovedTotal: totalDue);
+                                if (!paymentSaved)
+                                {
+                                    await ShowPaymentSaveFailureAsync();
+                                    return;
+                                }
                             }
                         }
                         else
@@ -3762,7 +4672,14 @@ namespace POS_in_NET.Pages
                 if (paidThisAttempt > 0)
                 {
                     paidThisAttempt = Math.Min(paidThisAttempt, remainingBalance);
-                    AddReceiptPayment(paymentMethod, paidThisAttempt);
+                    AddReceiptPayment(
+                        paymentMethod,
+                        paidThisAttempt,
+                        amountReceivedThisAttempt > 0 ? amountReceivedThisAttempt : paidThisAttempt,
+                        changeThisAttempt,
+                        tipThisAttempt,
+                        paymentReferenceThisAttempt);
+                    tipRemaining = Math.Max(0m, tipRemaining - tipThisAttempt);
                     totalPaid += paidThisAttempt;
                     remainingBalance = Math.Max(0, remainingBalance - paidThisAttempt);
 
@@ -3795,7 +4712,7 @@ namespace POS_in_NET.Pages
             }
             
             // Payment complete - print receipt and close table
-            await CompletePayment(totalDue, tip, totalPaid);
+            await CompletePaymentFromLedgerAsync(totalDue, tip);
         }
 
         private async Task<PaymentSplitPlan?> ShowPaymentSplitPlanDialog(decimal totalDue, decimal remainingBalance)
@@ -3847,7 +4764,7 @@ namespace POS_in_NET.Pages
 
                 if (selected == "Split Evenly")
                 {
-                    var splitPlan = await ShowEvenSplitPlanDialog(totalDue);
+                    var splitPlan = await ShowEvenSplitPlanDialog(remainingBalance);
                     if (splitPlan != null)
                     {
                         return splitPlan;
@@ -3856,7 +4773,7 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task<PaymentSplitPlan?> ShowEvenSplitPlanDialog(decimal totalDue)
+        private async Task<PaymentSplitPlan?> ShowEvenSplitPlanDialog(decimal remainingBalance)
         {
             var splitDialog = new ModernActionSheetDialog();
             splitDialog.SetActionSheetGrid(
@@ -3900,7 +4817,7 @@ namespace POS_in_NET.Pages
                     return null;
                 }
 
-                return PaymentSplitPlan.Equal(totalDue, customParts);
+                return PaymentSplitPlan.Equal(remainingBalance, customParts);
             }
 
             var splitCount = selected switch
@@ -3914,8 +4831,8 @@ namespace POS_in_NET.Pages
             };
 
             return splitCount <= 1
-                ? PaymentSplitPlan.Full(totalDue)
-                : PaymentSplitPlan.Equal(totalDue, splitCount);
+                ? PaymentSplitPlan.Full(remainingBalance)
+                : PaymentSplitPlan.Equal(remainingBalance, splitCount);
         }
 
         private async Task<PaymentSplitPlan?> ShowCustomPaymentAmountDialog(decimal totalDue, decimal remainingBalance)
@@ -3954,9 +4871,10 @@ namespace POS_in_NET.Pages
 
             var dialog = new PayByItemsDialog();
             dialog.SetOrder(
-                _currentOrder.Items,
+                _currentOrder.Items.Where(item => !IsTastingMenuCourseItem(item)).ToList(),
                 _currentOrder.Subtotal,
                 _currentOrder.ServiceCharge,
+                _currentOrder.DeliveryFee,
                 _currentOrder.Discount,
                 remainingBalance);
 
@@ -3990,7 +4908,7 @@ namespace POS_in_NET.Pages
                 }
 
                 var existingOrder = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
-                if (existingOrder?.Id <= 0)
+                if (existingOrder == null || existingOrder.Id <= 0)
                 {
                     return 0m;
                 }
@@ -4180,13 +5098,6 @@ namespace POS_in_NET.Pages
             return await cashDialog.ShowAsync();
         }
 
-        private async Task<CardPaymentResult> ProcessCardPayment(decimal amountDue)
-        {
-            var cardDialog = new CardPaymentDialog();
-            cardDialog.SetAmount(amountDue);
-            return await cardDialog.ShowAsync();
-        }
-
         private async Task<GiftCardPaymentResult> ProcessGiftCardPayment(decimal amountDue, string transactionId)
         {
             var giftDialog = new GiftCardPaymentDialog();
@@ -4194,7 +5105,13 @@ namespace POS_in_NET.Pages
             return await giftDialog.ShowAsync();
         }
 
-        private void AddReceiptPayment(PaymentMethod paymentMethod, decimal amount)
+        private void AddReceiptPayment(
+            PaymentMethod paymentMethod,
+            decimal amount,
+            decimal amountReceived,
+            decimal change,
+            decimal tipAmount,
+            string? reference)
         {
             if (amount <= 0)
             {
@@ -4215,6 +5132,10 @@ namespace POS_in_NET.Pages
                 OrderId = _currentOrder.Id,
                 Method = method,
                 Amount = amount,
+                AmountReceived = amountReceived,
+                Change = change,
+                TipAmount = tipAmount,
+                Reference = reference,
                 CreatedAt = DateTime.Now,
                 StaffName = _currentUser?.Name ?? _currentUser?.Username ?? string.Empty
             });
@@ -4273,6 +5194,126 @@ namespace POS_in_NET.Pages
             return $"{orderReference}:{method}:{amount:F2}:{alreadyPaid:F2}:{splitPart}";
         }
 
+        private async Task<decimal?> ReloadApprovedReceiptPaymentsAsync()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_currentOrder.Id))
+                {
+                    return null;
+                }
+
+                var existingOrder = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
+                if (existingOrder == null || existingOrder.Id <= 0)
+                {
+                    return null;
+                }
+
+                var approvedPayments = (await _orderService.GetOrderPaymentsAsync(existingOrder.Id))
+                    .Where(payment => string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                _currentOrder.Payments.Clear();
+                foreach (var payment in approvedPayments)
+                {
+                    _currentOrder.Payments.Add(new TableOrderPayment
+                    {
+                        Id = payment.Id.ToString(CultureInfo.InvariantCulture),
+                        OrderId = _currentOrder.Id,
+                        Method = ParsePaymentMethodType(payment.PaymentMethod),
+                        Amount = payment.Amount,
+                        AmountReceived = GetPaymentMetadataAmount(payment.MetadataJson, "amountReceived", payment.Amount),
+                        Change = GetPaymentMetadataAmount(payment.MetadataJson, "change", 0m),
+                        TipAmount = payment.TipAmount,
+                        Reference = payment.Reference,
+                        CreatedAt = payment.CreatedAt,
+                        StaffName = payment.CreatedBy ?? string.Empty
+                    });
+                }
+
+                return approvedPayments.Sum(payment => payment.Amount);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error refreshing approved payments: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task CompletePaymentFromLedgerAsync(decimal totalAmount, decimal tip)
+        {
+            var approvedTotal = await ReloadApprovedReceiptPaymentsAsync();
+            if (!approvedTotal.HasValue)
+            {
+                await ShowPaymentSaveFailureAsync();
+                return;
+            }
+
+            var difference = totalAmount - approvedTotal.Value;
+            if (Math.Abs(difference) > 0.009m)
+            {
+                var message = difference > 0
+                    ? $"The bill still has Â£{difference:F2} to pay. Existing payments were kept, so you can safely continue."
+                    : $"Payments are Â£{Math.Abs(difference):F2} above the bill total. The order remains open for a manager to review; no extra payment was added.";
+                await AppAlertService.ShowAlertAsync("Review Payment", message);
+                return;
+            }
+
+            await CompletePayment(totalAmount, tip, approvedTotal.Value);
+        }
+
+        private static async Task ShowPaymentSaveFailureAsync()
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Payment Not Saved",
+                "This payment could not be added to the bill. The order is still open. Check the connection, then review the existing payments before trying again.");
+        }
+
+        private bool ShouldOfferTip()
+        {
+            return TableOrderFinancialPolicy.ShouldOfferTip(
+                _isCollectionOrder || _isDeliveryOrder,
+                _currentOrder.ServiceChargeStatus,
+                _currentOrder.ServiceChargePercent);
+        }
+
+        private static decimal AllocateTipForPayment(decimal tipRemaining, decimal paymentAmount, decimal remainingBalance)
+        {
+            return TableOrderFinancialPolicy.AllocateTip(tipRemaining, paymentAmount, remainingBalance);
+        }
+
+        private static decimal GetPaymentMetadataAmount(string? metadataJson, string propertyName, decimal fallback)
+        {
+            if (string.IsNullOrWhiteSpace(metadataJson))
+            {
+                return fallback;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(metadataJson);
+                if (document.RootElement.TryGetProperty(propertyName, out var value)
+                    && value.TryGetDecimal(out var amount))
+                {
+                    return amount;
+                }
+            }
+            catch (JsonException)
+            {
+                // Older payment records may not have structured metadata.
+            }
+
+            return fallback;
+        }
+
+        private string BuildDirectCardReference(decimal amount)
+        {
+            var orderReference = GetReceiptOrderReference()
+                .Replace(" ", string.Empty, StringComparison.Ordinal)
+                .Replace("#", string.Empty, StringComparison.Ordinal);
+            return $"POS-CARD-{orderReference}-{amount:0.00}-{DateTime.Now:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
+        }
+
         private static string? MaskGiftCardNumber(string? cardNumber)
         {
             if (string.IsNullOrWhiteSpace(cardNumber))
@@ -4288,6 +5329,8 @@ namespace POS_in_NET.Pages
 
         private async Task CompletePayment(decimal totalAmount, decimal tip, decimal totalPaid)
         {
+            var paymentNotice = BuildPaymentCompletionNotice(totalAmount);
+
             // Persist every paid order (collection, delivery, and table).
             _isFinalizingOrder = true;
             var saved = await SavePaidOrder(totalAmount, tip, totalPaid);
@@ -4306,8 +5349,8 @@ namespace POS_in_NET.Pages
             
             // Show payment success without blocking receipt printing.
             _ = ToastNotification.ShowAsync(
-                "Payment saved",
-                $"Printing receipt for £{totalAmount:F2}...",
+                paymentNotice.Title,
+                paymentNotice.Message,
                 NotificationType.Success,
                 1200
             );
@@ -4323,6 +5366,32 @@ namespace POS_in_NET.Pages
             
             // Close table and navigate back
             await CloseTable();
+        }
+
+        private (string Title, string Message) BuildPaymentCompletionNotice(decimal totalAmount)
+        {
+            var methods = _currentOrder.Payments
+                .Where(payment => payment.Amount > 0)
+                .Select(payment => payment.Method)
+                .Distinct()
+                .ToList();
+
+            if (methods.Count == 1 && methods[0] == PaymentMethodType.Card)
+            {
+                return ("Paid by card", $"£{totalAmount:F2} paid. Printing receipt...");
+            }
+
+            if (methods.Count == 1 && methods[0] == PaymentMethodType.Cash)
+            {
+                return ("Paid by cash", $"£{totalAmount:F2} paid. Printing receipt...");
+            }
+
+            if (methods.Count == 1 && methods[0] == PaymentMethodType.GiftCard)
+            {
+                return ("Paid by gift card", $"£{totalAmount:F2} paid. Printing receipt...");
+            }
+
+            return ("Payment complete", $"£{totalAmount:F2} paid. Printing receipt...");
         }
 
         private async Task<bool> SavePaidOrder(decimal totalAmount, decimal tip, decimal totalPaid)
@@ -4349,7 +5418,6 @@ namespace POS_in_NET.Pages
                     }
                 }
 
-                var orderService = new OrderService();
                 var collectionCustomerService = new CollectionCustomerService();
                 var deliveryCustomerService = new DeliveryCustomerService();
                 var order = await BuildPersistentOrderSnapshotAsync(LocalLifecycleState.Paid, paidAt: DateTime.Now);
@@ -4361,7 +5429,7 @@ namespace POS_in_NET.Pages
                 order.TotalAmount = totalAmount;
                 order.PaidAt = DateTime.Now;
                 order.CompletedTime = DateTime.Now;
-                var saveResult = await orderService.SaveOrderAsync(order);
+                var saveResult = await _orderService.SaveOrderAsync(order);
                 if (!saveResult.Success)
                 {
                     if (IsConcurrencyConflict(saveResult.Message))
@@ -4473,6 +5541,7 @@ namespace POS_in_NET.Pages
                 UnitPrice = source.UnitPrice,
                 VatCategory = source.VatCategory,
                 PrintGroupId = source.PrintGroupId,
+                PrintInRed = source.PrintInRed,
                 Notes = source.Notes,
                 Modifiers = source.Modifiers,
                 CourseType = source.CourseType,
@@ -4535,8 +5604,6 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                var orderService = new OrderService();
-
                 var approverName = !string.IsNullOrWhiteSpace(approvingUser.Name)
                     ? approvingUser.Name
                     : approvingUser.Username;
@@ -4550,7 +5617,7 @@ namespace POS_in_NET.Pages
                     return false;
                 }
 
-                var saveResult = await orderService.SaveOrderAsync(order);
+                var saveResult = await _orderService.SaveOrderAsync(order);
                 if (!saveResult.Success)
                 {
                     if (IsConcurrencyConflict(saveResult.Message))
@@ -4609,6 +5676,39 @@ namespace POS_in_NET.Pages
             return _isDeliveryOrder || _isCollectionOrder ? "takeaway" : "table";
         }
 
+        private static bool IsTableOrderType(string? orderType) =>
+            string.Equals(orderType?.Trim(), "table", StringComparison.OrdinalIgnoreCase);
+
+        private static TableServiceChargeStatus ParseServiceChargeStatus(string? value) =>
+            value?.Trim().ToLowerInvariant() switch
+            {
+                "applied" => TableServiceChargeStatus.Applied,
+                "removed" => TableServiceChargeStatus.Removed,
+                _ => TableServiceChargeStatus.NotConfigured
+            };
+
+        private static ServiceChargeClassification? ParseServiceChargeClassification(string? value) =>
+            value?.Trim().ToLowerInvariant() switch
+            {
+                "optional" => ServiceChargeClassification.Optional,
+                "compulsory" => ServiceChargeClassification.Compulsory,
+                _ => null
+            };
+
+        private static string ToDatabaseValue(TableServiceChargeStatus value) => value switch
+        {
+            TableServiceChargeStatus.Applied => "applied",
+            TableServiceChargeStatus.Removed => "removed",
+            _ => "not_configured"
+        };
+
+        private static string? ToDatabaseValue(ServiceChargeClassification? value) => value switch
+        {
+            ServiceChargeClassification.Optional => "optional",
+            ServiceChargeClassification.Compulsory => "compulsory",
+            _ => null
+        };
+
         private bool IsTakeawayStyleOrder()
         {
             return _isDeliveryOrder || _isCollectionOrder;
@@ -4646,6 +5746,7 @@ namespace POS_in_NET.Pages
             try
             {
                 _currentOrder.RecalculateAll();
+                await EnsureOrderNumberAssignedAsync();
 
                 var receiptPrinter = await ResolveLocalReceiptPrinterAsync();
                 if (receiptPrinter == null)
@@ -4695,9 +5796,15 @@ namespace POS_in_NET.Pages
             var routingService = ServiceHelper.GetService<PrinterRoutingService>();
             if (routingService != null)
             {
-                return await routingService.ResolvePrinterAsync(
-                    NetworkPrinterType.Receipt,
-                    NetworkPrinterType.Online);
+                return IsTakeawayStyleOrder()
+                    ? await routingService.ResolvePrinterAsync(
+                        NetworkPrinterType.Receipt,
+                        NetworkPrinterType.Online,
+                        NetworkPrinterType.Takeaway,
+                        NetworkPrinterType.Kitchen)
+                    : await routingService.ResolvePrinterAsync(
+                        NetworkPrinterType.Receipt,
+                        NetworkPrinterType.Online);
             }
 
             var receiptPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Receipt);
@@ -4710,7 +5817,21 @@ namespace POS_in_NET.Pages
             if (IsTakeawayStyleOrder())
             {
                 var onlineReceiptPrinters = await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Online);
-                return onlineReceiptPrinters.FirstOrDefault(printer => printer.IsEnabled);
+                var onlinePrinter = onlineReceiptPrinters.FirstOrDefault(printer => printer.IsEnabled);
+                if (onlinePrinter != null)
+                {
+                    return onlinePrinter;
+                }
+
+                foreach (var fallbackType in new[] { NetworkPrinterType.Takeaway, NetworkPrinterType.Kitchen })
+                {
+                    var fallbackPrinter = (await printerDb.GetPrintersByTypeAsync(fallbackType))
+                        .FirstOrDefault(printer => printer.IsEnabled);
+                    if (fallbackPrinter != null)
+                    {
+                        return fallbackPrinter;
+                    }
+                }
             }
 
             return null;
@@ -4776,7 +5897,7 @@ namespace POS_in_NET.Pages
 
             builder.PrintLine(new string('-', lineWidth));
 
-            foreach (var item in _currentOrder.Items.Where(item => !item.IsVoided))
+            foreach (var item in _currentOrder.Items.Where(item => !item.IsVoided && !IsTastingMenuCourseItem(item)))
             {
                 var itemTotal = item.TotalPriceWithVat > 0 ? item.TotalPriceWithVat : item.TotalPrice;
                 builder.PrintColumns($"{item.Quantity}x {item.DisplayName}", FormatCurrency(itemTotal));
@@ -4796,9 +5917,22 @@ namespace POS_in_NET.Pages
             builder.PrintLine(new string('-', lineWidth))
                    .PrintColumns("Subtotal:", FormatCurrency(_currentOrder.Subtotal));
 
-            if (_currentOrder.ServiceCharge > 0)
+            if (_currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied && _currentOrder.ServiceCharge > 0)
             {
-                builder.PrintColumns(IsTakeawayStyleOrder() ? "Delivery/Fee:" : "Service:", FormatCurrency(_currentOrder.ServiceCharge));
+                builder.PrintColumns($"Service Charge ({_currentOrder.ServiceChargePercent:0.##}%):", FormatCurrency(_currentOrder.ServiceCharge));
+            }
+            else if (!IsTakeawayStyleOrder() && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Removed)
+            {
+                builder.PrintLine($"Service charge ({_currentOrder.ServiceChargePercent:0.##}%): Removed");
+            }
+            else if (!IsTakeawayStyleOrder() && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.NotConfigured)
+            {
+                builder.PrintLine("Service charge not included");
+            }
+
+            if (_currentOrder.DeliveryFee > 0)
+            {
+                builder.PrintColumns("Delivery Fee:", FormatCurrency(_currentOrder.DeliveryFee));
             }
 
             if (_currentOrder.Discount > 0)
@@ -4908,21 +6042,22 @@ namespace POS_in_NET.Pages
         private async Task CloseTable()
         {
             // Navigate back based on order type
-            if (_isCollectionOrder)
+            if (_isCollectionOrder || _isDeliveryOrder)
             {
-                // Navigate back to dashboard for collection orders
-                await Shell.Current.GoToAsync("//dashboard");
+                // A completed takeaway order must discard both the order page and
+                // its customer-entry page, then return to the correct role dashboard.
+                await NavigateToRoleDashboardAsync(noAnimation: true);
             }
             else
             {
                 // Dine-in: pop back to existing layout page instantly when possible.
                 if (Navigation?.NavigationStack?.Count > 1)
                 {
-                    await Navigation.PopAsync(animated: false);
+                    await _navigationCoordinator.PopTemporaryPageAsync(Navigation, animated: false);
                 }
                 else
                 {
-                    await Shell.Current.GoToAsync("//visuallayout");
+                    await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
                 }
             }
         }
@@ -5059,7 +6194,7 @@ namespace POS_in_NET.Pages
                 );
                 await alert.ShowAsync();
 
-                await Shell.Current.GoToAsync("//visuallayout", false);
+                await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
             }
         }
 
@@ -5128,18 +6263,255 @@ namespace POS_in_NET.Pages
         private async Task ShowFireCourseDialog()
         {
             var dialog = new FireCourseDialog();
-            
             var selected = await dialog.ShowAsync();
-            
-            if (selected != null)
+
+            if (!string.IsNullOrWhiteSpace(selected))
             {
-                string message = selected == "All" 
-                    ? "All courses sent to kitchen!" 
-                    : $"{selected} sent to kitchen!";
-                    
+                await FireCourseAsync(selected);
+            }
+        }
+
+        private async Task ShowTastingCourseProgressAsync(TableOrderItem package)
+        {
+            var courses = GetTastingMenuCourses(package);
+            if (courses.Count == 0)
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "No Courses",
+                    "This tasting-menu package has no saved courses. Remove it and add the package again from the current menu.");
+                return;
+            }
+
+            var dialog = new TastingCourseProgressDialog();
+            var selectedCourse = await dialog.ShowAsync(package, courses);
+            if (selectedCourse != null)
+            {
+                var number = TastingCourseProgressDialog.GetCourseNumber(selectedCourse);
+                var confirmation = new ModernConfirmDialog();
+                confirmation.SetConfirm(
+                    $"Fire Course {number}",
+                    $"Send {selectedCourse.Name} to the kitchen now?",
+                    "Fire Course",
+                    "Cancel",
+                    "F",
+                    "#F59E0B");
+                if (await confirmation.ShowAsync())
+                {
+                    await FireTastingMenuCourseAsync(package, selectedCourse);
+                }
+            }
+        }
+
+        private async Task FireTastingMenuCourseAsync(TableOrderItem package, TableOrderItem course)
+        {
+            if (_isCourseFireInProgress)
+            {
+                return;
+            }
+
+            if (course.IsCourseFired)
+            {
+                await AppAlertService.ShowAlertAsync("Already Fired", $"{course.Name} has already been fired.");
+                RefreshOrderItems();
+                return;
+            }
+
+            _isCourseFireInProgress = true;
+            var claimAcquired = false;
+            var firedBy = "Staff";
+            try
+            {
+                EnsureCurrentOrderIdentity();
+                await EnsureOrderNumberAssignedAsync();
+                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+
+                var actor = ResolveCurrentActor();
+                firedBy = string.IsNullOrWhiteSpace(actor.ActorName) ? "Staff" : actor.ActorName;
+                var firedAt = DateTime.Now;
+                claimAcquired = await _orderService.TryClaimTastingCourseFireAsync(
+                    _currentOrder.Id,
+                    course.Id,
+                    firedAt,
+                    firedBy);
+
+                if (!claimAcquired)
+                {
+                    await AppAlertService.ShowAlertAsync(
+                        "Already Fired",
+                        $"{course.Name} was already fired by another user or terminal. The order will refresh now.");
+                    var latest = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
+                    if (latest != null)
+                    {
+                        await ApplyLoadedOrderAsync(latest);
+                        _hasLoadedPersistentOrder = true;
+                        _draftDirty = false;
+                    }
+                    return;
+                }
+
+                var printResult = await _orderRoutingPrintService.PrintTastingCourseAsync(_currentOrder, package, course);
+                if (!printResult.FoodPrinted)
+                {
+                    await _orderService.ReleaseTastingCourseFireClaimAsync(_currentOrder.Id, course.Id, firedBy);
+                    claimAcquired = false;
+                    var reason = printResult.RoutingResult.FailedRoutes.FirstOrDefault()
+                        ?? "No configured kitchen route accepted the course ticket.";
+                    await AppAlertService.ShowAlertAsync("Course Not Fired", $"Nothing was printed. {reason}");
+                    return;
+                }
+
+                course.FiredAt = firedAt;
+                course.FiredBy = firedBy;
+                _currentOrder.UpdatedAt = firedAt;
+                _draftDirty = true;
+                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+                RefreshOrderItems();
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+
+                var message = $"Course {TastingCourseProgressDialog.GetCourseNumber(course)} - {course.Name} printed.";
+                if (printResult.WineRequested && !printResult.WinePrinted)
+                {
+                    message += " The food ticket printed, but the wine/bar ticket failed; please notify the bar.";
+                }
+                else if (printResult.CombinedOnSinglePrinter)
+                {
+                    message += " Food and wine were combined on the single available printer.";
+                }
+                else if (printResult.WineRedirected)
+                {
+                    message += $" The Bar route was unavailable, so the wine was redirected to {printResult.WineDestination ?? "the food printer"}; please notify the bar.";
+                }
+                else if (printResult.WineRequested)
+                {
+                    message += " Kitchen and Bar tickets printed successfully.";
+                }
+
                 var successDialog = new ModernAlertDialog();
                 successDialog.SetAlert("Course Fired", message, "", "#10B981", "White");
                 await successDialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                if (claimAcquired && !course.IsCourseFired)
+                {
+                    try
+                    {
+                        await _orderService.ReleaseTastingCourseFireClaimAsync(_currentOrder.Id, course.Id, firedBy);
+                    }
+                    catch
+                    {
+                        // Preserve the original failure for the operator.
+                    }
+                }
+
+                await AppAlertService.ShowAlertAsync("Course Fire Failed", ex.Message);
+            }
+            finally
+            {
+                _isCourseFireInProgress = false;
+            }
+        }
+
+        private async Task FireCourseAsync(string selectedCourse)
+        {
+            if (_isCourseFireInProgress)
+            {
+                return;
+            }
+
+            var fireAll = string.Equals(selectedCourse, "All", StringComparison.OrdinalIgnoreCase);
+            var normalizedCourse = fireAll ? null : NormalizeCourseType(selectedCourse);
+            if (!fireAll && normalizedCourse == null)
+            {
+                await AppAlertService.ShowAlertAsync("Course Not Found", "The selected course could not be identified.");
+                return;
+            }
+
+            foreach (var item in _currentOrder.Items
+                         .Where(item => !IsTastingMenuOrderItem(item) && !IsTastingMenuCourseItem(item))
+                         .Where(item => string.IsNullOrWhiteSpace(item.CourseType)))
+            {
+                item.CourseType = ResolveCourseType(item.MenuItemId) ?? "Mains";
+            }
+
+            var matchingItems = _currentOrder.Items
+                .Where(item => !item.IsVoided)
+                .Where(item => !IsTastingMenuOrderItem(item) && !IsTastingMenuCourseItem(item))
+                .Where(item => fireAll || string.Equals(item.CourseType, normalizedCourse, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var itemsToFire = matchingItems.Where(item => !item.IsCourseFired).ToList();
+
+            if (itemsToFire.Count == 0)
+            {
+                var message = matchingItems.Count > 0
+                    ? $"{(fireAll ? "All matching courses have" : $"{normalizedCourse} has")} already been fired."
+                    : $"There are no {(fireAll ? "courses" : normalizedCourse)} on this order.";
+                await AppAlertService.ShowAlertAsync("Nothing to Fire", message);
+                RefreshOrderItems();
+                return;
+            }
+
+            _isCourseFireInProgress = true;
+            try
+            {
+                EnsureCurrentOrderIdentity();
+                await EnsureOrderNumberAssignedAsync();
+                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+
+                var itemIds = itemsToFire.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var fireOrder = CloneOrderForSend(_currentOrder);
+                foreach (var item in fireOrder.Items.Where(item => !itemIds.Contains(item.Id)).ToList())
+                {
+                    fireOrder.Items.Remove(item);
+                }
+
+                var fireLabel = fireAll ? "ALL COURSES" : normalizedCourse!.ToUpperInvariant();
+                fireOrder.KitchenTicketType = $"FIRE {fireLabel}";
+                foreach (var item in fireOrder.Items)
+                {
+                    item.SendStatus = ItemSendStatus.NotSent;
+                    item.KitchenAction = KitchenChangeAction.New;
+                    item.FailureReason = null;
+                }
+
+                var printResult = await _orderRoutingPrintService.PrintOrderAsync(fireOrder);
+                if (!printResult.AnyPrinted)
+                {
+                    var reason = printResult.FailedRoutes.FirstOrDefault() ?? "No configured kitchen route accepted the course ticket.";
+                    await AppAlertService.ShowAlertAsync("Course Not Fired", $"Nothing was printed. {reason}");
+                    return;
+                }
+
+                var firedAt = DateTime.Now;
+                var actor = ResolveCurrentActor();
+                var firedBy = string.IsNullOrWhiteSpace(actor.ActorName) ? "Staff" : actor.ActorName;
+                var printedIds = printResult.PrintedItemIds;
+                foreach (var item in itemsToFire.Where(item => printedIds.Contains(item.Id)))
+                {
+                    item.FiredAt = firedAt;
+                    item.FiredBy = firedBy;
+                }
+
+                _currentOrder.UpdatedAt = firedAt;
+                _draftDirty = true;
+                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+                RefreshOrderItems();
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+
+                var firedCount = itemsToFire.Count(item => printedIds.Contains(item.Id));
+                var message = $"{fireLabel} printed to the kitchen. {firedCount} item{(firedCount == 1 ? string.Empty : "s")} marked as fired.";
+                if (printResult.HasFailures)
+                {
+                    message += $" Some routes failed: {string.Join(", ", printResult.FailedRoutes)}";
+                }
+
+                var successDialog = new ModernAlertDialog();
+                successDialog.SetAlert("Course Fired", message, "", "#10B981", "White");
+                await successDialog.ShowAsync();
+            }
+            finally
+            {
+                _isCourseFireInProgress = false;
             }
         }
 

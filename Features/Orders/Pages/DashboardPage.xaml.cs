@@ -17,6 +17,7 @@ namespace POS_in_NET.Pages
         private readonly ZReportService _zReportService;
         private readonly ZReportPrintService _zReportPrintService;
         private readonly CloudOrderService? _cloudService;
+        private readonly NavigationCoordinator _navigationCoordinator;
         private bool _isDashboardLoading;
         private bool _isZReportLoading;
         private bool _isRestaurantNavigationInProgress;
@@ -39,13 +40,9 @@ namespace POS_in_NET.Pages
                 ?? new ZReportPrintService(
                     _zReportService,
                     new NetworkPrinterDatabaseService(new DatabaseService()),
-                    new NetworkPrinterService(),
-                    ServiceHelper.GetService<OrderWebDailyReportSyncService>()
-                        ?? new OrderWebDailyReportSyncService(
-                            new DatabaseService(),
-                            _zReportService,
-                            new TimeClockService(new DatabaseService())));
+                    new NetworkPrinterService());
             _cloudService = ServiceHelper.GetService<CloudOrderService>();
+            _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
             
             TopBar.SetPageTitle("Dashboard");
         }
@@ -58,7 +55,7 @@ namespace POS_in_NET.Pages
             if (!_roleAccessService.CanViewZReport(_authService.CurrentUser?.Role))
             {
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Dashboard.");
-                await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+                await _navigationCoordinator.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
                 return;
             }
             
@@ -104,6 +101,7 @@ namespace POS_in_NET.Pages
 
             try
             {
+                var performance = PosPerformanceMonitor.BeginDataLoad("Dashboard");
                 _isDashboardLoading = true;
                 System.Diagnostics.Debug.WriteLine(" Starting parallel data load...");
 
@@ -149,6 +147,7 @@ namespace POS_in_NET.Pages
                 else
                 {
                     System.Diagnostics.Debug.WriteLine(" Dashboard data loaded successfully");
+                    PosPerformanceMonitor.MarkDataVisible(performance);
                 }
             }
             catch (Exception ex)
@@ -395,21 +394,11 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                var includeDetail = false;
-                if (snapshot.TopItems.Count > 0)
-                {
-                    var detailDialog = new ModernConfirmDialog();
-                    detailDialog.SetConfirm(
-                        "Detail Slip",
-                        "Also print a detail slip with top 5 selling items?",
-                        "Yes",
-                        "No",
-                        "logo",
-                        "#0F766E");
-                    includeDetail = await detailDialog.ShowAsync();
-                }
-
-                var result = await _zReportPrintService.PrintAsync(snapshot, includeDetail, user?.Id);
+                // Z Print is intentionally a single compact summary receipt.
+                var result = await _zReportPrintService.PrintAsync(
+                    snapshot,
+                    includeDetailSlip: false,
+                    printedByUserId: user?.Id);
 
                 if (result.Success)
                 {
@@ -431,11 +420,8 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                while (Navigation.NavigationStack.Count > 1)
-                {
-                    await Navigation.PopAsync(false);
-                }
-                await Shell.Current.GoToAsync("collection");
+                NavigationCoordinator.PruneTemporaryPages();
+                await _navigationCoordinator.NavigateTemporaryRouteAsync("collection", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -447,11 +433,8 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                while (Navigation.NavigationStack.Count > 1)
-                {
-                    await Navigation.PopAsync(false);
-                }
-                await Shell.Current.GoToAsync("delivery");
+                NavigationCoordinator.PruneTemporaryPages();
+                await _navigationCoordinator.NavigateTemporaryRouteAsync("delivery", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -470,7 +453,7 @@ namespace POS_in_NET.Pages
             {
                 _isRestaurantNavigationInProgress = true;
                 ClearShellDetailStacks();
-                await Shell.Current.GoToAsync("//visuallayout");
+                await _navigationCoordinator.NavigateShellAsync("visuallayout", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -484,35 +467,14 @@ namespace POS_in_NET.Pages
 
         private static void ClearShellDetailStacks()
         {
-            if (Shell.Current is not Shell shell)
-            {
-                return;
-            }
-
-            foreach (var shellItem in shell.Items)
-            {
-                foreach (var shellSection in shellItem.Items)
-                {
-                    var nav = shellSection.Navigation;
-                    if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
-                    {
-                        continue;
-                    }
-
-                    var pagesToRemove = nav.NavigationStack.Skip(1).ToList();
-                    foreach (var page in pagesToRemove)
-                    {
-                        nav.RemovePage(page);
-                    }
-                }
-            }
+            NavigationCoordinator.PruneTemporaryPages();
         }
 
         private async void OnViewWebOrdersClicked(object sender, EventArgs e)
         {
             try
             {
-                await Shell.Current.GoToAsync("//weborders");
+                await _navigationCoordinator.NavigateShellAsync("weborders", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -524,7 +486,7 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                await Shell.Current.GoToAsync("//cloudsettings");
+                await _navigationCoordinator.NavigateShellAsync("cloudsettings", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -540,7 +502,7 @@ namespace POS_in_NET.Pages
                 await authService.LogoutAsync();
             }
 
-            await Shell.Current.GoToAsync("//login");
+            await _navigationCoordinator.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
         }
     }
 }

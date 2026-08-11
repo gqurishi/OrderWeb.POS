@@ -22,6 +22,10 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupLogging=yes
+#ifdef SignInstaller
+SignTool=orderweb
+SignedUninstaller=yes
+#endif
 UsePreviousAppDir=yes
 CloseApplications=yes
 RestartApplications=no

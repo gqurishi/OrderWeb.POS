@@ -47,6 +47,40 @@ public partial class PrintTemplatesPage : ContentPage
         SetKitchenTemplate(KitchenTicketPreviewMode.Table);
     }
 
+    private void OnPrintTemplatesPageSizeChanged(object? sender, EventArgs e)
+    {
+        if (Width <= 0 || Height <= 0)
+        {
+            return;
+        }
+
+        var tablet = Width <= 1280 || Height <= 800;
+        TemplateLayoutGrid.ColumnDefinitions.Clear();
+        TemplateLayoutGrid.RowDefinitions.Clear();
+
+        if (tablet)
+        {
+            TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            TemplateLayoutGrid.Padding = new Thickness(16);
+            TemplateLayoutGrid.ColumnSpacing = 0;
+            TemplateLayoutGrid.RowSpacing = 18;
+            Grid.SetColumn(TemplateSettingsPanel, 0);
+            Grid.SetRow(TemplateSettingsPanel, 1);
+            return;
+        }
+
+        TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(420));
+        TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        TemplateLayoutGrid.Padding = new Thickness(32);
+        TemplateLayoutGrid.ColumnSpacing = 28;
+        TemplateLayoutGrid.RowSpacing = 0;
+        Grid.SetColumn(TemplateSettingsPanel, 1);
+        Grid.SetRow(TemplateSettingsPanel, 0);
+    }
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();
@@ -58,11 +92,11 @@ public partial class PrintTemplatesPage : ContentPage
     {
         if (Navigation.NavigationStack.Count > 1)
         {
-            await Navigation.PopAsync();
+            await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
             return;
         }
 
-        await Shell.Current.GoToAsync("//printersetup", false);
+        await NavigationCoordinator.Shared.NavigateShellAsync("printersetup", animated: false, source: sender as VisualElement);
     }
 
     private void OnTablePreviewClicked(object? sender, EventArgs e)
@@ -774,18 +808,27 @@ public partial class PrintTemplatesPage : ContentPage
         AddNormalLine(new string('-', PreviewLineWidth));
         AddNormalLine("Subtotal:                                £27.45");
         AddNormalLine("Discount:                                -£2.00");
-        AddNormalLine(new string('=', PreviewLineWidth));
-        AddNormalLine("TOTAL:                                   £25.45");
-        AddBlankLine();
 
-        if (isTablePayment)
+        if (isDelivery)
+        {
+            AddNormalLine("Delivery fee:                             £2.50");
+        }
+        else if (isTablePayment)
         {
             AddPreviewLine(
-                "Service Charge:                           £2.75",
+                "Service charge (10%):                     £2.75",
                 GetPreviewFontSize(settings.ServiceChargeSize, PreviewFontSize),
                 settings.ServiceChargeBold,
                 TextAlignment.Start);
         }
+
+        AddNormalLine(new string('=', PreviewLineWidth));
+        AddNormalLine(isDelivery
+            ? "TOTAL:                                   £27.95"
+            : isTablePayment
+                ? "TOTAL:                                   £28.20"
+                : "TOTAL:                                   £25.45");
+        AddBlankLine();
 
         if (isTableBill)
         {

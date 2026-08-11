@@ -22,6 +22,7 @@ namespace POS_in_NET.Pages
         private readonly AuthenticationService _authService;
         private readonly RoleAccessService _roleAccessService;
         private readonly InactivityService _inactivityService;
+        private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
         private List<Floor> _floors = new();
         private Floor? _currentFloor;
         private Dictionary<int, Border> _tableViews = new();
@@ -30,6 +31,7 @@ namespace POS_in_NET.Pages
         private bool _hasUnsavedChanges = false;
         private bool _isSubscribedToRefreshEvents;
         private bool _isTableSelectionInProgress;
+        private bool _isOpeningTableOrder;
         private bool _isLoadingFloorsAndTables;
         private bool _hasBackfilledTableSessions;
         private DateTime _lastSuccessfulLayoutLoadAt = DateTime.MinValue;
@@ -57,6 +59,8 @@ namespace POS_in_NET.Pages
             _tableService = new RestaurantTableService();
             _sessionService = new TableSessionService();
             _orderService = new OrderService();
+            _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+                ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), _authService);
             
             // Set up numeric keyboard event
             NumericKeyboard.NumberConfirmed += OnNumericKeyboardConfirmed;
@@ -67,6 +71,14 @@ namespace POS_in_NET.Pages
         protected override async void OnAppearing()
         {
             base.OnAppearing();
+
+            var serviceSettings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            if (!serviceSettings.TableEnabled)
+            {
+                await AppAlertService.ShowAlertAsync("Table Service Unavailable", "Table service is disabled by the Administrator.");
+                await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
+                return;
+            }
 
             if (_authService.CurrentUser?.Role == UserRole.User)
             {
@@ -188,7 +200,6 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested += OnRefreshRequested;
             AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
@@ -200,7 +211,6 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
             AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
         }
@@ -228,11 +238,6 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async void OnRefreshRequested(object? sender, EventArgs e)
-        {
-            await OnMainThreadRefreshLayoutAsync();
-        }
-
         private async Task OnMainThreadRefreshLayoutAsync()
         {
             if ((DateTime.UtcNow - _lastSuccessfulLayoutLoadAt).TotalMilliseconds < 1200)
@@ -252,7 +257,8 @@ namespace POS_in_NET.Pages
             }
 
             _autoRefreshTimer = Dispatcher.CreateTimer();
-            _autoRefreshTimer.Interval = TimeSpan.FromSeconds(30);
+            // Change events are primary; this slow poll only recovers a missed event.
+            _autoRefreshTimer.Interval = TimeSpan.FromMinutes(5);
             _autoRefreshTimer.Tick += OnAutoRefreshTick;
             _autoRefreshTimer.Start();
         }
@@ -376,9 +382,11 @@ namespace POS_in_NET.Pages
                     BackgroundColor = Color.FromArgb("#F3F4F6"),
                     Stroke = Color.FromArgb("#E5E7EB"),
                     StrokeThickness = 1,
-                    Padding = new Thickness(16, 10),
+                    Padding = new Thickness(16, 8),
+                    MinimumHeightRequest = 44,
+                    VerticalOptions = LayoutOptions.Center,
                     BindingContext = floor.Id,
-                    StrokeShape = new RoundRectangle { CornerRadius = 20 }
+                    StrokeShape = new RoundRectangle { CornerRadius = 12 }
                 };
 
                 var tabLabel = new Label
@@ -985,27 +993,11 @@ namespace POS_in_NET.Pages
 
         private async Task<(int? SessionId, string? ExistingOrderId, int EffectiveCoverCount)> ResolveTableOrderContextAsync(RestaurantTable table)
         {
-            var sessionId = table.CurrentSession?.Id;
-            var existingOrderId = table.CurrentSession?.LinkedOrderId ?? table.CurrentSession?.CurrentOrderId;
+            var sessionId = table.CurrentSession?.Id ?? table.CurrentSessionId;
+            string? existingOrderId = null;
             var effectiveCoverCount = table.CurrentSession?.PartySize > 0
                 ? table.CurrentSession.PartySize
                 : Math.Max(table.Capacity, 1);
-
-            if (string.IsNullOrWhiteSpace(existingOrderId) && sessionId.HasValue)
-            {
-                if (ActiveTableOrderCacheService.TryGetOpenOrderBySessionId(sessionId.Value, out var cachedBySession))
-                {
-                    existingOrderId = cachedBySession;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(existingOrderId))
-            {
-                if (ActiveTableOrderCacheService.TryGetOpenOrderByTableNumber(table.TableNumber, out var cachedByTable))
-                {
-                    existingOrderId = cachedByTable;
-                }
-            }
 
             if (!sessionId.HasValue)
             {
@@ -1014,21 +1006,44 @@ namespace POS_in_NET.Pages
                 {
                     sessionId = activeSession.Id;
                     effectiveCoverCount = activeSession.PartySize > 0 ? activeSession.PartySize : effectiveCoverCount;
-                    if (string.IsNullOrWhiteSpace(existingOrderId))
-                    {
-                        existingOrderId = activeSession.CurrentOrderId;
-                    }
                 }
             }
 
-            // Try to get order from session - include sent/partial orders, not just open
+            var candidateOrderIds = new List<string?>
+            {
+                table.CurrentSession?.LinkedOrderId,
+                table.CurrentSession?.CurrentOrderId
+            };
+
+            if (sessionId.HasValue && ActiveTableOrderCacheService.TryGetOpenOrderBySessionId(sessionId.Value, out var cachedBySession))
+            {
+                candidateOrderIds.Add(cachedBySession);
+            }
+
+            if (ActiveTableOrderCacheService.TryGetOpenOrderByTableNumber(table.TableNumber, out var cachedByTable))
+            {
+                candidateOrderIds.Add(cachedByTable);
+            }
+
+            foreach (var candidateOrderId in candidateOrderIds.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var candidate = await _orderService.GetOrderByExternalIdAsync(candidateOrderId!);
+                if (IsUsableTableOrder(candidate, table.TableNumber, sessionId))
+                {
+                    existingOrderId = candidate!.OrderId;
+                    break;
+                }
+
+                ActiveTableOrderCacheService.Remove(candidateOrderId, sessionId, table.TableNumber);
+                AppDiagnostics.Log($"[VisualTable] Ignored stale order reference '{candidateOrderId}' for table {table.TableNumber}.");
+            }
+
             if (sessionId.HasValue && string.IsNullOrWhiteSpace(existingOrderId))
             {
-                // First try GetOpenOrderByTableSessionIdAsync (covers active/sent orders)
                 var sessionOrder = await _orderService.GetOpenOrderByTableSessionIdAsync(sessionId.Value);
-                if (!string.IsNullOrWhiteSpace(sessionOrder?.OrderId))
+                if (IsUsableTableOrder(sessionOrder, table.TableNumber, sessionId))
                 {
-                    existingOrderId = sessionOrder.OrderId;
+                    existingOrderId = sessionOrder!.OrderId;
                     ActiveTableOrderCacheService.Upsert(
                         sessionOrder.OrderId,
                         sessionOrder.TableSessionId,
@@ -1036,61 +1051,40 @@ namespace POS_in_NET.Pages
                         sessionOrder.UpdatedAt == default ? DateTime.Now : sessionOrder.UpdatedAt,
                         sessionOrder.IsOpen);
                 }
-                else
-                {
-                    // If no open order found, check GetLatestTableOrderBySessionIdAsync for recently sent orders
-                    sessionOrder = await _orderService.GetLatestTableOrderBySessionIdAsync(sessionId.Value);
-                    if (!string.IsNullOrWhiteSpace(sessionOrder?.OrderId))
-                    {
-                        existingOrderId = sessionOrder.OrderId;
-                        ActiveTableOrderCacheService.Upsert(
-                            sessionOrder.OrderId,
-                            sessionOrder.TableSessionId,
-                            table.TableNumber,
-                            sessionOrder.UpdatedAt == default ? DateTime.Now : sessionOrder.UpdatedAt,
-                            sessionOrder.IsOpen);
-                    }
-                }
             }
 
             if (string.IsNullOrWhiteSpace(existingOrderId))
             {
                 var recoveredOrder = await _orderService.GetLatestOpenTableOrderByTableNumberAsync(table.TableNumber);
-                if (!string.IsNullOrWhiteSpace(recoveredOrder?.OrderId))
+                if (IsUsableTableOrder(recoveredOrder, table.TableNumber, sessionId))
                 {
-                    existingOrderId = recoveredOrder.OrderId;
+                    existingOrderId = recoveredOrder!.OrderId;
                     ActiveTableOrderCacheService.Upsert(
                         recoveredOrder.OrderId,
                         recoveredOrder.TableSessionId,
                         table.TableNumber,
                         recoveredOrder.UpdatedAt == default ? DateTime.Now : recoveredOrder.UpdatedAt,
                         recoveredOrder.IsOpen);
-                    if (!sessionId.HasValue && recoveredOrder.TableSessionId.HasValue)
-                    {
-                        sessionId = recoveredOrder.TableSessionId.Value;
-                    }
-                }
-                else
-                {
-                    var recentTableOrder = await _orderService.GetLatestTableOrderByTableNumberAsync(table.TableNumber);
-                    if (!string.IsNullOrWhiteSpace(recentTableOrder?.OrderId))
-                    {
-                        existingOrderId = recentTableOrder.OrderId;
-                        ActiveTableOrderCacheService.Upsert(
-                            recentTableOrder.OrderId,
-                            recentTableOrder.TableSessionId,
-                            table.TableNumber,
-                            recentTableOrder.UpdatedAt == default ? DateTime.Now : recentTableOrder.UpdatedAt,
-                            recentTableOrder.IsOpen);
-                        if (!sessionId.HasValue && recentTableOrder.TableSessionId.HasValue)
-                        {
-                            sessionId = recentTableOrder.TableSessionId.Value;
-                        }
-                    }
                 }
             }
 
             return (sessionId, existingOrderId, Math.Max(effectiveCoverCount, 1));
+        }
+
+        private static bool IsUsableTableOrder(Order? order, string tableNumber, int? sessionId)
+        {
+            if (order == null || !order.IsOpen || order.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided)
+            {
+                return false;
+            }
+
+            if (!string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(order.CustomerName?.Trim(), $"Table {tableNumber.Trim()}", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return !sessionId.HasValue || !order.TableSessionId.HasValue || order.TableSessionId.Value == sessionId.Value;
         }
         
         private void OnCloseCoverPopup(object sender, EventArgs e)
@@ -1171,7 +1165,9 @@ namespace POS_in_NET.Pages
         
         private async Task ProcessTableSelection(int coverCount)
         {
-            if (_popupTable == null) return;
+            if (_popupTable == null || _isOpeningTableOrder || coverCount <= 0) return;
+
+            _isOpeningTableOrder = true;
 
             var selectedTable = _popupTable;
             
@@ -1191,12 +1187,30 @@ namespace POS_in_NET.Pages
             _popupTable = null;
             _popupTableView = null;
 
-            var context = await ResolveTableOrderContextAsync(selectedTable);
-            await NavigateToTableOrderAsync(selectedTable, Math.Max(coverCount, context.EffectiveCoverCount), context.SessionId, context.ExistingOrderId);
+            SetLoadingState(true, $"Opening table {selectedTable.TableNumber}...");
+            try
+            {
+                var context = await ResolveTableOrderContextAsync(selectedTable);
+                var effectiveCoverCount = context.SessionId.HasValue
+                    ? context.EffectiveCoverCount
+                    : coverCount;
+                await NavigateToTableOrderAsync(selectedTable, effectiveCoverCount, context.SessionId, context.ExistingOrderId);
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log($"[VisualTable] Failed to open table {selectedTable.TableNumber}: {ex}");
+                await ToastNotification.ShowAsync("Could not open table", "Please tap the table and try again.", NotificationType.Error, 3000);
+            }
+            finally
+            {
+                SetLoadingState(false);
+                _isOpeningTableOrder = false;
+            }
         }
 
         private async Task NavigateToTableOrderAsync(RestaurantTable table, int requestedCoverCount, int? sessionId, string? existingOrderId)
         {
+            var createdNewSession = false;
             if (sessionId.HasValue && !string.IsNullOrWhiteSpace(existingOrderId))
             {
                 var linkResult = await _sessionService.LinkOrderToSessionAsync(sessionId.Value, existingOrderId);
@@ -1212,7 +1226,7 @@ namespace POS_in_NET.Pages
                     1,
                     sessionId,
                     existingOrderId);
-                await Navigation.PushAsync(fastOrderPage, animated: false);
+                await NavigationCoordinator.Shared.PushTemporaryPageAsync(fastOrderPage, animated: false);
                 return;
             }
 
@@ -1226,6 +1240,7 @@ namespace POS_in_NET.Pages
                 }
 
                 sessionId = openResult.sessionId.Value;
+                createdNewSession = !string.Equals(openResult.message, "Existing active session resumed", StringComparison.OrdinalIgnoreCase);
             }
 
             if (sessionId.HasValue && !string.IsNullOrWhiteSpace(existingOrderId))
@@ -1242,7 +1257,19 @@ namespace POS_in_NET.Pages
                 : Math.Max(requestedCoverCount, 1);
 
             var orderPage = new OrderPlacementPageSimple(table.TableNumber, effectiveCoverCount, "Current User", 1, sessionId, existingOrderId);
-            await Navigation.PushAsync(orderPage, animated: false);
+            try
+            {
+                await NavigationCoordinator.Shared.PushTemporaryPageAsync(orderPage, animated: false);
+            }
+            catch
+            {
+                if (createdNewSession && sessionId.HasValue)
+                {
+                    await _sessionService.CloseSessionForOrderAsync(sessionId.Value, "open_navigation_failed", "system");
+                }
+
+                throw;
+            }
         }
 
         private void ShowNoFloorsMessage()
@@ -1373,7 +1400,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            await Shell.Current.GoToAsync("//table");
+            await NavigationCoordinator.Shared.NavigateShellAsync("table", source: sender as VisualElement);
         }
 
         private void SetCanvasBackground(string? imagePath)
@@ -1416,7 +1443,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            await Shell.Current.GoToAsync("//floor");
+            await NavigationCoordinator.Shared.NavigateShellAsync("floor", source: sender as VisualElement);
         }
     }
 }

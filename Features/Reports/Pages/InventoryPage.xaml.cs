@@ -28,7 +28,7 @@ public partial class InventoryPage : ContentPage
             if (!await _permissionService.HasPermissionAsync(PermissionKeys.InventoryView))
             {
                 await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Inventory.");
-                await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+                await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             }
         }
         catch (Exception ex)

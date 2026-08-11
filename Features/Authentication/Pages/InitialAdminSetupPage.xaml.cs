@@ -22,13 +22,13 @@ public partial class InitialAdminSetupPage : ContentPage
 
         if (!TerminalConfigurationService.IsConfigured || !TerminalConfigurationService.IsMotherTerminal)
         {
-            await Shell.Current.GoToAsync("//login", false);
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
             return;
         }
 
         if (await _authService.HasAnyUserAsync())
         {
-            await Shell.Current.GoToAsync("//login", false);
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
         }
     }
 
@@ -70,7 +70,7 @@ public partial class InitialAdminSetupPage : ContentPage
             if (result.Message.Contains("Access denied for user", StringComparison.OrdinalIgnoreCase))
             {
                 TerminalConfigurationService.SetConfigured(false);
-                await Shell.Current.GoToAsync("//terminalsetup", false);
+                await NavigationCoordinator.Shared.NavigateShellAsync("terminalsetup", animated: false, source: sender as VisualElement);
                 return;
             }
 
@@ -81,7 +81,7 @@ public partial class InitialAdminSetupPage : ContentPage
         await _authService.WarmAuthenticationCacheAsync();
         StatusLabel.TextColor = Color.FromArgb("#059669");
         StatusLabel.Text = "Admin account created. Redirecting to login...";
-        await Shell.Current.GoToAsync("//login", false);
+        await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
     }
 
     private void ShowError(string message)

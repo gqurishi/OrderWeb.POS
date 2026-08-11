@@ -7,7 +7,7 @@ public sealed class InstallManifest
 {
     public string Product { get; set; } = PosDefaults.ProductName;
     public string InstallType { get; set; } = "mother";
-    public string AppVersion { get; set; } = "1.0.0";
+    public string AppVersion { get; set; } = "1.0.1";
     public DateTime InstalledAtUtc { get; set; } = DateTime.UtcNow;
     public string DatabaseName { get; set; } = PosDefaults.ProductionDatabaseName;
     public string DatabaseUser { get; set; } = PosDefaults.ProductionDatabaseUser;

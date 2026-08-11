@@ -48,7 +48,9 @@ public sealed class KitchenOrderRevisionService
     public async Task EnsureBaselineAsync(int orderDbId, TableOrder order)
     {
         var sentItems = order.Items
-            .Where(item => item.Quantity > 0 && item.SendStatus is not ItemSendStatus.NotSent)
+            .Where(item => item.Quantity > 0
+                && item.SendStatus is not ItemSendStatus.NotSent
+                && !IsTastingCourseChild(item))
             .ToList();
         if (sentItems.Count == 0)
         {
@@ -162,6 +164,8 @@ public sealed class KitchenOrderRevisionService
         foreach (var line in revision.Lines)
         {
             var addons = DeserializeAddons(line.AddonsJson);
+            var sourceItem = source.Items.FirstOrDefault(item =>
+                string.Equals(item.Id, line.ClientItemId, StringComparison.OrdinalIgnoreCase));
             printOrder.Items.Add(new TableOrderItem
             {
                 Id = line.LineId,
@@ -175,6 +179,7 @@ public sealed class KitchenOrderRevisionService
                 PreviousQuantity = line.PreviousQuantity,
                 UnitPrice = 0m,
                 PrintGroupId = line.PrintGroupId,
+                PrintInRed = sourceItem?.PrintInRed ?? false,
                 Notes = line.Notes,
                 PreviousNotes = line.PreviousNotes,
                 Modifiers = line.Modifiers,
@@ -259,6 +264,7 @@ public sealed class KitchenOrderRevisionService
             .Where(item => !item.IsVoided
                 && item.Quantity > 0
                 && !string.IsNullOrWhiteSpace(item.Id)
+                && !IsTastingCourseChild(item)
                 && (!fullVoid || item.SendStatus is not ItemSendStatus.NotSent))
             .GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => Snapshot(group.First()), StringComparer.OrdinalIgnoreCase);
@@ -332,6 +338,9 @@ public sealed class KitchenOrderRevisionService
             Lines = lines
         };
     }
+
+    private static bool IsTastingCourseChild(TableOrderItem item) =>
+        item.MenuItemId.StartsWith("tasting-course:", StringComparison.OrdinalIgnoreCase);
 
     private static List<KitchenOrderRevisionLine> BuildDeltaLines(
         IReadOnlyDictionary<string, KitchenItemState> states,

@@ -16,9 +16,9 @@ Run migrations in filename order only:
 8. `008_reports.sql`
 9. `009_delivery_zones.sql`
 10. `010_postcode_orderweb_api.sql`
-11. Continue in filename order through `026_manual_refund_audit.sql`.
+11. Continue in filename order through `033_phase2_query_indexes.sql`.
 
-Future migrations must continue with `027_...` and so on. Never insert a new migration between existing numbers after release.
+Future migrations must continue with `034_...` and so on. Never insert a new migration between existing numbers after release.
 
 ## Mother And Child Rules
 
@@ -81,3 +81,6 @@ The verifier must confirm these foundation tables exist:
 - `postcode_lookup_settings`
 - `order_number_settings`
 - `z_report_print_log`
+- `table_service_charge_settings`
+- `table_service_charge_setting_events`
+- `order_service_charge_events`

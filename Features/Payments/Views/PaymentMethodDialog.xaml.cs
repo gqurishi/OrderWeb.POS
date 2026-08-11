@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Threading.Tasks;
 
@@ -23,6 +24,25 @@ namespace POS_in_NET.Views
         public PaymentMethodDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 700, 760, ApplyResponsiveLayout);
+        }
+
+        private void ApplyResponsiveLayout(bool tablet, bool shortWindow)
+        {
+            DialogContent.Spacing = shortWindow ? 12 : tablet ? 17 : 25;
+            TitleLabel.FontSize = tablet ? 25 : 30;
+            CloseButton.WidthRequest = tablet ? 82 : 90;
+            CloseButton.HeightRequest = 45;
+            AmountDueCard.Padding = shortWindow ? 14 : tablet ? 17 : 20;
+            AmountDueLabel.FontSize = shortWindow ? 29 : tablet ? 32 : 36;
+            PaymentButtonsGrid.ColumnSpacing = tablet ? 12 : 20;
+            var buttonHeight = shortWindow ? 88 : tablet ? 104 : 130;
+            CashButton.HeightRequest = buttonHeight;
+            CardButton.HeightRequest = buttonHeight;
+            GiftCardButton.HeightRequest = buttonHeight;
+            CashButton.FontSize = tablet ? 24 : 28;
+            CardButton.FontSize = tablet ? 24 : 28;
+            GiftCardButton.FontSize = tablet ? 21 : 24;
         }
 
         public void SetAmountDue(decimal amount, decimal remaining = 0, string? title = null)

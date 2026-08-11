@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Controls.Shapes;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,6 +32,7 @@ namespace POS_in_NET.Views
         private Grid? _parentGrid;
         private decimal _orderSubtotal;
         private decimal _serviceCharge;
+        private decimal _deliveryFee;
         private decimal _discount;
         private decimal _remainingBalance;
         private decimal _amountDue;
@@ -38,17 +40,20 @@ namespace POS_in_NET.Views
         public PayByItemsDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 820, 760);
         }
 
         public void SetOrder(
             IEnumerable<TableOrderItem> items,
             decimal orderSubtotal,
             decimal serviceCharge,
+            decimal deliveryFee,
             decimal discount,
             decimal remainingBalance)
         {
             _orderSubtotal = Math.Max(0, orderSubtotal);
             _serviceCharge = Math.Max(0, serviceCharge);
+            _deliveryFee = Math.Max(0, deliveryFee);
             _discount = Math.Max(0, discount);
             _remainingBalance = Math.Max(0, remainingBalance);
 
@@ -238,8 +243,9 @@ namespace POS_in_NET.Views
             var selectedSubtotal = _lines.Sum(line => line.SelectedAmount);
             var shareRatio = _orderSubtotal > 0 ? selectedSubtotal / _orderSubtotal : 0;
             var serviceShare = Math.Round(_serviceCharge * shareRatio, 2);
+            var deliveryShare = Math.Round(_deliveryFee * shareRatio, 2);
             var discountShare = Math.Round(_discount * shareRatio, 2);
-            var adjustments = serviceShare - discountShare;
+            var adjustments = serviceShare + deliveryShare - discountShare;
             _amountDue = Math.Round(selectedSubtotal + adjustments, 2);
 
             if (_amountDue > _remainingBalance)

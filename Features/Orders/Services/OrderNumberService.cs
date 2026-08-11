@@ -196,6 +196,7 @@ namespace POS_in_NET.Services
 
         private async Task EnsureOrderNumberSchemaAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             string createTableSql = @"
                 CREATE TABLE IF NOT EXISTS order_number_settings (
                     id INT PRIMARY KEY AUTO_INCREMENT,

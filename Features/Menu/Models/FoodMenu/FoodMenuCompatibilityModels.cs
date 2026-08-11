@@ -352,8 +352,10 @@ namespace MyFirstMauiApp.Models.FoodMenu
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get; set; } = string.Empty;
+        public string? WineName { get; set; }
         public int CourseNumber { get; set; }
         public bool Required { get; set; } = true;
+        public string VatCategory { get; set; } = "HotFood";
         public List<TastingMenuChoice> Choices { get; set; } = new();
 
         public string ChoiceDisplay => Choices.Count == 0
@@ -379,6 +381,7 @@ namespace MyFirstMauiApp.Models.FoodMenu
     {
         public const string PosCategoryId = "__tasting_menus__";
         public const string OrderMenuItemPrefix = "tasting:";
+        public const string OrderCourseItemPrefix = "tasting-course:";
 
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
@@ -388,6 +391,8 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public int DisplayOrder { get; set; }
         public string VatCategory { get; set; } = "HotFood";
         public bool ManualCourseCalling { get; set; } = true;
+        public string? FoodPrintGroupId { get; set; }
+        public string? WinePrintGroupId { get; set; }
         public List<TastingMenuOption> Options { get; set; } = new();
         public List<TastingMenuCourse> Courses { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -405,6 +410,8 @@ namespace MyFirstMauiApp.Models.FoodMenu
         {
             VatCategory = VatCategory,
             ManualCourseCalling = ManualCourseCalling,
+            FoodPrintGroupId = FoodPrintGroupId,
+            WinePrintGroupId = WinePrintGroupId,
             Options = Options.OrderBy(o => o.SortOrder).ToList(),
             Courses = Courses.OrderBy(c => c.CourseNumber).ToList()
         });
@@ -415,6 +422,8 @@ namespace MyFirstMauiApp.Models.FoodMenu
             menu.Courses = new List<TastingMenuCourse>();
             menu.VatCategory = "HotFood";
             menu.ManualCourseCalling = true;
+            menu.FoodPrintGroupId = null;
+            menu.WinePrintGroupId = null;
 
             if (string.IsNullOrWhiteSpace(json))
             {
@@ -426,6 +435,8 @@ namespace MyFirstMauiApp.Models.FoodMenu
                 var config = JsonSerializer.Deserialize<TastingMenuConfigPayload>(json);
                 menu.VatCategory = string.IsNullOrWhiteSpace(config?.VatCategory) ? "HotFood" : config!.VatCategory!;
                 menu.ManualCourseCalling = config?.ManualCourseCalling ?? true;
+                menu.FoodPrintGroupId = string.IsNullOrWhiteSpace(config?.FoodPrintGroupId) ? null : config!.FoodPrintGroupId;
+                menu.WinePrintGroupId = string.IsNullOrWhiteSpace(config?.WinePrintGroupId) ? null : config!.WinePrintGroupId;
                 menu.Options = (config?.Options ?? new List<TastingMenuOption>())
                     .Where(o => !string.IsNullOrWhiteSpace(o.Name))
                     .OrderBy(o => o.SortOrder)
@@ -446,8 +457,10 @@ namespace MyFirstMauiApp.Models.FoodMenu
                     {
                         Id = string.IsNullOrWhiteSpace(c.Id) ? Guid.NewGuid().ToString() : c.Id,
                         Name = c.Name.Trim(),
+                        WineName = string.IsNullOrWhiteSpace(c.WineName) ? null : c.WineName.Trim(),
                         CourseNumber = c.CourseNumber <= 0 ? index + 1 : c.CourseNumber,
                         Required = c.Required,
+                        VatCategory = string.IsNullOrWhiteSpace(c.VatCategory) ? "HotFood" : c.VatCategory,
                         Choices = c.Choices
                             .Where(choice => !string.IsNullOrWhiteSpace(choice.Name))
                             .OrderBy(choice => choice.SortOrder)
@@ -473,6 +486,8 @@ namespace MyFirstMauiApp.Models.FoodMenu
         {
             public string? VatCategory { get; set; }
             public bool ManualCourseCalling { get; set; } = true;
+            public string? FoodPrintGroupId { get; set; }
+            public string? WinePrintGroupId { get; set; }
             public List<TastingMenuOption>? Options { get; set; }
             public List<TastingMenuCourse>? Courses { get; set; }
         }
@@ -480,8 +495,66 @@ namespace MyFirstMauiApp.Models.FoodMenu
 
     public static class TastingMenuNotesHelper
     {
+        private const string OrderNotePrefix = "Order note:";
+
         public static string BuildOrderMenuItemId(string menuId, string optionId) =>
             $"{TastingMenu.OrderMenuItemPrefix}{menuId}:{optionId}";
+
+        public static string BuildOrderCourseMenuItemId(string menuId, string courseId) =>
+            $"{TastingMenu.OrderCourseItemPrefix}{menuId}:{courseId}";
+
+        public static bool IsOrderCourseItem(string? menuItemId) =>
+            !string.IsNullOrWhiteSpace(menuItemId)
+            && menuItemId.StartsWith(TastingMenu.OrderCourseItemPrefix, StringComparison.OrdinalIgnoreCase);
+
+        public static string FormatPackage(
+            TastingMenuOption option,
+            string? foodPrintGroupId = null,
+            string? winePrintGroupId = null) => string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    $"Package: {option.DisplayName}",
+                    option.IncludesWine ? "Wine pairing: Yes" : "Wine pairing: No",
+                    string.IsNullOrWhiteSpace(foodPrintGroupId) ? null : $"Food print group: {foodPrintGroupId}",
+                    string.IsNullOrWhiteSpace(winePrintGroupId) ? null : $"Wine print group: {winePrintGroupId}",
+                    "Courses: HOLD - fire individually"
+                }.Where(line => !string.IsNullOrWhiteSpace(line)));
+
+        public static string? GetFoodPrintGroupId(string? packageNotes) =>
+            GetMetadataValue(packageNotes, "Food print group:");
+
+        public static string? GetWinePrintGroupId(string? packageNotes) =>
+            GetMetadataValue(packageNotes, "Wine print group:");
+
+        private static string? GetMetadataValue(string? packageNotes, string prefix) => (packageNotes ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))?
+            [prefix.Length..]
+            .Trim();
+
+        public static string? GetOrderNote(string? packageNotes) => (packageNotes ?? string.Empty)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.StartsWith(OrderNotePrefix, StringComparison.OrdinalIgnoreCase))?
+            [OrderNotePrefix.Length..]
+            .Trim();
+
+        public static string WithOrderNote(string? packageNotes, string? orderNote)
+        {
+            var lines = (packageNotes ?? string.Empty)
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => !line.Trim().StartsWith(OrderNotePrefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(orderNote))
+            {
+                lines.Add($"{OrderNotePrefix} {orderNote.Trim()}");
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
 
         public static string FormatSelections(TastingMenuOption option, IEnumerable<(TastingMenuCourse Course, TastingMenuChoice Choice)> selections)
         {

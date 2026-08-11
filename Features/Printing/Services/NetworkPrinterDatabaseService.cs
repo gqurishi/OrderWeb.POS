@@ -21,6 +21,7 @@ public class NetworkPrinterDatabaseService
     /// </summary>
     public async Task EnsureTablesExistAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         try
         {
             using var connection = await _db.GetConnectionAsync();
@@ -39,6 +40,7 @@ public class NetworkPrinterDatabaseService
                     has_cash_drawer BOOLEAN DEFAULT FALSE,
                     has_cutter BOOLEAN DEFAULT TRUE,
                     has_buzzer BOOLEAN DEFAULT FALSE,
+                    supports_two_color BOOLEAN DEFAULT FALSE,
                     is_enabled BOOLEAN DEFAULT TRUE,
                     is_online BOOLEAN DEFAULT FALSE,
                     last_seen DATETIME NULL,
@@ -191,11 +193,11 @@ public class NetworkPrinterDatabaseService
             cmd.CommandText = @"
                 INSERT INTO network_printers 
                 (name, ip_address, port, brand, printer_type, paper_width, 
-                 has_cash_drawer, has_cutter, has_buzzer, is_enabled, 
+                 has_cash_drawer, has_cutter, has_buzzer, supports_two_color, is_enabled,
                  color_code, display_order, notes, print_group_id)
                 VALUES 
                 (@name, @ip, @port, @brand, @type, @width,
-                 @drawer, @cutter, @buzzer, @enabled,
+                 @drawer, @cutter, @buzzer, @twoColor, @enabled,
                  @color, @order, @notes, @printGroupId);
                 SELECT LAST_INSERT_ID();";
 
@@ -208,6 +210,7 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@drawer", printer.HasCashDrawer);
             cmd.Parameters.AddWithValue("@cutter", printer.HasCutter);
             cmd.Parameters.AddWithValue("@buzzer", printer.HasBuzzer);
+            cmd.Parameters.AddWithValue("@twoColor", printer.SupportsTwoColor);
             cmd.Parameters.AddWithValue("@enabled", printer.IsEnabled);
             cmd.Parameters.AddWithValue("@color", printer.ColorCode);
             cmd.Parameters.AddWithValue("@order", printer.DisplayOrder);
@@ -247,6 +250,7 @@ public class NetworkPrinterDatabaseService
                     has_cash_drawer = @drawer,
                     has_cutter = @cutter,
                     has_buzzer = @buzzer,
+                    supports_two_color = @twoColor,
                     is_enabled = @enabled,
                     color_code = @color,
                     display_order = @order,
@@ -264,6 +268,7 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@drawer", printer.HasCashDrawer);
             cmd.Parameters.AddWithValue("@cutter", printer.HasCutter);
             cmd.Parameters.AddWithValue("@buzzer", printer.HasBuzzer);
+            cmd.Parameters.AddWithValue("@twoColor", printer.SupportsTwoColor);
             cmd.Parameters.AddWithValue("@enabled", printer.IsEnabled);
             cmd.Parameters.AddWithValue("@color", printer.ColorCode);
             cmd.Parameters.AddWithValue("@order", printer.DisplayOrder);
@@ -496,6 +501,13 @@ public class NetworkPrinterDatabaseService
                 ADD COLUMN print_group_id VARCHAR(36) NULL AFTER notes");
         }
 
+        if (!await ColumnExistsAsync(connection, "network_printers", "supports_two_color"))
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_printers
+                ADD COLUMN supports_two_color BOOLEAN DEFAULT FALSE AFTER has_buzzer");
+        }
+
         await CreateIndexIfMissingAsync(connection, "network_printers", "idx_network_printers_print_group_id", "CREATE INDEX idx_network_printers_print_group_id ON network_printers(print_group_id)");
         await CreateIndexIfMissingAsync(connection, "network_printers", "idx_network_printers_type_enabled", "CREATE INDEX idx_network_printers_type_enabled ON network_printers(printer_type, is_enabled)");
 
@@ -636,6 +648,7 @@ public class NetworkPrinterDatabaseService
             HasCashDrawer = reader.GetBoolean(reader.GetOrdinal("has_cash_drawer")),
             HasCutter = reader.GetBoolean(reader.GetOrdinal("has_cutter")),
             HasBuzzer = reader.GetBoolean(reader.GetOrdinal("has_buzzer")),
+            SupportsTwoColor = reader.GetBoolean(reader.GetOrdinal("supports_two_color")),
             IsEnabled = reader.GetBoolean(reader.GetOrdinal("is_enabled")),
             IsOnline = reader.GetBoolean(reader.GetOrdinal("is_online")),
             LastSeen = reader.IsDBNull(reader.GetOrdinal("last_seen")) ? null : reader.GetDateTime(reader.GetOrdinal("last_seen")),

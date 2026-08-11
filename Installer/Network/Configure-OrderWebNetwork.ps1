@@ -147,7 +147,7 @@ if ($PSCmdlet.ShouldProcess('MariaDB and Windows Firewall', 'Apply exact Child a
         childIps = $ChildIp
         printerIps = $PrinterIp
         mariaDbPort = 3306
-        requiredSchemaVersion = 26
+        requiredSchemaVersion = 27
         tlsMode = $(if ($RequireTls) { 'Required' } else { 'Preferred' })
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8

@@ -32,6 +32,7 @@ public sealed partial class DeliveryZoneService
 
     public async Task EnsureTablesAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_tablesEnsured)
         {
             return;

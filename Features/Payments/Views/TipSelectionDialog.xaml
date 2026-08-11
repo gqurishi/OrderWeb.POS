@@ -7,11 +7,11 @@
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Fill" HorizontalOptions="Fill">
-        <Border BackgroundColor="White"
+        <Border x:Name="DialogCard" BackgroundColor="White"
                Stroke="{StaticResource DialogShellStrokeColor}"
                StrokeThickness="1"
                Padding="30"
-               MaximumWidthRequest="600"
+               MaximumWidthRequest="560"
                MaximumHeightRequest="760"
                Margin="16"
                HorizontalOptions="Fill"
@@ -25,17 +25,17 @@
             </Border.Shadow>
             
             <ScrollView VerticalScrollBarVisibility="Default">
-            <VerticalStackLayout Spacing="20">
+            <VerticalStackLayout x:Name="DialogContent" Spacing="20">
                 
                 <!-- Header with Close Button -->
                 <Grid ColumnDefinitions="*,Auto">
-                    <Label Text="ADD TIP"
+                    <Label x:Name="DialogTitle" Text="ADD TIP"
                            FontSize="30"
                            FontAttributes="Bold"
                            TextColor="#111827"
                            VerticalOptions="Center"/>
                     <!-- Close Button - Rectangle -->
-                    <Button Grid.Column="1"
+                    <Button x:Name="CloseButton" Grid.Column="1"
                             Text="CLOSE"
                             BackgroundColor="#DC2626"
                             TextColor="White"
@@ -48,10 +48,10 @@
                 </Grid>
                 
                 <!-- Divider -->
-                <BoxView HeightRequest="2" Color="#E5E7EB"/>
+                <BoxView HeightRequest="1" Color="#E5E7EB"/>
                 
                 <!-- Order Total -->
-                <Border BackgroundColor="#F0FDF4" Stroke="#10B981" StrokeThickness="2" Padding="20">
+                <Border x:Name="OrderTotalCard" BackgroundColor="#F0FDF4" Stroke="#A7F3D0" StrokeThickness="1" Padding="20">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
@@ -71,14 +71,14 @@
                 </Border>
                 
                 <!-- Tip Options Grid -->
-                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="15" RowSpacing="15">
+                <Grid x:Name="TipOptionsGrid" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="15" RowSpacing="15">
                     <Button Grid.Row="0" Grid.Column="0"
                             Text="NO TIP"
                             BackgroundColor="#F3F4F6"
                             TextColor="#374151"
                             FontSize="20"
                             FontAttributes="Bold"
-                            CornerRadius="14"
+                            CornerRadius="10"
                             HeightRequest="65"
                             Clicked="OnNoTipClicked"/>
                     
@@ -88,7 +88,7 @@
                             TextColor="#1E40AF"
                             FontSize="24"
                             FontAttributes="Bold"
-                            CornerRadius="14"
+                            CornerRadius="10"
                             HeightRequest="65"
                             Clicked="OnTip5Clicked"/>
                     
@@ -98,7 +98,7 @@
                             TextColor="#1E40AF"
                             FontSize="24"
                             FontAttributes="Bold"
-                            CornerRadius="14"
+                            CornerRadius="10"
                             HeightRequest="65"
                             Clicked="OnTip10Clicked"/>
                     
@@ -108,7 +108,7 @@
                             TextColor="#1E40AF"
                             FontSize="24"
                             FontAttributes="Bold"
-                            CornerRadius="14"
+                            CornerRadius="10"
                             HeightRequest="65"
                             Clicked="OnTip20Clicked"/>
                 </Grid>
@@ -121,9 +121,11 @@
                            FontSize="16"
                            HeightRequest="55"
                            BackgroundColor="#F3F4F6"
+                           IsReadOnly="True"
+                           Focused="OnCustomTipFocused"
                            TextChanged="OnCustomTipChanged"/>
                     <Button Grid.Column="1"
-                            Text="APPLY"
+                            Text="ENTER"
                             BackgroundColor="#7C3AED"
                             TextColor="White"
                             FontSize="14"
@@ -131,11 +133,11 @@
                             CornerRadius="14"
                             WidthRequest="90"
                             HeightRequest="55"
-                            Clicked="OnContinueClicked"/>
+                            Clicked="OnCustomTipButtonClicked"/>
                 </Grid>
                 
                 <!-- Tip Amount Display -->
-                <Border BackgroundColor="#FEF3C7" Stroke="#F59E0B" StrokeThickness="2" Padding="16">
+                <Border BackgroundColor="#FFFBEB" Stroke="#FCD34D" StrokeThickness="1" Padding="16">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
@@ -156,7 +158,7 @@
                 </Border>
                 
                 <!-- Continue Button -->
-                <Button Text="CONTINUE TO PAYMENT"
+                <Button x:Name="ContinueButton" Text="CONTINUE TO PAYMENT"
                         BackgroundColor="#059669"
                         TextColor="White"
                         FontSize="20"

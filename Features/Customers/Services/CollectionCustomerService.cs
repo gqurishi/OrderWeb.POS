@@ -16,6 +16,7 @@ namespace POS_in_NET.Services
 
         private async Task EnsureTableExistsAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             if (_tableChecked) return;
 
             try

@@ -618,7 +618,7 @@ namespace POS_in_NET.Pages
 
             try
             {
-                await Navigation.PushAsync(page, false);
+                await NavigationCoordinator.Shared.PushTemporaryPageAsync(page, animated: false);
             }
             catch
             {
@@ -871,6 +871,7 @@ namespace POS_in_NET.Pages
 
         private async Task EnsureOrderLifecycleSchemaAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             if (_lifecycleColumnsEnsured)
             {
                 return;

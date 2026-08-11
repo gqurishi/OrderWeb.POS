@@ -16,6 +16,7 @@ public static class TerminalConfigurationService
     private const string DatabaseNameKey = Prefix + "database_name";
     private const string DatabaseUserKey = Prefix + "database_user";
     private const string DatabasePasswordKey = Prefix + "database_password";
+    private const string ProtectedDatabasePasswordKey = Prefix + "database_password_protected";
     private const string DatabaseSslModeKey = Prefix + "database_ssl_mode";
     private const string InstallerConfigAppliedKey = Prefix + "installer_db_applied";
 
@@ -46,7 +47,7 @@ public static class TerminalConfigurationService
             DatabasePort = Preferences.Default.Get(DatabasePortKey, 3306),
             DatabaseName = Preferences.Default.Get(DatabaseNameKey, PosDatabaseDefaults.ProductionDatabaseName),
             DatabaseUser = Preferences.Default.Get(DatabaseUserKey, PosDatabaseDefaults.ProductionDatabaseUser),
-            DatabasePassword = Preferences.Default.Get(DatabasePasswordKey, string.Empty),
+            DatabasePassword = ReadDatabasePassword(),
             DatabaseSslMode = Preferences.Default.Get(DatabaseSslModeKey, nameof(MySqlSslMode.Preferred))
         };
     }
@@ -153,7 +154,7 @@ public static class TerminalConfigurationService
         Preferences.Default.Set(DatabaseUserKey, string.IsNullOrWhiteSpace(configuration.DatabaseUser)
             ? PosDatabaseDefaults.ProductionDatabaseUser
             : configuration.DatabaseUser.Trim());
-        Preferences.Default.Set(DatabasePasswordKey, configuration.DatabasePassword ?? string.Empty);
+        SaveDatabasePassword(configuration.DatabasePassword ?? string.Empty);
         Preferences.Default.Set(DatabaseSslModeKey, string.IsNullOrWhiteSpace(configuration.DatabaseSslMode)
             ? nameof(MySqlSslMode.Preferred)
             : configuration.DatabaseSslMode);
@@ -162,6 +163,61 @@ public static class TerminalConfigurationService
     public static void SetConfigured(bool isConfigured)
     {
         Preferences.Default.Set(IsConfiguredKey, isConfigured);
+    }
+
+    private static string ReadDatabasePassword()
+    {
+        if (WindowsCredentialProtectionService.IsSupported)
+        {
+            var protectedValue = Preferences.Default.Get(ProtectedDatabasePasswordKey, string.Empty);
+            if (!string.IsNullOrWhiteSpace(protectedValue))
+            {
+                try
+                {
+                    return WindowsCredentialProtectionService.Unprotect(protectedValue);
+                }
+                catch (Exception ex)
+                {
+                    AppDiagnostics.LogFatal("Read protected database credential", ex);
+                    return string.Empty;
+                }
+            }
+
+            // One-time migration from releases that stored the password in MAUI Preferences.
+            var legacyValue = Preferences.Default.Get(DatabasePasswordKey, string.Empty);
+            if (!string.IsNullOrEmpty(legacyValue))
+            {
+                try
+                {
+                    SaveDatabasePassword(legacyValue);
+                    return legacyValue;
+                }
+                catch (Exception ex)
+                {
+                    AppDiagnostics.LogFatal("Migrate database credential", ex);
+                    return string.Empty;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        // MacCatalyst remains a development target. Production deployment is Windows.
+        return Preferences.Default.Get(DatabasePasswordKey, string.Empty);
+    }
+
+    private static void SaveDatabasePassword(string password)
+    {
+        if (WindowsCredentialProtectionService.IsSupported)
+        {
+            Preferences.Default.Set(
+                ProtectedDatabasePasswordKey,
+                WindowsCredentialProtectionService.Protect(password));
+            Preferences.Default.Remove(DatabasePasswordKey);
+            return;
+        }
+
+        Preferences.Default.Set(DatabasePasswordKey, password);
     }
 
     public static string GetPosConnectionString(
@@ -217,6 +273,7 @@ public static class TerminalConfigurationService
         Preferences.Default.Remove(DatabaseNameKey);
         Preferences.Default.Remove(DatabaseUserKey);
         Preferences.Default.Remove(DatabasePasswordKey);
+        Preferences.Default.Remove(ProtectedDatabasePasswordKey);
         Preferences.Default.Remove(DatabaseSslModeKey);
         Preferences.Default.Remove(InstallerConfigAppliedKey);
     }

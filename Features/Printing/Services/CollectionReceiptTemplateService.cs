@@ -40,7 +40,7 @@ public static class CollectionReceiptTemplateService
         await TryPrintLogoAsync(builder, businessInfo, printer.PaperWidth, logoSize);
         PrintHeader(builder, businessInfo, templateSettings);
         PrintOrderBlock(builder, receiptKind, order, orderReference, DateTime.Now, customerName, customerPhone, deliveryAddress, templateSettings);
-        PrintItems(builder, order.Items.Where(item => !item.IsVoided));
+        PrintItems(builder, order.Items.Where(item => !item.IsVoided && !IsTastingMenuCourseItem(item)));
         PrintTotals(builder, order, receiptKind, total, tip, templateSettings);
 
         if (receiptKind == CustomerReceiptKind.TablePayment)
@@ -49,7 +49,14 @@ public static class CollectionReceiptTemplateService
         }
         else if (receiptKind is CustomerReceiptKind.Collection or CustomerReceiptKind.Delivery)
         {
-            PrintPayment(builder, order.Payments, templateSettings, receiptKind is CustomerReceiptKind.Collection or CustomerReceiptKind.Delivery);
+            if (order.Payments.Any(payment => payment.Amount > 0))
+            {
+                PrintPayment(builder, order.Payments, templateSettings, useSettings: true);
+            }
+            else
+            {
+                PrintDeclaredCloudPayment(builder, order, total, templateSettings);
+            }
         }
 
         if (receiptKind == CustomerReceiptKind.Delivery)
@@ -102,7 +109,6 @@ public static class CollectionReceiptTemplateService
         var isTableReceipt = isTableBill || isTablePayment;
 
         builder.AppendLine(Center("[LOGO]"));
-        builder.AppendLine();
         builder.AppendLine(Center("RESTAURANT NAME"));
         builder.AppendLine(Center("123 High Street"));
         builder.AppendLine(Center("London AB1 2CD"));
@@ -149,15 +155,15 @@ public static class CollectionReceiptTemplateService
         builder.AppendLine("2x Pilau Rice                             \u00A37.00");
         builder.AppendLine(new string('-', LineWidth));
         builder.AppendLine("Subtotal:                                \u00A327.45");
+        builder.AppendLine("Discount:                                -\u00A32.00");
         if (isDelivery)
         {
-            builder.AppendLine("Delivery/Fee:                             \u00A32.50");
+            builder.AppendLine("Delivery fee:                             \u00A32.50");
         }
         else if (isTablePayment)
         {
-            builder.AppendLine("Service Charge:                           \u00A32.75");
+            builder.AppendLine("Service charge (10%):                     \u00A32.75");
         }
-        builder.AppendLine("Discount:                                -\u00A32.00");
         builder.AppendLine(new string('=', LineWidth));
         builder.AppendLine(isDelivery
             ? "TOTAL:                                   \u00A327.95"
@@ -181,6 +187,11 @@ public static class CollectionReceiptTemplateService
         else if (!isTableBill)
         {
             builder.AppendLine(isDelivery ? "Payment: Card" : "Payment: Cash");
+            if (!isDelivery)
+            {
+                builder.AppendLine("Cash received:                           \u00A330.00");
+                builder.AppendLine("Change given:                             \u00A34.55");
+            }
         }
         if (isDelivery)
         {
@@ -216,8 +227,7 @@ public static class CollectionReceiptTemplateService
             }
 
             builder.SetAlign(TextAlign.Center)
-                   .PrintRasterImage(image.Value.RasterData, image.Value.Width, image.Value.Height)
-                   .FeedLines(1);
+                   .PrintRasterImage(image.Value.RasterData, image.Value.Width, image.Value.Height);
         }
         catch (Exception ex)
         {
@@ -242,9 +252,11 @@ public static class CollectionReceiptTemplateService
         var originalHeight = Math.Max(1, (int)decoder.PixelHeight);
         var (maxWidth, maxHeight) = (paperWidth, logoSize) switch
         {
-            (PaperWidth.Mm80, ReceiptLogoSize.Large) => (560, 280),
-            (PaperWidth.Mm58, ReceiptLogoSize.Large) => (360, 200),
-            (PaperWidth.Mm80, _) => (480, 220),
+            (PaperWidth.Mm80, ReceiptLogoSize.Large) => (576, 360),
+            (PaperWidth.Mm58, ReceiptLogoSize.Large) => (384, 240),
+            (PaperWidth.Mm80, ReceiptLogoSize.Medium) => (560, 280),
+            (PaperWidth.Mm58, ReceiptLogoSize.Medium) => (360, 200),
+            (PaperWidth.Mm80, ReceiptLogoSize.Small) => (480, 220),
             _ => (320, 160)
         };
         var scale = Math.Min(maxWidth / (double)originalWidth, maxHeight / (double)originalHeight);
@@ -311,6 +323,9 @@ public static class CollectionReceiptTemplateService
 
         return await new CollectionReceiptTemplateSettingsService(new DatabaseService()).GetSettingsAsync();
     }
+
+    private static bool IsTastingMenuCourseItem(TableOrderItem item) =>
+        item.MenuItemId.StartsWith("tasting-course:", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<CollectionReceiptTemplateSettings> LoadDeliverySettingsAsync()
     {
@@ -536,14 +551,14 @@ public static class CollectionReceiptTemplateService
             PrintAmountLine(builder, "Discount:", -order.Discount);
         }
 
-        if (order.ServiceCharge > 0)
+        if (order.DeliveryFee > 0)
         {
-            var serviceLabel = receiptKind switch
-            {
-                CustomerReceiptKind.Delivery => "Delivery/Fee:",
-                CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment => "Service Charge:",
-                _ => "Fee:"
-            };
+            PrintAmountLine(builder, "Delivery Fee:", order.DeliveryFee);
+        }
+
+        if (order.ServiceChargeStatus == TableServiceChargeStatus.Applied && order.ServiceCharge > 0)
+        {
+            var serviceLabel = $"Service Charge ({order.ServiceChargePercent:0.##}%):";
 
             if (receiptKind is CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment)
             {
@@ -568,16 +583,18 @@ public static class CollectionReceiptTemplateService
                .SetBold(false);
 
         if (receiptKind is CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment
-            && order.ServiceCharge <= 0)
+            && order.ServiceChargeStatus == TableServiceChargeStatus.Removed)
         {
-            if (receiptKind is CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment)
-            {
-                PrintStyledWrapped(builder, "Service charge not included", settings.ServiceChargeSize, settings.ServiceChargeBold);
-            }
-            else
-            {
-                PrintWrapped(builder, "Service charge not included");
-            }
+            PrintStyledWrapped(
+                builder,
+                $"Service charge ({order.ServiceChargePercent:0.##}%): Removed",
+                settings.ServiceChargeSize,
+                settings.ServiceChargeBold);
+        }
+        else if (receiptKind is CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment
+            && order.ServiceChargeStatus == TableServiceChargeStatus.NotConfigured)
+        {
+            PrintStyledWrapped(builder, "Service charge not included", settings.ServiceChargeSize, settings.ServiceChargeBold);
         }
 
         builder.FeedLines(1);
@@ -601,6 +618,8 @@ public static class CollectionReceiptTemplateService
                 PrintWrapped(builder, $"Payment: {paymentText}");
             }
         }
+
+        PrintCashTenderDetails(builder, payments, settings, useSettings);
     }
 
     private static void PrintPaidPaymentBreakdown(
@@ -620,12 +639,14 @@ public static class CollectionReceiptTemplateService
         builder.PrintLine(new string('-', LineWidth));
         PrintStyledWrapped(builder, "Payment", settings.PaymentSize, settings.PaymentBold);
 
-        foreach (var payment in approvedPayments)
+        foreach (var paymentGroup in approvedPayments
+                     .GroupBy(payment => payment.Method)
+                     .OrderBy(group => GetPaymentMethodSortOrder(group.Key)))
         {
             PrintStyledAmountLine(
                 builder,
-                $"{GetPaymentMethodLabel(payment.Method)}:",
-                payment.Amount,
+                $"{GetPaymentMethodLabel(paymentGroup.Key)}:",
+                paymentGroup.Sum(payment => payment.Amount),
                 settings.PaymentSize,
                 settings.PaymentBold);
         }
@@ -638,6 +659,97 @@ public static class CollectionReceiptTemplateService
             settings.PaymentSize,
             settings.PaymentBold);
         PrintStyledWrapped(builder, "Status: PAID", settings.PaidStatusSize, settings.PaidStatusBold);
+    }
+
+    private static void PrintDeclaredCloudPayment(
+        EscPosBuilder builder,
+        TableOrder order,
+        decimal total,
+        CollectionReceiptTemplateSettings settings)
+    {
+        var method = OnlineOrderPaymentHelper.GetDisplayMethod(order.DeclaredPaymentMethod);
+        var isPaid = string.Equals(order.DeclaredPaymentStatus, "paid", StringComparison.OrdinalIgnoreCase)
+            || OnlineOrderPaymentHelper.IsPaidFromSource(order.DeclaredPaymentMethod, order.DeclaredPaymentStatus);
+        var amountPaid = order.DeclaredAmountPaid ?? (isPaid ? total : 0m);
+
+        builder.PrintLine(new string('-', LineWidth));
+        PrintStyledWrapped(builder, $"Payment: {method}", settings.PaymentSize, settings.PaymentBold);
+        PrintStyledWrapped(
+            builder,
+            $"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.DeclaredPaymentMethod, order.DeclaredPaymentStatus)}",
+            settings.PaymentSize,
+            settings.PaymentBold);
+
+        if (isPaid)
+        {
+            PrintStyledAmountLine(builder, "Amount paid:", amountPaid, settings.PaymentSize, settings.PaymentBold);
+        }
+        else
+        {
+            PrintStyledAmountLine(builder, "Amount due:", Math.Max(0m, total - amountPaid), settings.PaymentSize, settings.PaymentBold);
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.DeclaredPaymentProvider))
+        {
+            PrintWrapped(builder, $"Provider: {order.DeclaredPaymentProvider.Trim()}");
+        }
+
+        var reference = OnlineOrderPaymentHelper.FormatReceiptReference(order.DeclaredPaymentReference);
+        if (reference != null)
+        {
+            PrintWrapped(builder, $"Reference: {reference}");
+        }
+
+        var voucher = OnlineOrderPaymentHelper.MaskVoucherCode(order.DeclaredVoucherCode);
+        if (voucher != null)
+        {
+            var label = OnlineOrderPaymentHelper.NormalizeMethod(order.DeclaredPaymentMethod) == "gift_card"
+                ? "Gift Card"
+                : "Voucher";
+            PrintWrapped(builder, $"{label}: {voucher}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.DeclaredPromoCode))
+            PrintWrapped(builder, $"Promo Code: {order.DeclaredPromoCode.Trim()}");
+        var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(order.DeclaredGiftCardNumberMasked);
+        if (safeGiftCardNumber != null)
+            PrintWrapped(builder, $"Gift Card: {safeGiftCardNumber}");
+        if (order.DeclaredGiftCardRemainingBalance.HasValue)
+            PrintAmountLine(builder, "Gift Card Balance:", order.DeclaredGiftCardRemainingBalance.Value);
+        if (order.DeclaredLoyaltyPointsEarned > 0)
+            PrintWrapped(builder, $"Loyalty Earned: {order.DeclaredLoyaltyPointsEarned} points");
+        if (order.DeclaredLoyaltyPointsRedeemed > 0)
+            PrintWrapped(builder, $"Loyalty Redeemed: {order.DeclaredLoyaltyPointsRedeemed} points");
+        if (order.DeclaredLoyaltyPointsDiscount > 0)
+            PrintAmountLine(builder, "Loyalty Discount:", order.DeclaredLoyaltyPointsDiscount);
+        if (order.DeclaredLoyaltyBalanceAfter.HasValue)
+            PrintWrapped(builder, $"Loyalty Balance: {order.DeclaredLoyaltyBalanceAfter.Value} points");
+    }
+
+    private static void PrintCashTenderDetails(
+        EscPosBuilder builder,
+        IEnumerable<TableOrderPayment> payments,
+        CollectionReceiptTemplateSettings settings,
+        bool useSettings)
+    {
+        foreach (var payment in payments.Where(payment =>
+                     payment.Method == PaymentMethodType.Cash && payment.Amount > 0))
+        {
+            var amountReceived = payment.AmountReceived > 0
+                ? payment.AmountReceived
+                : payment.Amount + Math.Max(0, payment.Change);
+
+            if (useSettings)
+            {
+                PrintStyledAmountLine(builder, "Cash received:", amountReceived, settings.PaymentSize, settings.PaymentBold);
+                PrintStyledAmountLine(builder, "Change given:", Math.Max(0, payment.Change), settings.PaymentSize, settings.PaymentBold);
+            }
+            else
+            {
+                PrintAmountLine(builder, "Cash received:", amountReceived);
+                PrintAmountLine(builder, "Change given:", Math.Max(0, payment.Change));
+            }
+        }
     }
 
     private static void PrintCustomerNote(EscPosBuilder builder, string? customerNote)
@@ -729,6 +841,17 @@ public static class CollectionReceiptTemplateService
         {
             builder.PrintColumns(string.Empty, amountText);
         }
+    }
+
+    private static int GetPaymentMethodSortOrder(PaymentMethodType method)
+    {
+        return method switch
+        {
+            PaymentMethodType.Cash => 0,
+            PaymentMethodType.Card => 1,
+            PaymentMethodType.GiftCard => 2,
+            _ => 3
+        };
     }
 
     private static void PrintStyledAmountLine(

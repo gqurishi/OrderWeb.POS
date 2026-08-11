@@ -210,7 +210,7 @@ public partial class TopBar : ContentView
             }
             
             // Navigate to login page
-            await Shell.Current.GoToAsync("//login");
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -219,7 +219,7 @@ public partial class TopBar : ContentView
             // Still navigate to login even if logout service fails
             try
             {
-                await Shell.Current.GoToAsync("//login");
+                await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
             }
             catch (Exception navEx)
             {

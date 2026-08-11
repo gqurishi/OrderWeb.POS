@@ -4,14 +4,14 @@
              x:Class="POS_in_NET.Pages.OrderSearchModal"
              BackgroundColor="{StaticResource DialogOverlayColor}">
 
-    <Frame BackgroundColor="White"
-           Margin="60"
-           Padding="24"
-           CornerRadius="16"
-           HasShadow="True"
-           VerticalOptions="Center"
-           HorizontalOptions="Center"
-           WidthRequest="500">
+        <Frame BackgroundColor="White"
+            Margin="60"
+            Padding="24"
+            CornerRadius="16"
+            HasShadow="True"
+            VerticalOptions="Center"
+            HorizontalOptions="Center"
+            WidthRequest="500">
 
         <VerticalStackLayout Spacing="20">
             
@@ -39,113 +39,29 @@
                 </Border>
             </Grid>
 
-            <!-- Search Fields -->
+            <!-- Search Input -->
             <VerticalStackLayout Spacing="16">
-                
                 <VerticalStackLayout Spacing="8">
-                    <Label Text="Order Number" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
-                    <Frame BackgroundColor="White" 
+                    <Label Text="Order Number or Phone" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
+                    <Frame BackgroundColor="White"
                            Padding="12"
                            CornerRadius="8"
                            HasShadow="False"
                            BorderColor="#D1D5DB">
                         <Frame.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnOrderNumberTapped"/>
+                            <TapGestureRecognizer Tapped="OnSearchFieldTapped"/>
                         </Frame.GestureRecognizers>
-                        <Entry x:Name="OrderNumberEntry"
-                               Placeholder="e.g. COL-001, DEL-045"
+                        <Entry x:Name="SearchEntry"
+                               Placeholder="Tap to open keyboard"
+                               Keyboard="Text"
                                TextColor="#1F2937"
                                PlaceholderColor="#9CA3AF"
                                FontSize="15"
-                               IsReadOnly="True"/>
+                               ReturnType="Search"
+                               IsReadOnly="True"
+                               InputTransparent="True"/>
                     </Frame>
                 </VerticalStackLayout>
-
-                <VerticalStackLayout Spacing="8">
-                    <Label Text="Phone Number" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
-                    <Frame BackgroundColor="White" 
-                           Padding="12"
-                           CornerRadius="8"
-                           HasShadow="False"
-                           BorderColor="#D1D5DB">
-                        <Frame.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnPhoneNumberTapped"/>
-                        </Frame.GestureRecognizers>
-                        <Entry x:Name="PhoneNumberEntry"
-                               Placeholder="e.g. 07123456789"
-                               Keyboard="Telephone"
-                               TextColor="#1F2937"
-                               PlaceholderColor="#9CA3AF"
-                               FontSize="15"
-                               IsReadOnly="True"/>
-                    </Frame>
-                </VerticalStackLayout>
-
-            </VerticalStackLayout>
-
-            <!-- Search Results -->
-            <VerticalStackLayout x:Name="ResultsLayout" Spacing="12" IsVisible="False">
-                <BoxView BackgroundColor="#E5E7EB" HeightRequest="1"/>
-                
-                <Label Text="Search Results:" FontSize="15" FontAttributes="Bold" TextColor="#374151"/>
-                
-                <ScrollView MaximumHeightRequest="300">
-                    <CollectionView x:Name="SearchResultsCollection" SelectionMode="None">
-                        <CollectionView.ItemTemplate>
-                            <DataTemplate>
-                                <Frame BackgroundColor="#F9FAFB" 
-                                       Padding="12"
-                                       Margin="0,0,0,8"
-                                       CornerRadius="8"
-                                       HasShadow="False"
-                                       BorderColor="#E5E7EB">
-                                    <Frame.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnResultSelected"/>
-                                    </Frame.GestureRecognizers>
-                                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
-                                        <Label Text="{Binding OrderIcon}" 
-                                               FontSize="18"
-                                               VerticalOptions="Center"
-                                               Grid.Row="0"
-                                               Grid.Column="0"
-                                               Grid.RowSpan="2"/>
-                                        
-                                        <Label Text="{Binding OrderId}" 
-                                               FontSize="15"
-                                               FontAttributes="Bold"
-                                               TextColor="#1F2937"
-                                               Grid.Row="0"
-                                               Grid.Column="1"
-                                               Margin="12,0,0,0"/>
-                                        
-                                        <Label Text="{Binding OrderDateTime}" 
-                                               FontSize="12"
-                                               TextColor="#6B7280"
-                                               Grid.Row="1"
-                                               Grid.Column="1"
-                                               Margin="12,0,0,0"/>
-                                        
-                                        <Label Text="{Binding TotalAmount, StringFormat='£{0:F2}'}" 
-                                               FontSize="16"
-                                               FontAttributes="Bold"
-                                               TextColor="#10B981"
-                                               VerticalOptions="Center"
-                                               Grid.Row="0"
-                                               Grid.Column="2"
-                                               Grid.RowSpan="2"/>
-                                    </Grid>
-                                </Frame>
-                            </DataTemplate>
-                        </CollectionView.ItemTemplate>
-                    </CollectionView>
-                </ScrollView>
-
-                <Label x:Name="NoResultsLabel"
-                       Text="No orders found"
-                       FontSize="14"
-                       TextColor="#9CA3AF"
-                       HorizontalOptions="Center"
-                       IsVisible="False"/>
             </VerticalStackLayout>
 
             <!-- Action Buttons -->

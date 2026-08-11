@@ -15,7 +15,7 @@
                 Padding="28"
                 WidthRequest="520"
                 MaximumWidthRequest="560"
-                MaximumHeightRequest="560"
+                MaximumHeightRequest="{DynamicResource ResponsiveDialogBodyHeight}"
                 VerticalOptions="Center"
                 HorizontalOptions="Center">
             <Border.StrokeShape>

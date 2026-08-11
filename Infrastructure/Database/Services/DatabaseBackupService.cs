@@ -13,7 +13,7 @@ public sealed record DatabaseBackupFileInfo(string FilePath, string FileName, Da
 public sealed class DatabaseBackupMetadata
 {
     public string Product { get; set; } = "OrderWebPOS";
-    public string BackupFormat { get; set; } = "orderwebbackup-v1";
+    public string BackupFormat { get; set; } = "orderwebbackup-v2-aes256gcm";
     public string BackupType { get; set; } = "manual";
     public string AppVersion { get; set; } = AppInfo.Current.VersionString;
     public string DatabaseName { get; set; } = string.Empty;
@@ -28,8 +28,28 @@ public sealed class DatabaseBackupService : IDisposable
 {
     private const string LastBackupDateKey = "database_backup_last_date";
     private const string BackupExtension = ".orderwebbackup";
+    public const int ScheduledBackupIntervalDays = 3;
+    public const int RetainedBackupCount = 15;
+    private static readonly byte[] EncryptedBackupMagic = Encoding.ASCII.GetBytes("OWPBK2\r\n");
+    private const int BackupSaltSize = 16;
+    private const int BackupNonceSize = 12;
+    private const int BackupTagSize = 16;
+    private const int BackupKeySize = 32;
+    private const int BackupPbkdf2Iterations = 210_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private static readonly string[] RequiredTables = ["users", "orders", "order_items", "settings", "cloud_config"];
+    private static readonly string[] RequiredTables =
+    [
+        "users",
+        "orders",
+        "order_items",
+        "order_payments",
+        "FoodMenuCategories",
+        "FoodMenuItems",
+        "ReportSnapshots",
+        "ReportVatBreakdown",
+        "settings",
+        "cloud_config"
+    ];
     private readonly DatabaseService _databaseService;
     private readonly object _syncRoot = new();
     private Timer? _timer;
@@ -86,11 +106,23 @@ public sealed class DatabaseBackupService : IDisposable
             return new DatabaseBackupResult(false, "Database backups run on the mother terminal only.");
         }
 
-        var todayKey = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var lastBackupDate = Preferences.Default.Get(LastBackupDateKey, string.Empty);
-        if (string.Equals(lastBackupDate, todayKey, StringComparison.Ordinal))
+        var today = DateTime.Today;
+        var todayKey = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var lastBackupValue = Preferences.Default.Get(LastBackupDateKey, string.Empty);
+        if (DateTime.TryParseExact(
+                lastBackupValue,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var lastBackupDate)
+            && lastBackupDate.Date <= today
+            && (today - lastBackupDate.Date).TotalDays < ScheduledBackupIntervalDays)
         {
-            return new DatabaseBackupResult(true, "Daily database backup already completed today.", LastBackupPath);
+            var nextBackupDate = lastBackupDate.Date.AddDays(ScheduledBackupIntervalDays);
+            return new DatabaseBackupResult(
+                true,
+                $"Next scheduled full database backup is due {nextBackupDate:dd MMM yyyy}.",
+                LastBackupPath);
         }
 
         var result = await CreateBackupAsync("scheduled");
@@ -481,29 +513,52 @@ public sealed class DatabaseBackupService : IDisposable
 
     private static async Task WriteBackupPackageAsync(string filePath, byte[] sqlBytes, DatabaseBackupMetadata metadata)
     {
-        await using var fileStream = File.Create(filePath);
-        using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
-
-        var metadataEntry = archive.CreateEntry("metadata.json", CompressionLevel.Optimal);
-        await using (var stream = metadataEntry.Open())
-        await JsonSerializer.SerializeAsync(stream, metadata, JsonOptions);
-
-        var sqlEntry = archive.CreateEntry("backup.sql", CompressionLevel.Optimal);
-        await using (var stream = sqlEntry.Open())
+        byte[] packageBytes;
+        await using (var packageStream = new MemoryStream())
         {
-            await stream.WriteAsync(sqlBytes);
+            using (var archive = new ZipArchive(packageStream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var metadataEntry = archive.CreateEntry("metadata.json", CompressionLevel.Optimal);
+                await using (var stream = metadataEntry.Open())
+                await JsonSerializer.SerializeAsync(stream, metadata, JsonOptions);
+
+                var sqlEntry = archive.CreateEntry("backup.sql", CompressionLevel.Optimal);
+                await using (var stream = sqlEntry.Open())
+                {
+                    await stream.WriteAsync(sqlBytes);
+                }
+
+                var checksumEntry = archive.CreateEntry("checksum.txt", CompressionLevel.Optimal);
+                await using var writer = new StreamWriter(checksumEntry.Open(), Encoding.UTF8);
+                await writer.WriteAsync(metadata.SqlSha256);
+            }
+
+            packageBytes = packageStream.ToArray();
         }
 
-        var checksumEntry = archive.CreateEntry("checksum.txt", CompressionLevel.Optimal);
-        await using (var writer = new StreamWriter(checksumEntry.Open(), Encoding.UTF8))
+        try
         {
-            await writer.WriteAsync(metadata.SqlSha256);
+            var encryptedBytes = EncryptBackupPackage(packageBytes);
+            try
+            {
+                await File.WriteAllBytesAsync(filePath, encryptedBytes);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(encryptedBytes);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(packageBytes);
         }
     }
 
     private static async Task<(DatabaseBackupMetadata Metadata, string Sql)> ReadBackupPackageAsync(string filePath)
     {
-        using var archive = ZipFile.OpenRead(filePath);
+        var packageBytes = await ReadDecryptedBackupPackageAsync(filePath);
+        using var packageStream = new MemoryStream(packageBytes, writable: false);
+        using var archive = new ZipArchive(packageStream, ZipArchiveMode.Read);
         var metadataEntry = archive.GetEntry("metadata.json") ?? throw new InvalidDataException("metadata.json is missing.");
         var sqlEntry = archive.GetEntry("backup.sql") ?? throw new InvalidDataException("backup.sql is missing.");
 
@@ -519,6 +574,7 @@ public sealed class DatabaseBackupService : IDisposable
             throw new InvalidDataException("Backup SQL is empty.");
         }
 
+        CryptographicOperations.ZeroMemory(packageBytes);
         return (metadata, sql);
     }
 
@@ -526,7 +582,9 @@ public sealed class DatabaseBackupService : IDisposable
     {
         try
         {
-            using var archive = ZipFile.OpenRead(filePath);
+            var packageBytes = await ReadDecryptedBackupPackageAsync(filePath);
+            using var packageStream = new MemoryStream(packageBytes, writable: false);
+            using var archive = new ZipArchive(packageStream, ZipArchiveMode.Read);
             var metadataEntry = archive.GetEntry("metadata.json");
             if (metadataEntry == null)
             {
@@ -534,11 +592,117 @@ public sealed class DatabaseBackupService : IDisposable
             }
 
             await using var stream = metadataEntry.Open();
-            return await JsonSerializer.DeserializeAsync<DatabaseBackupMetadata>(stream);
+            var metadata = await JsonSerializer.DeserializeAsync<DatabaseBackupMetadata>(stream);
+            CryptographicOperations.ZeroMemory(packageBytes);
+            return metadata;
         }
         catch
         {
             return null;
+        }
+    }
+
+    private static byte[] EncryptBackupPackage(byte[] packageBytes)
+    {
+        var password = TerminalConfigurationService.GetConfiguration().DatabasePassword;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("The protected database credential is unavailable; an encrypted backup cannot be created.");
+        }
+
+        var salt = RandomNumberGenerator.GetBytes(BackupSaltSize);
+        var nonce = RandomNumberGenerator.GetBytes(BackupNonceSize);
+        var key = Rfc2898DeriveBytes.Pbkdf2(
+            password,
+            salt,
+            BackupPbkdf2Iterations,
+            HashAlgorithmName.SHA256,
+            BackupKeySize);
+        var ciphertext = new byte[packageBytes.Length];
+        var tag = new byte[BackupTagSize];
+
+        try
+        {
+            using var aes = new AesGcm(key, BackupTagSize);
+            aes.Encrypt(nonce, packageBytes, ciphertext, tag, EncryptedBackupMagic);
+
+            var output = new byte[EncryptedBackupMagic.Length + salt.Length + nonce.Length + tag.Length + ciphertext.Length];
+            var offset = 0;
+            EncryptedBackupMagic.CopyTo(output, offset);
+            offset += EncryptedBackupMagic.Length;
+            salt.CopyTo(output, offset);
+            offset += salt.Length;
+            nonce.CopyTo(output, offset);
+            offset += nonce.Length;
+            tag.CopyTo(output, offset);
+            offset += tag.Length;
+            ciphertext.CopyTo(output, offset);
+            return output;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(ciphertext);
+            CryptographicOperations.ZeroMemory(tag);
+        }
+    }
+
+    private static async Task<byte[]> ReadDecryptedBackupPackageAsync(string filePath)
+    {
+        var fileBytes = await File.ReadAllBytesAsync(filePath);
+        if (!fileBytes.AsSpan().StartsWith(EncryptedBackupMagic))
+        {
+            // Legacy v1 ZIP backups remain readable so existing recovery media is not lost.
+            return fileBytes;
+        }
+
+        var minimumLength = EncryptedBackupMagic.Length + BackupSaltSize + BackupNonceSize + BackupTagSize + 1;
+        if (fileBytes.Length < minimumLength)
+        {
+            throw new InvalidDataException("Encrypted backup file is incomplete.");
+        }
+
+        var password = TerminalConfigurationService.GetConfiguration().DatabasePassword;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("The protected database credential is unavailable; this backup cannot be decrypted.");
+        }
+
+        var offset = EncryptedBackupMagic.Length;
+        var salt = fileBytes.AsSpan(offset, BackupSaltSize).ToArray();
+        offset += BackupSaltSize;
+        var nonce = fileBytes.AsSpan(offset, BackupNonceSize).ToArray();
+        offset += BackupNonceSize;
+        var tag = fileBytes.AsSpan(offset, BackupTagSize).ToArray();
+        offset += BackupTagSize;
+        var ciphertext = fileBytes.AsSpan(offset).ToArray();
+        var plaintext = new byte[ciphertext.Length];
+        var key = Rfc2898DeriveBytes.Pbkdf2(
+            password,
+            salt,
+            BackupPbkdf2Iterations,
+            HashAlgorithmName.SHA256,
+            BackupKeySize);
+
+        try
+        {
+            using var aes = new AesGcm(key, BackupTagSize);
+            aes.Decrypt(nonce, ciphertext, tag, plaintext, EncryptedBackupMagic);
+            return plaintext;
+        }
+        catch (CryptographicException ex)
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            throw new InvalidDataException(
+                "Backup authentication failed. The file is damaged or was encrypted with different database credentials.",
+                ex);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(fileBytes);
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(ciphertext);
+            CryptographicOperations.ZeroMemory(tag);
         }
     }
 
@@ -634,7 +798,7 @@ public sealed class DatabaseBackupService : IDisposable
         var files = Directory.GetFiles(backupFolder, $"*{BackupExtension}")
             .Select(path => new FileInfo(path))
             .OrderByDescending(file => file.CreationTimeUtc)
-            .Skip(30);
+            .Skip(RetainedBackupCount);
 
         foreach (var file in files)
         {

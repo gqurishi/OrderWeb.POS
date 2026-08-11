@@ -752,6 +752,7 @@ namespace POS_in_NET.Services
             }
             catch (Exception ex)
             {
+                AppDiagnostics.Log($"[TableSession] Failed to link order {orderId} to session {sessionId}: {ex}");
                 return (false, $"Error linking order to session: {ex.Message}");
             }
         }
@@ -1323,6 +1324,16 @@ namespace POS_in_NET.Services
 
         private async Task EnsureSessionOrchestrationSchemaAsync(MySqlConnection connection)
         {
+            // This is data normalization, not schema management. Keep it running in
+            // production so sessions left behind by an interrupted/abandoned table
+            // order cannot be reused several days later.
+            if (!_sessionSchemaMaintenanceChecked)
+            {
+                await NormalizeTerminalSessionsAndTableStateAsync(connection);
+                _sessionSchemaMaintenanceChecked = true;
+            }
+
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             try
             {
                 var createEventsTable = @"
@@ -1386,12 +1397,7 @@ namespace POS_in_NET.Services
                 {
                 }
 
-                if (!_sessionSchemaMaintenanceChecked)
-                {
-                    await RemoveLegacyUniqueActiveSessionConstraintAsync(connection);
-                    await NormalizeTerminalSessionsAndTableStateAsync(connection);
-                    _sessionSchemaMaintenanceChecked = true;
-                }
+                await RemoveLegacyUniqueActiveSessionConstraintAsync(connection);
 
                 await EnsureTableSessionStatusTriggerAsync(connection);
             }
@@ -1469,6 +1475,58 @@ namespace POS_in_NET.Services
                       )", connection))
                 {
                     await closeTerminalSessions.ExecuteNonQueryAsync();
+                }
+
+                // If a new order was linked to an abandoned session from a previous
+                // day, its elapsed time must start with the new order, not the old
+                // session. A 24-hour gap is well outside a normal seated-to-order
+                // delay while avoiding changes to legitimate same-day sessions.
+                using (var rebaseReusedSessions = new MySqlCommand(@"
+                    UPDATE TableSessions s
+                    INNER JOIN (
+                        SELECT o.table_session_id, MIN(o.created_at) AS FirstOpenOrderAt
+                        FROM orders o
+                        WHERE o.table_session_id IS NOT NULL
+                          AND COALESCE(o.source_channel, 'local') = 'local'
+                          AND COALESCE(LOWER(o.order_type), 'table') = 'table'
+                          AND COALESCE(o.is_open, TRUE) = TRUE
+                          AND COALESCE(LOWER(o.local_lifecycle_state), 'active') NOT IN ('paid', 'voided')
+                        GROUP BY o.table_session_id
+                    ) active_order ON active_order.table_session_id = s.Id
+                    SET s.StartTime = active_order.FirstOpenOrderAt,
+                        s.UpdatedDate = CURRENT_TIMESTAMP
+                    WHERE s.IsActive = TRUE
+                      AND s.Status <> 'Closed'
+                      AND s.StartTime < DATE_SUB(active_order.FirstOpenOrderAt, INTERVAL 24 HOUR)", connection))
+                {
+                    await rebaseReusedSessions.ExecuteNonQueryAsync();
+                }
+
+                // An active session with no open order can be left behind when the
+                // order screen is abandoned before any item is saved. Do not allow
+                // those orphaned rows to occupy a table indefinitely.
+                using (var closeStaleOrphanSessions = new MySqlCommand(@"
+                    UPDATE TableSessions s
+                    SET s.Status = 'Closed',
+                        s.EndTime = COALESCE(s.EndTime, CURRENT_TIMESTAMP),
+                        s.ActualDuration = COALESCE(s.ActualDuration, TIMESTAMPDIFF(MINUTE, s.StartTime, CURRENT_TIMESTAMP)),
+                        s.CurrentOrderId = NULL,
+                        s.IsActive = FALSE,
+                        s.UpdatedDate = CURRENT_TIMESTAMP
+                    WHERE s.IsActive = TRUE
+                      AND s.Status <> 'Closed'
+                      AND s.StartTime < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 24 HOUR)
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM orders o
+                          WHERE o.table_session_id = s.Id
+                            AND COALESCE(o.source_channel, 'local') = 'local'
+                            AND COALESCE(LOWER(o.order_type), 'table') = 'table'
+                            AND COALESCE(o.is_open, TRUE) = TRUE
+                            AND COALESCE(LOWER(o.local_lifecycle_state), 'active') NOT IN ('paid', 'voided')
+                      )", connection))
+                {
+                    await closeStaleOrphanSessions.ExecuteNonQueryAsync();
                 }
 
                 using (var syncAvailableTables = new MySqlCommand(@"

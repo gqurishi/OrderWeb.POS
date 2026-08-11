@@ -163,6 +163,7 @@ public sealed class ReportGenerationService
 
     private static async Task EnsureOrderItemReportColumnsAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         await using var command = new MySqlCommand(@"
             ALTER TABLE order_items
             ADD COLUMN IF NOT EXISTS variant_id VARCHAR(100) NULL,

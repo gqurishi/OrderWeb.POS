@@ -31,7 +31,7 @@ public partial class StaffAttendancePage : ContentPage
         if (!_roleAccessService.IsAdmin(_authService.CurrentUser?.Role))
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can view Staff Clock.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             return;
         }
 

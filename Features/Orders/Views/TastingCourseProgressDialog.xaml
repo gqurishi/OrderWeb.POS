@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Views.TastingCourseProgressDialog"
+             BackgroundColor="{StaticResource DialogOverlayColor}"
+             HorizontalOptions="Fill"
+             VerticalOptions="Fill">
+    <Grid Padding="16,12">
+        <Border x:Name="DialogCard"
+                StyleId="DialogCard"
+                BackgroundColor="White"
+                Stroke="{StaticResource DialogShellStrokeColor}"
+                StrokeThickness="1"
+                Padding="20"
+                MaximumWidthRequest="720"
+                MaximumHeightRequest="720"
+                HorizontalOptions="Fill"
+                VerticalOptions="Center">
+            <Border.StrokeShape><RoundRectangle CornerRadius="22" /></Border.StrokeShape>
+            <Border.Shadow><Shadow Brush="#0F172A" Opacity="0.18" Radius="22" Offset="0,8" /></Border.Shadow>
+
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="14">
+                <Grid ColumnDefinitions="58,*" ColumnSpacing="14">
+                    <Border WidthRequest="58" HeightRequest="58" BackgroundColor="#0EA5E9" StrokeThickness="0">
+                        <Border.StrokeShape><RoundRectangle CornerRadius="29" /></Border.StrokeShape>
+                        <Label Text="T" FontSize="26" FontAttributes="Bold" TextColor="White"
+                               HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
+                    <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                        <Label Text="Tasting Menu Courses" FontSize="23" FontFamily="OpenSansSemibold" TextColor="#0F172A" />
+                        <Label x:Name="PackageLabel" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#0369A1" />
+                        <Label Text="Fire only the course that the kitchen should prepare now."
+                               FontSize="12" TextColor="#64748B" />
+                    </VerticalStackLayout>
+                </Grid>
+
+                <CollectionView x:Name="CoursesList" Grid.Row="1" SelectionMode="None" VerticalScrollBarVisibility="Always">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="#F8FAFC" Stroke="#DCE5F0" StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 14" Padding="14" Margin="0,0,0,10">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                    <Border WidthRequest="42" HeightRequest="42" BackgroundColor="{Binding NumberBackground}" StrokeThickness="0">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="12" /></Border.StrokeShape>
+                                        <Label Text="{Binding CourseNumber}" FontSize="16" FontAttributes="Bold"
+                                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                                        <Label Text="{Binding CourseName}" FontSize="16" FontFamily="OpenSansSemibold" TextColor="#0F172A" />
+                                        <Label Text="{Binding PairingDisplay}" IsVisible="{Binding HasPairing}"
+                                               FontSize="12" TextColor="#7E22CE" />
+                                        <Label Text="{Binding StatusDisplay}" FontSize="11" FontFamily="OpenSansSemibold" TextColor="{Binding StatusColor}" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="2" Text="{Binding ActionText}" CommandParameter="{Binding Course}"
+                                            IsEnabled="{Binding CanFire}" Clicked="OnFireClicked"
+                                            BackgroundColor="{Binding ActionColor}" TextColor="White"
+                                            FontFamily="OpenSansSemibold" CornerRadius="10" HeightRequest="46" Padding="16,0" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Button Grid.Row="2" Text="Close" Clicked="OnCloseClicked"
+                        BackgroundColor="#E2E8F0" TextColor="#334155"
+                        FontFamily="OpenSansSemibold" HeightRequest="48" CornerRadius="12" />
+            </Grid>
+        </Border>
+    </Grid>
+</ContentView>

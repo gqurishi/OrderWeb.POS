@@ -21,8 +21,17 @@ namespace POS_in_NET.Models
         private DateTime _startTime;
         private decimal _subtotal;
         private decimal _serviceCharge;
-        private decimal _fixedServiceCharge;
+        private decimal _serviceChargeBasis;
         private decimal _serviceChargePercent;
+        private TableServiceChargeStatus _serviceChargeStatus = TableServiceChargeStatus.NotConfigured;
+        private ServiceChargeClassification? _serviceChargeClassification;
+        private string? _serviceChargeRemovalReason;
+        private int? _serviceChargeRemovedByUserId;
+        private string? _serviceChargeRemovedByName;
+        private int? _serviceChargeApprovedByUserId;
+        private string? _serviceChargeApprovedByName;
+        private DateTime? _serviceChargeRemovedAt;
+        private decimal _deliveryFee;
         private decimal _discount;
         private decimal _discountPercent;
         private string? _discountReason;
@@ -100,24 +109,19 @@ namespace POS_in_NET.Models
         public decimal Subtotal
         {
             get => _subtotal;
-            set { _subtotal = value; OnPropertyChanged(); CalculateTotal(); }
+            set { _subtotal = value; OnPropertyChanged(); CalculateServiceCharge(); }
         }
 
         public decimal ServiceCharge
         {
             get => _serviceCharge;
-            set { _serviceCharge = value; OnPropertyChanged(); }
+            private set { _serviceCharge = value; OnPropertyChanged(); }
         }
 
-        public decimal FixedServiceCharge
+        public decimal ServiceChargeBasis
         {
-            get => _fixedServiceCharge;
-            set
-            {
-                _fixedServiceCharge = value;
-                OnPropertyChanged();
-                CalculateServiceCharge();
-            }
+            get => _serviceChargeBasis;
+            private set { _serviceChargeBasis = value; OnPropertyChanged(); }
         }
 
         public decimal ServiceChargePercent
@@ -131,10 +135,44 @@ namespace POS_in_NET.Models
             }
         }
 
+        public TableServiceChargeStatus ServiceChargeStatus
+        {
+            get => _serviceChargeStatus;
+            set { _serviceChargeStatus = value; OnPropertyChanged(); CalculateServiceCharge(); }
+        }
+
+        public ServiceChargeClassification? ServiceChargeClassification
+        {
+            get => _serviceChargeClassification;
+            set { _serviceChargeClassification = value; OnPropertyChanged(); }
+        }
+
+        public string? ServiceChargeRemovalReason { get => _serviceChargeRemovalReason; set { _serviceChargeRemovalReason = value; OnPropertyChanged(); } }
+        public int? ServiceChargeRemovedByUserId { get => _serviceChargeRemovedByUserId; set { _serviceChargeRemovedByUserId = value; OnPropertyChanged(); } }
+        public string? ServiceChargeRemovedByName { get => _serviceChargeRemovedByName; set { _serviceChargeRemovedByName = value; OnPropertyChanged(); } }
+        public int? ServiceChargeApprovedByUserId { get => _serviceChargeApprovedByUserId; set { _serviceChargeApprovedByUserId = value; OnPropertyChanged(); } }
+        public string? ServiceChargeApprovedByName { get => _serviceChargeApprovedByName; set { _serviceChargeApprovedByName = value; OnPropertyChanged(); } }
+        public DateTime? ServiceChargeRemovedAt { get => _serviceChargeRemovedAt; set { _serviceChargeRemovedAt = value; OnPropertyChanged(); } }
+
+        /// <summary>
+        /// Delivery is a separate order charge and is never used as the basis
+        /// for a table service-charge calculation.
+        /// </summary>
+        public decimal DeliveryFee
+        {
+            get => _deliveryFee;
+            set
+            {
+                _deliveryFee = Math.Max(0m, value);
+                OnPropertyChanged();
+                CalculateTotal();
+            }
+        }
+
         public decimal Discount
         {
             get => _discount;
-            set { _discount = value; OnPropertyChanged(); CalculateTotal(); }
+            set { _discount = value; OnPropertyChanged(); CalculateServiceCharge(); }
         }
 
         public decimal DiscountPercent
@@ -218,7 +256,7 @@ namespace POS_in_NET.Models
             {
                 _orderMode = string.IsNullOrWhiteSpace(value) ? "dine_in" : value;
                 OnPropertyChanged();
-                CalculateTotal();
+                CalculateServiceCharge();
             }
         }
 
@@ -238,6 +276,19 @@ namespace POS_in_NET.Models
 
         // Payment tracking
         public ObservableCollection<TableOrderPayment> Payments { get; set; } = new();
+        public string? DeclaredPaymentMethod { get; set; }
+        public string? DeclaredPaymentStatus { get; set; }
+        public decimal? DeclaredAmountPaid { get; set; }
+        public string? DeclaredPaymentProvider { get; set; }
+        public string? DeclaredPaymentReference { get; set; }
+        public string? DeclaredVoucherCode { get; set; }
+        public string? DeclaredPromoCode { get; set; }
+        public string? DeclaredGiftCardNumberMasked { get; set; }
+        public decimal? DeclaredGiftCardRemainingBalance { get; set; }
+        public int DeclaredLoyaltyPointsEarned { get; set; }
+        public int DeclaredLoyaltyPointsRedeemed { get; set; }
+        public decimal DeclaredLoyaltyPointsDiscount { get; set; }
+        public int? DeclaredLoyaltyBalanceAfter { get; set; }
         
         public decimal TotalPaid => Payments.Sum(p => p.Amount);
         public decimal RemainingBalance => Total - TotalPaid;
@@ -256,18 +307,15 @@ namespace POS_in_NET.Models
 
         public void CalculateServiceCharge()
         {
-            if (FixedServiceCharge > 0)
-            {
-                ServiceCharge = FixedServiceCharge;
-            }
-            else if (ServiceChargePercent > 0)
-            {
-                ServiceCharge = Math.Round(Subtotal * (ServiceChargePercent / 100), 2);
-            }
-            else
-            {
-                ServiceCharge = 0;
-            }
+            var calculation = TableServiceChargeCalculator.Calculate(
+                OrderMode,
+                Subtotal,
+                Discount,
+                ServiceChargePercent,
+                ServiceChargeStatus == TableServiceChargeStatus.Applied);
+
+            ServiceChargeBasis = calculation.ChargeBasis;
+            ServiceCharge = calculation.ServiceCharge;
             CalculateTotal();
         }
 
@@ -276,8 +324,15 @@ namespace POS_in_NET.Models
             // VAT is extracted from VAT-inclusive item prices for reporting only.
             VAT = Math.Round(Items.Sum(i => i.VatAmount), 2);
 
-            // Customer total stays VAT-inclusive; VAT must not be added on top.
-            Total = Subtotal + ServiceCharge - Discount;
+            // The calculator total is the discounted item basis plus table service
+            // charge. Delivery is added separately and is never charged itself.
+            var calculation = TableServiceChargeCalculator.Calculate(
+                OrderMode,
+                Subtotal,
+                Discount,
+                ServiceChargePercent,
+                ServiceChargeStatus == TableServiceChargeStatus.Applied);
+            Total = calculation.OrderTotal + DeliveryFee;
             OnPropertyChanged(nameof(Total));
             OnPropertyChanged(nameof(VAT));
             OnPropertyChanged(nameof(PerPersonAmount));
@@ -287,8 +342,6 @@ namespace POS_in_NET.Models
         public void RecalculateAll()
         {
             CalculateSubtotal();
-            CalculateServiceCharge();
-            CalculateTotal();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -323,9 +376,12 @@ namespace POS_in_NET.Models
         private int _quantity = 1;
         private string? _notes;
         private string? _printGroupId;
+        private bool _printInRed;
         private string? _modifiers;
         private ItemSendStatus _sendStatus = ItemSendStatus.NotSent;
         private string? _courseType;
+        private DateTime? _firedAt;
+        private string? _firedBy;
         private DateTime _createdAt;
         private DateTime? _sentAt;
         private string? _voidReason;
@@ -455,6 +511,12 @@ namespace POS_in_NET.Models
             set { _printGroupId = string.IsNullOrWhiteSpace(value) ? null : value; OnPropertyChanged(); }
         }
 
+        public bool PrintInRed
+        {
+            get => _printInRed;
+            set { _printInRed = value; OnPropertyChanged(); }
+        }
+
         public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
 
         public string? Modifiers
@@ -493,6 +555,20 @@ namespace POS_in_NET.Models
             get => _courseType;
             set { _courseType = value; OnPropertyChanged(); }
         }
+
+        public DateTime? FiredAt
+        {
+            get => _firedAt;
+            set { _firedAt = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsCourseFired)); }
+        }
+
+        public string? FiredBy
+        {
+            get => _firedBy;
+            set { _firedBy = value; OnPropertyChanged(); }
+        }
+
+        public bool IsCourseFired => FiredAt.HasValue;
 
         public DateTime CreatedAt
         {
@@ -592,6 +668,7 @@ namespace POS_in_NET.Models
         private decimal _amount;
         private decimal _amountReceived;
         private decimal _change;
+        private decimal _tipAmount;
         private string? _reference;
         private string? _giftCardNumber;
         private DateTime _createdAt;
@@ -631,6 +708,12 @@ namespace POS_in_NET.Models
         {
             get => _change;
             set { _change = value; OnPropertyChanged(); }
+        }
+
+        public decimal TipAmount
+        {
+            get => _tipAmount;
+            set { _tipAmount = value; OnPropertyChanged(); }
         }
 
         public string? Reference

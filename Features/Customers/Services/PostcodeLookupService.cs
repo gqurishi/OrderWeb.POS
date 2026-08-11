@@ -158,6 +158,7 @@ public class PostcodeLookupService
 
     public async Task EnsureSettingsTableAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
 

@@ -27,8 +27,8 @@ namespace POS_in_NET.Pages
             
             _tables = new ObservableCollection<RestaurantTable>();
             TablesCollectionView.ItemsSource = _tables;
-            _tableService = new RestaurantTableService();
-            _floorService = new FloorService();
+            _tableService = ServiceHelper.GetService<RestaurantTableService>() ?? new RestaurantTableService();
+            _floorService = ServiceHelper.GetService<FloorService>() ?? new FloorService();
         }
 
         protected override void OnAppearing()
@@ -51,7 +51,6 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested += OnRefreshRequested;
             AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
@@ -63,14 +62,8 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
             AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
-        }
-
-        private async void OnRefreshRequested(object? sender, EventArgs e)
-        {
-            await RefreshTablesIfReadyAsync();
         }
 
         private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
@@ -134,12 +127,8 @@ namespace POS_in_NET.Pages
                 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    _tables.Clear();
-                    foreach (var table in tables)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    Adding table: {table.TableNumber} on {table.FloorName}");
-                        _tables.Add(table);
-                    }
+                    _tables = new ObservableCollection<RestaurantTable>(tables);
+                    TablesCollectionView.ItemsSource = _tables;
                 });
 
                 System.Diagnostics.Debug.WriteLine($" LoadTablesAsync COMPLETE - {_tables.Count} tables displayed in UI");
@@ -178,7 +167,7 @@ namespace POS_in_NET.Pages
             try
             {
                 System.Diagnostics.Debug.WriteLine(" Navigating to Floor Management...");
-                await Shell.Current.GoToAsync("//floor");
+                await NavigationCoordinator.Shared.NavigateShellAsync("floor", source: sender as VisualElement);
                 System.Diagnostics.Debug.WriteLine(" Navigation successful");
             }
             catch (Exception ex)

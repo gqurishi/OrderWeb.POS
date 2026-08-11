@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls.Shapes;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System.Linq;
 
 namespace POS_in_NET.Views;
@@ -13,10 +14,12 @@ public partial class MealDealPickerDialog : ContentView
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Border> _choiceBorders = new(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource<List<string>?>? _taskCompletionSource;
+    private Grid? _parentGrid;
 
     public MealDealPickerDialog(MealDeal deal)
     {
         InitializeComponent();
+        TabletLayoutHelper.AttachDialog(this, DialogCard, 720, 760);
         _deal = deal;
         TitleLabel.Text = deal.Name;
         SubtitleLabel.Text = string.IsNullOrWhiteSpace(deal.Description)
@@ -28,7 +31,7 @@ public partial class MealDealPickerDialog : ContentView
 
     public Task<List<string>?> ShowAsync(Page hostPage)
     {
-        _taskCompletionSource = new TaskCompletionSource<List<string>?>();
+        _taskCompletionSource = new TaskCompletionSource<List<string>?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         if (hostPage is ContentPage contentPage)
         {
@@ -46,10 +49,13 @@ public partial class MealDealPickerDialog : ContentView
     {
         HorizontalOptions = LayoutOptions.Fill;
         VerticalOptions = LayoutOptions.Fill;
-        ZIndex = 1000;
+        ZIndex = 5000;
 
         if (page.Content is Grid grid)
         {
+            _parentGrid = grid;
+            Grid.SetRow(this, 0);
+            Grid.SetColumn(this, 0);
             if (grid.RowDefinitions.Count > 0)
             {
                 Grid.SetRowSpan(this, grid.RowDefinitions.Count);
@@ -74,6 +80,7 @@ public partial class MealDealPickerDialog : ContentView
 
         wrapper.Children.Add(this);
         page.Content = wrapper;
+        _parentGrid = wrapper;
     }
 
     private void BuildChoiceButtons()
@@ -149,10 +156,8 @@ public partial class MealDealPickerDialog : ContentView
 
     private void Close(List<string>? result)
     {
-        if (Parent is Grid grid)
-        {
-            grid.Children.Remove(this);
-        }
+        _parentGrid?.Children.Remove(this);
+        _parentGrid = null;
 
         _taskCompletionSource?.TrySetResult(result);
     }

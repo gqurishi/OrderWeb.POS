@@ -518,6 +518,7 @@ namespace POS_in_NET.Services
 
         private async Task EnsureBackgroundImageColumnExistsAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             if (await CheckBackgroundColumnExistsAsync(connection))
             {
                 return;
@@ -538,6 +539,7 @@ namespace POS_in_NET.Services
 
         private static async Task EnsureFloorBackgroundImagesTableAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             const string createSql = @"
                 CREATE TABLE IF NOT EXISTS FloorBackgroundImages (
                     FloorId INT PRIMARY KEY,
@@ -618,6 +620,7 @@ namespace POS_in_NET.Services
 
         private async Task EnsureFloorSchemaCompatibilityAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             await EnsureFloorTablesExistAsync(connection);
 
             try
@@ -643,6 +646,7 @@ namespace POS_in_NET.Services
 
         private static async Task EnsureFloorTablesExistAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             const string createFloorsSql = @"
                 CREATE TABLE IF NOT EXISTS Floors (
                     Id INT AUTO_INCREMENT PRIMARY KEY,

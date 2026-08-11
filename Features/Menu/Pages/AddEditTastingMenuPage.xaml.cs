@@ -1,4 +1,5 @@
 using MyFirstMauiApp.Models.FoodMenu;
+using MyFirstMauiApp.Models;
 using MyFirstMauiApp.Services;
 using POS_in_NET.Services;
 
@@ -6,21 +7,37 @@ namespace POS_in_NET.Pages;
 
 public partial class AddEditTastingMenuPage : ContentPage
 {
+    private const int MaximumCourseCount = 100;
+
+    private static readonly string[] VatOptions =
+    {
+        "Hot Food (20%)",
+        "Cold Food (0%)",
+        "Hot Beverage (20%)",
+        "Cold Beverage (0%)",
+        "Alcohol (20%)",
+        "No VAT (0%)"
+    };
+
     private readonly TastingMenuService _service = new();
-    private readonly List<OptionRow> _optionRows = new();
+    private readonly PrintGroupService _printGroupService = new();
     private readonly List<CourseRow> _courseRows = new();
     private readonly TastingMenu? _editingMenu;
+    private string _packageOptionId = Guid.NewGuid().ToString();
+    private string _menuColor = "#0EA5E9";
+    private string? _savedFoodPrintGroupId;
+    private string? _savedWinePrintGroupId;
+    private bool _printerGroupsLoaded;
 
     public AddEditTastingMenuPage()
     {
         InitializeComponent();
-        AddOptionRow(new TastingMenuOption { Name = "4 Course Without Wine", CourseCount = 4, Price = 0, SortOrder = 0 });
-        AddOptionRow(new TastingMenuOption { Name = "4 Course With Wine", CourseCount = 4, IncludesWine = true, Price = 0, SortOrder = 1 });
-        AddOptionRow(new TastingMenuOption { Name = "5 Course Without Wine", CourseCount = 5, Price = 0, SortOrder = 2 });
-        AddOptionRow(new TastingMenuOption { Name = "5 Course With Wine", CourseCount = 5, IncludesWine = true, Price = 0, SortOrder = 3 });
-        AddCourseRow(new TastingMenuCourse { Name = "Starter", CourseNumber = 1 });
-        AddCourseRow(new TastingMenuCourse { Name = "Main", CourseNumber = 2 });
-        AddCourseRow(new TastingMenuCourse { Name = "Dessert", CourseNumber = 3 });
+        VatCategoryPicker.ItemsSource = VatOptions;
+        VatCategoryPicker.SelectedIndex = 0;
+        CourseCountEntry.Text = "4";
+
+        LoadCourseRows(Array.Empty<TastingMenuCourse>(), 4);
+        RefreshCourseRows();
     }
 
     public AddEditTastingMenuPage(TastingMenu menu) : this()
@@ -28,69 +45,133 @@ public partial class AddEditTastingMenuPage : ContentPage
         _editingMenu = menu;
         PageTitle.Text = "Edit Tasting Menu";
         SaveButton.Text = "Update";
-
         NameEntry.Text = menu.Name;
-        DescriptionEditor.Text = menu.Description;
-        ColorEntry.Text = menu.Color;
-        VatCategoryEntry.Text = menu.VatCategory;
         ActiveSwitch.IsToggled = menu.Active;
-        ManualCallSwitch.IsToggled = menu.ManualCourseCalling;
+        _menuColor = string.IsNullOrWhiteSpace(menu.Color) ? "#0EA5E9" : menu.Color;
+        _savedFoodPrintGroupId = menu.FoodPrintGroupId;
+        _savedWinePrintGroupId = menu.WinePrintGroupId;
 
-        _optionRows.Clear();
-        OptionsContainer.Children.Clear();
-        foreach (var option in menu.Options.OrderBy(o => o.SortOrder))
+        var option = menu.Options.OrderBy(candidate => candidate.SortOrder).FirstOrDefault();
+        if (option != null)
         {
-            AddOptionRow(option);
+            _packageOptionId = string.IsNullOrWhiteSpace(option.Id) ? Guid.NewGuid().ToString() : option.Id;
+            PriceEntry.Text = option.Price.ToString("0.00");
+            CourseCountEntry.Text = Math.Max(1, option.CourseCount).ToString();
+            IncludesWineSwitch.IsToggled = option.IncludesWine;
         }
 
+        VatCategoryPicker.SelectedIndex = GetVatIndex(menu.VatCategory);
+        var savedCourseCount = option?.CourseCount > 0
+            ? option.CourseCount
+            : Math.Max(1, menu.Courses.Count);
+        CourseCountEntry.Text = savedCourseCount.ToString();
+        LoadCourseRows(menu.Courses, savedCourseCount);
+        RefreshCourseRows();
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        if (_printerGroupsLoaded)
+        {
+            return;
+        }
+
+        _printerGroupsLoaded = true;
+        try
+        {
+            var groups = (await _printGroupService.GetAllPrintGroupsAsync())
+                .Where(group => group.IsActive
+                    || string.Equals(group.Id, _savedFoodPrintGroupId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(group.Id, _savedWinePrintGroupId, StringComparison.OrdinalIgnoreCase))
+                .Where(group => !string.Equals(group.PrinterType, "label", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(group => group.DisplayOrder)
+                .ThenBy(group => group.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            FoodPrintGroupPicker.ItemsSource = BuildPrintGroupChoices("Automatic Kitchen", groups);
+            WinePrintGroupPicker.ItemsSource = BuildPrintGroupChoices("Automatic Bar", groups);
+            SelectPrintGroup(FoodPrintGroupPicker, _savedFoodPrintGroupId);
+            SelectPrintGroup(WinePrintGroupPicker, _savedWinePrintGroupId);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unable to load tasting-menu print groups: {ex.Message}");
+            FoodPrintGroupPicker.ItemsSource = BuildPrintGroupChoices("Automatic Kitchen", Array.Empty<PrintGroup>());
+            WinePrintGroupPicker.ItemsSource = BuildPrintGroupChoices("Automatic Bar", Array.Empty<PrintGroup>());
+            FoodPrintGroupPicker.SelectedIndex = 0;
+            WinePrintGroupPicker.SelectedIndex = 0;
+        }
+    }
+
+    private void LoadCourseRows(IEnumerable<TastingMenuCourse> existingCourses, int requestedCount)
+    {
         _courseRows.Clear();
         CoursesContainer.Children.Clear();
-        foreach (var course in menu.Courses.OrderBy(c => c.CourseNumber))
+        var existing = existingCourses
+            .OrderBy(course => course.CourseNumber)
+            .ToList();
+        var rowCount = Math.Max(requestedCount, existing.Count);
+        for (var number = 1; number <= rowCount; number++)
         {
-            AddCourseRow(course);
+            var course = existing.FirstOrDefault(candidate => candidate.CourseNumber == number)
+                ?? existing.ElementAtOrDefault(number - 1)
+                ?? new TastingMenuCourse { CourseNumber = number };
+            var row = new CourseRow(number, course);
+            _courseRows.Add(row);
+            CoursesContainer.Children.Add(row.Root);
         }
     }
 
-    private void OnAddOptionClicked(object sender, EventArgs e)
+    private int SelectedCourseCount =>
+        int.TryParse(CourseCountEntry.Text?.Trim(), out var count) && count > 0 && count <= MaximumCourseCount
+            ? count
+            : 0;
+
+    private void OnCourseCountChanged(object sender, TextChangedEventArgs e)
     {
-        AddOptionRow(new TastingMenuOption { SortOrder = _optionRows.Count, CourseCount = 4 });
+        var courseCount = SelectedCourseCount;
+        if (courseCount > 0)
+        {
+            EnsureCourseRows(courseCount);
+        }
+
+        RefreshCourseRows();
     }
 
-    private void OnAddCourseClicked(object sender, EventArgs e)
+    private void OnWineToggled(object sender, ToggledEventArgs e) => RefreshCourseRows();
+
+    private void RefreshCourseRows()
     {
-        AddCourseRow(new TastingMenuCourse { CourseNumber = _courseRows.Count + 1 });
+        var courseCount = SelectedCourseCount;
+        var includesWine = IncludesWineSwitch.IsToggled;
+        WineRoutingField.IsVisible = includesWine;
+        for (var index = 0; index < _courseRows.Count; index++)
+        {
+            _courseRows[index].Root.IsVisible = index < courseCount;
+            _courseRows[index].SetWineEnabled(includesWine);
+        }
+
+        CoursesHelpLabel.Text = courseCount == 0
+            ? $"Enter a number from 1 to {MaximumCourseCount} to create the course fields."
+            : includesWine
+                ? $"Enter {courseCount} course names and the matching wine for each course."
+                : $"Enter the {courseCount} course names in the order they will be served.";
     }
 
-    private void AddOptionRow(TastingMenuOption option)
+    private void EnsureCourseRows(int courseCount)
     {
-        var row = new OptionRow(option, RemoveOptionRow);
-        _optionRows.Add(row);
-        OptionsContainer.Children.Add(row.Root);
+        while (_courseRows.Count < courseCount)
+        {
+            var number = _courseRows.Count + 1;
+            var row = new CourseRow(number, new TastingMenuCourse { CourseNumber = number });
+            _courseRows.Add(row);
+            CoursesContainer.Children.Add(row.Root);
+        }
     }
 
-    private void AddCourseRow(TastingMenuCourse course)
-    {
-        var row = new CourseRow(course, RemoveCourseRow);
-        _courseRows.Add(row);
-        CoursesContainer.Children.Add(row.Root);
-    }
-
-    private void RemoveOptionRow(OptionRow row)
-    {
-        _optionRows.Remove(row);
-        OptionsContainer.Children.Remove(row.Root);
-    }
-
-    private void RemoveCourseRow(CourseRow row)
-    {
-        _courseRows.Remove(row);
-        CoursesContainer.Children.Remove(row.Root);
-    }
-
-    private async void OnBackClicked(object sender, EventArgs e)
-    {
-        await Navigation.PopAsync();
-    }
+    private async void OnBackClicked(object sender, EventArgs e) =>
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
 
     private async void OnSaveClicked(object sender, EventArgs e)
     {
@@ -99,47 +180,85 @@ public partial class AddEditTastingMenuPage : ContentPage
             var name = NameEntry.Text?.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
-                await AppAlertService.ShowAlertAsync("Missing Name", "Enter a tasting menu name.");
+                await AppAlertService.ShowAlertAsync("Missing Name", "Enter a tasting-menu name, for example Non-Veg 4 Course.");
                 return;
             }
 
-            var options = _optionRows
-                .Select((row, index) => row.ToOption(index))
-                .Where(option => !string.IsNullOrWhiteSpace(option.Name))
-                .ToList();
-
-            if (options.Count == 0)
+            if (!decimal.TryParse(PriceEntry.Text, out var price) || price <= 0m)
             {
-                await AppAlertService.ShowAlertAsync("Missing Options", "Add at least one price option.");
+                await AppAlertService.ShowAlertAsync("Invalid Price", "Enter a package price above zero.");
                 return;
             }
 
+            var courseCount = SelectedCourseCount;
+            if (courseCount == 0)
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Invalid Course Count",
+                    $"Enter a number of courses from 1 to {MaximumCourseCount}.");
+                return;
+            }
+
+            EnsureCourseRows(courseCount);
+            var includesWine = IncludesWineSwitch.IsToggled;
+            var vatCategory = GetVatCategory(VatCategoryPicker.SelectedIndex);
             var courses = _courseRows
-                .Select((row, index) => row.ToCourse(index + 1))
-                .Where(course => !string.IsNullOrWhiteSpace(course.Name) && course.Choices.Count > 0)
+                .Take(courseCount)
+                .Select(row => row.ToCourse(vatCategory, includesWine))
                 .ToList();
 
-            if (courses.Count == 0)
+            if (courses.Any(course => string.IsNullOrWhiteSpace(course.Name)))
             {
-                await AppAlertService.ShowAlertAsync("Missing Courses", "Add at least one course with dish choices.");
+                await AppAlertService.ShowAlertAsync("Missing Course", $"Enter a name for all {courseCount} courses.");
                 return;
             }
 
-            var menu = _editingMenu ?? new TastingMenu { Id = Guid.NewGuid().ToString(), CreatedAt = DateTime.Now };
+            if (includesWine && courses.Any(course => string.IsNullOrWhiteSpace(course.WineName)))
+            {
+                await AppAlertService.ShowAlertAsync("Missing Wine", "Enter the wine name paired with every course.");
+                return;
+            }
+
+            SaveButton.IsEnabled = false;
+            SaveButton.Text = "Saving...";
+
+            var menu = _editingMenu ?? new TastingMenu
+            {
+                Id = Guid.NewGuid().ToString(),
+                CreatedAt = DateTime.Now
+            };
             menu.Name = name;
-            menu.Description = string.IsNullOrWhiteSpace(DescriptionEditor.Text) ? null : DescriptionEditor.Text.Trim();
-            menu.Color = string.IsNullOrWhiteSpace(ColorEntry.Text) ? "#0EA5E9" : ColorEntry.Text.Trim();
-            menu.VatCategory = string.IsNullOrWhiteSpace(VatCategoryEntry.Text) ? "HotFood" : VatCategoryEntry.Text.Trim();
+            menu.Description = null;
+            menu.Color = _menuColor;
+            menu.VatCategory = vatCategory;
             menu.Active = ActiveSwitch.IsToggled;
-            menu.ManualCourseCalling = ManualCallSwitch.IsToggled;
-            menu.Options = options;
+            menu.ManualCourseCalling = true;
+            menu.FoodPrintGroupId = _printerGroupsLoaded
+                ? GetSelectedPrintGroupId(FoodPrintGroupPicker)
+                : _savedFoodPrintGroupId;
+            menu.WinePrintGroupId = includesWine
+                ? _printerGroupsLoaded
+                    ? GetSelectedPrintGroupId(WinePrintGroupPicker)
+                    : _savedWinePrintGroupId
+                : null;
+            menu.Options = new List<TastingMenuOption>
+            {
+                new()
+                {
+                    Id = _packageOptionId,
+                    Name = name,
+                    Price = price,
+                    CourseCount = courseCount,
+                    IncludesWine = includesWine,
+                    SortOrder = 0
+                }
+            };
             menu.Courses = courses;
             menu.UpdatedAt = DateTime.Now;
 
             var saved = _editingMenu == null
                 ? await _service.CreateAsync(menu)
                 : await _service.UpdateAsync(menu);
-
             if (!saved)
             {
                 await AppAlertService.ShowAlertAsync("Save Failed", "Tasting menu was not saved.");
@@ -148,153 +267,140 @@ public partial class AddEditTastingMenuPage : ContentPage
 
             OrderPlacementPageSimple.InvalidateMenuCache();
             await AppAlertService.ShowAlertAsync("Success", "Tasting menu saved.");
-            await Navigation.PopAsync();
+            await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
         }
         catch (Exception ex)
         {
             await AppAlertService.ShowAlertAsync("Error", ex.Message);
         }
+        finally
+        {
+            SaveButton.IsEnabled = true;
+            SaveButton.Text = _editingMenu == null ? "Save" : "Update";
+        }
     }
 
-    private sealed class OptionRow
+    private static int GetVatIndex(string? vatCategory) => (vatCategory ?? string.Empty).Trim() switch
     {
-        public Grid Root { get; }
-        private readonly string _id;
-        private readonly Action<OptionRow> _onDelete;
-        private readonly Entry _name = new() { Placeholder = "Option name" };
-        private readonly Entry _price = new() { Placeholder = "Price", Keyboard = Keyboard.Numeric };
-        private readonly Entry _courseCount = new() { Placeholder = "Courses", Keyboard = Keyboard.Numeric };
-        private readonly Switch _wine = new();
+        "ColdFood" => 1,
+        "HotBeverage" => 2,
+        "ColdBeverage" => 3,
+        "Alcohol" => 4,
+        "NoVAT" => 5,
+        _ => 0
+    };
 
-        public OptionRow(TastingMenuOption option, Action<OptionRow> onDelete)
-        {
-            _id = string.IsNullOrWhiteSpace(option.Id) ? Guid.NewGuid().ToString() : option.Id;
-            _onDelete = onDelete;
-            _name.Text = option.Name;
-            _price.Text = option.Price.ToString("0.00");
-            _courseCount.Text = option.CourseCount <= 0 ? string.Empty : option.CourseCount.ToString();
-            _wine.IsToggled = option.IncludesWine;
+    private static string GetVatCategory(int selectedIndex) => selectedIndex switch
+    {
+        1 => "ColdFood",
+        2 => "HotBeverage",
+        3 => "ColdBeverage",
+        4 => "Alcohol",
+        5 => "NoVAT",
+        _ => "HotFood"
+    };
 
-            Root = new Grid
-            {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition { Width = GridLength.Star },
-                    new ColumnDefinition { Width = 120 },
-                    new ColumnDefinition { Width = 100 },
-                    new ColumnDefinition { Width = 120 },
-                    new ColumnDefinition { Width = 44 }
-                },
-                ColumnSpacing = 10,
-                Padding = new Thickness(10),
-                BackgroundColor = Colors.White
-            };
-
-            Root.Add(_name, 0, 0);
-            Root.Add(_price, 1, 0);
-            Root.Add(_courseCount, 2, 0);
-            Root.Add(new HorizontalStackLayout
-            {
-                Spacing = 6,
-                Children = { _wine, new Label { Text = "Wine", VerticalOptions = LayoutOptions.Center } }
-            }, 3, 0);
-            Root.Add(CreateDeleteButton(() => _onDelete(this)), 4, 0);
-        }
-
-        public TastingMenuOption ToOption(int index)
-        {
-            decimal.TryParse(_price.Text, out var price);
-            int.TryParse(_courseCount.Text, out var courseCount);
-            return new TastingMenuOption
-            {
-                Id = _id,
-                Name = _name.Text?.Trim() ?? string.Empty,
-                Price = Math.Max(0, price),
-                CourseCount = Math.Max(0, courseCount),
-                IncludesWine = _wine.IsToggled,
-                SortOrder = index
-            };
-        }
+    private static List<PrintGroupChoice> BuildPrintGroupChoices(string automaticLabel, IEnumerable<PrintGroup> groups)
+    {
+        var choices = new List<PrintGroupChoice> { new(null, automaticLabel) };
+        choices.AddRange(groups.Select(group => new PrintGroupChoice(
+            group.Id,
+            $"{group.Name} · {group.PrinterType}{(group.IsActive ? string.Empty : " · Inactive")}")));
+        return choices;
     }
+
+    private static void SelectPrintGroup(Picker picker, string? groupId)
+    {
+        var choices = picker.ItemsSource?.Cast<PrintGroupChoice>().ToList() ?? new List<PrintGroupChoice>();
+        var index = string.IsNullOrWhiteSpace(groupId)
+            ? 0
+            : choices.FindIndex(choice => string.Equals(choice.Id, groupId, StringComparison.OrdinalIgnoreCase));
+        picker.SelectedIndex = index < 0 ? 0 : index;
+    }
+
+    private static string? GetSelectedPrintGroupId(Picker picker) =>
+        picker.SelectedItem is PrintGroupChoice choice ? choice.Id : null;
+
+    private sealed record PrintGroupChoice(string? Id, string DisplayName);
 
     private sealed class CourseRow
     {
-        public Grid Root { get; }
         private readonly string _id;
-        private readonly Action<CourseRow> _onDelete;
-        private readonly Entry _name = new() { Placeholder = "Course name" };
-        private readonly Entry _choices = new() { Placeholder = "Choices: Scallops, Beef Tartare, Tomato Salad" };
-        private readonly Dictionary<string, string> _choiceIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly int _number;
+        private readonly Entry _courseName = new() { Placeholder = "Course name, e.g. Chicken" };
+        private readonly Entry _wineName = new() { Placeholder = "Wine name, e.g. Chardonnay" };
+        private readonly ColumnDefinition _wineColumn = new(GridLength.Star);
+        private readonly VerticalStackLayout _wineField;
 
-        public CourseRow(TastingMenuCourse course, Action<CourseRow> onDelete)
+        public CourseRow(int number, TastingMenuCourse course)
         {
+            _number = number;
             _id = string.IsNullOrWhiteSpace(course.Id) ? Guid.NewGuid().ToString() : course.Id;
-            _onDelete = onDelete;
-            _name.Text = course.Name;
-            _choices.Text = string.Join(", ", course.Choices.OrderBy(c => c.SortOrder).Select(c => c.Name));
-            foreach (var choice in course.Choices.Where(choice => !string.IsNullOrWhiteSpace(choice.Name)))
-            {
-                _choiceIds[choice.Name.Trim()] = string.IsNullOrWhiteSpace(choice.Id) ? Guid.NewGuid().ToString() : choice.Id;
-            }
+            _courseName.Text = course.Name;
+            _wineName.Text = course.WineName;
+            _wineField = BuildField("Wine pairing", _wineName);
 
             Root = new Grid
             {
                 ColumnDefinitions =
                 {
-                    new ColumnDefinition { Width = 180 },
+                    new ColumnDefinition { Width = 54 },
                     new ColumnDefinition { Width = GridLength.Star },
-                    new ColumnDefinition { Width = 44 }
+                    _wineColumn
                 },
-                ColumnSpacing = 10,
-                Padding = new Thickness(10),
+                ColumnSpacing = 14,
+                Padding = new Thickness(12, 10),
                 BackgroundColor = Colors.White
             };
 
-            Root.Add(_name, 0, 0);
-            Root.Add(_choices, 1, 0);
-            Root.Add(CreateDeleteButton(() => _onDelete(this)), 2, 0);
-        }
-
-        public TastingMenuCourse ToCourse(int courseNumber)
-        {
-            var choices = (_choices.Text ?? string.Empty)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select((name, index) => new TastingMenuChoice
-                {
-                    Id = _choiceIds.TryGetValue(name, out var existingId) ? existingId : Guid.NewGuid().ToString(),
-                    Name = name,
-                    SortOrder = index
-                })
-                .ToList();
-
-            return new TastingMenuCourse
+            Root.Add(new Border
             {
-                Id = _id,
-                Name = _name.Text?.Trim() ?? string.Empty,
-                CourseNumber = courseNumber,
-                Required = true,
-                Choices = choices
-            };
+                WidthRequest = 42,
+                HeightRequest = 42,
+                BackgroundColor = Color.FromArgb("#0EA5E9"),
+                StrokeThickness = 0,
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 12 },
+                Content = new Label
+                {
+                    Text = number.ToString(),
+                    TextColor = Colors.White,
+                    FontAttributes = FontAttributes.Bold,
+                    FontSize = 16,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center
+                }
+            }, 0);
+            Root.Add(BuildField("Course name", _courseName), 1);
+            Root.Add(_wineField, 2);
         }
-    }
 
-    private static Button CreateDeleteButton(Action onDelete)
-    {
-        var button = new Button
+        public Grid Root { get; }
+
+        public void SetWineEnabled(bool enabled)
         {
-            Text = "X",
-            BackgroundColor = Color.FromArgb("#EF4444"),
-            TextColor = Colors.White,
-            FontAttributes = FontAttributes.Bold,
-            FontSize = 13,
-            WidthRequest = 36,
-            HeightRequest = 36,
-            CornerRadius = 18,
-            Padding = 0,
-            VerticalOptions = LayoutOptions.Center
+            _wineField.IsVisible = enabled;
+            _wineColumn.Width = enabled ? GridLength.Star : new GridLength(0);
+        }
+
+        public TastingMenuCourse ToCourse(string vatCategory, bool includesWine) => new()
+        {
+            Id = _id,
+            Name = _courseName.Text?.Trim() ?? string.Empty,
+            WineName = includesWine ? _wineName.Text?.Trim() : null,
+            CourseNumber = _number,
+            Required = true,
+            VatCategory = vatCategory,
+            Choices = new List<TastingMenuChoice>()
         };
 
-        button.Clicked += (_, _) => onDelete();
-        return button;
+        private static VerticalStackLayout BuildField(string label, Entry entry) => new()
+        {
+            Spacing = 5,
+            Children =
+            {
+                new Label { Text = label, FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#475569") },
+                entry
+            }
+        };
     }
 }

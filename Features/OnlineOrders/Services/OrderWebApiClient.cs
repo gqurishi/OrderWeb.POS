@@ -54,6 +54,12 @@ public sealed class OrderWebApiClient
             return null;
         }
 
+        if (!CloudEndpointSecurityPolicy.IsSecureRestApiUrl(baseUrl))
+        {
+            AppDiagnostics.Log("OrderWeb API configuration rejected because HTTPS is required.");
+            return null;
+        }
+
         return new OrderWebApiConfig(baseUrl, tenant, apiKey, enabled);
     }
 

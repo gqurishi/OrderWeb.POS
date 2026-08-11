@@ -1,6 +1,7 @@
 using Microsoft.Maui.Controls;
 using MyFirstMauiApp.Models;
 using MyFirstMauiApp.Services;
+using POS_in_NET.Services;
 using System;
 using System.Threading.Tasks;
 
@@ -99,7 +100,7 @@ public partial class AddEditPrintGroupPage : ContentPage
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Print group updated successfully");
             }
 
-            await Navigation.PopAsync();
+            await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
         }
         catch (Exception ex)
         {
@@ -133,6 +134,6 @@ public partial class AddEditPrintGroupPage : ContentPage
 
     private async void OnCancelClicked(object sender, EventArgs e)
     {
-        await Navigation.PopAsync();
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
     }
 }

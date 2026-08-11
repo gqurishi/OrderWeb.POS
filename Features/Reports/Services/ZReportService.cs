@@ -29,6 +29,7 @@ public sealed class ZReportService
 
     public async Task EnsureAuditSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_auditSchemaEnsured)
         {
             return;
@@ -60,8 +61,9 @@ public sealed class ZReportService
 
     public async Task<ZReportSnapshot> GetSummaryAsync(DateTime reportDate, string? printedByName = null, bool includeTopItems = true)
     {
-        var start = reportDate.Date;
-        var end = start.AddDays(1);
+        var businessDate = reportDate.Date;
+        var start = TradingDayHelper.GetBusinessDayStart(businessDate);
+        var end = TradingDayHelper.GetBusinessDayEnd(businessDate);
 
         var businessInfo = await _businessSettingsService.GetBusinessInfoAsync();
         var dailyReport = await _dailyReportService.GetReportAsync(start, start);
@@ -74,10 +76,11 @@ public sealed class ZReportService
         var orderTypes = await LoadOrderTypeBreakdownAsync(start, end);
         var lastCashCount = await LoadLatestCashCountAsync(start, end);
         var openingFloat = await LoadOpeningTillFloatAsync();
+        var charges = await LoadFinancialChargeBreakdownAsync(start, end);
 
         var snapshot = new ZReportSnapshot
         {
-            ReportDate = start,
+            ReportDate = businessDate,
             GeneratedAt = DateTime.Now,
             BusinessName = string.IsNullOrWhiteSpace(businessInfo?.RestaurantName)
                 ? "Restaurant POS"
@@ -98,8 +101,16 @@ public sealed class ZReportService
             GiftCardTotal = payments.GiftCardTotal,
             GiftCardTransactionCount = payments.GiftCardCount,
             TipsTotal = payments.TipsTotal,
+            CashTips = payments.CashTips,
+            CardTips = payments.CardTips,
             RefundTotal = payments.RefundTotal,
             RefundCount = payments.RefundCount,
+            ItemSales = charges.ItemSales,
+            TableServiceCharges = charges.ServiceCharges,
+            RemovedServiceChargeValue = charges.RemovedServiceChargeValue,
+            RemovedServiceChargeCount = charges.RemovedServiceChargeCount,
+            DeliveryFees = charges.DeliveryFees,
+            FinalMoneyCollected = payments.CashTotal + payments.CardTotal + payments.GiftCardTotal + payments.RefundTotal,
             PosOrderCount = channels.LocalCount,
             PosGrossSales = channels.LocalGross,
             OnlineOrderCount = channels.WebCount,
@@ -126,7 +137,17 @@ public sealed class ZReportService
             VoidCount = analytics.VoidAudits.Count,
             OpeningTillFloat = openingFloat,
             YesterdayGrossSales = yesterdayReport.Summary.GrossSales,
-            ReportReference = $"ZR-{start:yyyyMMdd}-{DateTime.Now:HHmmss}"
+            ReportReference = $"ZR-{businessDate:yyyyMMdd}-{DateTime.Now:HHmmss}",
+            ServiceChargeRemovals = dailyReport.ServiceChargeRemovalAudits
+                .Select(row => new ZReportServiceChargeRemovalRow
+                {
+                    RemovedAt = row.EventAt,
+                    OrderNumber = row.OrderNumber,
+                    Amount = row.Amount,
+                    Reason = row.Reason,
+                    ApprovedBy = row.ApprovedBy
+                })
+                .ToList()
         };
 
         if (yesterdayReport.Summary.GrossSales > 0)
@@ -137,9 +158,8 @@ public sealed class ZReportService
 
         snapshot.ExpectedCashInDrawer = openingFloat
             + snapshot.CashTotal
-            + snapshot.TipsTotal
             - snapshot.TillNetOut
-            - snapshot.RefundTotal;
+            + snapshot.RefundTotal;
 
         if (snapshot.LastCashCountAmount.HasValue)
         {
@@ -164,8 +184,9 @@ public sealed class ZReportService
 
     public async Task<OrderWebDailyReportPayload> BuildInRestaurantDailyUploadAsync(DateTime reportDate)
     {
-        var start = reportDate.Date;
-        var end = start.AddDays(1);
+        var businessDate = reportDate.Date;
+        var start = TradingDayHelper.GetBusinessDayStart(businessDate);
+        var end = TradingDayHelper.GetBusinessDayEnd(businessDate);
 
         var dailyReport = await _dailyReportService.GetReportAsync(
             start,
@@ -176,11 +197,23 @@ public sealed class ZReportService
 
         return new OrderWebDailyReportPayload
         {
-            ReportDate = start,
+            ContractVersion = 2,
+            ReportDate = businessDate,
             TotalSales = dailyReport.Summary.GrossSales,
             TotalOrders = dailyReport.Summary.OrderCount,
             CashSales = payments.CashTotal,
-            CardSales = payments.CardTotal
+            CardSales = payments.CardTotal,
+            ItemSales = dailyReport.Summary.ItemSales,
+            Discounts = dailyReport.Summary.DiscountTotal,
+            ServiceCharges = dailyReport.Summary.ServiceChargeTotal,
+            RemovedServiceChargeCount = dailyReport.Summary.RemovedServiceChargeCount,
+            RemovedServiceChargeValue = dailyReport.Summary.RemovedServiceChargeValue,
+            CashTips = dailyReport.Summary.CashTips,
+            CardTips = dailyReport.Summary.CardTips,
+            DeliveryFees = dailyReport.Summary.DeliveryChargeTotal,
+            Refunds = dailyReport.Summary.RefundTotal,
+            Vat = dailyReport.Summary.VatAmount,
+            FinalMoneyCollected = dailyReport.Summary.FinalMoneyCollected
         };
     }
 
@@ -232,12 +265,14 @@ public sealed class ZReportService
                     op.payment_method,
                     COUNT(*) AS txn_count,
                     COALESCE(SUM(op.amount), 0) AS amount_total,
-                    COALESCE(SUM(op.tip_amount), 0) AS tip_total
+                    COALESCE(SUM(op.tip_amount), 0) AS tip_total,
+                    COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cashTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS cash_tip_reversed,
+                    COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cardTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS card_tip_reversed
                 FROM order_payments op
                 INNER JOIN orders o ON o.id = op.order_id
                 WHERE op.status = 'approved'
-                  AND o.created_at >= @startDate
-                  AND o.created_at < @endDate
+                  AND op.created_at >= @startDate
+                  AND op.created_at < @endDate
                 GROUP BY op.payment_method";
 
             command.Parameters.AddWithValue("@startDate", start);
@@ -275,12 +310,14 @@ public sealed class ZReportService
                     op.payment_method,
                     COUNT(*) AS txn_count,
                     COALESCE(SUM(op.amount), 0) AS amount_total,
-                    COALESCE(SUM(op.tip_amount), 0) AS tip_total
+                    COALESCE(SUM(op.tip_amount), 0) AS tip_total,
+                    COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cashTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS cash_tip_reversed,
+                    COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cardTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS card_tip_reversed
                 FROM order_payments op
                 INNER JOIN orders o ON o.id = op.order_id
                 WHERE op.status = 'approved'
-                  AND o.created_at >= @startDate
-                  AND o.created_at < @endDate
+                  AND op.created_at >= @startDate
+                  AND op.created_at < @endDate
                   AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) NOT IN ('web', 'online')
                 GROUP BY op.payment_method";
 
@@ -312,6 +349,8 @@ public sealed class ZReportService
         var count = reader.GetInt32("txn_count");
         var amount = reader.GetDecimal("amount_total");
         var tips = reader.GetDecimal("tip_total");
+        var cashTipReversed = reader.GetDecimal("cash_tip_reversed");
+        var cardTipReversed = reader.GetDecimal("card_tip_reversed");
 
         switch (method)
         {
@@ -319,11 +358,13 @@ public sealed class ZReportService
                 breakdown.CashTotal += amount;
                 breakdown.CashCount += count;
                 breakdown.TipsTotal += tips;
+                breakdown.CashTips += tips;
                 break;
             case "card":
                 breakdown.CardTotal += amount;
                 breakdown.CardCount += count;
                 breakdown.TipsTotal += tips;
+                breakdown.CardTips += tips;
                 break;
             case "gift_card":
                 breakdown.GiftCardTotal += amount;
@@ -332,6 +373,9 @@ public sealed class ZReportService
             case "refund":
                 breakdown.RefundTotal += amount;
                 breakdown.RefundCount += count;
+                breakdown.TipsTotal += tips - cashTipReversed - cardTipReversed;
+                breakdown.CashTips -= cashTipReversed;
+                breakdown.CardTips -= cardTipReversed;
                 break;
             case "tip_adjust":
                 breakdown.TipsTotal += amount;
@@ -617,10 +661,6 @@ public sealed class ZReportService
         try
         {
             await using var connection = await _databaseService.GetConnectionAsync();
-            await using var ensure = connection.CreateCommand();
-            ensure.CommandText = "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS opening_till_float DECIMAL(10,2) NOT NULL DEFAULT 0";
-            await ensure.ExecuteNonQueryAsync();
-
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT COALESCE(opening_till_float, 0) FROM business_info ORDER BY id ASC LIMIT 1";
             var value = await command.ExecuteScalarAsync();
@@ -641,8 +681,69 @@ public sealed class ZReportService
         public decimal GiftCardTotal { get; set; }
         public int GiftCardCount { get; set; }
         public decimal TipsTotal { get; set; }
+        public decimal CashTips { get; set; }
+        public decimal CardTips { get; set; }
         public decimal RefundTotal { get; set; }
         public int RefundCount { get; set; }
+    }
+
+    private async Task<FinancialChargeBreakdown> LoadFinancialChargeBreakdownAsync(DateTime start, DateTime end)
+    {
+        await using var connection = await _databaseService.GetConnectionAsync();
+        var result = new FinancialChargeBreakdown();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT
+                    COALESCE(SUM(subtotal_amount), 0) AS item_sales,
+                    COALESCE(SUM(CASE WHEN service_charge_status = 'applied' THEN service_charge_amount ELSE 0 END), 0) AS service_charges,
+                    COALESCE(SUM(delivery_fee), 0) AS delivery_fees
+                FROM orders
+                WHERE local_lifecycle_state = 'paid'
+                  AND COALESCE(paid_at, updated_at, created_at) >= @startDate
+                  AND COALESCE(paid_at, updated_at, created_at) < @endDate
+                """;
+            command.Parameters.AddWithValue("@startDate", start);
+            command.Parameters.AddWithValue("@endDate", end);
+            await using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                result.ItemSales = reader.GetDecimal("item_sales");
+                result.ServiceCharges = reader.GetDecimal("service_charges");
+                result.DeliveryFees = reader.GetDecimal("delivery_fees");
+            }
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT COUNT(*) AS removed_count,
+                       COALESCE(SUM(service_charge_amount), 0) AS removed_value
+                FROM order_service_charge_events
+                WHERE event_type = 'removed'
+                  AND event_at >= @startDate AND event_at < @endDate
+                """;
+            command.Parameters.AddWithValue("@startDate", start);
+            command.Parameters.AddWithValue("@endDate", end);
+            await using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                result.RemovedServiceChargeCount = reader.GetInt32("removed_count");
+                result.RemovedServiceChargeValue = reader.GetDecimal("removed_value");
+            }
+        }
+
+        return result;
+    }
+
+    private sealed class FinancialChargeBreakdown
+    {
+        public decimal ItemSales { get; set; }
+        public decimal ServiceCharges { get; set; }
+        public decimal RemovedServiceChargeValue { get; set; }
+        public int RemovedServiceChargeCount { get; set; }
+        public decimal DeliveryFees { get; set; }
     }
 
     private sealed class ChannelBreakdown

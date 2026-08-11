@@ -1,5 +1,6 @@
 using MySqlConnector;
 using POS_in_NET.Models;
+using System.Text;
 using System.Text.Json;
 
 namespace POS_in_NET.Services;
@@ -14,9 +15,62 @@ public class OrderService
     private bool _financialSchemaChecked;
 
     public OrderService()
+        : this(ServiceHelper.GetService<OnlineOrderApiService>() ?? new OnlineOrderApiService())
+    {
+    }
+
+    public OrderService(OnlineOrderApiService apiService)
     {
         _connectionString = TerminalConfigurationService.GetPosConnectionString();
-        _apiService = new OnlineOrderApiService();
+        _apiService = apiService;
+    }
+
+    public async Task<bool> TryClaimTastingCourseFireAsync(
+        string orderId,
+        string clientItemId,
+        DateTime firedAt,
+        string firedBy)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync();
+        const string sql = @"
+            UPDATE order_items oi
+            INNER JOIN orders o ON o.id = oi.order_id
+            SET oi.fired_at = @firedAt,
+                oi.fired_by = @firedBy
+            WHERE o.order_id = @orderId
+              AND oi.client_item_id = @clientItemId
+              AND oi.menu_item_id LIKE 'tasting-course:%'
+              AND oi.fired_at IS NULL";
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@firedAt", firedAt);
+        command.Parameters.AddWithValue("@firedBy", firedBy);
+        command.Parameters.AddWithValue("@orderId", orderId);
+        command.Parameters.AddWithValue("@clientItemId", clientItemId);
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
+    public async Task ReleaseTastingCourseFireClaimAsync(
+        string orderId,
+        string clientItemId,
+        string firedBy)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync();
+        const string sql = @"
+            UPDATE order_items oi
+            INNER JOIN orders o ON o.id = oi.order_id
+            SET oi.fired_at = NULL,
+                oi.fired_by = NULL
+            WHERE o.order_id = @orderId
+              AND oi.client_item_id = @clientItemId
+              AND oi.menu_item_id LIKE 'tasting-course:%'
+              AND oi.fired_by = @firedBy";
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@orderId", orderId);
+        command.Parameters.AddWithValue("@clientItemId", clientItemId);
+        command.Parameters.AddWithValue("@firedBy", firedBy);
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task<(bool Success, string Message)> SaveOrderAsync(Order order)
@@ -51,6 +105,12 @@ public class OrderService
                 order.IsOpen = false;
             }
 
+            if (order.LocalLifecycleState == LocalLifecycleState.Paid || order.PaidAt.HasValue)
+            {
+                order.PaymentStatusRaw = "paid";
+                order.AmountPaid ??= order.TotalAmount;
+            }
+
             var existingOrder = await GetOrderByExternalIdAsync(order.OrderId);
             if (!string.IsNullOrWhiteSpace(existingOrder?.OrderNumber) && string.IsNullOrWhiteSpace(order.OrderNumber))
             {
@@ -67,8 +127,18 @@ public class OrderService
             var orderQuery = @"
                 INSERT INTO orders (order_id, order_number, cloud_order_id, 
                                   customer_name, customer_phone, customer_email, customer_address, 
-                                  total_amount, subtotal_amount, discount_amount, delivery_fee, tax_amount,
-                          order_type, source_channel, table_session_id, payment_method, special_instructions, scheduled_time,
+                                  total_amount, subtotal_amount, discount_amount, delivery_fee,
+                                  service_charge_percentage, service_charge_basis, service_charge_amount,
+                                  service_charge_status, service_charge_classification,
+                                  service_charge_removal_reason, service_charge_removed_by_user_id,
+                                  service_charge_removed_by_name, service_charge_approved_by_user_id,
+                                  service_charge_approved_by_name, service_charge_removed_at, tax_amount,
+                                  cash_tip_amount, card_tip_amount,
+                          order_type, source_channel, table_session_id, payment_method, payment_status, amount_paid,
+                          payment_provider, payment_reference, payment_currency, voucher_code, promo_code,
+                          gift_card_number_masked, gift_card_amount_paid, gift_card_remaining_balance,
+                          loyalty_points_earned, loyalty_points_redeemed, loyalty_points_discount, loyalty_balance_after,
+                          special_instructions, scheduled_time,
                           local_lifecycle_state, is_open, void_reason, voided_at, voided_by, paid_at,
                                   status, order_data, sync_status, 
                                   kitchen_time, preparing_time, ready_time, delivering_time, completed_time,
@@ -76,8 +146,18 @@ public class OrderService
                                   created_at, updated_at) 
                 VALUES (@orderId, @orderNumber, @cloudOrderId,
                         @customerName, @customerPhone, @customerEmail, @customerAddress, 
-                        @totalAmount, @subtotalAmount, @discountAmount, @deliveryFee, @taxAmount,
-                    @orderType, @sourceChannel, @tableSessionId, @paymentMethod, @specialInstructions, @scheduledTime,
+                        @totalAmount, @subtotalAmount, @discountAmount, @deliveryFee,
+                        @serviceChargePercentage, @serviceChargeBasis, @serviceChargeAmount,
+                        @serviceChargeStatus, @serviceChargeClassification,
+                        @serviceChargeRemovalReason, @serviceChargeRemovedByUserId,
+                        @serviceChargeRemovedByName, @serviceChargeApprovedByUserId,
+                        @serviceChargeApprovedByName, @serviceChargeRemovedAt, @taxAmount,
+                        @cashTipAmount, @cardTipAmount,
+                    @orderType, @sourceChannel, @tableSessionId, @paymentMethod, @paymentStatus, @amountPaid,
+                    @paymentProvider, @paymentReference, @paymentCurrency, @voucherCode, @promoCode,
+                    @giftCardNumberMasked, @giftCardAmountPaid, @giftCardRemainingBalance,
+                    @loyaltyPointsEarned, @loyaltyPointsRedeemed, @loyaltyPointsDiscount, @loyaltyBalanceAfter,
+                    @specialInstructions, @scheduledTime,
                     @localLifecycleState, @isOpen, @voidReason, @voidedAt, @voidedBy, @paidAt,
                         @status, @orderData, @syncStatus,
                         @kitchenTime, @preparingTime, @readyTime, @deliveringTime, @completedTime,
@@ -97,11 +177,15 @@ public class OrderService
             orderCommand.Parameters.AddWithValue("@subtotalAmount", order.SubtotalAmount);
             orderCommand.Parameters.AddWithValue("@discountAmount", order.DiscountAmount);
             orderCommand.Parameters.AddWithValue("@deliveryFee", order.DeliveryFee);
+            AddServiceChargeParameters(orderCommand, order);
             orderCommand.Parameters.AddWithValue("@taxAmount", order.TaxAmount);
+            orderCommand.Parameters.AddWithValue("@cashTipAmount", order.CashTipAmount);
+            orderCommand.Parameters.AddWithValue("@cardTipAmount", order.CardTipAmount);
             orderCommand.Parameters.AddWithValue("@orderType", normalizedOrderType);
             orderCommand.Parameters.AddWithValue("@sourceChannel", normalizedSourceChannel);
             orderCommand.Parameters.AddWithValue("@tableSessionId", order.TableSessionId ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@paymentMethod", order.PaymentMethod ?? (object)DBNull.Value);
+            AddCloudPaymentParameters(orderCommand, order);
             orderCommand.Parameters.AddWithValue("@specialInstructions", order.SpecialInstructions ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@scheduledTime", order.ScheduledTime ?? (object)DBNull.Value);
             orderCommand.Parameters.AddWithValue("@localLifecycleState", ToDbLifecycleState(order.LocalLifecycleState));
@@ -186,6 +270,12 @@ public class OrderService
             order.SourceChannel = normalizedSourceChannel;
             order.LocalLifecycleState = NormalizeLocalLifecycleState(order.LocalLifecycleState, order.Status);
 
+            if (order.LocalLifecycleState == LocalLifecycleState.Paid || order.PaidAt.HasValue)
+            {
+                order.PaymentStatusRaw = "paid";
+                order.AmountPaid ??= order.TotalAmount;
+            }
+
             if (order.LocalLifecycleState == LocalLifecycleState.Paid || order.LocalLifecycleState == LocalLifecycleState.Voided)
             {
                 order.IsOpen = false;
@@ -224,11 +314,38 @@ public class OrderService
                     subtotal_amount = @subtotalAmount,
                     discount_amount = @discountAmount,
                     delivery_fee = @deliveryFee,
+                    service_charge_percentage = @serviceChargePercentage,
+                    service_charge_basis = @serviceChargeBasis,
+                    service_charge_amount = @serviceChargeAmount,
+                    service_charge_status = @serviceChargeStatus,
+                    service_charge_classification = @serviceChargeClassification,
+                    service_charge_removal_reason = @serviceChargeRemovalReason,
+                    service_charge_removed_by_user_id = @serviceChargeRemovedByUserId,
+                    service_charge_removed_by_name = @serviceChargeRemovedByName,
+                    service_charge_approved_by_user_id = @serviceChargeApprovedByUserId,
+                    service_charge_approved_by_name = @serviceChargeApprovedByName,
+                    service_charge_removed_at = @serviceChargeRemovedAt,
                     tax_amount = @taxAmount,
+                    cash_tip_amount = @cashTipAmount,
+                    card_tip_amount = @cardTipAmount,
                     order_type = @orderType,
                     source_channel = @sourceChannel,
                     table_session_id = @tableSessionId,
                     payment_method = @paymentMethod,
+                    payment_status = @paymentStatus,
+                    amount_paid = @amountPaid,
+                    payment_provider = @paymentProvider,
+                    payment_reference = @paymentReference,
+                    payment_currency = @paymentCurrency,
+                    voucher_code = @voucherCode,
+                    promo_code = @promoCode,
+                    gift_card_number_masked = @giftCardNumberMasked,
+                    gift_card_amount_paid = @giftCardAmountPaid,
+                    gift_card_remaining_balance = @giftCardRemainingBalance,
+                    loyalty_points_earned = @loyaltyPointsEarned,
+                    loyalty_points_redeemed = @loyaltyPointsRedeemed,
+                    loyalty_points_discount = @loyaltyPointsDiscount,
+                    loyalty_balance_after = @loyaltyBalanceAfter,
                     special_instructions = @specialInstructions,
                     scheduled_time = @scheduledTime,
                     local_lifecycle_state = @localLifecycleState,
@@ -266,11 +383,15 @@ public class OrderService
             command.Parameters.AddWithValue("@subtotalAmount", order.SubtotalAmount);
             command.Parameters.AddWithValue("@discountAmount", order.DiscountAmount);
             command.Parameters.AddWithValue("@deliveryFee", order.DeliveryFee);
+            AddServiceChargeParameters(command, order);
             command.Parameters.AddWithValue("@taxAmount", order.TaxAmount);
+            command.Parameters.AddWithValue("@cashTipAmount", order.CashTipAmount);
+            command.Parameters.AddWithValue("@cardTipAmount", order.CardTipAmount);
             command.Parameters.AddWithValue("@orderType", normalizedOrderType);
             command.Parameters.AddWithValue("@sourceChannel", normalizedSourceChannel);
             command.Parameters.AddWithValue("@tableSessionId", order.TableSessionId ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@paymentMethod", order.PaymentMethod ?? (object)DBNull.Value);
+            AddCloudPaymentParameters(command, order);
             command.Parameters.AddWithValue("@specialInstructions", order.SpecialInstructions ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@scheduledTime", order.ScheduledTime ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@localLifecycleState", ToDbLifecycleState(order.LocalLifecycleState));
@@ -366,6 +487,301 @@ public class OrderService
         }
     }
 
+    /// <summary>
+    /// Enrich an existing OrderWeb order without changing its local lifecycle,
+    /// kitchen state, payment attempts, or operator edits.
+    /// </summary>
+    public async Task<(bool Success, string Message)> EnrichCloudOrderAsync(Order incoming)
+    {
+        if (string.IsNullOrWhiteSpace(incoming.OrderId))
+        {
+            return (false, "Cloud order ID missing");
+        }
+
+        try
+        {
+            await using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+
+            const string sql = @"
+                UPDATE orders
+                SET order_number = COALESCE(NULLIF(@orderNumber, ''), order_number),
+                    cloud_order_id = COALESCE(NULLIF(@cloudOrderId, ''), cloud_order_id),
+                    customer_name = COALESCE(NULLIF(@customerName, ''), customer_name),
+                    customer_phone = COALESCE(NULLIF(@customerPhone, ''), customer_phone),
+                    customer_email = COALESCE(NULLIF(@customerEmail, ''), customer_email),
+                    customer_address = COALESCE(NULLIF(@customerAddress, ''), customer_address),
+                    total_amount = CASE WHEN @totalAmount > 0 THEN @totalAmount ELSE total_amount END,
+                    subtotal_amount = CASE WHEN @subtotalAmount > 0 THEN @subtotalAmount ELSE subtotal_amount END,
+                    discount_amount = CASE WHEN @discountAmount > 0 OR discount_amount = 0 THEN @discountAmount ELSE discount_amount END,
+                    delivery_fee = CASE WHEN @deliveryFee > 0 OR delivery_fee = 0 THEN @deliveryFee ELSE delivery_fee END,
+                    service_charge_percentage = CASE WHEN @serviceChargePercentage > 0 THEN @serviceChargePercentage ELSE service_charge_percentage END,
+                    service_charge_basis = CASE WHEN @serviceChargeBasis > 0 THEN @serviceChargeBasis ELSE service_charge_basis END,
+                    service_charge_amount = CASE WHEN @serviceChargeAmount > 0 OR service_charge_amount = 0 THEN @serviceChargeAmount ELSE service_charge_amount END,
+                    service_charge_status = CASE WHEN @serviceChargeStatus <> 'not_configured' THEN @serviceChargeStatus ELSE service_charge_status END,
+                    tax_amount = CASE WHEN @taxAmount > 0 OR tax_amount = 0 THEN @taxAmount ELSE tax_amount END,
+                    cash_tip_amount = CASE WHEN @cashTipAmount > 0 OR cash_tip_amount = 0 THEN @cashTipAmount ELSE cash_tip_amount END,
+                    card_tip_amount = CASE WHEN @cardTipAmount > 0 OR card_tip_amount = 0 THEN @cardTipAmount ELSE card_tip_amount END,
+                    order_type = COALESCE(NULLIF(@orderType, ''), order_type),
+                    payment_method = COALESCE(NULLIF(@paymentMethod, ''), payment_method),
+                    payment_status = CASE
+                        WHEN NULLIF(@paymentStatus, '') IS NULL THEN payment_status
+                        WHEN LOWER(COALESCE(payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+                             AND LOWER(@paymentStatus) IN ('pending', 'awaiting', 'processing', 'unpaid')
+                            THEN payment_status
+                        ELSE @paymentStatus
+                    END,
+                    amount_paid = COALESCE(@amountPaid, amount_paid),
+                    payment_provider = COALESCE(NULLIF(@paymentProvider, ''), payment_provider),
+                    payment_reference = COALESCE(NULLIF(@paymentReference, ''), payment_reference),
+                    payment_currency = COALESCE(NULLIF(@paymentCurrency, ''), payment_currency),
+                    voucher_code = COALESCE(NULLIF(@voucherCode, ''), voucher_code),
+                    promo_code = COALESCE(NULLIF(@promoCode, ''), promo_code),
+                    gift_card_number_masked = COALESCE(NULLIF(@giftCardNumberMasked, ''), gift_card_number_masked),
+                    gift_card_amount_paid = COALESCE(@giftCardAmountPaid, gift_card_amount_paid),
+                    gift_card_remaining_balance = COALESCE(@giftCardRemainingBalance, gift_card_remaining_balance),
+                    loyalty_points_earned = CASE WHEN @loyaltyPointsEarned > 0 THEN @loyaltyPointsEarned ELSE loyalty_points_earned END,
+                    loyalty_points_redeemed = CASE WHEN @loyaltyPointsRedeemed > 0 THEN @loyaltyPointsRedeemed ELSE loyalty_points_redeemed END,
+                    loyalty_points_discount = CASE WHEN @loyaltyPointsDiscount > 0 THEN @loyaltyPointsDiscount ELSE loyalty_points_discount END,
+                    loyalty_balance_after = COALESCE(@loyaltyBalanceAfter, loyalty_balance_after),
+                    special_instructions = COALESCE(NULLIF(@specialInstructions, ''), special_instructions),
+                    scheduled_time = COALESCE(@scheduledTime, scheduled_time),
+                    order_data = CASE
+                        WHEN CHAR_LENGTH(COALESCE(@orderData, '')) > CHAR_LENGTH(COALESCE(order_data, ''))
+                            THEN @orderData
+                        ELSE order_data
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE (order_id = @orderId OR cloud_order_id = @orderId)
+                  AND LOWER(COALESCE(source_channel, 'web')) = 'web'";
+
+            await using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@orderId", incoming.OrderId);
+            command.Parameters.AddWithValue("@orderNumber", incoming.OrderNumber ?? string.Empty);
+            command.Parameters.AddWithValue("@cloudOrderId", incoming.CloudOrderId ?? string.Empty);
+            command.Parameters.AddWithValue("@customerName", incoming.CustomerName ?? string.Empty);
+            command.Parameters.AddWithValue("@customerPhone", incoming.CustomerPhone ?? string.Empty);
+            command.Parameters.AddWithValue("@customerEmail", incoming.CustomerEmail ?? string.Empty);
+            command.Parameters.AddWithValue("@customerAddress", incoming.CustomerAddress ?? string.Empty);
+            command.Parameters.AddWithValue("@totalAmount", incoming.TotalAmount);
+            command.Parameters.AddWithValue("@subtotalAmount", incoming.SubtotalAmount);
+            command.Parameters.AddWithValue("@discountAmount", incoming.DiscountAmount);
+            command.Parameters.AddWithValue("@deliveryFee", incoming.DeliveryFee);
+            command.Parameters.AddWithValue("@serviceChargePercentage", incoming.ServiceChargePercentage);
+            command.Parameters.AddWithValue("@serviceChargeBasis", incoming.ServiceChargeBasis);
+            command.Parameters.AddWithValue("@serviceChargeAmount", incoming.ServiceChargeAmount);
+            command.Parameters.AddWithValue("@serviceChargeStatus", incoming.ServiceChargeStatus ?? "not_configured");
+            command.Parameters.AddWithValue("@taxAmount", incoming.TaxAmount);
+            command.Parameters.AddWithValue("@cashTipAmount", incoming.CashTipAmount);
+            command.Parameters.AddWithValue("@cardTipAmount", incoming.CardTipAmount);
+            command.Parameters.AddWithValue("@orderType", incoming.OrderType ?? string.Empty);
+            command.Parameters.AddWithValue("@paymentMethod", incoming.PaymentMethod ?? string.Empty);
+            AddCloudPaymentParameters(command, incoming);
+            command.Parameters.AddWithValue("@specialInstructions", incoming.SpecialInstructions ?? string.Empty);
+            command.Parameters.AddWithValue("@scheduledTime", incoming.ScheduledTime ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@orderData", incoming.OrderData ?? string.Empty);
+
+            var rows = await command.ExecuteNonQueryAsync();
+            if (rows > 0 && incoming.Items.Count > 0)
+            {
+                const string itemCountSql = @"
+                    SELECT o.id, COUNT(oi.id)
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    WHERE (o.order_id = @orderId OR o.cloud_order_id = @orderId)
+                    GROUP BY o.id
+                    LIMIT 1";
+                await using var itemCountCommand = new MySqlCommand(itemCountSql, connection);
+                itemCountCommand.Parameters.AddWithValue("@orderId", incoming.OrderId);
+                await using var reader = await itemCountCommand.ExecuteReaderAsync();
+                var databaseOrderId = 0;
+                var itemCount = 0;
+                if (await reader.ReadAsync())
+                {
+                    databaseOrderId = reader.GetInt32(0);
+                    itemCount = reader.GetInt32(1);
+                }
+                await reader.CloseAsync();
+
+                if (databaseOrderId > 0 && itemCount == 0)
+                {
+                    foreach (var item in incoming.Items)
+                    {
+                        await SaveOrderItemAsync(connection, databaseOrderId, item);
+                    }
+                }
+            }
+
+            return rows > 0
+                ? (true, "Cloud order details enriched")
+                : (false, "Cloud order not found for enrichment");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Cloud order enrichment failed: {ex.Message}");
+        }
+    }
+
+    public async Task<Order?> GetOrderByDatabaseIdAsync(int orderDbId)
+    {
+        if (orderDbId <= 0)
+        {
+            return null;
+        }
+
+        await using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+        await connection.OpenAsync();
+        return await GetOrderByIdAsync(connection, orderDbId);
+    }
+
+    public async Task<List<CustomerPreviousOrder>> GetPreviousCustomerOrdersAsync(
+        string customerPhone,
+        int maximumOrders = 3,
+        int monthsBack = 12)
+    {
+        var normalizedPhone = OrderWebCustomerCloudService.NormalizePhone(customerPhone);
+        if (string.IsNullOrWhiteSpace(normalizedPhone) || maximumOrders <= 0 || monthsBack <= 0)
+        {
+            return new List<CustomerPreviousOrder>();
+        }
+
+        var suffixLength = Math.Min(9, normalizedPhone.Length);
+        var phoneSuffix = normalizedPhone[^suffixLength..];
+        var cutoff = DateTime.Today.AddMonths(-monthsBack);
+        var candidates = new List<(Order Order, decimal RefundAmount)>();
+
+        await using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+        await connection.OpenAsync();
+        await EnsureOrderTypeSchemaAsync(connection);
+        await EnsureSourceChannelSchemaAsync(connection);
+        await EnsureLifecycleSchemaAsync(connection);
+        await EnsureFinancialSchemaAsync(connection);
+
+        const string normalizedPhoneSql = """
+            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                COALESCE(o.customer_phone, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')
+            """;
+        var sql = $"""
+            SELECT o.*,
+                   COALESCE((
+                       SELECT SUM(r.refund_amount)
+                       FROM order_refunds r
+                       WHERE r.order_id = o.id
+                   ), 0) AS refund_total
+            FROM orders o
+            WHERE o.created_at >= @cutoff
+              AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
+              AND LOWER(COALESCE(o.status, 'new')) <> 'cancelled'
+              AND LOWER(COALESCE(o.local_lifecycle_state, 'draft')) <> 'voided'
+              AND COALESCE(o.draft_abandoned_flag, 0) = 0
+              AND (
+                    LOWER(COALESCE(o.local_lifecycle_state, '')) IN ('sent_partial', 'sent_full', 'payment_partial', 'paid')
+                    OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready', 'delivering', 'completed')
+                  )
+              AND RIGHT({normalizedPhoneSql}, @suffixLength) = @phoneSuffix
+              AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id)
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT @candidateLimit
+            """;
+
+        await using (var command = new MySqlCommand(sql, connection))
+        {
+            command.Parameters.AddWithValue("@cutoff", cutoff);
+            command.Parameters.AddWithValue("@suffixLength", suffixLength);
+            command.Parameters.AddWithValue("@phoneSuffix", phoneSuffix);
+            command.Parameters.AddWithValue("@candidateLimit", Math.Max(maximumOrders * 10, 30));
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var order = MapOrderFromReader(reader);
+                var storedPhone = OrderWebCustomerCloudService.NormalizePhone(order.CustomerPhone);
+                if (!string.Equals(storedPhone, normalizedPhone, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var refundAmount = reader["refund_total"] == DBNull.Value
+                    ? 0m
+                    : Convert.ToDecimal(reader["refund_total"]);
+                candidates.Add((order, refundAmount));
+
+                if (candidates.Count >= maximumOrders)
+                {
+                    break;
+                }
+            }
+        }
+
+        var result = new List<CustomerPreviousOrder>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            candidate.Order.Items = await GetOrderItemsAsync(connection, candidate.Order.Id);
+            if (candidate.Order.Items.Count == 0)
+            {
+                continue;
+            }
+
+            result.Add(new CustomerPreviousOrder
+            {
+                OrderDatabaseId = candidate.Order.Id,
+                OrderNumber = candidate.Order.OrderNumber,
+                CreatedAt = candidate.Order.CreatedAt,
+                OrderType = candidate.Order.OrderType ?? string.Empty,
+                TotalAmount = candidate.Order.TotalAmount,
+                Status = candidate.Order.Status.ToString(),
+                LocalLifecycleState = candidate.Order.LocalLifecycleState.ToString(),
+                RefundAmount = candidate.RefundAmount,
+                OrderNotes = candidate.Order.SpecialInstructions,
+                ItemsText = BuildPreviousOrderItemsText(candidate.Order.Items)
+            });
+        }
+
+        if (result.Count > 0)
+        {
+            result[0].IsMostRecent = true;
+        }
+
+        return result;
+    }
+
+    private static string BuildPreviousOrderItemsText(IReadOnlyList<OrderItem> items)
+    {
+        var builder = new StringBuilder();
+        foreach (var item in items)
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            var itemName = !string.IsNullOrWhiteSpace(item.DisplayName) ? item.DisplayName : item.ItemName;
+            builder.Append(item.Quantity).Append(" × ").Append(itemName);
+
+            if (!string.IsNullOrWhiteSpace(item.VariantName)
+                && !itemName.Contains(item.VariantName, StringComparison.OrdinalIgnoreCase))
+            {
+                builder.Append(" — ").Append(item.VariantName);
+            }
+
+            if (item.Addons.Count > 0)
+            {
+                builder.AppendLine();
+                builder.Append("   Extras: ");
+                builder.Append(string.Join(", ", item.Addons.Select(addon =>
+                    addon.Quantity > 1 ? $"{addon.Quantity} × {addon.AddonName}" : addon.AddonName)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+            {
+                builder.AppendLine();
+                builder.Append("   Note: ").Append(item.SpecialInstructions.Trim());
+            }
+        }
+
+        return builder.ToString();
+    }
+
     public async Task<Order?> GetOpenOrderByTableSessionIdAsync(int tableSessionId)
     {
         try
@@ -418,6 +834,7 @@ public class OrderService
                 WHERE table_session_id = @tableSessionId
                   AND COALESCE(source_channel, 'local') = 'local'
                   AND COALESCE(order_type, 'table') = 'table'
+                  AND COALESCE(is_open, 1) = 1
                   AND COALESCE(local_lifecycle_state, 'active') NOT IN ('paid', 'voided')
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 1";
@@ -507,6 +924,7 @@ public class OrderService
                 WHERE COALESCE(source_channel, 'local') = 'local'
                   AND COALESCE(order_type, 'table') = 'table'
                   AND customer_name = @customerName
+                  AND COALESCE(is_open, 1) = 1
                   AND COALESCE(local_lifecycle_state, 'active') NOT IN ('paid', 'voided')
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 1";
@@ -581,8 +999,18 @@ public class OrderService
         const string sql = @"
                  SELECT id, order_id, order_number, cloud_order_id,
                    customer_name, customer_phone, customer_email, customer_address, 
-                   total_amount, subtotal_amount, delivery_fee, tax_amount,
-                     order_type, source_channel, table_session_id, payment_method, special_instructions, scheduled_time,
+                   total_amount, subtotal_amount, discount_amount, delivery_fee,
+                   service_charge_percentage, service_charge_basis, service_charge_amount,
+                   service_charge_status, service_charge_classification,
+                   service_charge_removal_reason, service_charge_removed_by_user_id,
+                   service_charge_removed_by_name, service_charge_approved_by_user_id,
+                   service_charge_approved_by_name, service_charge_removed_at,
+                   tax_amount, cash_tip_amount, card_tip_amount,
+                     order_type, source_channel, table_session_id, payment_method, payment_status, amount_paid,
+                     payment_provider, payment_reference, payment_currency, voucher_code, promo_code,
+                     gift_card_number_masked, gift_card_amount_paid, gift_card_remaining_balance,
+                     loyalty_points_earned, loyalty_points_redeemed, loyalty_points_discount, loyalty_balance_after,
+                     special_instructions, scheduled_time,
                      local_lifecycle_state, is_open, void_reason, voided_at, voided_by, paid_at,
                    status, order_data, sync_status, 
                    kitchen_time, preparing_time, ready_time, delivering_time, completed_time,
@@ -614,8 +1042,18 @@ public class OrderService
         const string sql = @"
                  SELECT id, order_id, order_number, cloud_order_id,
                    customer_name, customer_phone, customer_email, customer_address, 
-                   total_amount, subtotal_amount, delivery_fee, tax_amount,
-                     order_type, source_channel, table_session_id, payment_method, special_instructions, scheduled_time,
+                   total_amount, subtotal_amount, discount_amount, delivery_fee,
+                   service_charge_percentage, service_charge_basis, service_charge_amount,
+                   service_charge_status, service_charge_classification,
+                   service_charge_removal_reason, service_charge_removed_by_user_id,
+                   service_charge_removed_by_name, service_charge_approved_by_user_id,
+                   service_charge_approved_by_name, service_charge_removed_at,
+                   tax_amount, cash_tip_amount, card_tip_amount,
+                     order_type, source_channel, table_session_id, payment_method, payment_status, amount_paid,
+                     payment_provider, payment_reference, payment_currency, voucher_code, promo_code,
+                     gift_card_number_masked, gift_card_amount_paid, gift_card_remaining_balance,
+                     loyalty_points_earned, loyalty_points_redeemed, loyalty_points_discount, loyalty_balance_after,
+                     special_instructions, scheduled_time,
                      local_lifecycle_state, is_open, void_reason, voided_at, voided_by, paid_at,
                    status, order_data, sync_status, 
                    kitchen_time, preparing_time, ready_time, delivering_time, completed_time,
@@ -978,6 +1416,7 @@ public class OrderService
 
     private async Task EnsureOrderTypeSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_orderTypeSchemaChecked)
         {
             return;
@@ -1028,6 +1467,7 @@ public class OrderService
 
     private async Task EnsureSourceChannelSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_sourceChannelSchemaChecked)
         {
             return;
@@ -1063,6 +1503,7 @@ public class OrderService
 
     private async Task EnsureLifecycleSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_lifecycleSchemaChecked)
         {
             return;
@@ -1100,6 +1541,10 @@ public class OrderService
                     ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100) NULL,
                     ADD COLUMN IF NOT EXISTS display_name VARCHAR(180) NULL,
                     ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL,
+                    ADD COLUMN IF NOT EXISTS print_in_red BOOLEAN NOT NULL DEFAULT FALSE,
+                    ADD COLUMN IF NOT EXISTS course_type VARCHAR(30) NULL,
+                    ADD COLUMN IF NOT EXISTS fired_at DATETIME NULL,
+                    ADD COLUMN IF NOT EXISTS fired_by VARCHAR(150) NULL,
                     ADD COLUMN IF NOT EXISTS client_item_id VARCHAR(100) NULL", connection);
                 await ensureItemColumnsCommand.ExecuteNonQueryAsync();
 
@@ -1246,6 +1691,7 @@ public class OrderService
 
     private async Task EnsureFinancialSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_financialSchemaChecked)
         {
             return;
@@ -1355,18 +1801,23 @@ public class OrderService
     {
         // Insert order item with new schema
         var itemQuery = @"
-            INSERT INTO order_items (order_id, client_item_id, cloud_item_id, menu_item_id, variant_id, variant_name, display_name, print_group_id, item_name, quantity, item_price, special_instructions) 
-            VALUES (@orderId, @clientItemId, @cloudItemId, @menuItemId, @variantId, @variantName, @displayName, @printGroupId, @itemName, @quantity, @itemPrice, @specialInstructions)";
+            INSERT INTO order_items (order_id, client_item_id, cloud_item_id, cloud_item_external_id, menu_item_id, variant_id, variant_name, display_name, print_group_id, print_in_red, course_type, fired_at, fired_by, item_name, quantity, item_price, special_instructions)
+            VALUES (@orderId, @clientItemId, @cloudItemId, @cloudItemExternalId, @menuItemId, @variantId, @variantName, @displayName, @printGroupId, @printInRed, @courseType, @firedAt, @firedBy, @itemName, @quantity, @itemPrice, @specialInstructions)";
 
         using var itemCommand = new MySqlCommand(itemQuery, connection);
     itemCommand.Parameters.AddWithValue("@orderId", orderId);
         itemCommand.Parameters.AddWithValue("@clientItemId", item.ClientItemId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@cloudItemId", item.CloudItemId ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@cloudItemExternalId", item.CloudItemExternalId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@menuItemId", item.MenuItemId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@variantId", item.VariantId ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@variantName", item.VariantName ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@displayName", item.DisplayName ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@printGroupId", item.PrintGroupId ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@printInRed", item.PrintInRed);
+        itemCommand.Parameters.AddWithValue("@courseType", item.CourseType ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@firedAt", item.FiredAt ?? (object)DBNull.Value);
+        itemCommand.Parameters.AddWithValue("@firedBy", item.FiredBy ?? (object)DBNull.Value);
         itemCommand.Parameters.AddWithValue("@itemName", item.ItemName);
         itemCommand.Parameters.AddWithValue("@quantity", item.Quantity);
         itemCommand.Parameters.AddWithValue("@itemPrice", item.ItemPrice ?? (object)DBNull.Value);
@@ -1418,6 +1869,10 @@ public class OrderService
                 oi.variant_name,
                 oi.display_name,
                 oi.print_group_id,
+                oi.print_in_red,
+                oi.course_type,
+                oi.fired_at,
+                oi.fired_by,
                 oi.item_name,
                 oi.quantity,
                 oi.item_price,
@@ -1489,6 +1944,10 @@ public class OrderService
                         variant_name = @variantName,
                         display_name = @displayName,
                         print_group_id = @printGroupId,
+                        print_in_red = @printInRed,
+                        course_type = @courseType,
+                        fired_at = @firedAt,
+                        fired_by = @firedBy,
                         item_name = @itemName,
                         quantity = @quantity,
                         item_price = @itemPrice,
@@ -1503,6 +1962,10 @@ public class OrderService
                     updateCommand.Parameters.AddWithValue("@variantName", incomingItem.VariantName ?? (object)DBNull.Value);
                     updateCommand.Parameters.AddWithValue("@displayName", incomingItem.DisplayName ?? (object)DBNull.Value);
                     updateCommand.Parameters.AddWithValue("@printGroupId", incomingItem.PrintGroupId ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@printInRed", incomingItem.PrintInRed);
+                    updateCommand.Parameters.AddWithValue("@courseType", incomingItem.CourseType ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@firedAt", incomingItem.FiredAt ?? (object)DBNull.Value);
+                    updateCommand.Parameters.AddWithValue("@firedBy", incomingItem.FiredBy ?? (object)DBNull.Value);
                     updateCommand.Parameters.AddWithValue("@itemName", incomingItem.ItemName);
                     updateCommand.Parameters.AddWithValue("@quantity", incomingItem.Quantity);
                     updateCommand.Parameters.AddWithValue("@itemPrice", incomingItem.ItemPrice ?? (object)DBNull.Value);
@@ -1597,11 +2060,16 @@ public class OrderService
                 OrderId = reader["order_id"].ToString() ?? "",
                 ClientItemId = reader["client_item_id"]?.ToString(),
                 CloudItemId = reader["cloud_item_id"] == DBNull.Value ? null : Convert.ToInt32(reader["cloud_item_id"]),
+                CloudItemExternalId = HasColumn(reader, "cloud_item_external_id") ? reader["cloud_item_external_id"]?.ToString() : null,
                 MenuItemId = reader["menu_item_id"]?.ToString(),
                 VariantId = reader["variant_id"]?.ToString(),
                 VariantName = reader["variant_name"]?.ToString(),
                 DisplayName = reader["display_name"]?.ToString(),
                 PrintGroupId = reader["print_group_id"]?.ToString(),
+                PrintInRed = Convert.ToBoolean(reader["print_in_red"]),
+                CourseType = reader["course_type"]?.ToString(),
+                FiredAt = reader["fired_at"] == DBNull.Value ? null : Convert.ToDateTime(reader["fired_at"]),
+                FiredBy = reader["fired_by"]?.ToString(),
                 ItemName = reader["item_name"].ToString() ?? "",
                 Quantity = Convert.ToInt32(reader["quantity"]),
                 ItemPrice = reader["item_price"] == DBNull.Value ? null : Convert.ToDecimal(reader["item_price"]),
@@ -2444,7 +2912,8 @@ public class OrderService
         decimal tipAmount = 0,
         string? reference = null,
         string? createdBy = null,
-        object? metadata = null)
+        object? metadata = null,
+        decimal? maximumApprovedTotal = null)
     {
         if (string.IsNullOrWhiteSpace(externalOrderId) || string.IsNullOrWhiteSpace(paymentMethod))
         {
@@ -2476,9 +2945,10 @@ public class OrderService
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
             await EnsureLifecycleSchemaAsync(connection);
+            using var transaction = await connection.BeginTransactionAsync();
 
-            const string findOrderSql = "SELECT id FROM orders WHERE order_id = @orderId LIMIT 1";
-            using var findOrderCommand = new MySqlCommand(findOrderSql, connection);
+            const string findOrderSql = "SELECT id FROM orders WHERE order_id = @orderId LIMIT 1 FOR UPDATE";
+            using var findOrderCommand = new MySqlCommand(findOrderSql, connection, transaction);
             findOrderCommand.Parameters.AddWithValue("@orderId", externalOrderId);
             var orderIdObj = await findOrderCommand.ExecuteScalarAsync();
             if (orderIdObj == null)
@@ -2488,8 +2958,40 @@ public class OrderService
 
             var orderDbId = Convert.ToInt32(orderIdObj);
 
+            if (normalizedStatus == "approved" && !string.IsNullOrWhiteSpace(reference))
+            {
+                const string duplicateSql = """
+                    SELECT COUNT(*) FROM order_payments
+                    WHERE order_id = @orderId AND status = 'approved' AND reference = @reference
+                    """;
+                using var duplicateCommand = new MySqlCommand(duplicateSql, connection, transaction);
+                duplicateCommand.Parameters.AddWithValue("@orderId", orderDbId);
+                duplicateCommand.Parameters.AddWithValue("@reference", reference);
+                if (Convert.ToInt32(await duplicateCommand.ExecuteScalarAsync() ?? 0) > 0)
+                {
+                    await transaction.CommitAsync();
+                    return true;
+                }
+            }
+
+            if (normalizedStatus == "approved" && maximumApprovedTotal.HasValue)
+            {
+                const string approvedTotalSql = """
+                    SELECT COALESCE(SUM(amount), 0) FROM order_payments
+                    WHERE order_id = @orderId AND status = 'approved'
+                    """;
+                using var approvedTotalCommand = new MySqlCommand(approvedTotalSql, connection, transaction);
+                approvedTotalCommand.Parameters.AddWithValue("@orderId", orderDbId);
+                var approvedTotal = Convert.ToDecimal(await approvedTotalCommand.ExecuteScalarAsync() ?? 0m);
+                if (approvedTotal + amount > maximumApprovedTotal.Value + 0.009m)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+            }
+
             const string nextAttemptSql = "SELECT COALESCE(MAX(attempt_no), 0) + 1 FROM order_payments WHERE order_id = @orderId";
-            using var nextAttemptCommand = new MySqlCommand(nextAttemptSql, connection);
+            using var nextAttemptCommand = new MySqlCommand(nextAttemptSql, connection, transaction);
             nextAttemptCommand.Parameters.AddWithValue("@orderId", orderDbId);
             var attemptNo = Convert.ToInt32(await nextAttemptCommand.ExecuteScalarAsync());
 
@@ -2499,7 +3001,7 @@ public class OrderService
                 VALUES
                     (@orderId, @attemptNo, @paymentMethod, @amount, 'GBP', @status, @reference, @tipAmount, @metadataJson, @createdAt, @createdBy)";
 
-            using var insertCommand = new MySqlCommand(insertSql, connection);
+            using var insertCommand = new MySqlCommand(insertSql, connection, transaction);
             insertCommand.Parameters.AddWithValue("@orderId", orderDbId);
             insertCommand.Parameters.AddWithValue("@attemptNo", attemptNo);
             insertCommand.Parameters.AddWithValue("@paymentMethod", normalizedMethod);
@@ -2511,6 +3013,8 @@ public class OrderService
             insertCommand.Parameters.AddWithValue("@createdAt", DateTime.Now);
             insertCommand.Parameters.AddWithValue("@createdBy", createdBy ?? (object)DBNull.Value);
             await insertCommand.ExecuteNonQueryAsync();
+
+            await transaction.CommitAsync();
 
             await PublishOrderTerminalEventAsync(
                 connection,
@@ -2582,6 +3086,74 @@ public class OrderService
         return payments;
     }
 
+    public async Task<bool> VoidApprovedPaymentAsync(int paymentId, string voidedBy, string reason)
+    {
+        if (paymentId <= 0 || string.IsNullOrWhiteSpace(voidedBy) || string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+        await connection.OpenAsync();
+        await EnsureLifecycleSchemaAsync(connection);
+        const string sql = """
+            UPDATE order_payments
+            SET status = 'voided',
+                metadata_json = JSON_SET(
+                    COALESCE(metadata_json, JSON_OBJECT()),
+                    '$.voidedBy', @voidedBy,
+                    '$.voidReason', @reason,
+                    '$.voidedAt', @voidedAt)
+            WHERE id = @paymentId AND status = 'approved'
+            """;
+        using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@paymentId", paymentId);
+        command.Parameters.AddWithValue("@voidedBy", voidedBy.Trim());
+        command.Parameters.AddWithValue("@reason", reason.Trim());
+        command.Parameters.AddWithValue("@voidedAt", DateTime.UtcNow.ToString("O"));
+        // Voiding the approved row also removes its associated tip from every
+        // reconciliation query because both are stored on the same payment row.
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
+    private static void AddServiceChargeParameters(MySqlCommand command, Order order)
+    {
+        command.Parameters.AddWithValue("@serviceChargePercentage", order.ServiceChargePercentage);
+        command.Parameters.AddWithValue("@serviceChargeBasis", order.ServiceChargeBasis);
+        command.Parameters.AddWithValue("@serviceChargeAmount", order.ServiceChargeAmount);
+        command.Parameters.AddWithValue("@serviceChargeStatus", string.IsNullOrWhiteSpace(order.ServiceChargeStatus)
+            ? "not_configured"
+            : order.ServiceChargeStatus);
+        command.Parameters.AddWithValue("@serviceChargeClassification",
+            string.IsNullOrWhiteSpace(order.ServiceChargeClassification)
+                ? DBNull.Value
+                : order.ServiceChargeClassification);
+        command.Parameters.AddWithValue("@serviceChargeRemovalReason", order.ServiceChargeRemovalReason ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@serviceChargeRemovedByUserId", order.ServiceChargeRemovedByUserId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@serviceChargeRemovedByName", order.ServiceChargeRemovedByName ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@serviceChargeApprovedByUserId", order.ServiceChargeApprovedByUserId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@serviceChargeApprovedByName", order.ServiceChargeApprovedByName ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@serviceChargeRemovedAt", order.ServiceChargeRemovedAt ?? (object)DBNull.Value);
+    }
+
+    private static void AddCloudPaymentParameters(MySqlCommand command, Order order)
+    {
+        command.Parameters.AddWithValue("@paymentStatus", order.PaymentStatusRaw ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@amountPaid", order.AmountPaid ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@paymentProvider", order.PaymentProvider ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@paymentReference", order.TransactionId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@paymentCurrency", order.CurrencyCode ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@voucherCode", order.VoucherCode ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@promoCode", order.PromoCode ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@giftCardNumberMasked", order.GiftCardNumberMasked ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@giftCardAmountPaid", order.GiftCardAmountPaid ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@giftCardRemainingBalance", order.GiftCardRemainingBalance ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@loyaltyPointsEarned", order.LoyaltyPointsEarned);
+        command.Parameters.AddWithValue("@loyaltyPointsRedeemed", order.LoyaltyPointsRedeemed);
+        command.Parameters.AddWithValue("@loyaltyPointsDiscount", order.LoyaltyPointsDiscount);
+        command.Parameters.AddWithValue("@loyaltyBalanceAfter", order.LoyaltyBalanceAfter ?? (object)DBNull.Value);
+    }
+
     private Order MapOrderFromReader(MySqlDataReader reader)
     {
         return new Order
@@ -2607,12 +3179,76 @@ public class OrderService
                 ? Convert.ToDecimal(reader["discount_amount"])
                 : 0,
             DeliveryFee = reader["delivery_fee"] != DBNull.Value ? Convert.ToDecimal(reader["delivery_fee"]) : 0,
+            ServiceChargePercentage = HasColumn(reader, "service_charge_percentage") && reader["service_charge_percentage"] != DBNull.Value
+                ? Convert.ToDecimal(reader["service_charge_percentage"])
+                : 0,
+            ServiceChargeBasis = HasColumn(reader, "service_charge_basis") && reader["service_charge_basis"] != DBNull.Value
+                ? Convert.ToDecimal(reader["service_charge_basis"])
+                : 0,
+            ServiceChargeAmount = HasColumn(reader, "service_charge_amount") && reader["service_charge_amount"] != DBNull.Value
+                ? Convert.ToDecimal(reader["service_charge_amount"])
+                : 0,
+            ServiceChargeStatus = HasColumn(reader, "service_charge_status")
+                ? reader["service_charge_status"]?.ToString() ?? "not_configured"
+                : "not_configured",
+            ServiceChargeClassification = HasColumn(reader, "service_charge_classification")
+                ? reader["service_charge_classification"]?.ToString()
+                : null,
+            ServiceChargeRemovalReason = HasColumn(reader, "service_charge_removal_reason") ? reader["service_charge_removal_reason"]?.ToString() : null,
+            ServiceChargeRemovedByUserId = HasColumn(reader, "service_charge_removed_by_user_id") && reader["service_charge_removed_by_user_id"] != DBNull.Value
+                ? Convert.ToInt32(reader["service_charge_removed_by_user_id"])
+                : null,
+            ServiceChargeRemovedByName = HasColumn(reader, "service_charge_removed_by_name") ? reader["service_charge_removed_by_name"]?.ToString() : null,
+            ServiceChargeApprovedByUserId = HasColumn(reader, "service_charge_approved_by_user_id") && reader["service_charge_approved_by_user_id"] != DBNull.Value
+                ? Convert.ToInt32(reader["service_charge_approved_by_user_id"])
+                : null,
+            ServiceChargeApprovedByName = HasColumn(reader, "service_charge_approved_by_name") ? reader["service_charge_approved_by_name"]?.ToString() : null,
+            ServiceChargeRemovedAt = HasColumn(reader, "service_charge_removed_at") && reader["service_charge_removed_at"] != DBNull.Value
+                ? Convert.ToDateTime(reader["service_charge_removed_at"])
+                : null,
             TaxAmount = reader["tax_amount"] != DBNull.Value ? Convert.ToDecimal(reader["tax_amount"]) : 0,
+            CashTipAmount = HasColumn(reader, "cash_tip_amount") && reader["cash_tip_amount"] != DBNull.Value
+                ? Convert.ToDecimal(reader["cash_tip_amount"])
+                : 0,
+            CardTipAmount = HasColumn(reader, "card_tip_amount") && reader["card_tip_amount"] != DBNull.Value
+                ? Convert.ToDecimal(reader["card_tip_amount"])
+                : 0,
             
             // Order details
             OrderType = NormalizeOrderType(reader["order_type"]?.ToString()),
             SourceChannel = NormalizeSourceChannel(HasColumn(reader, "source_channel") ? reader["source_channel"]?.ToString() : null),
             PaymentMethod = reader["payment_method"]?.ToString(),
+            PaymentStatusRaw = HasColumn(reader, "payment_status") ? reader["payment_status"]?.ToString() : null,
+            AmountPaid = HasColumn(reader, "amount_paid") && reader["amount_paid"] != DBNull.Value
+                ? Convert.ToDecimal(reader["amount_paid"])
+                : null,
+            PaymentProvider = HasColumn(reader, "payment_provider") ? reader["payment_provider"]?.ToString() : null,
+            TransactionId = HasColumn(reader, "payment_reference") ? reader["payment_reference"]?.ToString() : null,
+            CurrencyCode = HasColumn(reader, "payment_currency") ? reader["payment_currency"]?.ToString() : null,
+            VoucherCode = HasColumn(reader, "voucher_code") ? reader["voucher_code"]?.ToString() : null,
+            PromoCode = HasColumn(reader, "promo_code") ? reader["promo_code"]?.ToString() : null,
+            GiftCardNumberMasked = HasColumn(reader, "gift_card_number_masked") ? reader["gift_card_number_masked"]?.ToString() : null,
+            GiftCardAmountPaid = HasColumn(reader, "gift_card_amount_paid") && reader["gift_card_amount_paid"] != DBNull.Value
+                ? Convert.ToDecimal(reader["gift_card_amount_paid"])
+                : null,
+            GiftCardRemainingBalance = HasColumn(reader, "gift_card_remaining_balance") && reader["gift_card_remaining_balance"] != DBNull.Value
+                ? Convert.ToDecimal(reader["gift_card_remaining_balance"])
+                : null,
+            LoyaltyPointsEarned = HasColumn(reader, "loyalty_points_earned") && reader["loyalty_points_earned"] != DBNull.Value
+                ? Convert.ToInt32(reader["loyalty_points_earned"])
+                : 0,
+            LoyaltyPointsRedeemed = HasColumn(reader, "loyalty_points_redeemed") && reader["loyalty_points_redeemed"] != DBNull.Value
+                ? Convert.ToInt32(reader["loyalty_points_redeemed"])
+                : 0,
+            LoyaltyPointsDiscount = HasColumn(reader, "loyalty_points_discount") && reader["loyalty_points_discount"] != DBNull.Value
+                ? Convert.ToDecimal(reader["loyalty_points_discount"])
+                : 0,
+            LoyaltyBalanceAfter = HasColumn(reader, "loyalty_balance_after") && reader["loyalty_balance_after"] != DBNull.Value
+                ? Convert.ToInt32(reader["loyalty_balance_after"])
+                : null,
+            PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(
+                reader["payment_method"]?.ToString(),
+                HasColumn(reader, "payment_status") ? reader["payment_status"]?.ToString() : null),
             SpecialInstructions = reader["special_instructions"]?.ToString(),
             ScheduledTime = reader["scheduled_time"] as DateTime?,
             

@@ -356,9 +356,23 @@ public class NetworkPrinterService
                    .SetFontSize(2, 2)
                    .PrintLine("TEST DONE")
                    .SetBold(false)
-                   .SetNormalSize()
-                   .FeedLines(4)
-                   .Cut();
+                   .SetNormalSize();
+
+            if (printer.SupportsTwoColor && printer.Brand == PrinterBrand.Epson)
+            {
+                builder.PrintLine("BLACK INK TEST")
+                       .SetRedInk(true)
+                       .SetBold(true)
+                       .PrintLine("RED INK TEST")
+                       .SetBold(false)
+                       .SetRedInk(false);
+            }
+
+            builder.FeedLines(4);
+            if (printer.HasCutter)
+            {
+                builder.Cut();
+            }
 
             return await SendToPrinterAsync(printer, builder.Build());
         }

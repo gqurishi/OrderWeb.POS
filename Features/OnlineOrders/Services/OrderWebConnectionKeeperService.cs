@@ -131,6 +131,21 @@ public class OrderWebConnectionKeeperService
                 return;
             }
 
+            var endpointValidation = CloudEndpointSecurityPolicy.Validate(
+                !string.IsNullOrWhiteSpace(config.RestApiBaseUrl) ? config.RestApiBaseUrl : config.ApiBaseUrl,
+                config.WebSocketUrl);
+            if (!endpointValidation.IsValid)
+            {
+                UpdateStatus(new OrderWebConnectionStatus
+                {
+                    IsConfigured = true,
+                    IsEnabled = false,
+                    StatusMessage = endpointValidation.Message,
+                    LastError = endpointValidation.Message
+                });
+                return;
+            }
+
             var fingerprint = BuildFingerprint(config);
             var configChanged = !string.Equals(fingerprint, _activeConfigFingerprint, StringComparison.Ordinal);
             _activeConfigFingerprint = fingerprint;

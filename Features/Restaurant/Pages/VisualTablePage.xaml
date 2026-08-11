@@ -34,33 +34,60 @@
                                        InputTransparent="True"/>
         
             <!-- Floor Tabs Bar (Fixed at top) -->
-            <Border Grid.Row="0" 
-                    BackgroundColor="White"
+            <Border x:Name="LayoutToolbar"
+                    Grid.Row="0"
+                    BackgroundColor="#FFFFFF"
                     Stroke="#E5E7EB"
-                    StrokeThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,Auto" Padding="20,15">
+                    StrokeThickness="0,0,0,1"
+                    MinimumHeightRequest="64"
+                    MaximumHeightRequest="72"
+                    VerticalOptions="Start">
+                <Grid ColumnDefinitions="2*,3*"
+                      ColumnSpacing="12"
+                      Padding="12,9">
                     
                     <!-- Floor Pills -->
                     <ScrollView Grid.Column="0" 
                                Orientation="Horizontal" 
-                               HorizontalScrollBarVisibility="Never">
+                               HorizontalScrollBarVisibility="Never"
+                               VerticalScrollBarVisibility="Never"
+                               VerticalOptions="Center"
+                               MaximumHeightRequest="48">
                         <HorizontalStackLayout x:Name="FloorTabsLayout" 
-                                              Spacing="10">
+                                              Spacing="8"
+                                              VerticalOptions="Center">
                             <!-- Floor tabs will be generated dynamically -->
                         </HorizontalStackLayout>
                     </ScrollView>
                     
                     <!-- Admin Tools -->
-                    <HorizontalStackLayout Grid.Column="1" 
-                                          Spacing="12"
-                                          VerticalOptions="Center">
+                    <ScrollView Grid.Column="1"
+                                Orientation="Horizontal"
+                                HorizontalScrollBarVisibility="Never"
+                                VerticalScrollBarVisibility="Never"
+                                HorizontalOptions="Fill"
+                                VerticalOptions="Center"
+                                MaximumHeightRequest="48">
+                    <HorizontalStackLayout x:Name="AdminToolsLayout"
+                                           Spacing="8"
+                                           HorizontalOptions="End"
+                                           VerticalOptions="Center">
 
-                        <Label x:Name="LastSyncLabel"
-                               Text="Not synced yet"
-                               FontSize="12"
-                               FontFamily="OpenSansRegular"
-                               TextColor="#6B7280"
-                               VerticalOptions="Center"/>
+                        <Border BackgroundColor="#F0FDFA"
+                                Stroke="#CCFBF1"
+                                StrokeThickness="1"
+                                Padding="10,7"
+                                MinimumHeightRequest="44">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="10"/>
+                            </Border.StrokeShape>
+                            <Label x:Name="LastSyncLabel"
+                                   Text="Not synced yet"
+                                   FontSize="11"
+                                   FontFamily="OpenSansRegular"
+                                   TextColor="#0F766E"
+                                   VerticalOptions="Center"/>
+                        </Border>
 
                         <!-- Floor Management Button -->
                         <Border x:Name="FloorManagementButton"
@@ -68,6 +95,7 @@
                                 Stroke="#BFDBFE"
                                 StrokeThickness="1"
                                 Padding="12,8"
+                                MinimumHeightRequest="44"
                                 IsVisible="False">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="8"/>
@@ -88,6 +116,7 @@
                                 Stroke="#BBF7D0"
                                 StrokeThickness="1"
                                 Padding="12,8"
+                                MinimumHeightRequest="44"
                                 IsVisible="False">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="8"/>
@@ -108,6 +137,7 @@
                                 Stroke="#E5E7EB"
                                 StrokeThickness="1"
                                 Padding="12,8"
+                                MinimumHeightRequest="44"
                                 IsVisible="False">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="8"/>
@@ -128,6 +158,7 @@
                                 Stroke="#FECACA"
                                 StrokeThickness="1"
                                 Padding="12,8"
+                                MinimumHeightRequest="44"
                                 IsVisible="False">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="8"/>
@@ -148,6 +179,7 @@
                                 Stroke="Transparent"
                                 StrokeThickness="0"
                                 Padding="14,8"
+                                MinimumHeightRequest="44"
                                 IsVisible="False">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="8"/>
@@ -163,6 +195,7 @@
                         </Border>
                         
                     </HorizontalStackLayout>
+                    </ScrollView>
                 </Grid>
             </Border>
 
@@ -182,7 +215,9 @@
             </Border>
 
                  <!-- Full Screen Table Canvas -->
-                 <Grid Grid.Row="2">
+                 <Grid Grid.Row="2"
+                       BackgroundColor="#F1F5F9"
+                       Padding="12,10,12,12">
                   <AbsoluteLayout x:Name="TableCanvas"
                            BackgroundColor="White">
                 

@@ -1,6 +1,6 @@
 # OrderWeb POS Network and MariaDB Deployment
 
-This release requires database schema version `26`. Child terminals block when the Mother database is below `26`; version `25` is no longer sufficient.
+This release requires database schema version `27`. Child terminals block when the Mother database is below `27`.
 
 ## Router and switch preparation
 
@@ -54,7 +54,7 @@ Each Child:
 .\Installer\Network\Test-OrderWebNetwork.ps1 -Role Child
 ```
 
-The verifier checks that the application uses `orderweb_app`, the password meets production policy without displaying it, TLS is requested, and schema version `26` is available. It exits with code `1` on a required failure.
+The verifier checks that the application uses `orderweb_app`, the password meets production policy without displaying it, TLS is requested, and schema version `27` is available. It exits with code `1` on a required failure.
 
 ## Final manual tests
 
@@ -63,6 +63,6 @@ The verifier checks that the application uses `orderweb_app`, the password meets
 - [ ] Each approved Child connects to the Mother and an unapproved device/IP cannot connect.
 - [ ] Mother, Child, and printer addresses remain unchanged after router and device restarts.
 - [ ] MariaDB starts automatically after a Mother reboot.
-- [ ] Every Child blocks login/operation while tested against a database below schema `26`.
+- [ ] Every Child blocks login/operation while tested against a database below schema `27`.
 - [ ] MariaDB TLS is active on a Child session before `-RequireTls` is enabled.
 - [ ] The router/VLAN/firewall configuration is backed up.

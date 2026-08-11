@@ -10,11 +10,13 @@
         </Grid.GestureRecognizers>
         
         <!-- Dialog Card -->
-        <Border WidthRequest="520"
+        <Border MaximumWidthRequest="520"
+                MaximumHeightRequest="600"
+                Margin="12"
                 BackgroundColor="White"
                 StrokeThickness="0"
                 StrokeShape="RoundRectangle 20"
-                HorizontalOptions="Center"
+                HorizontalOptions="Fill"
                 VerticalOptions="Center">
             <Border.Shadow>
                 <Shadow Brush="Black" Offset="0,8" Radius="32" Opacity="0.24" />

@@ -19,6 +19,9 @@ public static class TradingDayHelper
         return date;
     }
 
+    public static DateTime GetBusinessDayStart(DateTime businessDate) =>
+        businessDate.Date.Add(DayStartTime);
+
     public static DateTime GetBusinessDayEnd(DateTime businessDate) =>
         businessDate.Date.AddDays(1).Add(DayStartTime);
 }

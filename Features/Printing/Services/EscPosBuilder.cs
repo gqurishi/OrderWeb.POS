@@ -40,6 +40,8 @@ public class EscPosBuilder
         public static readonly byte[] DOUBLE_WIDTH_ON = { 0x1B, 0x21, 0x20 };   // ESC ! 32
         public static readonly byte[] DOUBLE_SIZE_ON = { 0x1B, 0x21, 0x30 };    // ESC ! 48
         public static readonly byte[] NORMAL_SIZE = { 0x1B, 0x21, 0x00 };       // ESC ! 0
+        public static readonly byte[] COLOR_BLACK = { 0x1B, 0x72, 0x00 };       // ESC r 0
+        public static readonly byte[] COLOR_RED = { 0x1B, 0x72, 0x01 };         // ESC r 1
         
         // Alignment
         public static readonly byte[] ALIGN_LEFT = { 0x1B, 0x61, 0x00 };   // ESC a 0
@@ -124,6 +126,16 @@ public class EscPosBuilder
     {
         _buffer.AddRange(Commands.NORMAL_SIZE);
         _buffer.AddRange(new byte[] { 0x1D, 0x21, 0x00 });
+        return this;
+    }
+
+    /// <summary>
+    /// Select black or red ink on compatible two-colour ESC/POS impact printers.
+    /// Call this at the start of a line and reset to black after the coloured block.
+    /// </summary>
+    public EscPosBuilder SetRedInk(bool red)
+    {
+        _buffer.AddRange(red ? Commands.COLOR_RED : Commands.COLOR_BLACK);
         return this;
     }
 

@@ -26,7 +26,7 @@ public partial class PrinterSetupPage : ContentPage
     private NetworkPrinterType _selectedType = NetworkPrinterType.Receipt;
     private PaperWidth _selectedWidth = PaperWidth.Mm80;
     private string? _selectedPrintGroupId = null;
-    private ReceiptLogoSize _receiptLogoSize = ReceiptLogoSize.Medium;
+    private ReceiptLogoSize _receiptLogoSize = ReceiptLogoSize.Small;
 
     public PrinterSetupPage()
     {
@@ -123,6 +123,9 @@ public partial class PrinterSetupPage : ContentPage
         UpdateReceiptLogoSizeControls();
     }
 
+    private async void OnSmallLogoSizeClicked(object? sender, EventArgs e) =>
+        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Small);
+
     private async void OnMediumLogoSizeClicked(object? sender, EventArgs e) =>
         await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Medium);
 
@@ -136,9 +139,11 @@ public partial class PrinterSetupPage : ContentPage
             return;
         }
 
+        SmallLogoSizeButton.IsEnabled = false;
         MediumLogoSizeButton.IsEnabled = false;
         LargeLogoSizeButton.IsEnabled = false;
         var saved = await _receiptLogoSettingsService.SaveLogoSizeAsync(size);
+        SmallLogoSizeButton.IsEnabled = true;
         MediumLogoSizeButton.IsEnabled = true;
         LargeLogoSizeButton.IsEnabled = true;
 
@@ -154,12 +159,16 @@ public partial class PrinterSetupPage : ContentPage
 
     private void UpdateReceiptLogoSizeControls()
     {
-        var isMedium = _receiptLogoSize == ReceiptLogoSize.Medium;
-        MediumLogoSizeButton.BackgroundColor = Color.FromArgb(isMedium ? "#0F172A" : "#E2E8F0");
-        MediumLogoSizeButton.TextColor = Color.FromArgb(isMedium ? "#FFFFFF" : "#334155");
-        LargeLogoSizeButton.BackgroundColor = Color.FromArgb(isMedium ? "#E2E8F0" : "#0F172A");
-        LargeLogoSizeButton.TextColor = Color.FromArgb(isMedium ? "#334155" : "#FFFFFF");
+        SetLogoSizeButtonState(SmallLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Small);
+        SetLogoSizeButtonState(MediumLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Medium);
+        SetLogoSizeButtonState(LargeLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Large);
         LogoSizeStatusLabel.Text = $"Selected: {_receiptLogoSize} (saved automatically)";
+    }
+
+    private static void SetLogoSizeButtonState(Button button, bool isSelected)
+    {
+        button.BackgroundColor = Color.FromArgb(isSelected ? "#0F172A" : "#E2E8F0");
+        button.TextColor = Color.FromArgb(isSelected ? "#FFFFFF" : "#334155");
     }
 
     private async Task LoadRoutingSettingsAsync()
@@ -453,6 +462,10 @@ public partial class PrinterSetupPage : ContentPage
         {
             nameRow.Children.Add(CreateFeatureBadge("Buzzer", "#F59E0B"));
         }
+        if (printer.SupportsTwoColor)
+        {
+            nameRow.Children.Add(CreateFeatureBadge("Black + Red", "#EF4444"));
+        }
         if (!printer.IsEnabled)
         {
             nameRow.Children.Add(CreateFeatureBadge("Disabled", "#EF4444"));
@@ -560,6 +573,7 @@ public partial class PrinterSetupPage : ContentPage
         CashDrawerCheckbox.IsChecked = printer.HasCashDrawer;
         CutterCheckbox.IsChecked = printer.HasCutter;
         BuzzerCheckbox.IsChecked = printer.HasBuzzer;
+        TwoColorCheckbox.IsChecked = printer.SupportsTwoColor;
         
         // Set print group - load the group name if exists
         if (!string.IsNullOrEmpty(printer.PrintGroupId))
@@ -596,6 +610,7 @@ public partial class PrinterSetupPage : ContentPage
         CashDrawerCheckbox.IsChecked = false;
         CutterCheckbox.IsChecked = true;
         BuzzerCheckbox.IsChecked = false;
+        TwoColorCheckbox.IsChecked = false;
         
         PrintGroupEntry.Text = string.Empty;
         
@@ -718,6 +733,7 @@ public partial class PrinterSetupPage : ContentPage
             printer.HasCashDrawer = CashDrawerCheckbox.IsChecked;
             printer.HasCutter = CutterCheckbox.IsChecked;
             printer.HasBuzzer = BuzzerCheckbox.IsChecked;
+            printer.SupportsTwoColor = TwoColorCheckbox.IsChecked;
             printer.IsEnabled = true;
             
             // Get or create print group from the entered name
@@ -1018,7 +1034,7 @@ public partial class PrinterSetupPage : ContentPage
 
     private async void OnPrintDesignClicked(object? sender, EventArgs e)
     {
-        await Navigation.PushAsync(new PrintTemplatesPage());
+        await NavigationCoordinator.Shared.PushTemporaryPageAsync(new PrintTemplatesPage(), source: sender as VisualElement);
     }
 
     private static bool IsPrivateIpv4Address(string value)

@@ -4,13 +4,15 @@ namespace POS_in_NET.Services;
 
 public enum ReceiptLogoSize
 {
+    Small,
     Medium,
     Large
 }
 
 public sealed class ReceiptLogoSettingsService
 {
-    private const string SettingsKey = "printing.receipt.logo_size";
+    private const string SettingsKey = "printing.receipt.logo_size_v2";
+    private const string LegacySettingsKey = "printing.receipt.logo_size";
     private readonly DatabaseService _databaseService;
 
     public ReceiptLogoSettingsService(DatabaseService databaseService)
@@ -28,14 +30,25 @@ public sealed class ReceiptLogoSettingsService
                 connection);
             command.Parameters.AddWithValue("@key", SettingsKey);
             var value = Convert.ToString(await command.ExecuteScalarAsync());
-            return Enum.TryParse<ReceiptLogoSize>(value, true, out var size)
-                ? size
-                : ReceiptLogoSize.Medium;
+            if (Enum.TryParse<ReceiptLogoSize>(value, true, out var size))
+            {
+                return size;
+            }
+
+            // Version 1 offered Medium and Large. Keep their physical print sizes
+            // unchanged when moving to the new Small, Medium and Large scale.
+            command.Parameters["@key"].Value = LegacySettingsKey;
+            var legacyValue = Convert.ToString(await command.ExecuteScalarAsync());
+            return legacyValue?.Trim().ToLowerInvariant() switch
+            {
+                "large" => ReceiptLogoSize.Medium,
+                _ => ReceiptLogoSize.Small
+            };
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load receipt logo size: {ex.Message}");
-            return ReceiptLogoSize.Medium;
+            return ReceiptLogoSize.Small;
         }
     }
 

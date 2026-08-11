@@ -4,7 +4,7 @@ using POS_in_NET.Models;
 using POS_in_NET.Services;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
+using System.Threading;
 using System.Threading.Tasks;
 using MySqlConnector;
 using Syncfusion.Maui.Calendar;
@@ -14,11 +14,15 @@ namespace POS_in_NET.Pages
     public partial class OrderHistoryPage : ContentPage
     {
         private readonly DatabaseService _databaseService;
-        private ObservableCollection<OrderHistoryItem> CompletedOrders { get; set; } = new();
-        private ObservableCollection<OrderHistoryItem> VoidedOrders { get; set; } = new();
+        private const int PageSize = 50;
+        private readonly SemaphoreSlim _loadGate = new(1, 1);
+        private CancellationTokenSource? _loadCts;
+        private bool _subscribedToChanges;
         
         private DateTime _selectedDate;
         private string _selectedOrderType = "ALL"; // ALL, COL, DEL, TBL
+        private string _searchQuery = string.Empty;
+        private int _pageNumber = 1;
 
         public OrderHistoryPage()
         {
@@ -29,26 +33,59 @@ namespace POS_in_NET.Pages
             
             TopBar.SetPageTitle("Order History");
             
-            CompletedOrdersCollection.ItemsSource = CompletedOrders;
-            VoidedOrdersCollection.ItemsSource = VoidedOrders;
-
             UpdateTabSelection();
             UpdateDateDisplay();
+            UpdatePagination(false);
         }
 
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            if (!_subscribedToChanges)
+            {
+                AppDataRefreshService.DataChanged += OnAppDataChanged;
+                _subscribedToChanges = true;
+            }
+            _ = LoadOrdersSafeAsync();
+        }
+
+        protected override void OnDisappearing()
+        {
+            _loadCts?.Cancel();
+            if (_subscribedToChanges)
+            {
+                AppDataRefreshService.DataChanged -= OnAppDataChanged;
+                _subscribedToChanges = false;
+            }
+            base.OnDisappearing();
+        }
+
+        private void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+        {
+            if (!e.HasKind(AppDataChangeKind.Orders)) return;
+            _pageNumber = 1;
             _ = LoadOrdersSafeAsync();
         }
 
         private async Task LoadOrdersSafeAsync()
         {
+            var nextCts = new CancellationTokenSource();
+            var previousCts = Interlocked.Exchange(ref _loadCts, nextCts);
+            previousCts?.Cancel();
+
             try
             {
-                await LoadCompletedOrdersAsync();
-                await LoadVoidedOrdersAsync();
+                await _loadGate.WaitAsync(nextCts.Token);
+                try
+                {
+                    await LoadOrdersAsync(nextCts.Token);
+                }
+                finally
+                {
+                    _loadGate.Release();
+                }
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Order history load failed: {ex.Message}");
@@ -56,6 +93,11 @@ namespace POS_in_NET.Pages
                 {
                     await AppAlertService.ShowAlertAsync("Error", $"Failed to load order history: {ex.Message}");
                 });
+            }
+            finally
+            {
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _loadCts, null, nextCts), nextCts))
+                    nextCts.Dispose();
             }
         }
 
@@ -67,104 +109,80 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async Task LoadCompletedOrdersAsync()
+        private async Task LoadOrdersAsync(CancellationToken cancellationToken)
         {
-            var rows = new List<OrderHistoryItem>();
-
+            var performance = PosPerformanceMonitor.BeginDataLoad("Order History");
+            var completedRows = new List<OrderHistoryItem>(PageSize);
+            var voidedRows = new List<OrderHistoryItem>(PageSize);
             using var connection = await _databaseService.GetConnectionAsync();
-            var orderTypeFilter = BuildOrderTypeFilter();
 
             var query = $@"
-                SELECT o.id, o.order_id, o.order_type, o.total_amount, 
-                       o.created_at, o.status
-                FROM orders o
-                WHERE DATE(o.created_at) = @selectedDate
-                      AND COALESCE(o.source_channel, 'local') = 'local'
-                {orderTypeFilter}
-                AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'paid' OR LOWER(o.status) IN ('completed', 'closed', 'paid'))
-                ORDER BY o.created_at DESC";
+                WITH ranked_history AS (
+                    SELECT o.id, o.order_id, o.order_number, o.order_type, o.total_amount,
+                           o.created_at, o.status,
+                           CASE WHEN o.local_lifecycle_state = 'voided' OR o.status IN ('void', 'cancelled')
+                                THEN 'voided' ELSE 'completed' END AS history_group,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY CASE WHEN o.local_lifecycle_state = 'voided' OR o.status IN ('void', 'cancelled')
+                                                 THEN 'voided' ELSE 'completed' END
+                               ORDER BY o.created_at DESC, o.id DESC) AS row_number
+                    FROM orders o
+                    WHERE (o.source_channel = 'local' OR o.source_channel IS NULL)
+                          {BuildDateFilter()}
+                          {BuildOrderTypeFilter()}
+                          {BuildSearchFilter()}
+                      AND (o.local_lifecycle_state IN ('paid', 'voided')
+                           OR o.status IN ('completed', 'closed', 'paid', 'void', 'cancelled'))
+                )
+                SELECT id, order_id, order_number, order_type, total_amount,
+                       created_at, status, history_group
+                FROM ranked_history
+                WHERE row_number > @offset AND row_number <= @pageEnd
+                ORDER BY history_group, created_at DESC, id DESC";
 
             using var command = new MySqlCommand(query, connection);
-            command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
+            ApplyQueryParameters(command);
+            var offset = (_pageNumber - 1) * PageSize;
+            command.Parameters.AddWithValue("@offset", offset);
+            command.Parameters.AddWithValue("@pageEnd", offset + PageSize + 1);
 
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
                 var orderType = ReadString(reader, "order_type");
                 var createdAt = reader.GetDateTime("created_at");
-
-                rows.Add(new OrderHistoryItem
+                var row = new OrderHistoryItem
                 {
                     Id = reader.GetInt32("id"),
                     OrderId = ReadString(reader, "order_id"),
+                    OrderNumber = FormatOrderNumber(ReadString(reader, "order_number"), ReadString(reader, "order_id")),
                     OrderType = orderType,
-                    OrderIcon = GetOrderIcon(orderType),
+                    OrderTypeDisplay = FormatOrderType(orderType),
                     TotalAmount = reader.GetDecimal("total_amount"),
                     OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
                     Status = ReadString(reader, "status")
-                });
+                };
+
+                (ReadString(reader, "history_group") == "voided" ? voidedRows : completedRows).Add(row);
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var hasNextPage = completedRows.Count > PageSize || voidedRows.Count > PageSize;
+            if (completedRows.Count > PageSize) completedRows.RemoveAt(PageSize);
+            if (voidedRows.Count > PageSize) voidedRows.RemoveAt(PageSize);
 
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                CompletedOrders.Clear();
-                foreach (var row in rows)
-                {
-                    CompletedOrders.Add(row);
-                }
-
-                CompletedEmptyLabel.IsVisible = CompletedOrders.Count == 0;
+                CompletedOrdersCollection.ItemsSource = completedRows;
+                VoidedOrdersCollection.ItemsSource = voidedRows;
+                CompletedEmptyLabel.Text = string.IsNullOrWhiteSpace(_searchQuery)
+                    ? "No orders found for this date"
+                    : "No matching orders found";
+                CompletedEmptyLabel.IsVisible = completedRows.Count == 0;
+                VoidedOrdersLayout.IsVisible = voidedRows.Count > 0;
+                UpdatePagination(hasNextPage);
             });
-        }
-
-        private async Task LoadVoidedOrdersAsync()
-        {
-            var rows = new List<OrderHistoryItem>();
-
-            using var connection = await _databaseService.GetConnectionAsync();
-            var orderTypeFilter = BuildOrderTypeFilter();
-
-            var query = $@"
-                SELECT o.id, o.order_id, o.order_type, o.total_amount, 
-                       o.created_at, o.status
-                FROM orders o
-                WHERE DATE(o.created_at) = @selectedDate
-                      AND COALESCE(o.source_channel, 'local') = 'local'
-                {orderTypeFilter}
-                AND (COALESCE(LOWER(o.local_lifecycle_state), '') = 'voided' OR LOWER(o.status) IN ('void', 'cancelled'))
-                ORDER BY o.created_at DESC";
-
-            using var command = new MySqlCommand(query, connection);
-            command.Parameters.AddWithValue("@selectedDate", _selectedDate.ToString("yyyy-MM-dd"));
-
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                var orderType = ReadString(reader, "order_type");
-                var createdAt = reader.GetDateTime("created_at");
-
-                rows.Add(new OrderHistoryItem
-                {
-                    Id = reader.GetInt32("id"),
-                    OrderId = ReadString(reader, "order_id"),
-                    OrderType = orderType,
-                    OrderIcon = "",
-                    TotalAmount = reader.GetDecimal("total_amount"),
-                    OrderDateTime = $"{createdAt:h:mm tt} • {createdAt:dd/MM/yyyy}",
-                    Status = ReadString(reader, "status")
-                });
-            }
-
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                VoidedOrders.Clear();
-                foreach (var row in rows)
-                {
-                    VoidedOrders.Add(row);
-                }
-
-                VoidedOrdersLayout.IsVisible = VoidedOrders.Count > 0;
-            });
+            PosPerformanceMonitor.MarkDataVisible(performance);
         }
 
         private static string ReadString(MySqlDataReader reader, string column)
@@ -173,22 +191,33 @@ namespace POS_in_NET.Pages
             return reader.IsDBNull(ordinal) ? string.Empty : reader.GetString(ordinal);
         }
 
-        private string GetOrderIcon(string orderType)
+        private static string FormatOrderNumber(string? orderNumber, string? orderId)
+        {
+            var readableNumber = orderNumber?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(readableNumber))
+            {
+                return readableNumber.StartsWith('#') ? readableNumber : $"#{readableNumber}";
+            }
+
+            var legacyId = orderId?.Trim() ?? string.Empty;
+            if (legacyId.Length > 10)
+            {
+                legacyId = legacyId[..10].ToUpperInvariant();
+            }
+
+            return string.IsNullOrWhiteSpace(legacyId) ? "#—" : $"#{legacyId}";
+        }
+
+        private static string FormatOrderType(string? orderType)
         {
             var normalized = orderType?.Trim().ToLowerInvariant() ?? string.Empty;
 
             return normalized switch
             {
-                "pickup" => "",
-                "collection" => "",
-                "col" => "",
-                "delivery" => "",
-                "del" => "",
-                "table" => "",
-                "tbl" => "",
-                "dine_in" => "",
-                "dine-in" => "",
-                _ => ""
+                "pickup" or "collection" or "col" => "Collection",
+                "delivery" or "del" => "Delivery",
+                "table" or "tbl" or "dine_in" or "dine-in" => "Table",
+                _ => "Order"
             };
         }
 
@@ -198,9 +227,52 @@ namespace POS_in_NET.Pages
             {
                 "COL" => "AND LOWER(o.order_type) IN ('col', 'collection', 'pickup')",
                 "DEL" => "AND LOWER(o.order_type) IN ('del', 'delivery')",
-                "TBL" => "AND LOWER(o.order_type) IN ('tbl', 'table')",
+                "TBL" => "AND LOWER(o.order_type) IN ('tbl', 'table', 'dine_in', 'dine-in')",
                 _ => string.Empty
             };
+        }
+
+        private string BuildDateFilter()
+        {
+            return string.IsNullOrWhiteSpace(_searchQuery)
+                ? "AND o.created_at >= @dayStart AND o.created_at < @dayEnd"
+                : string.Empty;
+        }
+
+        private string BuildSearchFilter()
+        {
+            return string.IsNullOrWhiteSpace(_searchQuery)
+                ? string.Empty
+                : "AND (o.order_id = @searchExact OR o.order_number = @searchExact OR o.customer_phone LIKE @searchPrefix)";
+        }
+
+        private void ApplyQueryParameters(MySqlCommand command)
+        {
+            if (string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                command.Parameters.AddWithValue("@dayStart", _selectedDate.Date);
+                command.Parameters.AddWithValue("@dayEnd", _selectedDate.Date.AddDays(1));
+                return;
+            }
+
+            var search = _searchQuery.Trim().TrimStart('#');
+            command.Parameters.AddWithValue("@searchExact", search);
+            command.Parameters.AddWithValue("@searchPrefix", $"{search}%");
+        }
+
+        private void UpdatePagination(bool hasNextPage)
+        {
+            PageNumberLabel.Text = $"Page {_pageNumber}";
+            PreviousPageButton.IsEnabled = _pageNumber > 1;
+            PreviousPageButton.Opacity = PreviousPageButton.IsEnabled ? 1 : 0.45;
+            NextPageButton.IsEnabled = hasNextPage;
+            NextPageButton.Opacity = hasNextPage ? 1 : 0.45;
+        }
+
+        private void ResetPageAndLoad()
+        {
+            _pageNumber = 1;
+            _ = LoadOrdersSafeAsync();
         }
 
         // Tab Selection Handlers
@@ -208,28 +280,28 @@ namespace POS_in_NET.Pages
         {
             _selectedOrderType = "ALL";
             UpdateTabSelection();
-            _ = LoadOrdersSafeAsync();
+            ResetPageAndLoad();
         }
 
         private void OnCollectionTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "COL";
             UpdateTabSelection();
-            _ = LoadOrdersSafeAsync();
+            ResetPageAndLoad();
         }
 
         private void OnDeliveryTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "DEL";
             UpdateTabSelection();
-            _ = LoadOrdersSafeAsync();
+            ResetPageAndLoad();
         }
 
         private void OnTableTabClicked(object sender, EventArgs e)
         {
             _selectedOrderType = "TBL";
             UpdateTabSelection();
-            _ = LoadOrdersSafeAsync();
+            ResetPageAndLoad();
         }
 
         private void UpdateTabSelection()
@@ -268,7 +340,11 @@ namespace POS_in_NET.Pages
 
         private async void OnCancelClicked(object sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//dashboard");
+            var authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
+            var roleAccess = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
+            await NavigationCoordinator.Shared.NavigateShellAsync(
+                roleAccess.ResolveDashboardRoute(authService.CurrentUser?.Role),
+                source: sender as VisualElement);
         }
 
         private async void OnCalendarClicked(object sender, EventArgs e)
@@ -445,7 +521,7 @@ namespace POS_in_NET.Pages
                 {
                     _selectedDate = calendar.SelectedDate.Value;
                     UpdateDateDisplay();
-                    _ = LoadOrdersSafeAsync();
+                    ResetPageAndLoad();
                 }
                 await Navigation.PopModalAsync();
             };
@@ -469,14 +545,26 @@ namespace POS_in_NET.Pages
         private async void OnSearchClicked(object sender, EventArgs e)
         {
             var searchPage = new OrderSearchModal();
-            searchPage.OrderSelected += (orderId, orderDate) =>
+            searchPage.SearchSubmitted += query =>
             {
-                _selectedDate = orderDate;
-                UpdateDateDisplay();
-                _ = LoadOrdersSafeAsync();
+                _searchQuery = query?.Trim() ?? string.Empty;
+                ResetPageAndLoad();
             };
             
             await Navigation.PushModalAsync(searchPage);
+        }
+
+        private void OnPreviousPageClicked(object sender, EventArgs e)
+        {
+            if (_pageNumber <= 1) return;
+            _pageNumber--;
+            _ = LoadOrdersSafeAsync();
+        }
+
+        private void OnNextPageClicked(object sender, EventArgs e)
+        {
+            _pageNumber++;
+            _ = LoadOrdersSafeAsync();
         }
 
         // Order Action Handlers
@@ -489,34 +577,6 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private async void OnPrintOrderClicked(object sender, EventArgs e)
-        {
-            if (sender is VisualElement element && element.BindingContext is OrderHistoryItem order)
-            {
-                // TODO: Implement print functionality
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Print", $"Printing receipt for {order.OrderId}");
-            }
-        }
-
-        private async void OnRefundOrderClicked(object sender, EventArgs e)
-        {
-            if (sender is VisualElement element && element.BindingContext is OrderHistoryItem order)
-            {
-                var confirm = await DisplayAlert(
-                    "Refund Order",
-                    $"Process refund for {order.OrderId}?\nAmount: £{order.TotalAmount:F2}",
-                    "Yes",
-                    "Cancel"
-                );
-
-                if (confirm)
-                {
-                    var refundModal = new RefundModal(order.Id, order.OrderId, order.TotalAmount);
-                    refundModal.RefundCompleted += () => _ = LoadOrdersSafeAsync();
-                    await Navigation.PushModalAsync(refundModal);
-                }
-            }
-        }
     }
 
     // Helper class for order display
@@ -524,8 +584,9 @@ namespace POS_in_NET.Pages
     {
         public int Id { get; set; }
         public string OrderId { get; set; } = string.Empty;
+        public string OrderNumber { get; set; } = string.Empty;
         public string OrderType { get; set; } = string.Empty;
-        public string OrderIcon { get; set; } = string.Empty;
+        public string OrderTypeDisplay { get; set; } = string.Empty;
         public decimal TotalAmount { get; set; }
         public string OrderDateTime { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

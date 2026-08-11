@@ -16,21 +16,30 @@
         <Grid RowDefinitions="Auto,*,Auto" BackgroundColor="White" RowSpacing="0">
             
             <!-- HEADER - Clean & Elegant -->
-            <VerticalStackLayout Grid.Row="0" Spacing="16" Padding="20,32,20,28" BackgroundColor="White">
+            <VerticalStackLayout Grid.Row="0" Spacing="6" Padding="20,24,20,22" BackgroundColor="White">
                 <!-- Logo -->
                 <Image Source="companymark.png"
-                       WidthRequest="100"
-                       HeightRequest="100"
+                       WidthRequest="88"
+                       HeightRequest="88"
                        Aspect="AspectFit"
                        HorizontalOptions="Center"/>
-                
-                <!-- Subtitle -->
+
+                <!-- Brand -->
+                <Label Text="Order Web"
+                       FontFamily="OpenSansBold"
+                       FontSize="23"
+                       TextColor="#0F2F5F"
+                       CharacterSpacing="0.4"
+                       HorizontalTextAlignment="Center"
+                       HorizontalOptions="Center"/>
+
                 <Label Text="Restaurant Management" 
-                       FontFamily="OpenSansRegular"
-                       FontSize="16"
-                       TextColor="#718096"
-                       HorizontalOptions="Center"
-                       Margin="0,-4,0,0"/>
+                       FontFamily="OpenSansSemibold"
+                       FontSize="13"
+                       TextColor="#64748B"
+                       CharacterSpacing="0.7"
+                       HorizontalTextAlignment="Center"
+                       HorizontalOptions="Center"/>
             </VerticalStackLayout>
 
             <!-- MENU ITEMS - ScrollView for All Items -->

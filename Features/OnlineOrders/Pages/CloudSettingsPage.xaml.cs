@@ -89,7 +89,7 @@ public partial class CloudSettingsPage : ContentPage
     {
         try
         {
-            await Shell.Current.GoToAsync("//settings");
+            await NavigationCoordinator.Shared.NavigateShellAsync("settings", source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -101,7 +101,7 @@ public partial class CloudSettingsPage : ContentPage
     {
         try
         {
-            await Shell.Current.GoToAsync("//settings?tab=UserManagement");
+            await NavigationCoordinator.Shared.NavigateShellAsync("settings?tab=UserManagement", source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -124,7 +124,7 @@ public partial class CloudSettingsPage : ContentPage
             if (postcodeLookupService != null)
             {
                 var postcodePage = new PostcodeLookupPage(postcodeLookupService);
-                await Navigation.PushAsync(postcodePage);
+                await NavigationCoordinator.Shared.PushTemporaryPageAsync(postcodePage);
             }
         }
         catch (Exception ex)
@@ -439,6 +439,13 @@ public partial class CloudSettingsPage : ContentPage
 
             var tenantSlug = TenantSlugEntry.Text.Trim();
             var wsUrl = WebSocketUrlEntry.Text?.Trim() ?? "wss://orderweb.net:9011";
+            var restUrl = RestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api";
+            var endpointValidation = CloudEndpointSecurityPolicy.Validate(restUrl, wsUrl);
+            if (!endpointValidation.IsValid)
+            {
+                await ShowAlertAsync("Secure Connection Required", endpointValidation.Message);
+                return;
+            }
             
             System.Diagnostics.Debug.WriteLine("========================================");
             System.Diagnostics.Debug.WriteLine(" SAVE SETTINGS CLICKED");
@@ -456,7 +463,7 @@ public partial class CloudSettingsPage : ContentPage
             {
                 TenantSlug = tenantSlug,
                 ApiKey = ApiKeyEntry.Text.Trim(),
-                RestApiBaseUrl = RestApiUrlEntry.Text?.Trim() ?? "https://orderweb.net/api",
+                RestApiBaseUrl = restUrl,
                 WebSocketUrl = wsUrl,
                 IsEnabled = true,
                 ConnectionTimeout = 30,
@@ -641,6 +648,17 @@ public partial class CloudSettingsPage : ContentPage
                 if (!silentMode)
                 {
                     await ToastNotification.ShowAsync("Error", "Please enter your Restaurant ID and API Key", Services.NotificationType.Error, 3000);
+                }
+                return;
+            }
+
+            var endpointValidation = CloudEndpointSecurityPolicy.Validate(config.RestApiBaseUrl, config.WebSocketUrl);
+            if (!endpointValidation.IsValid)
+            {
+                UpdateStatus("Configuration Error", "#DC3545", endpointValidation.Message);
+                if (!silentMode)
+                {
+                    await ShowAlertAsync("Secure Connection Required", endpointValidation.Message);
                 }
                 return;
             }
@@ -881,7 +899,7 @@ public partial class CloudSettingsPage : ContentPage
 
         var uploadToday = await DisplayAlert(
             "Upload Daily Report",
-            "Upload today's in-restaurant totals to OrderWeb.net?",
+            "Upload today's final in-restaurant totals to OrderWeb.net? A successful report is permanent and cannot be replaced.",
             "Upload Today",
             "Cancel");
 
@@ -895,7 +913,7 @@ public partial class CloudSettingsPage : ContentPage
             UploadDailyReportButton.IsEnabled = false;
             UploadDailyReportButton.Text = "Uploading daily report...";
 
-            var result = await syncService.UploadManualAsync(DateTime.Today, forceReupload: true);
+            var result = await syncService.UploadManualAsync(DateTime.Today);
             await ShowAlertAsync(
                 result.Success ? "Upload Complete" : "Upload Failed",
                 result.Message);
@@ -923,23 +941,23 @@ public partial class CloudSettingsPage : ContentPage
             }
 
             // Navigate to login page immediately
-            await Shell.Current.GoToAsync("//login");
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($" Logout error: {ex.Message}");
             // Still navigate to login even if logout service fails
-            await Shell.Current.GoToAsync("//login");
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
         }
     }
 
     private async void OnBusinessSettingsClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("//settings");
+        await NavigationCoordinator.Shared.NavigateShellAsync("settings", source: sender as VisualElement);
     }
 
     private async void OnUserManagementClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("//settings?tab=UserManagement");
+        await NavigationCoordinator.Shared.NavigateShellAsync("settings?tab=UserManagement", source: sender as VisualElement);
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Devices;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -19,7 +20,6 @@ namespace POS_in_NET.Views
         public VirtualKeyboardDialog()
         {
             InitializeComponent();
-            StartCursorBlink();
         }
 
         public void SetInitialText(string text)
@@ -69,6 +69,7 @@ namespace POS_in_NET.Views
                 IsVisible = true;
                 page.SizeChanged += OnHostPageSizeChanged;
                 ApplyResponsiveLayout(page.Width, page.Height);
+                FocusInput(moveCursorToEnd: true);
                 return;
             }
 
@@ -101,6 +102,7 @@ namespace POS_in_NET.Views
             IsVisible = true;
             page.SizeChanged += OnHostPageSizeChanged;
             ApplyResponsiveLayout(page.Width, page.Height);
+            FocusInput(moveCursorToEnd: true);
         }
 
         private void CloseDialog()
@@ -143,26 +145,63 @@ namespace POS_in_NET.Views
                 width = display.Width / display.Density;
             }
 
+            if (height <= 0)
+            {
+                var display = DeviceDisplay.Current.MainDisplayInfo;
+                height = display.Height / display.Density;
+            }
+
             var isSmall = width < 720;
             var isMedium = width >= 720 && width < 1100;
+            var isShort = height <= 800;
+            var isVeryShort = height <= 650;
 
-            var horizontalPadding = isSmall ? 8 : 12;
-            KeyboardCard.Margin = new Thickness(horizontalPadding, 0, horizontalPadding, isSmall ? 8 : 10);
+            var profile = TabletLayoutHelper.GetProfile(width, height);
+            var horizontalPadding = profile.DialogMargin;
+            var verticalPadding = profile.SafeBottom;
+            KeyboardCard.Margin = new Thickness(horizontalPadding, 0, horizontalPadding, verticalPadding);
             KeyboardCard.MaximumWidthRequest = isSmall ? width - (horizontalPadding * 2) : Math.Min(1100, width - (horizontalPadding * 2));
+            KeyboardCard.MaximumHeightRequest = Math.Max(360, height - (verticalPadding * 2));
 
-            var keyHeight = isSmall ? 40 : isMedium ? 44 : 48;
-            var keyFont = isSmall ? 14 : isMedium ? 16 : 18;
-            var actionFont = isSmall ? 11 : isMedium ? 12 : 13;
+            var keyHeight = isVeryShort ? 44 : isShort ? 44 : isSmall ? 44 : isMedium ? 46 : 48;
+            var keyFont = isVeryShort ? 13 : isShort ? 15 : isSmall ? 14 : isMedium ? 16 : 18;
+            var actionFont = isVeryShort ? 10 : isShort || isSmall ? 11 : isMedium ? 12 : 13;
+            var cornerRadius = isShort ? 10 : 14;
 
             foreach (var button in GetButtons(KeyboardRowsContainer))
             {
                 var isActionButton = button == EnterButton || button.Text is "CANCEL" or "CLEAR" or "ENTER" or "DONE" or "DEL";
                 button.HeightRequest = keyHeight;
                 button.FontSize = isActionButton ? actionFont : keyFont;
+                button.CornerRadius = cornerRadius;
             }
 
-            SearchTextLabel.FontSize = isSmall ? 17 : isMedium ? 18 : 21;
-            CursorLabel.FontSize = SearchTextLabel.FontSize;
+            KeyboardHeader.Padding = isVeryShort
+                ? new Thickness(12, 6)
+                : isShort ? new Thickness(14, 8) : new Thickness(18, 12);
+            KeyboardRowsContainer.Padding = isVeryShort
+                ? new Thickness(8, 2, 8, 6)
+                : isShort ? new Thickness(10, 3, 10, 8) : new Thickness(14, 4, 14, 14);
+            KeyboardRowsContainer.Spacing = isVeryShort ? 3 : isShort ? 4 : 6;
+            SetKeyboardRowSpacing(isVeryShort ? 3 : isShort ? 4 : 5);
+
+            KeyboardInputBorder.Margin = isVeryShort
+                ? new Thickness(10, 5, 10, 4)
+                : isShort ? new Thickness(12, 8, 12, 5) : new Thickness(20, 14, 20, 8);
+            KeyboardInputBorder.HeightRequest = isVeryShort ? 44 : isShort ? 48 : 52;
+            KeyboardInputEntry.HeightRequest = KeyboardInputBorder.HeightRequest - 2;
+            KeyboardInputEntry.FontSize = isVeryShort ? 16 : isShort || isSmall ? 17 : isMedium ? 18 : 21;
+        }
+
+        private void SetKeyboardRowSpacing(double spacing)
+        {
+            foreach (var child in KeyboardRowsContainer.Children)
+            {
+                if (child is Grid row)
+                {
+                    row.ColumnSpacing = spacing;
+                }
+            }
         }
 
         private static IEnumerable<Button> GetButtons(IView root)
@@ -190,51 +229,115 @@ namespace POS_in_NET.Views
 
         private void UpdateDisplay()
         {
-            SearchTextLabel.Text = _searchText;
+            if (!string.Equals(KeyboardInputEntry.Text, _searchText, StringComparison.Ordinal))
+            {
+                KeyboardInputEntry.Text = _searchText;
+            }
         }
 
-        private void StartCursorBlink()
+        private void FocusInput(bool moveCursorToEnd = false)
         {
-            // Simple cursor blink animation
-            Device.StartTimer(TimeSpan.FromMilliseconds(500), () =>
+            Dispatcher.Dispatch(() =>
             {
-                if (IsVisible)
+                if (!IsVisible || _isClosed)
                 {
-                    CursorLabel.IsVisible = !CursorLabel.IsVisible;
-                    return true;
+                    return;
                 }
-                return false;
+
+                KeyboardInputEntry.Focus();
+                if (moveCursorToEnd)
+                {
+                    KeyboardInputEntry.CursorPosition = KeyboardInputEntry.Text?.Length ?? 0;
+                    KeyboardInputEntry.SelectionLength = 0;
+                }
             });
+        }
+
+        private void ReplaceSelection(string value)
+        {
+            var currentText = KeyboardInputEntry.Text ?? _searchText;
+            var cursorPosition = Math.Clamp(KeyboardInputEntry.CursorPosition, 0, currentText.Length);
+            var selectionLength = Math.Clamp(
+                KeyboardInputEntry.SelectionLength,
+                0,
+                currentText.Length - cursorPosition);
+
+            _searchText = currentText.Remove(cursorPosition, selectionLength)
+                .Insert(cursorPosition, value);
+            UpdateDisplay();
+
+            Dispatcher.Dispatch(() =>
+            {
+                KeyboardInputEntry.Focus();
+                KeyboardInputEntry.CursorPosition = cursorPosition + value.Length;
+                KeyboardInputEntry.SelectionLength = 0;
+            });
+        }
+
+        private void OnPhysicalTextChanged(object? sender, TextChangedEventArgs e)
+        {
+            _searchText = e.NewTextValue ?? string.Empty;
+        }
+
+        private void OnPhysicalEnterPressed(object? sender, EventArgs e)
+        {
+            CompleteDialog(_searchText);
         }
 
         private void OnKeyPressed(object? sender, EventArgs e)
         {
             if (sender is Button button)
             {
-                _searchText += button.Text;
-                UpdateDisplay();
+                ReplaceSelection(button.Text);
             }
         }
 
         private void OnBackspacePressed(object? sender, EventArgs e)
         {
-            if (_searchText.Length > 0)
+            var currentText = KeyboardInputEntry.Text ?? _searchText;
+            var cursorPosition = Math.Clamp(KeyboardInputEntry.CursorPosition, 0, currentText.Length);
+            var selectionLength = Math.Clamp(
+                KeyboardInputEntry.SelectionLength,
+                0,
+                currentText.Length - cursorPosition);
+
+            if (selectionLength > 0)
             {
-                _searchText = _searchText.Substring(0, _searchText.Length - 1);
+                _searchText = currentText.Remove(cursorPosition, selectionLength);
                 UpdateDisplay();
+                FocusInputAt(cursorPosition);
+            }
+            else if (cursorPosition > 0)
+            {
+                _searchText = currentText.Remove(cursorPosition - 1, 1);
+                UpdateDisplay();
+                FocusInputAt(cursorPosition - 1);
             }
         }
 
         private void OnSpacePressed(object? sender, EventArgs e)
         {
-            _searchText += " ";
-            UpdateDisplay();
+            ReplaceSelection(" ");
         }
 
         private void OnClearPressed(object? sender, EventArgs e)
         {
             _searchText = string.Empty;
             UpdateDisplay();
+            FocusInput(moveCursorToEnd: true);
+        }
+
+        private void FocusInputAt(int cursorPosition)
+        {
+            Dispatcher.Dispatch(() =>
+            {
+                KeyboardInputEntry.Focus();
+                KeyboardInputEntry.CursorPosition = Math.Clamp(
+                    cursorPosition,
+                    0,
+                    KeyboardInputEntry.Text?.Length ?? 0);
+                KeyboardInputEntry.SelectionLength = 0;
+            });
         }
 
         private void CompleteDialog(string? result)

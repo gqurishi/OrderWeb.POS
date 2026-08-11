@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using MyFirstMauiApp.Models;
 using MyFirstMauiApp.Services;
+using POS_in_NET.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -230,12 +231,12 @@ public partial class PrintGroupsPage : ContentPage
             DisplayOrder = _printGroups.Count + 1
         };
 
-        await Navigation.PushAsync(new AddEditPrintGroupPage(newGroup, true));
+        await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditPrintGroupPage(newGroup, true), source: sender as VisualElement);
     }
 
     private async Task OnEditPrintGroupClicked(PrintGroup group)
     {
-        await Navigation.PushAsync(new AddEditPrintGroupPage(group, false));
+        await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditPrintGroupPage(group, false));
     }
 
     private async Task OnTogglePrintGroupClicked(PrintGroup group, Button toggleButton)

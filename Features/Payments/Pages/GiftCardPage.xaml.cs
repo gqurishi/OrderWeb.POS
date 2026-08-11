@@ -50,7 +50,7 @@ public partial class GiftCardPage : ContentPage
         if (!_roleAccessService.IsManagerOrAdmin(_authService.CurrentUser?.Role))
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Manager and Admin can access Gift Cards.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             return;
         }
 
@@ -92,7 +92,7 @@ public partial class GiftCardPage : ContentPage
         try
         {
             var dashboardRoute = _roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role);
-            await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+            await NavigationCoordinator.Shared.NavigateShellAsync(dashboardRoute, animated: false, source: sender as VisualElement);
         }
         catch (Exception ex)
         {

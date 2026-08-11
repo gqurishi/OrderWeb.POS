@@ -6,7 +6,7 @@
              Title="Delivery Order"
              BackgroundColor="#F8F9FA">
 
-    <Grid Padding="50" RowDefinitions="Auto,*,Auto">
+    <Grid Padding="{DynamicResource ResponsivePagePadding}" RowDefinitions="Auto,*,Auto">
 
         <!-- Toast Notification Overlay -->
         <controls:ToastNotification x:Name="ToastNotification"
@@ -14,7 +14,7 @@
                                     ZIndex="1000"/>
         
         <!-- Header -->
-        <VerticalStackLayout Grid.Row="0" Spacing="12" Margin="0,0,0,40">
+        <VerticalStackLayout Grid.Row="0" Spacing="8" Margin="0,0,0,12">
             <Label Text="Delivery Order" 
                    FontSize="36" 
                    FontAttributes="Bold" 
@@ -35,7 +35,9 @@
 
         <!-- Main Content -->
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Spacing="30" HorizontalOptions="Center" WidthRequest="550">
+            <VerticalStackLayout Spacing="{DynamicResource ResponsiveSectionSpacing}"
+                                 HorizontalOptions="Center"
+                                 MaximumWidthRequest="550">
                 
                 <!-- Customer Name -->
                 <VerticalStackLayout Spacing="12">
@@ -145,7 +147,7 @@
                             StrokeThickness="2"
                             Stroke="#E2E8F0"
                             Padding="0"
-                            MaximumHeightRequest="560"
+                            MaximumHeightRequest="{DynamicResource ResponsiveDialogBodyHeight}"
                             MinimumHeightRequest="56"
                             Margin="0,8,0,0">
                         <Border.StrokeShape>
@@ -176,9 +178,9 @@
                     
                     <!-- Structured Address Form -->
                     <VerticalStackLayout Spacing="16" Margin="0,16,0,0">
-                        <!-- Address Line 1 -->
+                        <!-- Flat / House Number -->
                         <VerticalStackLayout Spacing="8">
-                            <Label Text="Address" 
+                            <Label Text="Flat / House Number"
                                    FontSize="14" 
                                    FontAttributes="Bold"
                                    TextColor="#1A202C"/>
@@ -190,10 +192,38 @@
                                     <RoundRectangle CornerRadius="12"/>
                                 </Border.StrokeShape>
                                 <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Tapped="OnAddressLine1FieldTapped" />
+                                    <TapGestureRecognizer Tapped="OnHouseNumberFieldTapped" />
                                 </Border.GestureRecognizers>
-                                <Entry x:Name="AddressLine1Entry"
-                                       Placeholder="Street address"
+                                <Entry x:Name="HouseNumberEntry"
+                                       Placeholder="e.g., Flat 2 or 24A"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0"/>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Road Name -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Road Name"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C"/>
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12"/>
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnRoadNameFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="RoadNameEntry"
+                                       Placeholder="e.g., High Street"
                                        FontSize="16"
                                        TextColor="#1A202C"
                                        PlaceholderColor="#A0AEC0"
@@ -232,38 +262,8 @@
                             </Border>
                         </VerticalStackLayout>
 
-                        <!-- State and Postcode -->
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <!-- County/State -->
-                            <VerticalStackLayout Grid.Column="0" Spacing="8">
-                                <Label Text="County" 
-                                       FontSize="14" 
-                                       FontAttributes="Bold"
-                                       TextColor="#1A202C"/>
-                                <Border BackgroundColor="White"
-                                        StrokeThickness="2"
-                                        Stroke="#E2E8F0"
-                                        Padding="0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="12"/>
-                                    </Border.StrokeShape>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnCountyFieldTapped" />
-                                    </Border.GestureRecognizers>
-                                    <Entry x:Name="CountyEntry"
-                                           Placeholder="County"
-                                           FontSize="16"
-                                           TextColor="#1A202C"
-                                           PlaceholderColor="#A0AEC0"
-                                           IsReadOnly="True"
-                                           InputTransparent="True"
-                                           HeightRequest="56"
-                                           Margin="16,0"/>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <!-- Postcode -->
-                            <VerticalStackLayout Grid.Column="1" Spacing="8">
+                        <!-- Postcode -->
+                            <VerticalStackLayout Spacing="8">
                                 <Label Text="Postcode" 
                                        FontSize="14" 
                                        FontAttributes="Bold"
@@ -289,7 +289,6 @@
                                            Margin="16,0"/>
                                 </Border>
                             </VerticalStackLayout>
-                        </Grid>
                     </VerticalStackLayout>
                 </VerticalStackLayout>
 

@@ -175,7 +175,7 @@
                         StrokeShape="RoundRectangle 18"
                         Padding="12">
                     <CollectionView x:Name="CustomersCollection"
-                                    HeightRequest="520"
+                                    HeightRequest="{DynamicResource ResponsiveLongListHeight}"
                                     SelectionMode="None">
                         <CollectionView.EmptyView>
                             <VerticalStackLayout Padding="30" Spacing="8" HorizontalOptions="Center" VerticalOptions="Center">

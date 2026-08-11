@@ -47,7 +47,8 @@ public sealed class OrderWebWebhookRouterService
 
             return eventType.ToLowerInvariant() switch
             {
-                "order_created" => await _cloudOrderService.ProcessWebhookOrderAsync(root),
+                "order.created" or "order_created" or "new_order" =>
+                    await _cloudOrderService.ProcessWebhookOrderAsync(root),
                 "new_reservation" or "reservation_created" or "reservation_updated" or "reservation_cancelled" =>
                     await _reservationSyncService.ProcessWebhookPayloadAsync(body, eventType),
                 _ => (true, $"Ignored event {eventType}.")

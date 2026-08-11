@@ -16,6 +16,7 @@ namespace POS_in_NET.Services
 
         private async Task EnsureTableExistsAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             if (_tableChecked) return;
 
             try
@@ -226,8 +227,8 @@ namespace POS_in_NET.Services
                     phoneNumber,
                     address,
                     city: ParseAddressLine(address, 1),
-                    county: ParseAddressLine(address, 2),
-                    postcode: ParseAddressLine(address, 3));
+                    county: null,
+                    postcode: ParseAddressLine(address, 2));
             }
             catch (Exception ex)
             {

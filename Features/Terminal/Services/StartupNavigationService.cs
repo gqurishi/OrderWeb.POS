@@ -18,17 +18,14 @@ public static class StartupNavigationService
 
     public static async Task<string> GetPostSetupRouteAsync()
     {
-        if (TerminalConfigurationService.IsChildTerminal)
+        var schemaGate = await ChildSchemaVersionGateService.CheckAsync();
+        if (!schemaGate.IsCompatible)
         {
-            var schemaGate = await ChildSchemaVersionGateService.CheckAsync();
-            if (!schemaGate.IsCompatible)
-            {
-                Preferences.Default.Set("child_schema_gate_message", schemaGate.Message);
-                return "//login";
-            }
-
-            Preferences.Default.Remove("child_schema_gate_message");
+            Preferences.Default.Set("child_schema_gate_message", schemaGate.Message);
+            return "//login";
         }
+
+        Preferences.Default.Remove("child_schema_gate_message");
 
         if (TerminalConfigurationService.IsMotherTerminal)
         {

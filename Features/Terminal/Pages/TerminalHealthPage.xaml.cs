@@ -14,7 +14,7 @@ public partial class TerminalHealthPage : ContentPage
     private string _onlineCountText = "0";
     private string _offlineCountText = "0";
     private string _lastCheckText = "Never";
-    private string _backupStatusText = "Backups run daily on the mother terminal.";
+    private string _backupStatusText = "Full database backups run every 3 days on the mother terminal; the latest 15 are retained.";
 
     public ObservableCollection<TerminalHealthStatus> Terminals { get; } = new();
 
@@ -190,12 +190,12 @@ public partial class TerminalHealthPage : ContentPage
     {
         if (!TerminalRoleService.CanRunMotherJobs)
         {
-            return "Daily database backups run on the mother terminal only.";
+            return "Full database backups run every 3 days on the mother terminal only; the latest 15 are retained.";
         }
 
         if (_databaseBackupService.LastBackupAt <= DateTime.MinValue.AddDays(1))
         {
-            return "Daily backup scheduler is ready. No backup has completed in this app session yet.";
+            return "Three-day backup scheduler is ready. No backup has completed in this app session yet.";
         }
 
         var location = string.IsNullOrWhiteSpace(_databaseBackupService.LastBackupPath)
@@ -274,7 +274,7 @@ public partial class TerminalHealthPage : ContentPage
             return;
         }
 
-        await Shell.Current.GoToAsync("//terminalsetup", false);
+        await NavigationCoordinator.Shared.NavigateShellAsync("terminalsetup", animated: false, source: sender as VisualElement);
     }
 
     private async void OnDeleteTerminalClicked(object sender, EventArgs e)

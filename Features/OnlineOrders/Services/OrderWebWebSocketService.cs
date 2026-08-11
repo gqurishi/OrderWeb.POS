@@ -229,12 +229,9 @@ public class OrderWebWebSocketService
                 wsUrl = $"{_websocketUrl}/{_tenantId}";
             }
             
-            // Add API key as query parameter (OrderWeb.net authentication method)
-            wsUrl = $"{wsUrl}?apiKey={_apiKey}";
-            
             System.Diagnostics.Debug.WriteLine(" Testing configured WebSocket connection");
 
-            // Also set headers as backup
+            // Match the production connection: credentials belong in headers, never URLs.
             testSocket.Options.SetRequestHeader("X-Tenant-ID", _tenantId);
             testSocket.Options.SetRequestHeader("X-API-Key", _apiKey);
 
@@ -540,6 +537,11 @@ public class OrderWebWebSocketService
             }
 
             var subtotal = GetDecimalProperty(orderElement, "subtotal", totalAmount);
+            var discountAmount = GetDecimalProperty(orderElement, "discountAmount", decimal.MinValue);
+            if (discountAmount == decimal.MinValue)
+            {
+                discountAmount = GetDecimalProperty(orderElement, "discount_amount", 0m);
+            }
             var deliveryFee = GetDecimalProperty(orderElement, "deliveryFee", decimal.MinValue);
             if (deliveryFee == decimal.MinValue)
             {
@@ -550,6 +552,31 @@ public class OrderWebWebSocketService
             {
                 taxAmount = GetDecimalProperty(orderElement, "tax_amount", 0m);
             }
+            var serviceChargePercentage = GetDecimalProperty(orderElement, "serviceChargePercentage", decimal.MinValue);
+            if (serviceChargePercentage == decimal.MinValue)
+            {
+                serviceChargePercentage = GetDecimalProperty(orderElement, "service_charge_percentage", 0m);
+            }
+            var serviceChargeBasis = GetDecimalProperty(orderElement, "serviceChargeBasis", decimal.MinValue);
+            if (serviceChargeBasis == decimal.MinValue)
+            {
+                serviceChargeBasis = GetDecimalProperty(orderElement, "service_charge_basis", 0m);
+            }
+            var serviceChargeAmount = GetDecimalProperty(orderElement, "serviceChargeAmount", decimal.MinValue);
+            if (serviceChargeAmount == decimal.MinValue)
+            {
+                serviceChargeAmount = GetDecimalProperty(orderElement, "service_charge_amount", 0m);
+            }
+            var cashTips = GetDecimalProperty(orderElement, "cashTips", decimal.MinValue);
+            if (cashTips == decimal.MinValue)
+            {
+                cashTips = GetDecimalProperty(orderElement, "cash_tips", 0m);
+            }
+            var cardTips = GetDecimalProperty(orderElement, "cardTips", decimal.MinValue);
+            if (cardTips == decimal.MinValue)
+            {
+                cardTips = GetDecimalProperty(orderElement, "card_tips", 0m);
+            }
             
             // Order details
             var orderType = GetStringProperty(orderElement, "orderType")
@@ -557,12 +584,65 @@ public class OrderWebWebSocketService
                 ?? "pickup";
             var paymentMethod = GetStringProperty(orderElement, "paymentMethod")
                 ?? GetStringProperty(orderElement, "payment_method")
-                ?? GetNestedStringProperty(orderElement, "payment", "method")
-                ?? "online";
+                ?? GetNestedStringProperty(orderElement, "payment", "method");
             var paymentStatus = GetStringProperty(orderElement, "paymentStatus")
                 ?? GetStringProperty(orderElement, "payment_status")
-                ?? GetNestedStringProperty(orderElement, "payment", "status")
-                ?? (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(paymentMethod) ? "pending" : "paid");
+                ?? GetNestedStringProperty(orderElement, "payment", "status");
+            var amountPaid = GetDecimalProperty(orderElement, "amountPaid", decimal.MinValue);
+            if (amountPaid == decimal.MinValue)
+            {
+                amountPaid = GetDecimalProperty(orderElement, "amount_paid", decimal.MinValue);
+            }
+            if (amountPaid == decimal.MinValue)
+            {
+                amountPaid = GetNestedDecimalProperty(orderElement, "payment", "amount_paid", decimal.MinValue);
+            }
+            if (amountPaid == decimal.MinValue)
+            {
+                amountPaid = GetNestedDecimalProperty(orderElement, "payment", "amount", decimal.MinValue);
+            }
+            var paymentProvider = GetStringProperty(orderElement, "paymentProvider")
+                ?? GetStringProperty(orderElement, "payment_provider")
+                ?? GetNestedStringProperty(orderElement, "payment", "provider")
+                ?? GetNestedStringProperty(orderElement, "payment", "gateway");
+            var paymentReference = GetStringProperty(orderElement, "paymentReference")
+                ?? GetStringProperty(orderElement, "payment_reference")
+                ?? GetStringProperty(orderElement, "transactionId")
+                ?? GetStringProperty(orderElement, "transaction_id")
+                ?? GetNestedStringProperty(orderElement, "payment", "transaction_id")
+                ?? GetNestedStringProperty(orderElement, "payment", "reference");
+            var currencyCode = GetStringProperty(orderElement, "currency")
+                ?? GetStringProperty(orderElement, "currency_code")
+                ?? GetNestedStringProperty(orderElement, "payment", "currency")
+                ?? "GBP";
+            var voucherCode = GetStringProperty(orderElement, "voucherCode")
+                ?? GetStringProperty(orderElement, "voucher_code")
+                ?? GetNestedStringProperty(orderElement, "payment", "voucher_code");
+            var contractVersion = GetIntProperty(orderElement, "contractVersion",
+                GetIntProperty(orderElement, "contract_version", 1));
+            Models.Api.CloudGiftCardSummary? giftCard = null;
+            if (TryGetObjectProperty(orderElement, "gift_card", out var giftCardElement))
+            {
+                giftCard = new Models.Api.CloudGiftCardSummary
+                {
+                    CardNumberMasked = GetStringProperty(giftCardElement, "card_number_masked")
+                        ?? OnlineOrderPaymentHelper.MaskVoucherCode(GetStringProperty(giftCardElement, "card_number")),
+                    AmountPaid = GetMoneyStringProperty(giftCardElement, "amount_paid"),
+                    RemainingBalance = GetMoneyStringProperty(giftCardElement, "remaining_balance")
+                };
+            }
+
+            Models.Api.CloudLoyaltySummary? loyalty = null;
+            if (TryGetObjectProperty(orderElement, "loyalty", out var loyaltyElement))
+            {
+                loyalty = new Models.Api.CloudLoyaltySummary
+                {
+                    PointsEarned = GetIntProperty(loyaltyElement, "points_earned", 0),
+                    PointsRedeemed = GetIntProperty(loyaltyElement, "points_redeemed", 0),
+                    PointsDiscount = GetMoneyStringProperty(loyaltyElement, "points_discount") ?? "0.00",
+                    BalanceAfter = GetNullableIntProperty(loyaltyElement, "balance_after")
+                };
+            }
             var specialInstructions = GetStringProperty(orderElement, "notes")
                 ?? GetStringProperty(orderElement, "specialInstructions")
                 ?? GetStringProperty(orderElement, "special_instructions")
@@ -581,6 +661,7 @@ public class OrderWebWebSocketService
 
             var cloudOrder = new Models.Api.CloudOrderResponse
             {
+                ContractVersion = contractVersion,
                 Id = cloudOrderId,
                 OrderNumber = orderNumber,
                 CustomerName = customerName,
@@ -589,11 +670,35 @@ public class OrderWebWebSocketService
                 Address = customerAddress,
                 Total = totalAmount.ToString("0.00"),
                 Subtotal = subtotal.ToString("0.00"),
+                DiscountAmount = discountAmount.ToString("0.00"),
                 DeliveryFee = deliveryFee.ToString("0.00"),
+                ServiceChargePercentage = serviceChargePercentage.ToString("0.00"),
+                ServiceChargeBasis = serviceChargeBasis.ToString("0.00"),
+                ServiceChargeAmount = serviceChargeAmount.ToString("0.00"),
+                ServiceChargeStatus = GetStringProperty(orderElement, "serviceChargeStatus")
+                    ?? GetStringProperty(orderElement, "service_charge_status")
+                    ?? "not_configured",
+                ServiceChargeClassification = GetStringProperty(orderElement, "service_charge_classification"),
+                ServiceChargeRemovalReason = GetStringProperty(orderElement, "service_charge_removal_reason"),
+                ServiceChargeRemovedByUserId = GetNullableIntProperty(orderElement, "service_charge_removed_by_user_id"),
+                ServiceChargeRemovedByName = GetStringProperty(orderElement, "service_charge_removed_by"),
+                ServiceChargeApprovedByUserId = GetNullableIntProperty(orderElement, "service_charge_approved_by_user_id"),
+                ServiceChargeApprovedByName = GetStringProperty(orderElement, "service_charge_approved_by"),
+                ServiceChargeRemovedAt = ParseOptionalDate(GetStringProperty(orderElement, "service_charge_removed_at")),
+                CashTips = cashTips.ToString("0.00"),
+                CardTips = cardTips.ToString("0.00"),
                 Tax = taxAmount.ToString("0.00"),
                 OrderType = orderType,
                 PaymentMethod = paymentMethod,
                 PaymentStatus = paymentStatus,
+                AmountPaid = amountPaid == decimal.MinValue ? null : amountPaid.ToString("0.00"),
+                PaymentProvider = paymentProvider,
+                PaymentReference = paymentReference,
+                CurrencyCode = currencyCode,
+                VoucherCode = voucherCode,
+                PromoCode = GetStringProperty(orderElement, "promo_code"),
+                GiftCard = giftCard,
+                Loyalty = loyalty,
                 SpecialInstructions = specialInstructions,
                 ScheduledTime = scheduledTime,
                 CreatedAt = createdAt
@@ -615,7 +720,7 @@ public class OrderWebWebSocketService
                     
                     var item = new Models.Api.CloudOrderItem
                     {
-                        Id = GetIntProperty(itemElem, "id", 0),
+                        Id = GetFlexibleIdentifierProperty(itemElem, "id"),
                         MenuItemId = GetStringProperty(itemElem, "menuItemId") ?? GetStringProperty(itemElem, "menu_item_id"),
                         VariantId = GetStringProperty(itemElem, "variantId") ?? GetStringProperty(itemElem, "variant_id"),
                         VariantName = GetStringProperty(itemElem, "variantName") ?? GetStringProperty(itemElem, "variant_name"),
@@ -804,6 +909,40 @@ public class OrderWebWebSocketService
         };
     }
 
+    private static string? GetFlexibleIdentifierProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property)) return null;
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetRawText(),
+            _ => null
+        };
+    }
+
+    private static string? GetMoneyStringProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property)) return null;
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetDecimal().ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+            _ => null
+        };
+    }
+
+    private static int? GetNullableIntProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null) return null;
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var number)) return number;
+        return property.ValueKind == JsonValueKind.String && int.TryParse(property.GetString(), out number) ? number : null;
+    }
+
+    private static bool TryGetObjectProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        return element.TryGetProperty(propertyName, out value) && value.ValueKind == JsonValueKind.Object;
+    }
+
     private static string? GetNestedStringProperty(JsonElement element, string parentName, string propertyName)
     {
         return element.TryGetProperty(parentName, out var parent) && parent.ValueKind == JsonValueKind.Object
@@ -836,10 +975,18 @@ public class OrderWebWebSocketService
             CustomerAddress = cloudOrder.Address ?? "",
             TotalAmount = cloudOrder.TotalAmount,
             SubtotalAmount = decimal.TryParse(cloudOrder.Subtotal, out var subtotal) ? subtotal : cloudOrder.TotalAmount,
+            DiscountAmount = decimal.TryParse(cloudOrder.DiscountAmount, out var discount) ? discount : 0m,
             DeliveryFee = decimal.TryParse(cloudOrder.DeliveryFee, out var deliveryFee) ? deliveryFee : 0m,
+            ServiceChargePercentage = decimal.TryParse(cloudOrder.ServiceChargePercentage, out var servicePercentage) ? servicePercentage : 0m,
+            ServiceChargeBasis = decimal.TryParse(cloudOrder.ServiceChargeBasis, out var serviceBasis) ? serviceBasis : 0m,
+            ServiceChargeAmount = decimal.TryParse(cloudOrder.ServiceChargeAmount, out var serviceAmount) ? serviceAmount : 0m,
+            ServiceChargeStatus = cloudOrder.ServiceChargeStatus,
+            ServiceChargeClassification = cloudOrder.ServiceChargeClassification,
+            CashTipAmount = decimal.TryParse(cloudOrder.CashTips, out var cashTips) ? cashTips : 0m,
+            CardTipAmount = decimal.TryParse(cloudOrder.CardTips, out var cardTips) ? cardTips : 0m,
             TaxAmount = decimal.TryParse(cloudOrder.Tax, out var tax) ? tax : 0m,
             OrderType = cloudOrder.OrderType ?? "pickup",
-            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod ?? "online"),
+            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(cloudOrder.PaymentMethod),
             SpecialInstructions = cloudOrder.SpecialInstructions ?? "",
             ScheduledTime = cloudOrder.ScheduledTime,
             Status = Models.OrderStatus.New,
@@ -849,7 +996,24 @@ public class OrderWebWebSocketService
             SourceChannel = "web",
             CreatedAt = cloudOrder.CreatedAt,
             UpdatedAt = DateTime.Now,
-            OrderData = rawOrderData,
+            OrderData = JsonSerializer.Serialize(cloudOrder),
+            PaymentStatusRaw = cloudOrder.PaymentStatus,
+            AmountPaid = decimal.TryParse(cloudOrder.AmountPaid, out var amountPaid) ? amountPaid : null,
+            PaymentProvider = cloudOrder.PaymentProvider,
+            TransactionId = cloudOrder.PaymentReference,
+            CurrencyCode = cloudOrder.CurrencyCode,
+            VoucherCode = OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card"
+                ? cloudOrder.VoucherCode
+                : null,
+            PromoCode = cloudOrder.PromoCode ??
+                (OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card" ? null : cloudOrder.VoucherCode),
+            GiftCardNumberMasked = OnlineOrderPaymentHelper.MaskVoucherCode(cloudOrder.GiftCard?.CardNumberMasked),
+            GiftCardAmountPaid = decimal.TryParse(cloudOrder.GiftCard?.AmountPaid, out var giftAmountPaid) ? giftAmountPaid : null,
+            GiftCardRemainingBalance = decimal.TryParse(cloudOrder.GiftCard?.RemainingBalance, out var giftBalance) ? giftBalance : null,
+            LoyaltyPointsEarned = cloudOrder.Loyalty?.PointsEarned ?? 0,
+            LoyaltyPointsRedeemed = cloudOrder.Loyalty?.PointsRedeemed ?? 0,
+            LoyaltyPointsDiscount = decimal.TryParse(cloudOrder.Loyalty?.PointsDiscount, out var loyaltyDiscount) ? loyaltyDiscount : 0m,
+            LoyaltyBalanceAfter = cloudOrder.Loyalty?.BalanceAfter,
             PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus)
         };
 
@@ -864,7 +1028,8 @@ public class OrderWebWebSocketService
             var item = new Models.OrderItem
             {
                 OrderId = cloudOrder.Id,
-                CloudItemId = cloudItem.Id,
+                CloudItemId = int.TryParse(cloudItem.Id, out var numericCloudItemId) ? numericCloudItemId : null,
+                CloudItemExternalId = cloudItem.Id,
                 MenuItemId = cloudItem.MenuItemId,
                 VariantId = variantId,
                 VariantName = variantName,

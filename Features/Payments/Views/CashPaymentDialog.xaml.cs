@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Threading.Tasks;
 
@@ -9,6 +10,7 @@ namespace POS_in_NET.Views
     {
         public bool Success { get; set; }
         public decimal AmountPaid { get; set; }
+        public decimal AmountReceived { get; set; }
         public decimal Change { get; set; }
         public decimal Remaining { get; set; }
     }
@@ -24,6 +26,19 @@ namespace POS_in_NET.Views
         public CashPaymentDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 650, 760, ApplyResponsiveLayout);
+        }
+
+        private void ApplyResponsiveLayout(bool tablet, bool shortWindow)
+        {
+            DialogContent.Spacing = shortWindow ? 9 : tablet ? 12 : 18;
+            DialogTitle.FontSize = tablet ? 25 : 30;
+            CloseButton.WidthRequest = tablet ? 82 : 90;
+            CloseButton.HeightRequest = 45;
+            AmountDueCard.Padding = shortWindow ? 12 : tablet ? 15 : 18;
+            AmountDueLabel.FontSize = shortWindow ? 27 : tablet ? 30 : 32;
+            QuickCashGrid.ColumnSpacing = tablet ? 8 : 12;
+            ConfirmButton.HeightRequest = tablet ? 54 : 60;
         }
 
         public void SetAmountDue(decimal amount)
@@ -169,6 +184,7 @@ namespace POS_in_NET.Views
             {
                 Success = true,
                 AmountPaid = _amountDue,
+                AmountReceived = _amountReceived,
                 Change = change,
                 Remaining = 0
             };

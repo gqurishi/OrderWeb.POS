@@ -4,6 +4,8 @@
 param(
     [string]$Configuration = "Release",
     [string]$InnoSetupCompiler = "",
+    [string]$SignToolCommand = $env:ORDERWEB_SIGNTOOL_COMMAND,
+    [switch]$AllowUnsigned,
     [switch]$IncludeLegacyInstallers
 )
 
@@ -28,6 +30,10 @@ if (-not $InnoSetupCompiler -or -not (Test-Path $InnoSetupCompiler)) {
     throw "ISCC.exe not found. Install Inno Setup 6 or pass -InnoSetupCompiler."
 }
 
+if ([string]::IsNullOrWhiteSpace($SignToolCommand) -and -not $AllowUnsigned) {
+    throw "Production installer signing is required. Set ORDERWEB_SIGNTOOL_COMMAND, or use -AllowUnsigned only for local validation builds."
+}
+
 $publishExe = Join-Path (Split-Path -Parent $installerDir) "publish\win-x64\POS-in-NET.exe"
 if (-not (Test-Path $publishExe)) {
     throw "Missing publish inputs. Run Installer\build-installer-inputs.ps1 first."
@@ -48,9 +54,18 @@ if ($IncludeLegacyInstallers) {
 
 foreach ($script in $scripts) {
     Write-Host "Compiling $script..."
-    & $InnoSetupCompiler `
-        "/DMyAppVersion=1.0.0" `
-        (Join-Path $installerDir $script)
+    $compilerArguments = @(
+        "/DMyAppVersion=1.0.1"
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SignToolCommand)) {
+        $compilerArguments += "/DSignInstaller=1"
+        $compilerArguments += "/Sorderweb=$SignToolCommand"
+    }
+    $compilerArguments += (Join-Path $installerDir $script)
+    & $InnoSetupCompiler $compilerArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup failed for $script with exit code $LASTEXITCODE."
+    }
 }
 
 Write-Host ""

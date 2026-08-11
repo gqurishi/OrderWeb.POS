@@ -106,8 +106,13 @@ public partial class OrderDetailsPopup : ContentPage
                 return;
             }
             
-            await receiptService.PrintReceiptAsync(_order);
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Receipt sent to printer");
+            var printed = await receiptService.PrintReceiptAsync(_order);
+            if (!printed)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Print Failed",
+                    "The receipt could not be queued. Check the receipt printer and Manage Queue.");
+            }
         }
         catch (Exception ex)
         {

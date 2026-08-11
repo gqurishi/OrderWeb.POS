@@ -14,13 +14,11 @@ public partial class AppShell : Shell, INotifyPropertyChanged
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
     private readonly InactivityService _inactivityService;
+    private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
+    private readonly NavigationCoordinator _navigationCoordinator;
     private bool _isSyncingDatabase;
-
-    private static readonly HashSet<string> ModalRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "collection",
-        "delivery"
-    };
+    private bool _isShellNavigationChanging;
+    private string? _pendingShellTarget;
 
     public string CurrentDateTime
     {
@@ -39,6 +37,11 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         _authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
+        _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
+        _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+            ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), _authService);
+        _orderServiceAvailabilityService.SettingsChanged += OnOrderServicesChanged;
+        AppDataRefreshService.DataChanged += OnAppDataChanged;
 
         // Register modal pages for navigation
         Routing.RegisterRoute(nameof(CustomColorPickerPage), typeof(CustomColorPickerPage));
@@ -66,6 +69,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         _inactivityService.Start();
         _inactivityService.TrackPage(CurrentPage);
         ApplyRoleBasedMenuVisibility();
+        _ = RefreshOrderServiceAvailabilityAsync();
     }
 
     private void UpdateDateTime()
@@ -78,6 +82,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
     private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
+        _isShellNavigationChanging = false;
+        _pendingShellTarget = null;
         // Update user info when navigating (handled by TopBar component now)
         System.Diagnostics.Debug.WriteLine($"Navigated to: {e.Current.Location}");
         _inactivityService.ResetActivity();
@@ -91,6 +97,17 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         {
             _inactivityService.ResetActivity();
             var target = e.Target.Location.OriginalString;
+
+            if (_isShellNavigationChanging)
+            {
+                System.Diagnostics.Debug.WriteLine($"Ignored duplicate navigation to {target}; {_pendingShellTarget} is still opening.");
+                e.Cancel();
+                return;
+            }
+
+            _isShellNavigationChanging = true;
+            _pendingShellTarget = target;
+            _ = ResetNavigationGuardAfterTimeoutAsync(target);
             if (!TryResolveRoute(target, out var route))
             {
                 return;
@@ -99,14 +116,28 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             if (!IsRouteAllowed(route))
             {
                 e.Cancel();
+                _isShellNavigationChanging = false;
+                _pendingShellTarget = null;
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this page.");
                 });
             }
+            else if (!_orderServiceAvailabilityService.IsRouteEnabled(route))
+            {
+                e.Cancel();
+                _isShellNavigationChanging = false;
+                _pendingShellTarget = null;
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled in Business Information settings.");
+                });
+            }
         }
         catch (Exception ex)
         {
+            _isShellNavigationChanging = false;
+            _pendingShellTarget = null;
             System.Diagnostics.Debug.WriteLine($"Role guard navigation error: {ex.Message}");
         }
     }
@@ -126,7 +157,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         }
 
         // Navigate to login page immediately
-        await Shell.Current.GoToAsync("//login");
+        await _navigationCoordinator.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
 
         // Restart timer
         _timer?.Start();
@@ -268,13 +299,19 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                         return;
                     }
 
+                    if (!_orderServiceAvailabilityService.IsRouteEnabled(route))
+                    {
+                        await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled in Business Information settings.");
+                        return;
+                    }
+
                     // Close the flyout
                     Shell.Current.FlyoutIsPresented = false;
 
-                    if (ModalRoutes.Contains(route))
+                    if (NavigationCoordinator.IsTemporaryRoute(route))
                     {
                         // Navigate to modal route without //
-                        await Shell.Current.GoToAsync(route);
+                        await _navigationCoordinator.NavigateTemporaryRouteAsync(route, source: view);
                     }
                     else
                     {
@@ -284,7 +321,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                         }
 
                         // Navigate to shell content route with //
-                        await Shell.Current.GoToAsync($"//{route}", false);
+                        await _navigationCoordinator.NavigateShellAsync(route, animated: false, source: view);
                     }
                 }
             }
@@ -302,29 +339,61 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         return _roleAccessService.CanAccessRoute(_authService.CurrentUser?.Role, route);
     }
 
-    private static void ClearShellDetailStacks()
+    private async Task ResetNavigationGuardAfterTimeoutAsync(string target)
     {
-        if (Shell.Current is not Shell shell)
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            if (_isShellNavigationChanging
+                && string.Equals(_pendingShellTarget, target, StringComparison.Ordinal))
+            {
+                System.Diagnostics.Debug.WriteLine($"Navigation guard timed out for {target}; accepting new navigation.");
+                _isShellNavigationChanging = false;
+                _pendingShellTarget = null;
+            }
+        });
+    }
+
+    private async Task RefreshOrderServiceAvailabilityAsync()
+    {
+        try
+        {
+            await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            await MainThread.InvokeOnMainThreadAsync(ApplyRoleBasedMenuVisibility);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Order service availability load error: {ex.Message}");
+        }
+    }
+
+    private void OnOrderServicesChanged(object? sender, OrderServiceAvailabilitySettings settings)
+    {
+        MainThread.BeginInvokeOnMainThread(ApplyRoleBasedMenuVisibility);
+    }
+
+    private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
+    {
+        if (e.IsFromCurrentTerminal || !e.HasKind(AppDataChangeKind.Settings))
         {
             return;
         }
 
-        foreach (var shellItem in shell.Items)
+        ServiceHelper.GetService<BusinessSettingsService>()?.InvalidateCache();
+        try
         {
-            foreach (var shellSection in shellItem.Items)
-            {
-                var nav = shellSection.Navigation;
-                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
-                {
-                    continue;
-                }
-
-                foreach (var page in nav.NavigationStack.Skip(1).ToList())
-                {
-                    nav.RemovePage(page);
-                }
-            }
+            await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            await MainThread.InvokeOnMainThreadAsync(ApplyRoleBasedMenuVisibility);
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Settings refresh warning: {ex.Message}");
+        }
+    }
+
+    private static void ClearShellDetailStacks()
+    {
+        NavigationCoordinator.PruneTemporaryPages();
     }
 
     private bool TryResolveRoute(string location, out string route)
@@ -345,14 +414,18 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
         DashboardMenuItem.IsVisible = isLoggedIn;
         LiveOrderMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "liveorder");
-        RestaurantMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "restaurant");
-        CollectionMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "collection");
-        DeliveryMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "delivery");
+        RestaurantMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "restaurant")
+            && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Table);
+        CollectionMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "collection")
+            && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection);
+        DeliveryMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "delivery")
+            && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery);
 
         WebOrdersMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "weborders");
         GiftCardsMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "giftcards");
         LoyaltyMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "loyalty");
-        ReservationMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "reservation");
+        ReservationMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "reservation")
+            && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Table);
         OrderHistoryMenuItem.IsVisible = _roleAccessService.CanAccessFeature(role, "orderhistory");
         CashDrawerMenuItem.IsVisible = _roleAccessService.CanOpenCashDrawer(role);
 
@@ -409,5 +482,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         base.OnDisappearing();
         _timer?.Stop();
         _timer?.Dispose();
+        _orderServiceAvailabilityService.SettingsChanged -= OnOrderServicesChanged;
+        AppDataRefreshService.DataChanged -= OnAppDataChanged;
     }
 }

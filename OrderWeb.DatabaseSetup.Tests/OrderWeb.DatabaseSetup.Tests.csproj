@@ -15,6 +15,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OrderWeb.DatabaseSetup\OrderWeb.DatabaseSetup.csproj" />
+    <Compile Include="..\Features\OnlineOrders\Services\CloudEndpointSecurityPolicy.cs" Link="Policies\CloudEndpointSecurityPolicy.cs" />
+    <Compile Include="..\Features\Payments\Services\RefundAmountPolicy.cs" Link="Policies\RefundAmountPolicy.cs" />
+    <Compile Include="..\Features\Settings\Models\TableServiceChargeSettings.cs" Link="Policies\TableServiceChargeSettings.cs" />
+    <Compile Include="..\Features\Restaurant\Models\TableServiceChargeCalculator.cs" Link="Policies\TableServiceChargeCalculator.cs" />
+    <Compile Include="..\Features\TimeClock\Services\TradingDayHelper.cs" Link="Policies\TradingDayHelper.cs" />
+    <Compile Include="..\Shared\Helpers\ResponsiveLayoutProfile.cs" Link="Policies\ResponsiveLayoutProfile.cs" />
+    <Compile Include="..\Shared\Services\PosPerformanceTargets.cs" Link="Policies\PosPerformanceTargets.cs" />
+    <Compile Include="..\Features\Orders\Models\Order.cs" Link="ContractV2\Order.cs" />
+    <Compile Include="..\Features\OnlineOrders\Models\Api\ApiCompatibilityModels.cs" Link="ContractV2\ApiCompatibilityModels.cs" />
+    <Compile Include="..\Features\OnlineOrders\Services\OnlineOrderPaymentHelper.cs" Link="ContractV2\OnlineOrderPaymentHelper.cs" />
   </ItemGroup>
 
 </Project>

@@ -438,6 +438,189 @@
                             </Grid>
                         </StackLayout>
                     </Border>
+
+                    <!-- Order Services (Administrator only) -->
+                    <Border x:Name="OrderServicesCard"
+                            IsVisible="False"
+                            BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="28"
+                            Margin="0,0,0,20">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="20"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="#CBD5E1" Radius="18" Opacity="0.10" Offset="0,5"/>
+                        </Border.Shadow>
+                        <VerticalStackLayout Spacing="18">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                <Border WidthRequest="44" HeightRequest="44" BackgroundColor="#EFF6FF" Stroke="#BFDBFE">
+                                    <Border.StrokeShape><RoundRectangle CornerRadius="12"/></Border.StrokeShape>
+                                    <Label Text="ON" FontSize="12" FontAttributes="Bold" TextColor="#1D4ED8" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                </Border>
+                                <Label Grid.Column="1" Text="Order Services" FontSize="21" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                            </Grid>
+
+                            <BoxView HeightRequest="1" BackgroundColor="#E2E8F0"/>
+
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                                <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" Padding="16" StrokeShape="RoundRectangle 14">
+                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
+                                        <Label Text="Table Service" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                                        <Switch x:Name="TableServiceSwitch" Grid.Column="1" Toggled="OnOrderServiceSwitchToggled" OnColor="#059669"/>
+                                        <Label x:Name="TableServiceStateLabel" Grid.Row="1" Grid.ColumnSpan="2" Text="Enabled" FontSize="12" TextColor="#047857"/>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="1" BackgroundColor="#F8FAFC" Stroke="#CBD5E1" Padding="16" StrokeShape="RoundRectangle 14">
+                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
+                                        <Label Text="Collection" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                                        <Switch x:Name="CollectionServiceSwitch" Grid.Column="1" Toggled="OnOrderServiceSwitchToggled" OnColor="#059669"/>
+                                        <Label x:Name="CollectionServiceStateLabel" Grid.Row="1" Grid.ColumnSpan="2" Text="Enabled" FontSize="12" TextColor="#047857"/>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="2" BackgroundColor="#F8FAFC" Stroke="#CBD5E1" Padding="16" StrokeShape="RoundRectangle 14">
+                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
+                                        <Label Text="Delivery" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                                        <Switch x:Name="DeliveryServiceSwitch" Grid.Column="1" Toggled="OnOrderServiceSwitchToggled" OnColor="#059669"/>
+                                        <Label x:Name="DeliveryServiceStateLabel" Grid.Row="1" Grid.ColumnSpan="2" Text="Enabled" FontSize="12" TextColor="#047857"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <Button x:Name="SaveOrderServicesButton"
+                                    Text="SAVE SERVICES"
+                                    BackgroundColor="#2563EB"
+                                    TextColor="White"
+                                    FontSize="14"
+                                    FontAttributes="Bold"
+                                    CornerRadius="12"
+                                    HeightRequest="52"
+                                    HorizontalOptions="End"
+                                    MinimumWidthRequest="180"
+                                    Clicked="OnSaveOrderServicesClicked"/>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Table Service Charge (Administrator only) -->
+                    <Border x:Name="TableServiceChargeCard"
+                            IsVisible="False"
+                            BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="28"
+                            Margin="0,0,0,20">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="20"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="#CBD5E1" Radius="18" Opacity="0.10" Offset="0,5"/>
+                        </Border.Shadow>
+                        <VerticalStackLayout Spacing="18">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                <Border Grid.Column="0"
+                                        WidthRequest="44"
+                                        HeightRequest="44"
+                                        BackgroundColor="#ECFDF5"
+                                        Stroke="#A7F3D0"
+                                        StrokeThickness="1"
+                                        VerticalOptions="Center">
+                                    <Border.StrokeShape>
+                                        <RoundRectangle CornerRadius="12"/>
+                                    </Border.StrokeShape>
+                                    <Label Text="%"
+                                           FontSize="20"
+                                           FontAttributes="Bold"
+                                           TextColor="#047857"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center"/>
+                                </Border>
+                                <Label Grid.Column="1"
+                                       Text="Table Service Charge"
+                                       FontSize="21"
+                                       FontAttributes="Bold"
+                                       TextColor="#0F172A"
+                                       VerticalOptions="Center"/>
+                            </Grid>
+
+                            <BoxView HeightRequest="1" BackgroundColor="#E2E8F0"/>
+
+                            <VerticalStackLayout Spacing="10">
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <Button x:Name="NoServiceChargeButton"
+                                            Grid.Column="0"
+                                            Text="NO SERVICE CHARGE"
+                                            HeightRequest="54"
+                                            CornerRadius="12"
+                                            FontSize="14"
+                                            FontAttributes="Bold"
+                                            Clicked="OnNoServiceChargeClicked"/>
+                                    <Button x:Name="PercentageServiceChargeButton"
+                                            Grid.Column="1"
+                                            Text="SERVICE CHARGE"
+                                            HeightRequest="54"
+                                            CornerRadius="12"
+                                            FontSize="14"
+                                            FontAttributes="Bold"
+                                            Clicked="OnPercentageServiceChargeClicked"/>
+                                </Grid>
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout x:Name="ServiceChargePercentagePanel"
+                                                 IsVisible="False"
+                                                 Spacing="16">
+                                <Grid ColumnDefinitions="*">
+                                    <VerticalStackLayout Spacing="8">
+                                        <Label Text="Service charge %"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#334155"/>
+                                        <Border BackgroundColor="#F8FAFC"
+                                                Stroke="#CBD5E1"
+                                                StrokeThickness="1"
+                                                HeightRequest="54">
+                                            <Border.StrokeShape>
+                                                <RoundRectangle CornerRadius="12"/>
+                                            </Border.StrokeShape>
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <Entry x:Name="ServiceChargePercentageEntry"
+                                                       Grid.Column="0"
+                                                       Placeholder="Enter percentage"
+                                                       Keyboard="Numeric"
+                                                       MaxLength="5"
+                                                       FontSize="18"
+                                                       TextColor="#0F172A"
+                                                       BackgroundColor="Transparent"
+                                                       Margin="10,0,0,0"
+                                                       TextChanged="OnServiceChargePercentageTextChanged"/>
+                                                <Label Grid.Column="1"
+                                                       Text="%"
+                                                       FontSize="18"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#475569"
+                                                       Margin="10,0,16,0"
+                                                       VerticalOptions="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                            </VerticalStackLayout>
+
+                            <Button x:Name="SaveServiceChargeButton"
+                                    Text="SAVE"
+                                    BackgroundColor="#059669"
+                                    TextColor="White"
+                                    FontSize="14"
+                                    FontAttributes="Bold"
+                                    CornerRadius="12"
+                                    HeightRequest="52"
+                                    HorizontalOptions="End"
+                                    MinimumWidthRequest="160"
+                                    Padding="20,10"
+                                    Clicked="OnSaveServiceChargeClicked"/>
+                        </VerticalStackLayout>
+                    </Border>
                     
                     <!-- Main Business Info Card -->
                     <Border BackgroundColor="White" 
@@ -897,15 +1080,15 @@
                                                         </Button.Shadow>
                                                     </Button>
 
-                                                    <!-- Delete Button -->
-                                                    <Button Text="X"
+                                                    <!-- Archive/remove employee while preserving historical records -->
+                                                    <Button Text="Remove"
                                                             BackgroundColor="#FEE2E2"
                                                             TextColor="#B91C1C"
-                                                            FontSize="18"
+                                                            FontSize="12"
                                                             FontAttributes="Bold"
                                                             Padding="0"
                                                             CornerRadius="10"
-                                                            WidthRequest="56"
+                                                            WidthRequest="72"
                                                             HeightRequest="44"
                                                             Clicked="OnPermanentDeleteUserClicked"
                                                             CommandParameter="{Binding}">
@@ -1252,7 +1435,7 @@
                             </Border.Shadow>
                             <StackLayout Spacing="14">
                                 <Label Text="Backup" FontSize="20" FontAttributes="Bold" TextColor="#0F172A"/>
-                                <Label Text="Create a full backup package and keep it inside the app backup folder." FontSize="14" TextColor="#64748B"/>
+                                <Label Text="Create a full database backup containing orders, payments, menu items, reports, users and settings. Automatic backups run every 3 days and retain the latest 15 packages." FontSize="14" TextColor="#64748B"/>
                                 <Button x:Name="BackupNowButton" Text="Backup Now" BackgroundColor="#10B981" TextColor="White" FontAttributes="Bold" CornerRadius="12" HeightRequest="46" Clicked="OnBackupNowClicked"/>
                                 <Button x:Name="OpenBackupFolderButton" Text="Open Backup Folder" BackgroundColor="Transparent" BorderColor="#0EA5E9" BorderWidth="1" TextColor="#0369A1" FontAttributes="Bold" CornerRadius="12" HeightRequest="46" Clicked="OnOpenBackupFolderClicked"/>
                             </StackLayout>

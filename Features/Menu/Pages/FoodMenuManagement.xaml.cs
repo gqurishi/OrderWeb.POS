@@ -127,9 +127,11 @@ namespace POS_in_NET.Pages
 
         private async Task LoadAllDataAsync()
         {
+            var performance = PosPerformanceMonitor.BeginDataLoad("Menu Management");
             await LoadCategoriesAsync();
             _allItems = await _menuItemService.GetAllItemsAsync();
             RefreshCurrentTab();
+            PosPerformanceMonitor.MarkDataVisible(performance);
         }
 
         private async Task LoadSecondaryMenuDataInBackgroundAsync()
@@ -1715,7 +1717,7 @@ namespace POS_in_NET.Pages
                 Content = new Label { Text = "\u2710", FontSize = 22, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
             };
             var editTap = new TapGestureRecognizer();
-            editTap.Tapped += (_, _) => Navigation.PushAsync(new AddEditTastingMenuPage(menu));
+            editTap.Tapped += async (_, _) => await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditTastingMenuPage(menu));
             editBtn.GestureRecognizers.Add(editTap);
 
             var deleteBtn = new Border
@@ -1741,9 +1743,9 @@ namespace POS_in_NET.Pages
             return container;
         }
 
-        private void OnAddTastingMenuClicked(object sender, EventArgs e)
+        private async void OnAddTastingMenuClicked(object sender, EventArgs e)
         {
-            Navigation.PushAsync(new AddEditTastingMenuPage());
+            await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditTastingMenuPage(), source: sender as VisualElement);
         }
 
         private async Task ToggleTastingMenuStatus(TastingMenu menu)
@@ -2435,14 +2437,14 @@ namespace POS_in_NET.Pages
 
         #region Item & Meal Deal Actions
 
-        private void OnAddItemClicked(object sender, EventArgs e)
+        private async void OnAddItemClicked(object sender, EventArgs e)
         {
-            Navigation.PushAsync(new AddEditItemPage());
+            await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditItemPage(), source: sender as VisualElement);
         }
         
-        private void OnEditItemClicked(FoodMenuItem item)
+        private async void OnEditItemClicked(FoodMenuItem item)
         {
-            Navigation.PushAsync(new AddEditItemPage(item));
+            await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditItemPage(item));
         }
         
         private async Task OnDeleteItemClicked(FoodMenuItem item)
@@ -2469,14 +2471,14 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void OnAddMealDealClicked(object sender, EventArgs e)
+        private async void OnAddMealDealClicked(object sender, EventArgs e)
         {
-            Navigation.PushAsync(new AddEditMealDealPage());
+            await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditMealDealPage(), source: sender as VisualElement);
         }
 
-        private void OnEditMealDealClicked(MealDeal deal)
+        private async void OnEditMealDealClicked(MealDeal deal)
         {
-            Navigation.PushAsync(new AddEditMealDealPage(deal));
+            await NavigationCoordinator.Shared.PushTemporaryPageAsync(new AddEditMealDealPage(deal));
         }
 
         private async Task OnDeleteMealDealClicked(MealDeal deal)

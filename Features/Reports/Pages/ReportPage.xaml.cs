@@ -7,6 +7,7 @@ using CommunityToolkit.Maui.Storage;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
+using POS_in_NET.Helpers;
 
 namespace POS_in_NET.Pages;
 
@@ -22,6 +23,8 @@ public partial class ReportPage : ContentPage
     private readonly CashDrawerService _cashDrawerService;
     private readonly DiscountAuditService _discountAuditService;
     private readonly TillExpenseService _tillExpenseService;
+    private readonly ZReportService _zReportService;
+    private readonly ZReportPrintService _zReportPrintService;
     private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
     private readonly TimeClockService _timeClockService;
 
@@ -41,7 +44,14 @@ public partial class ReportPage : ContentPage
     private string _summaryNetText = "£0.00";
     private string _summaryVatText = "£0.00";
     private string _summaryDeliveryText = "£0.00";
+    private string _summaryServiceChargeText = "£0.00";
+    private string _summaryRemovedChargeText = "£0.00";
+    private string _summaryCashTipsText = "£0.00";
+    private string _summaryCardTipsText = "£0.00";
+    private string _summaryRefundsText = "£0.00";
+    private string _summaryCollectedText = "£0.00";
     private string _summaryAverageText = "£0.00";
+    private string _summaryTotalTipsText = "£0.00";
     private bool _isCustomRangeDirty;
     private ReportViewMode _reportViewMode = ReportViewMode.Orders;
     private int _topSellRangeDays = 30;
@@ -100,6 +110,7 @@ public partial class ReportPage : ContentPage
     private string _staffHoursTotalText = "0h 0m";
     private string _staffHoursStaffCountText = "0 staff";
     private string _staffHoursOpenText = "0 open shifts";
+    private bool _isOrdersSearchKeyboardOpen;
 
     private enum ReportViewMode
     {
@@ -118,6 +129,26 @@ public partial class ReportPage : ContentPage
         End
     }
 
+    private void OnReportPageSizeChanged(object? sender, EventArgs e)
+    {
+        if (Width <= 0 || Height <= 0)
+        {
+            return;
+        }
+
+        var profile = TabletLayoutHelper.GetProfile(Width, Height);
+        ReportContentStack.Padding = new Thickness(0, 0, 0, profile.SafeBottom);
+        OrdersCollection.HeightRequest = Math.Max(300, Math.Min(700, Height - 240));
+
+        var cardMargin = new Thickness(
+            profile.PagePadding,
+            Math.Max(8, profile.PagePadding - 6),
+            profile.PagePadding,
+            0);
+        foreach (var card in ReportContentStack.Children.OfType<Border>())
+            card.Margin = cardMargin;
+    }
+
     public ObservableCollection<ReportOrderRow> Orders { get; } = new();
     public ObservableCollection<ReportTopItemRow> TopItems { get; } = new();
     public ObservableCollection<OperationalVoidAuditRow> VoidAudits { get; } = new();
@@ -128,6 +159,7 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<LabourReportRow> StaffHoursRows { get; } = new();
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
+    public ObservableCollection<ServiceChargeRemovalAuditRow> ServiceChargeRemovalAudits { get; } = new();
     public ObservableCollection<string> SourceFilters { get; } = new() { "All", "Local", "Web" };
     public ObservableCollection<string> OrderTypeFilters { get; } = new() { "All", "Pickup", "Delivery", "Table" };
 
@@ -140,6 +172,7 @@ public partial class ReportPage : ContentPage
     public bool HasVoidCancelledOrders => VoidCancelledOrders.Count > 0;
     public bool HasHistoricalReports => HistoricalReports.Count > 0;
     public bool HasDailyTrend => DailyTrend.Count > 1;
+    public bool HasServiceChargeRemovalAudits => ServiceChargeRemovalAudits.Count > 0;
 
     public DateTime StartDate
     {
@@ -863,6 +896,14 @@ public partial class ReportPage : ContentPage
         }
     }
 
+    public string SummaryServiceChargeText => _summaryServiceChargeText;
+    public string SummaryRemovedChargeText => _summaryRemovedChargeText;
+    public string SummaryCashTipsText => _summaryCashTipsText;
+    public string SummaryCardTipsText => _summaryCardTipsText;
+    public string SummaryTotalTipsText => _summaryTotalTipsText;
+    public string SummaryRefundsText => _summaryRefundsText;
+    public string SummaryCollectedText => _summaryCollectedText;
+
     public Color SummaryOrdersColor
     {
         get => _summaryOrdersColor;
@@ -1092,17 +1133,23 @@ public partial class ReportPage : ContentPage
             ?? new DiscountAuditService(new DatabaseService(), _authService);
         _tillExpenseService = ServiceHelper.GetService<TillExpenseService>()
             ?? new TillExpenseService(new DatabaseService(), _authService);
+        _zReportService = ServiceHelper.GetService<ZReportService>()
+            ?? new ZReportService(
+                new DatabaseService(),
+                _reportService,
+                _tillExpenseService,
+                _discountAuditService,
+                _businessSettingsService);
         _orderWebDailyReportSyncService = ServiceHelper.GetService<OrderWebDailyReportSyncService>()
             ?? new OrderWebDailyReportSyncService(
                 new DatabaseService(),
-                ServiceHelper.GetService<ZReportService>()
-                    ?? new ZReportService(
-                        new DatabaseService(),
-                        _reportService,
-                        _tillExpenseService,
-                        _discountAuditService,
-                        _businessSettingsService),
+                _zReportService,
                 ServiceHelper.GetService<TimeClockService>() ?? new TimeClockService(new DatabaseService()));
+        _zReportPrintService = ServiceHelper.GetService<ZReportPrintService>()
+            ?? new ZReportPrintService(
+                _zReportService,
+                new NetworkPrinterDatabaseService(new DatabaseService()),
+                new NetworkPrinterService());
         _timeClockService = ServiceHelper.GetService<TimeClockService>() ?? new TimeClockService(new DatabaseService());
 
         StaffHoursRows.CollectionChanged += (_, _) =>
@@ -1167,9 +1214,11 @@ public partial class ReportPage : ContentPage
         if (!await _permissionService.HasPermissionAsync(PermissionKeys.ReportView))
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Reports.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             return;
         }
+
+        UpdateZReportPrintButtonState();
 
         if (!_hasLoaded)
         {
@@ -1196,7 +1245,6 @@ public partial class ReportPage : ContentPage
             return;
         }
 
-        AppDataRefreshService.RefreshRequested += OnRefreshRequested;
         AppDataRefreshService.DataChanged += OnAppDataChanged;
         _isSubscribedToRefreshEvents = true;
     }
@@ -1208,14 +1256,87 @@ public partial class ReportPage : ContentPage
             return;
         }
 
-        AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
         AppDataRefreshService.DataChanged -= OnAppDataChanged;
         _isSubscribedToRefreshEvents = false;
     }
 
-    private async void OnRefreshRequested(object? sender, EventArgs e)
+    private void UpdateZReportPrintButtonState()
     {
-        await RefreshCurrentReportAsync(loadHistory: true);
+        var canPrint = _roleAccessService.CanPrintZReport(_authService.CurrentUser?.Role)
+            && TerminalRoleService.CanPrintZReport;
+        ZReportPrintTodayButton.IsEnabled = canPrint;
+        ZReportPrintTodayButton.Opacity = canPrint ? 1 : 0.5;
+    }
+
+    private async void OnPrintZReportTodayClicked(object sender, EventArgs e)
+    {
+        if (!_roleAccessService.CanPrintZReport(_authService.CurrentUser?.Role))
+        {
+            await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can print Z-Reports.");
+            return;
+        }
+
+        if (!TerminalRoleService.CanPrintZReport)
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Mother Terminal Required",
+                "Z-Report printing runs on the mother terminal only. You can still view reports here.");
+            return;
+        }
+
+        var button = sender as Button;
+        try
+        {
+            if (button != null)
+            {
+                button.IsEnabled = false;
+                button.Text = "Preparing...";
+            }
+
+            var user = _authService.CurrentUser;
+            var displayName = user == null
+                ? "Admin"
+                : !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
+            var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, displayName);
+            snapshot.IsReprint = false;
+
+            var confirmDialog = new ModernConfirmDialog();
+            confirmDialog.SetConfirm(
+                "Print Z-Report",
+                $"Print Z-Report for {snapshot.DateDisplay} to the receipt printer?",
+                "Print",
+                "Cancel",
+                "logo",
+                "#0F766E");
+
+            if (!await confirmDialog.ShowAsync())
+            {
+                return;
+            }
+
+            // Z Print is intentionally a single compact summary receipt.
+            var result = await _zReportPrintService.PrintAsync(
+                snapshot,
+                includeDetailSlip: false,
+                printedByUserId: user?.Id);
+            await AppAlertService.ShowAlertAsync(
+                result.Success ? "Z-Report Printed" : "Print Failed",
+                result.Message);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Report page Z-Report print error: {ex.Message}");
+            await AppAlertService.ShowAlertAsync("Print Failed", ex.Message);
+        }
+        finally
+        {
+            if (button != null)
+            {
+                button.Text = "Z Print Today";
+            }
+
+            UpdateZReportPrintButtonState();
+        }
     }
 
     private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
@@ -1392,6 +1513,37 @@ public partial class ReportPage : ContentPage
     private async void OnSearchCompleted(object sender, EventArgs e)
     {
         await LoadReportAsync();
+    }
+
+    private async void OnOrdersSearchFieldTapped(object sender, TappedEventArgs e)
+    {
+        if (_isOrdersSearchKeyboardOpen)
+        {
+            return;
+        }
+
+        _isOrdersSearchKeyboardOpen = true;
+        try
+        {
+            OrdersSearchEntry.Unfocus();
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt("Search orders", "SEARCH");
+            keyboard.SetInitialText(SearchText);
+
+            var result = await keyboard.ShowAsync(this);
+            if (result == null)
+            {
+                return;
+            }
+
+            SearchText = result.Trim();
+            await LoadReportAsync();
+        }
+        finally
+        {
+            _isOrdersSearchKeyboardOpen = false;
+        }
     }
 
     private async void OnSearchClicked(object sender, EventArgs e)
@@ -1861,7 +2013,7 @@ public partial class ReportPage : ContentPage
 
         try
         {
-            await Shell.Current.GoToAsync($"reportdetails?orderDbId={selectedOrder.OrderDbId}");
+            await NavigationCoordinator.Shared.NavigateTemporaryRouteAsync($"reportdetails?orderDbId={selectedOrder.OrderDbId}");
         }
         catch (Exception ex)
         {
@@ -1883,11 +2035,38 @@ public partial class ReportPage : ContentPage
             return;
         }
 
+        var currentUser = _authService?.CurrentUser;
+        if (currentUser is not { IsActive: true, Role: UserRole.Admin })
+        {
+            await AppAlertService.ShowAlertAsync("Administrator Required", "Only a signed-in Administrator can remove a local test order.");
+            return;
+        }
+
+        if (!string.Equals(order.SourceChannel, "local", StringComparison.OrdinalIgnoreCase))
+        {
+            await AppAlertService.ShowAlertAsync(
+                "OrderWeb Record",
+                "Online orders remain authoritative in OrderWeb.net. Finalized local cache copies are removed automatically after seven days.");
+            return;
+        }
+
         var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
+		var reason = await DisplayPromptAsync(
+			"Delete Test Order",
+			$"Enter why local order {orderLabel} is test/demo data. This is recorded locally and is never sent to OrderWeb.",
+			"Continue",
+			"Cancel",
+			"Required reason",
+			200);
+		if (string.IsNullOrWhiteSpace(reason))
+		{
+			return;
+		}
+
         var confirm = await DisplayAlert(
-            "Void Order",
-            $"Permanently remove order {orderLabel}?\n\nThis is for demo/test orders only. It will delete the order, items, payments, events, print queue entries, and related local records.",
-            "Void / Delete",
+            "Final Local Deletion",
+            $"Permanently remove local test order {orderLabel}?\n\nAllowed only before this day's report is uploaded. An audit tombstone will remain on this till. No deletion is sent to OrderWeb.net.",
+            "Delete Test Order",
             "Cancel");
 
         if (!confirm)
@@ -1898,7 +2077,12 @@ public partial class ReportPage : ContentPage
         try
         {
             button.IsEnabled = false;
-            var deleted = await _reportService.HardDeleteOrderAsync(order.OrderDbId);
+            var deletedByName = !string.IsNullOrWhiteSpace(currentUser.Name) ? currentUser.Name : currentUser.Username;
+            var deleted = await _reportService.HardDeleteOrderAsync(
+                order.OrderDbId,
+                currentUser.Id,
+                deletedByName,
+                reason);
 
             if (!deleted)
             {
@@ -1999,6 +2183,7 @@ public partial class ReportPage : ContentPage
             return;
         }
 
+        var performance = PosPerformanceMonitor.BeginDataLoad("Reports");
         IsLoading = true;
 
         try
@@ -2025,6 +2210,7 @@ public partial class ReportPage : ContentPage
                     ApplyTillExpenses(expenseSummary, expenseRows, pendingRows);
                     LastUpdatedText = lastUpdated;
                 });
+                PosPerformanceMonitor.MarkDataVisible(performance);
                 return;
             }
 
@@ -2038,6 +2224,7 @@ public partial class ReportPage : ContentPage
                     ApplyDiscountAudits(discountAuditRows);
                     LastUpdatedText = lastUpdated;
                 });
+                PosPerformanceMonitor.MarkDataVisible(performance);
                 return;
             }
 
@@ -2051,6 +2238,7 @@ public partial class ReportPage : ContentPage
                     ApplyStaffHoursReport(rows, summary);
                     LastUpdatedText = lastUpdated;
                 });
+                PosPerformanceMonitor.MarkDataVisible(performance);
                 return;
             }
 
@@ -2064,6 +2252,7 @@ public partial class ReportPage : ContentPage
                     ApplyVoidCancelledReport(audit);
                     LastUpdatedText = lastUpdated;
                 });
+                PosPerformanceMonitor.MarkDataVisible(performance);
                 return;
             }
 
@@ -2090,6 +2279,7 @@ public partial class ReportPage : ContentPage
                 ApplyTrend(trendRows);
                 LastUpdatedText = lastUpdatedText;
             });
+            PosPerformanceMonitor.MarkDataVisible(performance);
         }
         catch (Exception ex)
         {
@@ -2143,12 +2333,33 @@ public partial class ReportPage : ContentPage
         }
         OnPropertyChanged(nameof(IsTopItemsEmpty));
 
+        ServiceChargeRemovalAudits.Clear();
+        foreach (var audit in report.ServiceChargeRemovalAudits)
+        {
+            ServiceChargeRemovalAudits.Add(audit);
+        }
+        OnPropertyChanged(nameof(HasServiceChargeRemovalAudits));
+
         SummaryOrdersText = report.Summary.OrderCount.ToString(CultureInfo.InvariantCulture);
         SummaryGrossText = $"£{report.Summary.GrossSales:F2}";
         SummaryNetText = $"£{report.Summary.NetSales:F2}";
         SummaryVatText = $"£{report.Summary.VatAmount:F2}";
         SummaryDeliveryText = $"£{report.Summary.DeliveryChargeTotal:F2}";
         SummaryAverageText = $"£{report.Summary.AverageOrderValue:F2}";
+        _summaryServiceChargeText = $"£{report.Summary.ServiceChargeTotal:F2}";
+        _summaryRemovedChargeText = $"£{report.Summary.RemovedServiceChargeValue:F2} ({report.Summary.RemovedServiceChargeCount})";
+        _summaryCashTipsText = $"£{report.Summary.CashTips:F2}";
+        _summaryCardTipsText = $"£{report.Summary.CardTips:F2}";
+        _summaryRefundsText = $"£{Math.Abs(report.Summary.RefundTotal):F2}";
+        _summaryCollectedText = $"£{report.Summary.FinalMoneyCollected:F2}";
+        _summaryTotalTipsText = $"£{report.Summary.TotalTips:F2}";
+        OnPropertyChanged(nameof(SummaryServiceChargeText));
+        OnPropertyChanged(nameof(SummaryRemovedChargeText));
+        OnPropertyChanged(nameof(SummaryCashTipsText));
+        OnPropertyChanged(nameof(SummaryCardTipsText));
+        OnPropertyChanged(nameof(SummaryTotalTipsText));
+        OnPropertyChanged(nameof(SummaryRefundsText));
+        OnPropertyChanged(nameof(SummaryCollectedText));
 
         var sendLatencySampleCount = 0;
         var sendLatencyAverageMs = 0d;

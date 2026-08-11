@@ -38,9 +38,9 @@ try {
 }
 
 if (Test-Path -LiteralPath $DatabaseSetupPath -PathType Leaf) {
-    & $DatabaseSetupPath check-version --config-path $ConfigPath --required 26 --quiet
-    Add-Check 'Database schema version 26' $(if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }) `
-        $(if ($LASTEXITCODE -eq 0) { 'Database meets this release requirement.' } else { 'Terminal must remain blocked until Mother migration 026 is applied.' })
+    & $DatabaseSetupPath check-version --config-path $ConfigPath --required 28 --quiet
+    Add-Check 'Database schema version 28' $(if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }) `
+        $(if ($LASTEXITCODE -eq 0) { 'Database meets this release requirement.' } else { 'Terminal must remain blocked until Mother migration 028 is applied.' })
 
     $securityOutput = & $DatabaseSetupPath connection-security --config-path $ConfigPath --json 2>$null
     if ($LASTEXITCODE -eq 0) {
@@ -55,7 +55,7 @@ if (Test-Path -LiteralPath $DatabaseSetupPath -PathType Leaf) {
         Add-Check 'Active MariaDB TLS session' 'WARN' 'Could not inspect the live MariaDB session.'
     }
 } else {
-    Add-Check 'Database schema version 26' 'FAIL' "Database setup utility missing: $DatabaseSetupPath"
+    Add-Check 'Database schema version 28' 'FAIL' "Database setup utility missing: $DatabaseSetupPath"
     Add-Check 'Active MariaDB TLS session' 'WARN' 'Database setup utility is unavailable.'
 }
 

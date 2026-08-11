@@ -9,6 +9,7 @@ using POS_in_NET.Services;
 using POS_in_NET.Controls;
 using POS_in_NET.Views;
 using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace POS_in_NET.Pages
 {
@@ -27,6 +28,8 @@ namespace POS_in_NET.Pages
         private readonly DeliveryZoneService _deliveryZoneService;
         private readonly DatabaseBackupService _databaseBackupService;
         private readonly PostcodeLookupService _postcodeLookupService;
+        private readonly TableServiceChargeSettingsService _tableServiceChargeSettingsService;
+        private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
         
         // Cloud Connect Services
         private OrderWebWebSocketService? _webSocketService;
@@ -51,6 +54,10 @@ namespace POS_in_NET.Pages
         private bool _hasLoadedDeliveryZones;
         private bool _hasLoadedBackupSection;
         private string _initialTab = "BusinessInfo";
+        private TableServiceChargeSettings? _currentTableServiceChargeSettings;
+        private bool _serviceChargeEnabled;
+        private OrderServiceAvailabilitySettings _orderServices = new();
+        private bool _loadingOrderServiceSwitches;
 
         public UnifiedSettingsPage()
         {
@@ -58,14 +65,18 @@ namespace POS_in_NET.Pages
             TopBar.SetPageTitle("Settings");
             
             // Initialize services
-            _businessService = new BusinessSettingsService();
-            _databaseService = new DatabaseService();
-            _orderWebService = new OnlineOrderApiService();
+            _businessService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+            _databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
+            _orderWebService = ServiceHelper.GetService<OnlineOrderApiService>() ?? new OnlineOrderApiService();
             _authService = AuthenticationService.Instance;
             _orderNumberService = new OrderNumberService(_databaseService);
-            _deliveryZoneService = new DeliveryZoneService(_databaseService);
+            _deliveryZoneService = ServiceHelper.GetService<DeliveryZoneService>() ?? new DeliveryZoneService(_databaseService);
             _databaseBackupService = ServiceHelper.GetService<DatabaseBackupService>() ?? new DatabaseBackupService(_databaseService);
             _postcodeLookupService = ServiceHelper.GetService<PostcodeLookupService>() ?? new PostcodeLookupService(_databaseService);
+            _tableServiceChargeSettingsService = ServiceHelper.GetService<TableServiceChargeSettingsService>()
+                ?? new TableServiceChargeSettingsService(_databaseService, _authService);
+            _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+                ?? new OrderServiceAvailabilityService(_databaseService, _authService);
             
             // Initialize users collection
             _users = new ObservableCollection<User>();
@@ -127,14 +138,18 @@ namespace POS_in_NET.Pages
 
             try
             {
+                var performance = PosPerformanceMonitor.BeginDataLoad("Settings");
                 System.Diagnostics.Debug.WriteLine("Loading initial data for Settings page");
                 
+                await LoadOrderServicesAsync();
                 await MainThread.InvokeOnMainThreadAsync(() => ShowSettingsTab(_initialTab));
-                
+
                 await LoadBusinessInfoAsync();
+                await LoadTableServiceChargeSettingsAsync();
                 await LoadOrderNumberSettingsAsync();
                 
                 _hasLoadedInitialData = true;
+                PosPerformanceMonitor.MarkDataVisible(performance);
                 System.Diagnostics.Debug.WriteLine("Initial data loaded successfully");
             }
             catch (Exception ex)
@@ -397,6 +412,11 @@ namespace POS_in_NET.Pages
         private void ShowSettingsTab(string tabName)
         {
             var normalizedTab = NormalizeSettingsTab(tabName);
+            if (normalizedTab == "DeliveryZone" && !_orderServices.DeliveryEnabled)
+            {
+                normalizedTab = "BusinessInfo";
+            }
+
             var selectedTab = normalizedTab switch
             {
                 "UserManagement" => UserTabBorder,
@@ -1102,6 +1122,331 @@ namespace POS_in_NET.Pages
             {
                 System.Diagnostics.Debug.WriteLine($"LoadBusinessLogo error: {ex.Message}");
             }
+        }
+
+        private async Task LoadOrderServicesAsync()
+        {
+            var isAdmin = _authService.CurrentUser?.Role == UserRole.Admin;
+            OrderServicesCard.IsVisible = isAdmin;
+
+            try
+            {
+                _orderServices = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+                _loadingOrderServiceSwitches = true;
+                TableServiceSwitch.IsToggled = _orderServices.TableEnabled;
+                CollectionServiceSwitch.IsToggled = _orderServices.CollectionEnabled;
+                DeliveryServiceSwitch.IsToggled = _orderServices.DeliveryEnabled;
+                _loadingOrderServiceSwitches = false;
+                UpdateOrderServicesUi();
+            }
+            catch (Exception ex)
+            {
+                _loadingOrderServiceSwitches = false;
+                SaveOrderServicesButton.IsEnabled = false;
+                System.Diagnostics.Debug.WriteLine($"LoadOrderServicesAsync error: {ex.Message}");
+                await AppAlertService.ShowAlertAsync("Order Services", ex.Message);
+            }
+        }
+
+        private void OnOrderServiceSwitchToggled(object sender, ToggledEventArgs e)
+        {
+            if (!_loadingOrderServiceSwitches)
+            {
+                UpdateOrderServicesUi();
+            }
+        }
+
+        private void UpdateOrderServicesUi()
+        {
+            SetOrderServiceState(TableServiceStateLabel, TableServiceSwitch.IsToggled);
+            SetOrderServiceState(CollectionServiceStateLabel, CollectionServiceSwitch.IsToggled);
+            SetOrderServiceState(DeliveryServiceStateLabel, DeliveryServiceSwitch.IsToggled);
+            SaveOrderServicesButton.IsEnabled = _authService.CurrentUser?.Role == UserRole.Admin;
+        }
+
+        private static void SetOrderServiceState(Label label, bool enabled)
+        {
+            label.Text = enabled ? "Enabled" : "Disabled";
+            label.TextColor = Color.FromArgb(enabled ? "#047857" : "#B91C1C");
+        }
+
+        private async void OnSaveOrderServicesClicked(object sender, EventArgs e)
+        {
+            if (_authService.CurrentUser?.Role != UserRole.Admin)
+            {
+                await AppAlertService.ShowAlertAsync("Access Denied", "Only an Administrator can change order services.");
+                return;
+            }
+
+            var tableEnabled = TableServiceSwitch.IsToggled;
+            var collectionEnabled = CollectionServiceSwitch.IsToggled;
+            var deliveryEnabled = DeliveryServiceSwitch.IsToggled;
+            if (!tableEnabled && !collectionEnabled && !deliveryEnabled)
+            {
+                await AppAlertService.ShowAlertAsync("Order Services", "Keep at least one order service enabled.");
+                return;
+            }
+
+            var enabledNames = new List<string>();
+            if (tableEnabled) enabledNames.Add("Table");
+            if (collectionEnabled) enabledNames.Add("Collection");
+            if (deliveryEnabled) enabledNames.Add("Delivery");
+
+            var confirmation = new ModernConfirmDialog();
+            confirmation.SetConfirm(
+                "Save Order Services",
+                $"Enable: {string.Join(", ", enabledNames)}?\n\nDisabled services will stop accepting new orders. Existing orders and history remain available.",
+                "Save",
+                "Cancel",
+                string.Empty);
+            if (!await confirmation.ShowAsync())
+            {
+                return;
+            }
+
+            SaveOrderServicesButton.IsEnabled = false;
+            var originalText = SaveOrderServicesButton.Text;
+            SaveOrderServicesButton.Text = "SAVING...";
+            try
+            {
+                _orderServices = await _orderServiceAvailabilityService.SaveAsync(
+                    tableEnabled,
+                    collectionEnabled,
+                    deliveryEnabled);
+
+                TableServiceChargeCard.IsVisible = tableEnabled;
+                DeliveryZoneTabBorder.IsVisible = deliveryEnabled;
+                _ = ToastNotification.ShowAsync(
+                    "Order services updated",
+                    "New order options now match the selected services.",
+                    NotificationType.Success,
+                    1800);
+            }
+            catch (Exception ex)
+            {
+                await AppAlertService.ShowAlertAsync("Save Failed", ex.Message);
+            }
+            finally
+            {
+                SaveOrderServicesButton.Text = originalText;
+                SaveOrderServicesButton.IsEnabled = true;
+            }
+        }
+
+        private async Task LoadTableServiceChargeSettingsAsync()
+        {
+            var isAdmin = _authService.CurrentUser?.Role == UserRole.Admin;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                TableServiceChargeCard.IsVisible = isAdmin && _orderServices.TableEnabled;
+                DeliveryZoneTabBorder.IsVisible = _orderServices.DeliveryEnabled;
+            });
+            if (!isAdmin)
+            {
+                _currentTableServiceChargeSettings = null;
+                return;
+            }
+
+            try
+            {
+                var settings = await _tableServiceChargeSettingsService.GetAsync();
+                _currentTableServiceChargeSettings = settings.Copy();
+                _serviceChargeEnabled = settings.IsEnabled;
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ServiceChargePercentageEntry.Text = settings.IsEnabled
+                        ? settings.Percentage.ToString("0.##", CultureInfo.InvariantCulture)
+                        : string.Empty;
+                    UpdateTableServiceChargeUi();
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadTableServiceChargeSettingsAsync error: {ex.Message}");
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    TableServiceChargeCard.IsVisible = _orderServices.TableEnabled;
+                    SaveServiceChargeButton.IsEnabled = false;
+                });
+                await AppAlertService.ShowAlertAsync("Service Charge", "The saved service-charge setting could not be loaded.");
+            }
+        }
+
+        private void OnNoServiceChargeClicked(object sender, EventArgs e)
+        {
+            _serviceChargeEnabled = false;
+            UpdateTableServiceChargeUi();
+        }
+
+        private void OnPercentageServiceChargeClicked(object sender, EventArgs e)
+        {
+            _serviceChargeEnabled = true;
+            UpdateTableServiceChargeUi();
+            ServiceChargePercentageEntry.Focus();
+        }
+
+        private void OnServiceChargePercentageTextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateTableServiceChargeDirtyState();
+        }
+
+        private void UpdateTableServiceChargeUi()
+        {
+            SetServiceChargeChoiceButton(NoServiceChargeButton, !_serviceChargeEnabled, "#334155");
+            SetServiceChargeChoiceButton(PercentageServiceChargeButton, _serviceChargeEnabled, "#059669");
+            ServiceChargePercentagePanel.IsVisible = _serviceChargeEnabled;
+
+            UpdateTableServiceChargeDirtyState();
+        }
+
+        private static void SetServiceChargeChoiceButton(Button button, bool isSelected, string selectedColor)
+        {
+            button.BackgroundColor = Color.FromArgb(isSelected ? selectedColor : "#F1F5F9");
+            button.TextColor = Color.FromArgb(isSelected ? "#FFFFFF" : "#475569");
+            button.BorderColor = Color.FromArgb(isSelected ? selectedColor : "#CBD5E1");
+            button.BorderWidth = 1;
+        }
+
+        private void UpdateTableServiceChargeDirtyState()
+        {
+            if (_currentTableServiceChargeSettings == null)
+            {
+                return;
+            }
+
+            var percentage = 0m;
+            var inputIsValid = !_serviceChargeEnabled
+                || (TryParseServiceChargePercentage(ServiceChargePercentageEntry.Text, out percentage)
+                    && HasAtMostTwoDecimalPlaces(ServiceChargePercentageEntry.Text)
+                    && TableServiceChargePolicy.Validate(true, percentage).IsValid);
+
+            SaveServiceChargeButton.IsEnabled = _authService.CurrentUser?.Role == UserRole.Admin && inputIsValid;
+        }
+
+        private async void OnSaveServiceChargeClicked(object sender, EventArgs e)
+        {
+            if (_authService.CurrentUser?.Role != UserRole.Admin)
+            {
+                await AppAlertService.ShowAlertAsync("Access Denied", "Only an Administrator can change table service-charge settings.");
+                return;
+            }
+
+            decimal percentage = 0m;
+            if (_serviceChargeEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(ServiceChargePercentageEntry.Text))
+                {
+                    await AppAlertService.ShowAlertAsync("Validation", "Enter the service-charge percentage.");
+                    return;
+                }
+
+                if (!HasAtMostTwoDecimalPlaces(ServiceChargePercentageEntry.Text))
+                {
+                    await AppAlertService.ShowAlertAsync("Validation", "Use no more than two decimal places.");
+                    return;
+                }
+
+                if (!TryParseServiceChargePercentage(ServiceChargePercentageEntry.Text, out percentage))
+                {
+                    await AppAlertService.ShowAlertAsync("Validation", "Enter a valid numeric percentage.");
+                    return;
+                }
+            }
+
+            var validation = TableServiceChargePolicy.Validate(_serviceChargeEnabled, percentage);
+            if (!validation.IsValid)
+            {
+                await AppAlertService.ShowAlertAsync("Validation", validation.Message);
+                return;
+            }
+
+            var newDescription = _serviceChargeEnabled
+                ? $"{validation.NormalizedPercentage:0.##}% service charge"
+                : "no service charge";
+            var confirmation = new ModernConfirmDialog();
+            confirmation.SetConfirm(
+                "Confirm Table Service Charge",
+                $"Save {newDescription} for new table orders?\n\nCollection and delivery orders are not affected. Existing open orders keep their original policy.",
+                "Save Policy",
+                "Cancel",
+                "%",
+                "#059669");
+
+            if (!await confirmation.ShowAsync())
+            {
+                return;
+            }
+
+            var originalText = SaveServiceChargeButton.Text;
+            SaveServiceChargeButton.IsEnabled = false;
+            SaveServiceChargeButton.Text = "SAVING...";
+
+            try
+            {
+                var result = await _tableServiceChargeSettingsService.SaveAsync(
+                    _serviceChargeEnabled,
+                    validation.NormalizedPercentage,
+                    ServiceChargeClassification.Optional);
+
+                _currentTableServiceChargeSettings = result.Settings.Copy();
+                ServiceChargePercentageEntry.Text = result.Settings.IsEnabled
+                    ? result.Settings.Percentage.ToString("0.##", CultureInfo.InvariantCulture)
+                    : string.Empty;
+                UpdateTableServiceChargeUi();
+
+                await AppAlertService.ShowAlertAsync(
+                    result.Changed ? "Saved" : "No Changes",
+                    result.Changed
+                        ? "Table service-charge policy saved and audited successfully."
+                        : "The selected policy is already saved.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                await AppAlertService.ShowAlertAsync("Access Denied", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OnSaveServiceChargeClicked error: {ex.Message}");
+                await AppAlertService.ShowAlertAsync("Error", "The service-charge policy could not be saved. No changes were committed.");
+            }
+            finally
+            {
+                SaveServiceChargeButton.Text = originalText;
+                UpdateTableServiceChargeDirtyState();
+            }
+        }
+
+        private static bool TryParseServiceChargePercentage(string? input, out decimal percentage)
+        {
+            var normalized = (input ?? string.Empty).Trim().TrimEnd('%').Trim();
+            if (normalized.Contains(',') && !normalized.Contains('.'))
+            {
+                normalized = normalized.Replace(',', '.');
+            }
+
+            return decimal.TryParse(
+                normalized,
+                NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out percentage);
+        }
+
+        private static bool HasAtMostTwoDecimalPlaces(string? input)
+        {
+            var normalized = (input ?? string.Empty).Trim().TrimEnd('%').Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            var separatorCount = normalized.Count(character => character is '.' or ',');
+            if (separatorCount > 1 || normalized.Any(character => !char.IsDigit(character) && character is not '.' and not ','))
+            {
+                return false;
+            }
+
+            var separatorIndex = Math.Max(normalized.LastIndexOf('.'), normalized.LastIndexOf(','));
+            return separatorIndex < 0 || normalized.Length - separatorIndex - 1 <= 2;
         }
 
         private async Task LoadOrderNumberSettingsAsync()
@@ -1857,11 +2202,11 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("Permanent Delete User clicked");
+                System.Diagnostics.Debug.WriteLine("Remove employee clicked");
 
                 if (sender is not Button button || button.CommandParameter is not User userToDelete)
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to determine which user to delete");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Unable to determine which employee to remove");
                     return;
                 }
 
@@ -1870,9 +2215,9 @@ namespace POS_in_NET.Pages
                     : userToDelete.Name;
 
                 var confirm = await DisplayAlert(
-                    "Delete User",
-                    $"Permanently delete '{displayName}'?\n\nUse this only for old accounts you no longer need. This cannot be undone.",
-                    "Delete",
+                    "Remove Employee",
+                    $"Remove '{displayName}' from POS access?\n\nThe employee will disappear from user management and can no longer sign in. Historical clock, discount, void and refund identity will be preserved.",
+                    "Remove",
                     "Cancel");
 
                 if (!confirm)
@@ -1881,9 +2226,9 @@ namespace POS_in_NET.Pages
                 }
 
                 var finalConfirm = await DisplayAlert(
-                    "Confirm Delete",
-                    $"This will remove '{displayName}' from the user list permanently.",
-                    "Delete Now",
+                    "Confirm Removal",
+                    $"Remove '{displayName}' from the active employee list now?",
+                    "Remove Now",
                     "Cancel");
 
                 if (!finalConfirm)
@@ -1894,18 +2239,18 @@ namespace POS_in_NET.Pages
                 var result = await _authService.DeleteUserAsync(userToDelete.Id);
                 if (result.Success)
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Deleted", $"User '{displayName}' has been deleted.");
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Employee Removed", result.Message);
                     await LoadUsersAsync();
                 }
                 else
                 {
-                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delete Failed", result.Message);
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Removal Failed", result.Message);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error deleting user: {ex.Message}");
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to delete user: {ex.Message}");
+                AppDiagnostics.LogFatal("Remove employee", ex);
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Failed to remove the employee. Check the production error log.");
             }
         }
 

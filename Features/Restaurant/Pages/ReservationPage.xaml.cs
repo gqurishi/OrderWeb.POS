@@ -111,7 +111,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         if (!_roleAccessService.CanAccessFeature(_authService.CurrentUser?.Role, "reservation"))
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access Reservation.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role)}");
+            await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             return;
         }
 

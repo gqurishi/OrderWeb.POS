@@ -9,17 +9,60 @@ public static class KitchenTicketTemplateService
 {
     private const int LineWidth = 48;
 
+    public static byte[] BuildCourseFireCallTicket(
+        TableOrder order,
+        IReadOnlyList<TableOrderItem> items,
+        NetworkPrinter? printer = null)
+    {
+        var builder = new EscPosBuilder(
+            printer?.Brand ?? PrinterBrand.Epson,
+            printer?.PaperWidth ?? PaperWidth.Mm80).Initialize();
+        var fireText = string.IsNullOrWhiteSpace(order.KitchenTicketType)
+            ? "FIRE COURSE"
+            : order.KitchenTicketType.Trim().ToUpperInvariant();
+        var tableText = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
+
+        builder.SetAlign(TextAlign.Center)
+               .SetBold(true)
+               .SetFontSize(2, 2)
+               .PrintLine(fireText)
+               .PrintLine(tableText)
+               .SetNormalSize()
+               .SetBold(false)
+               .PrintLine(new string('-', LineWidth));
+
+        foreach (var item in items)
+        {
+            PrintTableItem(builder, item, SupportsRedInk(printer));
+        }
+
+        builder.PrintLine(new string('-', LineWidth))
+               .FeedLines(3);
+
+        if (printer?.HasCutter != false)
+        {
+            builder.Cut(true);
+        }
+
+        return builder.Build();
+    }
+
     public static byte[] BuildTableSectionTickets(
         TableOrder order,
         PrintGroup group,
         IReadOnlyList<TableOrderItem> items,
-        KitchenTemplateSettings? settings = null)
+        KitchenTemplateSettings? settings = null,
+        NetworkPrinter? printer = null)
     {
         settings = NormalizeSettings(settings);
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
-        var ticketTitle = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
+        var tableTitle = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
+        var ticketTitle = !string.IsNullOrWhiteSpace(order.KitchenTicketType)
+            && order.KitchenTicketType.StartsWith("FIRE ", StringComparison.OrdinalIgnoreCase)
+                ? $"{order.KitchenTicketType.ToUpperInvariant()} - {tableTitle}"
+                : tableTitle;
 
         if (items.Any(item => item.KitchenAction == KitchenChangeAction.Void))
         {
@@ -32,7 +75,7 @@ public static class KitchenTicketTemplateService
             PrintHeader(builder, ticketTitle, orderReference, printedAt, settings, section.Title);
             foreach (var item in section.Items)
             {
-                PrintTableItem(builder, item);
+                PrintTableItem(builder, item, SupportsRedInk(printer));
             }
 
             PrintOrderNotes(builder, order.Notes);
@@ -68,7 +111,7 @@ public static class KitchenTicketTemplateService
             PrintSectionTitle(builder, section.Title, settings);
             foreach (var item in section.Items)
             {
-                PrintTableItem(builder, item);
+                PrintTableItem(builder, item, SupportsRedInk(printer));
             }
         }
 
@@ -178,8 +221,14 @@ public static class KitchenTicketTemplateService
                .SetBold(false);
     }
 
-    private static void PrintTableItem(EscPosBuilder builder, TableOrderItem item)
+    private static void PrintTableItem(EscPosBuilder builder, TableOrderItem item, bool supportsRedInk)
     {
+        var useRedInk = supportsRedInk && item.PrintInRed;
+        if (useRedInk)
+        {
+            builder.SetRedInk(true);
+        }
+
         var name = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Name : item.DisplayName;
         var actionPrefix = item.KitchenAction switch
         {
@@ -194,6 +243,10 @@ public static class KitchenTicketTemplateService
         if (item.KitchenAction == KitchenChangeAction.Void)
         {
             builder.SetNormalSize().FeedLines(1);
+            if (useRedInk)
+            {
+                builder.SetRedInk(false);
+            }
             return;
         }
 
@@ -218,7 +271,14 @@ public static class KitchenTicketTemplateService
         }
 
         builder.SetNormalSize().SetBold(false).FeedLines(1);
+        if (useRedInk)
+        {
+            builder.SetRedInk(false);
+        }
     }
+
+    private static bool SupportsRedInk(NetworkPrinter? printer) =>
+        printer is { SupportsTwoColor: true, Brand: PrinterBrand.Epson };
 
     private static void PrintCloudItem(EscPosBuilder builder, CloudOrderItem item)
     {

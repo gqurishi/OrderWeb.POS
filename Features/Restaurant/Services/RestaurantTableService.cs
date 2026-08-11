@@ -302,33 +302,6 @@ namespace POS_in_NET.Services
             {
                 using var connection = await _databaseService.GetConnectionAsync();
                 
-                // First ensure columns exist
-                bool hasPositionColumns = await CheckPositionColumnsExistAsync(connection);
-                
-                if (!hasPositionColumns)
-                {
-                    // Create the columns if they don't exist
-                    System.Diagnostics.Debug.WriteLine("Creating PositionX/PositionY columns...");
-                    try
-                    {
-                        var alterQuery1 = "ALTER TABLE RestaurantTables ADD COLUMN PositionX INT DEFAULT 0";
-                        var alterQuery2 = "ALTER TABLE RestaurantTables ADD COLUMN PositionY INT DEFAULT 0";
-                        
-                        using var alterCmd1 = new MySqlCommand(alterQuery1, connection);
-                        await alterCmd1.ExecuteNonQueryAsync();
-                        
-                        using var alterCmd2 = new MySqlCommand(alterQuery2, connection);
-                        await alterCmd2.ExecuteNonQueryAsync();
-                        
-                        System.Diagnostics.Debug.WriteLine(" Position columns created successfully");
-                    }
-                    catch (Exception alterEx)
-                    {
-                        // Columns might already exist (race condition), ignore
-                        System.Diagnostics.Debug.WriteLine($"Column creation: {alterEx.Message}");
-                    }
-                }
-                
                 var query = @"
                     UPDATE RestaurantTables 
                     SET PositionX = @PositionX,

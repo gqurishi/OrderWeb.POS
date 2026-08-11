@@ -100,6 +100,7 @@ public class NetworkPrintQueueService : IDisposable
     /// </summary>
     public async Task EnsureTableExistsAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         try
         {
             using var connection = await _databaseService.GetConnectionAsync();

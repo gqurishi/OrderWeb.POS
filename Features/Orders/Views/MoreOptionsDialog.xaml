@@ -8,12 +8,13 @@
 
     <Grid VerticalOptions="Center"
           HorizontalOptions="Fill"
-          Padding="36">
-        <Border BackgroundColor="White"
+          Padding="12">
+        <Border x:Name="DialogCard" BackgroundColor="White"
                 Stroke="{StaticResource DialogShellStrokeColor}"
                 StrokeThickness="1"
                 Padding="30"
                MaximumWidthRequest="650"
+               MaximumHeightRequest="760"
                Margin="16"
                 HorizontalOptions="Fill"
                 VerticalOptions="Center">
@@ -24,8 +25,9 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
 
-            <VerticalStackLayout Spacing="18">
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="18">
                 <Border BackgroundColor="{StaticResource DialogPrimaryColor}"
+                        Grid.Row="0"
                         Stroke="#FFFFFF"
                         StrokeThickness="2"
                         WidthRequest="74"
@@ -44,9 +46,10 @@
                 </Border>
 
                 <Label Text="More Options"
+                       Grid.Row="1"
                        Style="{StaticResource DialogTitleStyle}"/>
 
-                <ScrollView MaximumHeightRequest="520">
+                <ScrollView Grid.Row="2">
                     <Grid x:Name="OptionsGrid"
                           ColumnDefinitions="*,*,*"
                           ColumnSpacing="10"
@@ -54,10 +57,11 @@
                 </ScrollView>
 
                 <Button Text="Cancel"
+                        Grid.Row="3"
                         Style="{StaticResource DialogCancelButtonStyle}"
                         Margin="0,8,0,0"
                         Clicked="OnCancelClicked"/>
-            </VerticalStackLayout>
+            </Grid>
         </Border>
     </Grid>
 </ContentView>

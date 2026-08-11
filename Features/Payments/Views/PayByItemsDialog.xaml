@@ -8,8 +8,8 @@
 
     <Grid VerticalOptions="Center"
           HorizontalOptions="Fill"
-          Padding="36">
-        <Border BackgroundColor="White"
+          Padding="12">
+        <Border x:Name="DialogCard" BackgroundColor="White"
                 Stroke="{StaticResource DialogShellStrokeColor}"
                 StrokeThickness="1"
                 Padding="30"

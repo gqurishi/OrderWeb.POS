@@ -8,13 +8,13 @@
 
     <Grid VerticalOptions="Center"
           HorizontalOptions="Center"
-          Padding="36">
-        <Border BackgroundColor="White"
+          Padding="12">
+        <Border x:Name="DialogCard" BackgroundColor="White"
                 Stroke="{StaticResource DialogShellStrokeColor}"
                 StrokeThickness="1"
                 Padding="0"
                 MaximumWidthRequest="720"
-                WidthRequest="680"
+                MaximumHeightRequest="760"
                 VerticalOptions="Center"
                 HorizontalOptions="Center">
             <Border.StrokeShape>

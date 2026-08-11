@@ -89,7 +89,7 @@ namespace POS_in_NET.Pages
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Manager and Admin can access Web Orders.");
-                    await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(_authService?.CurrentUser?.Role)}");
+                    await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService?.CurrentUser?.Role));
                 });
                 return;
             }
@@ -1115,7 +1115,10 @@ namespace POS_in_NET.Pages
             {
                 try
                 {
-                    await Navigation.PushAsync(new OrderPlacementPageSimple(order.OrderId), false);
+                    await NavigationCoordinator.Shared.PushTemporaryPageAsync(
+                        new OrderPlacementPageSimple(order.OrderId),
+                        animated: false,
+                        source: button);
                 }
                 catch (Exception ex)
                 {
@@ -1133,7 +1136,10 @@ namespace POS_in_NET.Pages
                     if (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
                         && order.LocalLifecycleState != LocalLifecycleState.Paid)
                     {
-                        await Navigation.PushAsync(new OrderPlacementPageSimple(order.OrderId), false);
+                        await NavigationCoordinator.Shared.PushTemporaryPageAsync(
+                            new OrderPlacementPageSimple(order.OrderId),
+                            animated: false,
+                            source: button);
                         return;
                     }
 
@@ -1513,7 +1519,7 @@ namespace POS_in_NET.Pages
             }
 
             // Navigate to login page immediately
-            await Shell.Current.GoToAsync("//login");
+            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
         }
         
         private async void OnShowAllClicked(object sender, EventArgs e)
@@ -1650,7 +1656,8 @@ namespace POS_in_NET.Pages
                 get
                 {
                     var method = OnlineOrderPaymentHelper.GetDisplayMethod(Order.PaymentMethod);
-                    return CanTakePayment ? $"{method} Due" : method;
+                    var status = OnlineOrderPaymentHelper.GetStatusDisplay(Order.PaymentMethod, Order.PaymentStatusRaw);
+                    return CanTakePayment ? $"{method} · Due" : $"{method} · {status}";
                 }
             }
             public Color PaymentMethodColor => OnlineOrderPaymentHelper.NormalizeMethod(Order.PaymentMethod) switch

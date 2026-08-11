@@ -36,14 +36,16 @@ public static class TerminalConnectionTestService
                 {
                     return new TerminalConnectionTestResult(
                         false,
-                        "Mother Database Outdated",
+                        "Mother Database Unavailable",
                         schemaGate.Message);
                 }
 
                 return new TerminalConnectionTestResult(
                     true,
                     "Connected",
-                    $"Connected to mother terminal ({config.DatabaseHost}). Database schema version {schemaGate.CurrentSchemaVersion}.");
+                    schemaGate.CurrentSchemaVersion.HasValue
+                        ? $"Connected to mother terminal ({config.DatabaseHost}). Database schema version {schemaGate.CurrentSchemaVersion.Value}."
+                        : $"Connected to mother terminal ({config.DatabaseHost}) using an unversioned compatible database.");
             }
 
             return new TerminalConnectionTestResult(true, "Connected", "Connected to Local Mother Database");

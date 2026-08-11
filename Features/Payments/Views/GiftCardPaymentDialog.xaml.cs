@@ -3,6 +3,7 @@ using System;
 using System.Threading.Tasks;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 
 namespace POS_in_NET.Views
 {
@@ -33,6 +34,7 @@ namespace POS_in_NET.Views
         public GiftCardPaymentDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 650, 760);
             _giftCardApiService = Application.Current?.Handler?.MauiContext?.Services.GetService(typeof(OrderWebGiftCardApiService)) as OrderWebGiftCardApiService;
         }
 

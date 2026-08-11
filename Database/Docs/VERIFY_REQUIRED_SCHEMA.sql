@@ -25,6 +25,8 @@ FROM (
     SELECT 'MenuItemComponents' UNION ALL
     SELECT 'ItemComponents' UNION ALL
     SELECT 'MealDeals' UNION ALL
+    SELECT 'TastingMenus' UNION ALL
+    SELECT 'MenuItemVariants' UNION ALL
     SELECT 'MenuCategories' UNION ALL
     SELECT 'MenuItems' UNION ALL
     SELECT 'orders' UNION ALL
@@ -32,11 +34,16 @@ FROM (
     SELECT 'order_item_addons' UNION ALL
     SELECT 'order_payments' UNION ALL
     SELECT 'order_events' UNION ALL
+    SELECT 'order_service_charge_events' UNION ALL
     SELECT 'order_item_send_tracking' UNION ALL
     SELECT 'order_refunds' UNION ALL
     SELECT 'collection_customers' UNION ALL
     SELECT 'delivery_customers' UNION ALL
     SELECT 'order_number_settings' UNION ALL
+    SELECT 'table_service_charge_settings' UNION ALL
+    SELECT 'table_service_charge_setting_events' UNION ALL
+    SELECT 'order_service_availability_settings' UNION ALL
+    SELECT 'order_service_availability_events' UNION ALL
     SELECT 'print_groups' UNION ALL
     SELECT 'network_printers' UNION ALL
     SELECT 'network_print_queue' UNION ALL
@@ -44,6 +51,7 @@ FROM (
     SELECT 'cash_drawer_events' UNION ALL
     SELECT 'till_expenses' UNION ALL
     SELECT 'Floors' UNION ALL
+    SELECT 'FloorBackgroundImages' UNION ALL
     SELECT 'RestaurantTables' UNION ALL
     SELECT 'TableSessions' UNION ALL
     SELECT 'SessionNotes' UNION ALL
@@ -63,7 +71,9 @@ FROM (
     SELECT 'online_order_print_tracking' UNION ALL
     SELECT 'cloud_reservations' UNION ALL
     SELECT 'reservation_sync_state' UNION ALL
+    SELECT 'reservation_pending_acks' UNION ALL
     SELECT 'orderweb_daily_report_sync_log' UNION ALL
+    SELECT 'local_order_deletion_audit' UNION ALL
     SELECT 'discount_events' UNION ALL
     SELECT 'z_report_print_log' UNION ALL
     SELECT 'ReportSnapshots' UNION ALL
@@ -96,6 +106,55 @@ FROM (
     SELECT 'order_refunds', 'refunded_by_role' UNION ALL
     SELECT 'order_refunds', 'terminal_name' UNION ALL
     SELECT 'order_refunds', 'external_reference'
+    UNION ALL SELECT 'users', 'is_archived'
+    UNION ALL SELECT 'users', 'archived_at'
+    UNION ALL SELECT 'users', 'archived_by_user_id'
+    UNION ALL SELECT 'users', 'archived_original_username'
+    UNION ALL SELECT 'table_service_charge_settings', 'is_enabled'
+    UNION ALL SELECT 'table_service_charge_settings', 'percentage'
+    UNION ALL SELECT 'table_service_charge_settings', 'classification'
+    UNION ALL SELECT 'table_service_charge_settings', 'updated_by_user_id'
+    UNION ALL SELECT 'table_service_charge_settings', 'updated_by_name'
+    UNION ALL SELECT 'table_service_charge_settings', 'updated_at'
+    UNION ALL SELECT 'order_service_availability_settings', 'table_enabled'
+    UNION ALL SELECT 'order_service_availability_settings', 'collection_enabled'
+    UNION ALL SELECT 'order_service_availability_settings', 'delivery_enabled'
+    UNION ALL SELECT 'order_service_availability_settings', 'updated_by_user_id'
+    UNION ALL SELECT 'order_service_availability_settings', 'updated_by_name'
+    UNION ALL SELECT 'order_service_availability_settings', 'updated_at'
+    UNION ALL SELECT 'orders', 'service_charge_percentage'
+    UNION ALL SELECT 'orders', 'service_charge_basis'
+    UNION ALL SELECT 'orders', 'service_charge_amount'
+    UNION ALL SELECT 'orders', 'service_charge_status'
+    UNION ALL SELECT 'orders', 'service_charge_classification'
+    UNION ALL SELECT 'orders', 'service_charge_removal_reason'
+    UNION ALL SELECT 'orders', 'service_charge_removed_by_user_id'
+    UNION ALL SELECT 'orders', 'service_charge_removed_by_name'
+    UNION ALL SELECT 'orders', 'service_charge_approved_by_user_id'
+    UNION ALL SELECT 'orders', 'service_charge_approved_by_name'
+    UNION ALL SELECT 'orders', 'service_charge_removed_at'
+    UNION ALL SELECT 'orders', 'payment_status'
+    UNION ALL SELECT 'orders', 'cash_tip_amount'
+    UNION ALL SELECT 'orders', 'card_tip_amount'
+    UNION ALL SELECT 'orders', 'promo_code'
+    UNION ALL SELECT 'orders', 'gift_card_number_masked'
+    UNION ALL SELECT 'orders', 'gift_card_amount_paid'
+    UNION ALL SELECT 'orders', 'gift_card_remaining_balance'
+    UNION ALL SELECT 'orders', 'loyalty_points_earned'
+    UNION ALL SELECT 'orders', 'loyalty_points_redeemed'
+    UNION ALL SELECT 'orders', 'loyalty_points_discount'
+    UNION ALL SELECT 'orders', 'loyalty_balance_after'
+    UNION ALL SELECT 'order_items', 'cloud_item_external_id'
+    UNION ALL SELECT 'orders', 'amount_paid'
+    UNION ALL SELECT 'orders', 'payment_provider'
+    UNION ALL SELECT 'orders', 'payment_reference'
+    UNION ALL SELECT 'orders', 'payment_currency'
+    UNION ALL SELECT 'orders', 'voucher_code'
+    UNION ALL SELECT 'network_printers', 'supports_two_color'
+    UNION ALL SELECT 'order_items', 'print_in_red'
+    UNION ALL SELECT 'order_items', 'course_type'
+    UNION ALL SELECT 'order_items', 'fired_at'
+    UNION ALL SELECT 'order_items', 'fired_by'
 ) required
 LEFT JOIN information_schema.columns existing
     ON existing.table_schema = DATABASE()

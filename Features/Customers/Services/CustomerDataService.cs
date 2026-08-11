@@ -28,6 +28,7 @@ public class CustomerDataService
 
     public async Task EnsureTableAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_tableReady)
         {
             return;

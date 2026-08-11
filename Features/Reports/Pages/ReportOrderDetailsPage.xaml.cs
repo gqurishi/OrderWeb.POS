@@ -81,7 +81,7 @@ public partial class ReportOrderDetailsPage : ContentPage
             await AppAlertService.ShowAlertAsync(
                 "Mother Terminal Only",
                 "Order drill-down reports are available on the mother terminal. Child terminals can view limited live reports from the shared database.");
-            await Shell.Current.GoToAsync("..");
+            await NavigationCoordinator.Shared.GoBackAsync();
             return;
         }
 
@@ -113,7 +113,7 @@ public partial class ReportOrderDetailsPage : ContentPage
 
     private async void OnCloseClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("..");
+        await NavigationCoordinator.Shared.GoBackAsync(source: sender as VisualElement);
     }
 
     protected override void OnPropertyChanged([CallerMemberName] string? propertyName = null)

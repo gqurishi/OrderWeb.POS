@@ -375,7 +375,7 @@ public sealed class InactivityService
             SuppressAutomaticNavigationActivity();
             if (Shell.Current != null)
             {
-                await Shell.Current.GoToAsync($"//{dashboardRoute}", false);
+                await NavigationCoordinator.Shared.NavigateShellAsync(dashboardRoute, animated: false);
             }
 
             lock (_sync)
@@ -410,7 +410,7 @@ public sealed class InactivityService
 
             if (Shell.Current != null)
             {
-                await Shell.Current.GoToAsync("//login", false);
+                await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
             }
         }
         catch (Exception ex)

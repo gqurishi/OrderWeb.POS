@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Threading.Tasks;
 
@@ -21,6 +22,7 @@ namespace POS_in_NET.Views
         public CardPaymentDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 600, 760);
         }
 
         public void SetAmount(decimal amount)

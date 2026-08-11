@@ -1,5 +1,6 @@
 using POS_in_NET.Services;
 using POS_in_NET.Models;
+using POS_in_NET.Helpers;
 using System.Linq;
 using System.Timers;
 
@@ -11,6 +12,8 @@ public partial class UserDashboardPage : ContentPage
     private readonly RoleAccessService _roleAccessService;
     private readonly InactivityService _inactivityService;
     private readonly BusinessSettingsService _businessSettingsService;
+    private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
+    private readonly NavigationCoordinator _navigationCoordinator;
     private System.Timers.Timer? _timeTimer;
     private User? _currentUser;
     private bool _isRestaurantNavigationInProgress;
@@ -21,16 +24,13 @@ public partial class UserDashboardPage : ContentPage
         _authService = AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
-        _businessSettingsService = new BusinessSettingsService();
-        
-        // Start time updates
-        StartTimeUpdates();
+        _businessSettingsService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+        _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
+        _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+            ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), _authService);
         
         // Load current user info
         LoadCurrentUser();
-
-        // Load business branding from settings
-        _ = LoadBusinessNameAsync();
     }
 
     private async Task LoadBusinessNameAsync()
@@ -65,21 +65,53 @@ public partial class UserDashboardPage : ContentPage
         }
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
         _inactivityService.Start();
         _inactivityService.ResetActivity();
         _inactivityService.TrackPage(this);
+        StartTimeUpdates();
+        await Task.WhenAll(LoadBusinessNameAsync(), RefreshOrderServiceButtonsAsync());
+    }
+
+    private async Task RefreshOrderServiceButtonsAsync()
+    {
+        try
+        {
+            var settings = await _orderServiceAvailabilityService.GetAsync();
+            RestaurantServiceButton.IsVisible = settings.TableEnabled;
+            CollectionServiceButton.IsVisible = settings.CollectionEnabled;
+            DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
+            ArrangeDashboardTiles();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Dashboard service availability error: {ex.Message}");
+        }
+    }
+
+    private void ArrangeDashboardTiles()
+    {
+        DashboardTileLayoutHelper.Arrange(
+            ButtonGrid,
+            RestaurantServiceButton,
+            DeliveryServiceButton,
+            CollectionServiceButton,
+            LiveOrderServiceButton);
     }
 
     private void StartTimeUpdates()
     {
+        _timeTimer?.Stop();
+        _timeTimer?.Dispose();
+
         // Update time immediately
         UpdateTimeDisplay();
         
-        // Update every second
-        _timeTimer = new System.Timers.Timer(1000);
+        // The displayed seconds are not operational data; a one-minute update avoids
+        // forcing the full dashboard to redraw continuously.
+        _timeTimer = new System.Timers.Timer(TimeSpan.FromMinutes(1).TotalMilliseconds);
         _timeTimer.Elapsed += (sender, e) =>
         {
             MainThread.BeginInvokeOnMainThread(UpdateTimeDisplay);
@@ -135,7 +167,7 @@ public partial class UserDashboardPage : ContentPage
         try
         {
             System.Diagnostics.Debug.WriteLine("Collection button clicked - User Dashboard");
-            await NavigateToAllowedRouteAsync("collection", isModal: true);
+            await NavigateToAllowedRouteAsync("collection", isModal: true, source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -151,7 +183,7 @@ public partial class UserDashboardPage : ContentPage
         try
         {
             System.Diagnostics.Debug.WriteLine("Delivery button clicked - User Dashboard");
-            await NavigateToAllowedRouteAsync("delivery", isModal: true);
+            await NavigateToAllowedRouteAsync("delivery", isModal: true, source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -173,7 +205,7 @@ public partial class UserDashboardPage : ContentPage
         {
             _isRestaurantNavigationInProgress = true;
             System.Diagnostics.Debug.WriteLine("Restaurant button clicked - User Dashboard - Navigating directly to visual tables");
-            await NavigateToAllowedRouteAsync("restaurant", resetShellStacks: true);
+            await NavigateToAllowedRouteAsync("restaurant", resetShellStacks: true, source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -193,7 +225,7 @@ public partial class UserDashboardPage : ContentPage
         try
         {
             System.Diagnostics.Debug.WriteLine("Live Order button clicked - User Dashboard");
-            await NavigateToAllowedRouteAsync("liveorder");
+            await NavigateToAllowedRouteAsync("liveorder", source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -214,11 +246,22 @@ public partial class UserDashboardPage : ContentPage
         PosWindowService.MinimizeMainWindow();
     }
 
-    private async Task NavigateToAllowedRouteAsync(string requestedRoute, bool isModal = false, bool resetShellStacks = false)
+    private async Task NavigateToAllowedRouteAsync(
+        string requestedRoute,
+        bool isModal = false,
+        bool resetShellStacks = false,
+        VisualElement? source = null)
     {
         _inactivityService.ResetActivity();
 
         var route = _roleAccessService.ResolveRouteForRole(_authService.CurrentUser?.Role, requestedRoute);
+        await _orderServiceAvailabilityService.GetAsync();
+        if (!_orderServiceAvailabilityService.IsRouteEnabled(route))
+        {
+            await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled by the Administrator.");
+            return;
+        }
+
         if (!_roleAccessService.CanAccessRoute(_authService.CurrentUser?.Role, route))
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this module.");
@@ -227,7 +270,7 @@ public partial class UserDashboardPage : ContentPage
 
         if (isModal)
         {
-            await Shell.Current.GoToAsync(route);
+            await _navigationCoordinator.NavigateTemporaryRouteAsync(route, source: source);
             return;
         }
 
@@ -236,32 +279,12 @@ public partial class UserDashboardPage : ContentPage
             ClearShellDetailStacks();
         }
 
-        await Shell.Current.GoToAsync($"//{route}", false);
+        await _navigationCoordinator.NavigateShellAsync(route, animated: false, source: source);
     }
 
     private static void ClearShellDetailStacks()
     {
-        if (Shell.Current is not Shell shell)
-        {
-            return;
-        }
-
-        foreach (var shellItem in shell.Items)
-        {
-            foreach (var shellSection in shellItem.Items)
-            {
-                var nav = shellSection.Navigation;
-                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
-                {
-                    continue;
-                }
-
-                foreach (var page in nav.NavigationStack.Skip(1).ToList())
-                {
-                    nav.RemovePage(page);
-                }
-            }
-        }
+        NavigationCoordinator.PruneTemporaryPages();
     }
 
     private async void OnLogoutClicked(object sender, EventArgs e)
@@ -279,7 +302,7 @@ public partial class UserDashboardPage : ContentPage
             await _authService.LogoutAsync();
 
             // Navigate back to login
-            await Shell.Current.GoToAsync("//login");
+            await _navigationCoordinator.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
         }
         catch (Exception ex)
         {
@@ -295,6 +318,7 @@ public partial class UserDashboardPage : ContentPage
         // Clean up timer
         _timeTimer?.Stop();
         _timeTimer?.Dispose();
+        _timeTimer = null;
     }
 
     // Responsive sizing based on screen dimensions
@@ -388,8 +412,11 @@ public partial class UserDashboardPage : ContentPage
             var grid = this.FindByName<Grid>("ButtonGrid");
             if (grid != null)
             {
-                grid.RowSpacing = rowSpacing;
-                grid.ColumnSpacing = columnSpacing;
+                TabletLayoutHelper.ApplyDashboardGrid(
+                    grid,
+                    new View[] { RestaurantServiceButton, DeliveryServiceButton, CollectionServiceButton, LiveOrderServiceButton },
+                    screenWidth,
+                    screenHeight);
             }
 
             // Update main stack layout padding and margins

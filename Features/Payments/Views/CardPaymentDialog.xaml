@@ -7,7 +7,7 @@
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Fill" HorizontalOptions="Fill">
-        <Border BackgroundColor="White"
+        <Border x:Name="DialogCard" BackgroundColor="White"
                Stroke="{StaticResource DialogShellStrokeColor}"
                StrokeThickness="1"
                Padding="30"
@@ -24,7 +24,8 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
-            <ScrollView VerticalScrollBarVisibility="Default">
+            <Grid RowDefinitions="*,Auto" RowSpacing="12">
+            <ScrollView Grid.Row="0" VerticalScrollBarVisibility="Default">
             <VerticalStackLayout Spacing="25">
                 
                 <!-- Header with Close Button -->
@@ -122,33 +123,18 @@
                            FontSize="13" TextColor="#64748B"/>
                 </VerticalStackLayout>
                 
-                <!-- Action Buttons -->
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
-                    <Button Grid.Column="0"
-                            Text="NO"
-                            BackgroundColor="#FEE2E2"
-                            TextColor="#DC2626"
-                            FontSize="26"
-                            FontAttributes="Bold"
-                            CornerRadius="14"
-                            HeightRequest="70"
-                            Clicked="OnNoClicked"/>
-                    
-                    <Button x:Name="YesButton"
-                            Grid.Column="1"
-                            Text="YES"
-                            BackgroundColor="#059669"
-                            TextColor="White"
-                            FontSize="26"
-                            FontAttributes="Bold"
-                            CornerRadius="14"
-                            HeightRequest="70"
-                            IsEnabled="False"
-                            Clicked="OnYesClicked"/>
-                </Grid>
-                
             </VerticalStackLayout>
             </ScrollView>
+                <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Button Grid.Column="0" Text="NO" BackgroundColor="#FEE2E2"
+                            TextColor="#DC2626" FontSize="22" FontAttributes="Bold"
+                            CornerRadius="14" HeightRequest="58" Clicked="OnNoClicked"/>
+                    <Button x:Name="YesButton" Grid.Column="1" Text="YES"
+                            BackgroundColor="#059669" TextColor="White" FontSize="22"
+                            FontAttributes="Bold" CornerRadius="14" HeightRequest="58"
+                            IsEnabled="False" Clicked="OnYesClicked"/>
+                </Grid>
+            </Grid>
         </Border>
     </Grid>
     

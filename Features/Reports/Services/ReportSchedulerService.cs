@@ -5,7 +5,8 @@ namespace POS_in_NET.Services;
 /// <summary>
 /// Background service that automatically generates daily, weekly, and monthly reports
 /// Runs on schedule:
-/// - Daily: Every day at 2:00 AM (generates previous day report, uploads to OrderWeb with labour + customer sync)
+/// - Daily: Admin normally uploads manually; after 2:00 AM the mother terminal
+///   automatically uploads any missed completed business day.
 /// - Weekly: Every Sunday at 2:00 AM
 /// - Monthly: 1st of month at 2:00 AM
 /// Reports are stored in database for historical access (1+ years)
@@ -93,6 +94,10 @@ public class ReportSchedulerService
             var now = DateTime.Now;
             var scheduledReportTime = now.Date.AddHours(REPORT_HOUR).AddMinutes(REPORT_MINUTE);
 
+            // Catch up missed completed days on every startup/check. This is safe to
+            // repeat because successful cloud uploads are idempotent and immutable.
+            await UploadMissingDailyReportsAsync(now);
+
             // Check if we've already run today
             var lastReportStr = Preferences.Get("LastReportGenerationDate", "");
             DateTime? lastReport = null;
@@ -123,6 +128,20 @@ public class ReportSchedulerService
         }
     }
 
+    private async Task UploadMissingDailyReportsAsync(DateTime now)
+    {
+        var missingDates = await _orderWebDailyReportSyncService.GetMissingCompletedReportDatesAsync(now);
+        foreach (var reportDate in missingDates)
+        {
+            await _reportService.GenerateDailyReportAsync(reportDate);
+            var uploadResult = await _orderWebDailyReportSyncService.UploadScheduledAsync(reportDate);
+            Debug.WriteLine(
+                uploadResult.Success
+                    ? $" OrderWeb automatic safety upload: {uploadResult.Message}"
+                    : $" OrderWeb automatic safety upload failed: {uploadResult.Message}");
+        }
+    }
+
     /// <summary>
     /// Generate all report types: daily, weekly, monthly
     /// </summary>
@@ -134,19 +153,6 @@ public class ReportSchedulerService
             var yesterday = now.Date.AddDays(-1);
             await _reportService.GenerateDailyReportAsync(yesterday);
             Debug.WriteLine($" Daily report generated for {yesterday:yyyy-MM-dd}");
-
-            try
-            {
-                var uploadResult = await _orderWebDailyReportSyncService.UploadScheduledAsync(yesterday);
-                Debug.WriteLine(
-                    uploadResult.Success
-                        ? $" OrderWeb end-of-day upload: {uploadResult.Message}"
-                        : $" OrderWeb end-of-day upload failed: {uploadResult.Message}");
-            }
-            catch (Exception uploadEx)
-            {
-                Debug.WriteLine($" OrderWeb end-of-day upload error: {uploadEx.Message}");
-            }
 
             // Generate WEEKLY report if today is Sunday (weekly reports are Mon-Sun)
             if (now.DayOfWeek == DayOfWeek.Sunday)

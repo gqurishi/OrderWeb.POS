@@ -89,7 +89,7 @@
                         StrokeShape="RoundRectangle 18"
                         Padding="12">
                     <CollectionView x:Name="SessionsCollection"
-                                    HeightRequest="560"
+                                HeightRequest="{DynamicResource ResponsiveLongListHeight}"
                                     SelectionMode="None">
                         <CollectionView.EmptyView>
                             <VerticalStackLayout Padding="30" Spacing="8" HorizontalOptions="Center" VerticalOptions="Center">

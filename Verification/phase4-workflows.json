@@ -1,0 +1,27 @@
+{
+  "scalingPercentages": [100, 125, 150, 175],
+  "performanceTargetsMilliseconds": {
+    "tapFeedback": 50,
+    "navigationFrame": 150,
+    "normalPageDataMaximum": 600
+  },
+  "workflows": [
+    "Dashboard to Collection",
+    "Dashboard to Delivery",
+    "Dashboard to Table",
+    "Add items and notes",
+    "More Options and Discount",
+    "Fire Course",
+    "Payment and split payment",
+    "Customer selection and address",
+    "Previous Orders",
+    "Order History",
+    "Reports",
+    "Settings and menu management"
+  ],
+  "requiredOutcomes": [
+    "No button hidden below the taskbar",
+    "No duplicate page after double tapping",
+    "No stale order after returning from another screen"
+  ]
+}

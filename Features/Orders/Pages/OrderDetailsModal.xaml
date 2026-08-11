@@ -141,7 +141,7 @@
             <!-- Action Buttons -->
             <Grid Grid.Row="2" 
                   Padding="20"
-                  ColumnDefinitions="*,*,*"
+                  ColumnDefinitions="*,*"
                   ColumnSpacing="12"
                   BackgroundColor="#F9FAFB">
                 
@@ -163,29 +163,10 @@
                            VerticalOptions="Center"/>
                 </Border>
 
-                <Border BackgroundColor="#F59E0B"
-                        StrokeThickness="0"
-                        Padding="16,12"
-                        Grid.Column="1"
-                        x:Name="RefundButton">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8"/>
-                    </Border.StrokeShape>
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnRefundClicked"/>
-                    </Border.GestureRecognizers>
-                    <Label Text="Refund" 
-                           TextColor="White"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Center"/>
-                </Border>
-
                 <Border BackgroundColor="#6B7280"
                         StrokeThickness="0"
                         Padding="16,12"
-                        Grid.Column="2">
+                        Grid.Column="1">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="8"/>
                     </Border.StrokeShape>

@@ -376,7 +376,7 @@ public class AuthenticationService
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            var query = "SELECT id, name, username, role, is_active, created_at, updated_at FROM users ORDER BY is_active DESC, created_at DESC";
+            var query = "SELECT id, name, username, role, is_active, created_at, updated_at FROM users WHERE COALESCE(is_archived, FALSE) = FALSE ORDER BY is_active DESC, created_at DESC";
             using var command = new MySqlCommand(query, connection);
             using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
 
@@ -422,7 +422,7 @@ public class AuthenticationService
                     {
                         lock (_tableInitLock)
                         {
-                            if (!_activityTableInitialized)
+                            if (!_activityTableInitialized && !RuntimeSchemaPolicy.IsMigrationManaged)
                             {
                                 var createTableQuery = @"
                                     CREATE TABLE IF NOT EXISTS user_activities (
@@ -506,7 +506,7 @@ public class AuthenticationService
 
             string? username = null;
             var role = string.Empty;
-            const string checkQuery = "SELECT username, role FROM users WHERE id = @userId";
+            const string checkQuery = "SELECT username, role FROM users WHERE id = @userId AND COALESCE(is_archived, FALSE) = FALSE";
             using (var checkCommand = new MySqlCommand(checkQuery, connection))
             {
                 checkCommand.Parameters.AddWithValue("@userId", userId);
@@ -525,7 +525,7 @@ public class AuthenticationService
 
             if (string.Equals(role, UserRole.Admin.ToString(), StringComparison.OrdinalIgnoreCase))
             {
-                const string adminCountQuery = "SELECT COUNT(*) FROM users WHERE LOWER(role) = 'admin' AND is_active = TRUE";
+                const string adminCountQuery = "SELECT COUNT(*) FROM users WHERE LOWER(role) = 'admin' AND is_active = TRUE AND COALESCE(is_archived, FALSE) = FALSE";
                 using var adminCountCommand = new MySqlCommand(adminCountQuery, connection);
                 var activeAdminCount = Convert.ToInt32(await adminCountCommand.ExecuteScalarAsync());
                 if (activeAdminCount <= 1)
@@ -534,25 +534,40 @@ public class AuthenticationService
                 }
             }
 
-            await LogUserActivityAsync(_currentUser.Id, "user_deleted", $"Deleted user: {username} (ID: {userId})");
+            await LogUserActivityAsync(_currentUser.Id, "user_archived", $"Removed employee from active POS access: {username} (ID: {userId})");
 
-            const string deleteQuery = "DELETE FROM users WHERE id = @userId";
-            using var deleteCommand = new MySqlCommand(deleteQuery, connection);
-            deleteCommand.Parameters.AddWithValue("@userId", userId);
-            var rowsAffected = await deleteCommand.ExecuteNonQueryAsync();
+            var archivedUsername = $"archived_{userId}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+            var disabledPasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N"));
+            const string archiveQuery = @"
+                UPDATE users
+                SET is_active = FALSE,
+                    is_archived = TRUE,
+                    archived_at = NOW(),
+                    archived_by_user_id = @archivedByUserId,
+                    archived_original_username = username,
+                    username = @archivedUsername,
+                    password_hash = @disabledPasswordHash
+                WHERE id = @userId
+                  AND COALESCE(is_archived, FALSE) = FALSE";
+            using var archiveCommand = new MySqlCommand(archiveQuery, connection);
+            archiveCommand.Parameters.AddWithValue("@userId", userId);
+            archiveCommand.Parameters.AddWithValue("@archivedByUserId", _currentUser.Id);
+            archiveCommand.Parameters.AddWithValue("@archivedUsername", archivedUsername);
+            archiveCommand.Parameters.AddWithValue("@disabledPasswordHash", disabledPasswordHash);
+            var rowsAffected = await archiveCommand.ExecuteNonQueryAsync();
 
             if (rowsAffected > 0)
             {
                 await EnsureAuthCacheAsync(forceReload: true);
-                return (true, "User deleted successfully.");
+                return (true, "Employee removed from POS access. Historical clock and audit records were preserved.");
             }
 
-            return (false, "Failed to delete user.");
+            return (false, "Failed to remove employee.");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Delete user error: {ex.Message}");
-            return (false, "An error occurred while deleting the user.");
+            AppDiagnostics.LogFatal("Archive employee", ex);
+            return (false, "An error occurred while removing the employee.");
         }
     }
 
@@ -749,6 +764,8 @@ public class AuthenticationService
 
     public async Task<(bool Success, string Message)> EnsureAuthenticationSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged)
+            return (true, "Schema verified by startup migrations.");
         try
         {
             var databaseName = TerminalConfigurationService.GetActiveDatabaseName();
@@ -773,6 +790,10 @@ public class AuthenticationService
                     password_hash VARCHAR(255) NOT NULL,
                     role VARCHAR(20) NOT NULL,
                     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+                    archived_at DATETIME NULL,
+                    archived_by_user_id INT NULL,
+                    archived_original_username VARCHAR(50) NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 )";
@@ -784,6 +805,10 @@ public class AuthenticationService
             {
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL AFTER id",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE AFTER role",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE AFTER is_active",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS archived_at DATETIME NULL AFTER is_archived",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS archived_by_user_id INT NULL AFTER archived_at",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS archived_original_username VARCHAR(50) NULL AFTER archived_by_user_id",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             };
@@ -815,7 +840,7 @@ public class AuthenticationService
             using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
-            using var command = new MySqlCommand("SELECT COUNT(*) FROM users", connection);
+            using var command = new MySqlCommand("SELECT COUNT(*) FROM users WHERE COALESCE(is_archived, FALSE) = FALSE", connection);
             return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
         }
         catch
@@ -875,7 +900,7 @@ public class AuthenticationService
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync(cancellationToken);
 
-            var query = "SELECT id, name, username, password_hash, role, is_active, created_at, updated_at FROM users";
+            var query = "SELECT id, name, username, password_hash, role, is_active, created_at, updated_at FROM users WHERE COALESCE(is_archived, FALSE) = FALSE";
             using var command = new MySqlCommand(query, connection);
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

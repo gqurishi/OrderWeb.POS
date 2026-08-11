@@ -442,8 +442,8 @@ public static class BackgroundSyncJobRegistrar
             {
                 Name = "report-generation-scheduler",
                 Priority = BackgroundSyncPriority.Low,
-                NormalInterval = TimeSpan.FromHours(1),
-                IdleInterval = TimeSpan.FromHours(1),
+                NormalInterval = TimeSpan.FromMinutes(15),
+                IdleInterval = TimeSpan.FromMinutes(15),
                 FailureBackoff = TimeSpan.FromMinutes(30),
                 InitialDelay = TimeSpan.FromSeconds(45),
                 RequiredResources = BackgroundSyncResources.Database |

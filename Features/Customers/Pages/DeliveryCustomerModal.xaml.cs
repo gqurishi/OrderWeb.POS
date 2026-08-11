@@ -1,6 +1,7 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
+using System.Text.RegularExpressions;
 
 namespace POS_in_NET.Pages;
 
@@ -13,17 +14,35 @@ public partial class DeliveryCustomerModal : ContentPage
     private readonly DeliveryCustomerService _customerService;
     private readonly PostcodeLookupService _postcodeLookupService;
     private readonly DeliveryZoneService _deliveryZoneService;
-    private readonly CustomerDataService _customerDataService = new();
+    private readonly CustomerDataService _customerDataService;
+    private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
+    private readonly NavigationCoordinator _navigationCoordinator;
     private DeliveryCustomer? _selectedCustomer;
     private bool _isOpeningKeyboard;
+    private bool _isContinuing;
 
     public DeliveryCustomerModal()
     {
         InitializeComponent();
         _customerService = new DeliveryCustomerService();
+        _customerDataService = ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService();
+        _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
         _postcodeLookupService = ServiceHelper.GetService<PostcodeLookupService>()
             ?? new PostcodeLookupService(new DatabaseService());
-        _deliveryZoneService = new DeliveryZoneService(new DatabaseService());
+        _deliveryZoneService = ServiceHelper.GetService<DeliveryZoneService>() ?? new DeliveryZoneService(new DatabaseService());
+        _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+            ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), AuthenticationService.Instance);
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        var settings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+        if (!settings.DeliveryEnabled)
+        {
+            await AppAlertService.ShowAlertAsync("Delivery Unavailable", "Delivery orders are disabled by the Administrator.");
+            await _navigationCoordinator.GoBackAsync(animated: false);
+        }
     }
 
     private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
@@ -41,19 +60,19 @@ public partial class DeliveryCustomerModal : ContentPage
         await OpenKeyboardForEntryAsync(PostcodeEntry);
     }
 
-    private async void OnAddressLine1FieldTapped(object sender, TappedEventArgs e)
+    private async void OnHouseNumberFieldTapped(object sender, TappedEventArgs e)
     {
-        await OpenKeyboardForEntryAsync(AddressLine1Entry);
+        await OpenKeyboardForEntryAsync(HouseNumberEntry);
+    }
+
+    private async void OnRoadNameFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(RoadNameEntry);
     }
 
     private async void OnCityFieldTapped(object sender, TappedEventArgs e)
     {
         await OpenKeyboardForEntryAsync(CityEntry);
-    }
-
-    private async void OnCountyFieldTapped(object sender, TappedEventArgs e)
-    {
-        await OpenKeyboardForEntryAsync(CountyEntry);
     }
 
     private async void OnPostcodeResultFieldTapped(object sender, TappedEventArgs e)
@@ -106,19 +125,19 @@ public partial class DeliveryCustomerModal : ContentPage
             return "Address search";
         }
 
-        if (entry == AddressLine1Entry)
+        if (entry == HouseNumberEntry)
         {
-            return "Street address";
+            return "Flat or house number";
+        }
+
+        if (entry == RoadNameEntry)
+        {
+            return "Road name";
         }
 
         if (entry == CityEntry)
         {
             return "City";
-        }
-
-        if (entry == CountyEntry)
-        {
-            return "County";
         }
 
         if (entry == PostcodeResultEntry)
@@ -221,17 +240,13 @@ public partial class DeliveryCustomerModal : ContentPage
     {
         if (e.CurrentSelection.FirstOrDefault() is AddressResult address)
         {
-            AddressLine1Entry.Text = address.AddressLine1;
-            if (!string.IsNullOrWhiteSpace(address.AddressLine2))
-            {
-                AddressLine1Entry.Text = string.IsNullOrWhiteSpace(AddressLine1Entry.Text)
-                    ? address.AddressLine2
-                    : $"{AddressLine1Entry.Text}, {address.AddressLine2}";
-            }
+            var (premise, road) = SplitLookupAddress(address);
+            HouseNumberEntry.Text = premise;
+            RoadNameEntry.Text = road;
 
             CityEntry.Text = address.City;
-            CountyEntry.Text = address.County;
             PostcodeResultEntry.Text = address.Postcode;
+            PostcodeEntry.Text = address.Postcode;
 
             AddressResultsBorder.IsVisible = false;
             AddressResultsCollection.SelectedItem = null;
@@ -325,52 +340,63 @@ public partial class DeliveryCustomerModal : ContentPage
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             ?? Array.Empty<string>();
 
-        AddressLine1Entry.Text = string.Empty;
+        HouseNumberEntry.Text = string.Empty;
+        RoadNameEntry.Text = string.Empty;
         CityEntry.Text = string.Empty;
-        CountyEntry.Text = string.Empty;
         PostcodeResultEntry.Text = string.Empty;
 
         if (addressLines.Length == 0)
         {
+            CityEntry.Text = customer.City;
+            PostcodeResultEntry.Text = customer.Postcode;
+            PostcodeEntry.Text = customer.Postcode;
             return;
         }
 
-        AddressLine1Entry.Text = addressLines[0];
+        var (premise, road) = SplitPremiseAndRoad(addressLines[0]);
+        HouseNumberEntry.Text = premise;
+        RoadNameEntry.Text = road;
 
-        if (addressLines.Length == 2)
-        {
-            PostcodeResultEntry.Text = addressLines[1];
-            PostcodeEntry.Text = addressLines[1];
-            return;
-        }
-
+        // New addresses are stored as street, city, postcode. Older records may
+        // also contain a county before the postcode; the county is intentionally ignored.
         if (addressLines.Length >= 3)
         {
             CityEntry.Text = addressLines[1];
         }
 
-        if (addressLines.Length >= 4)
-        {
-            CountyEntry.Text = addressLines[2];
-            PostcodeResultEntry.Text = addressLines[3];
-            PostcodeEntry.Text = addressLines[3];
-        }
-        else if (addressLines.Length == 3)
-        {
-            PostcodeResultEntry.Text = addressLines[2];
-            PostcodeEntry.Text = addressLines[2];
-        }
+        var postcode = addressLines.Length > 1 ? addressLines[^1] : customer.Postcode;
+        PostcodeResultEntry.Text = postcode;
+        PostcodeEntry.Text = postcode;
     }
 
     private async void OnContinueClicked(object sender, EventArgs e)
     {
+        if (_isContinuing)
+        {
+            return;
+        }
+
         var name = CustomerNameEntry.Text?.Trim();
         var phone = PhoneNumberEntry.Text?.Trim();
 
-        if (string.IsNullOrWhiteSpace(AddressLine1Entry.Text))
+        if (string.IsNullOrWhiteSpace(HouseNumberEntry.Text))
         {
-            await ToastNotification.ShowAsync("Required", "Delivery address is required to continue.", NotificationType.Warning, 3000);
-            AddressLine1Entry.Focus();
+            await ToastNotification.ShowAsync("Required", "Flat or house number is required to continue.", NotificationType.Warning, 3000);
+            HouseNumberEntry.Focus();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(RoadNameEntry.Text))
+        {
+            await ToastNotification.ShowAsync("Required", "Road name is required to continue.", NotificationType.Warning, 3000);
+            RoadNameEntry.Focus();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CityEntry.Text))
+        {
+            await ToastNotification.ShowAsync("Required", "City is required to continue.", NotificationType.Warning, 3000);
+            CityEntry.Focus();
             return;
         }
 
@@ -384,9 +410,8 @@ public partial class DeliveryCustomerModal : ContentPage
         
         // Build address from structured fields
         var addressParts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(AddressLine1Entry.Text)) addressParts.Add(AddressLine1Entry.Text.Trim());
-        if (!string.IsNullOrWhiteSpace(CityEntry.Text)) addressParts.Add(CityEntry.Text.Trim());
-        if (!string.IsNullOrWhiteSpace(CountyEntry.Text)) addressParts.Add(CountyEntry.Text.Trim());
+        addressParts.Add($"{HouseNumberEntry.Text.Trim()} {RoadNameEntry.Text.Trim()}".Trim());
+        addressParts.Add(CityEntry.Text.Trim());
         addressParts.Add(normalizedPostcode);
         
         var address = string.Join("\n", addressParts);
@@ -408,6 +433,15 @@ public partial class DeliveryCustomerModal : ContentPage
             return;
         }
 
+        var button = sender as Button;
+        var originalText = button?.Text;
+        _isContinuing = true;
+        if (button != null)
+        {
+            button.IsEnabled = false;
+            button.Text = "Opening order...";
+        }
+
         try
         {
             // Save or get existing customer
@@ -427,8 +461,8 @@ public partial class DeliveryCustomerModal : ContentPage
                     phone,
                     address,
                     CityEntry.Text?.Trim(),
-                    CountyEntry.Text?.Trim(),
-                    normalizedPostcode);
+                    county: null,
+                    postcode: normalizedPostcode);
             }
             catch (Exception ex)
             {
@@ -462,11 +496,20 @@ public partial class DeliveryCustomerModal : ContentPage
             // Pass customer info to order placement page
             orderPlacementPage.SetDeliveryOrderInfo(customer.Id, customer.Name, customer.PhoneNumber, customer.Address, deliveryFee);
 
-            await Navigation.PushAsync(orderPlacementPage);
+            await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage, source: button);
         }
         catch (Exception ex)
         {
             await ToastNotification.ShowAsync("Error", $"Failed to proceed: {ex.Message}", NotificationType.Error, 4000);
+        }
+        finally
+        {
+            _isContinuing = false;
+            if (button != null)
+            {
+                button.Text = originalText ?? "Continue";
+                button.IsEnabled = true;
+            }
         }
     }
 
@@ -475,24 +518,89 @@ public partial class DeliveryCustomerModal : ContentPage
         var authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
-        await Shell.Current.GoToAsync($"//{dashboardRoute}");
+        await _navigationCoordinator.NavigateShellAsync(dashboardRoute, source: sender as VisualElement);
     }
 
     private static DeliveryCustomer ToDeliveryCustomer(CustomerDataRecord record)
     {
-        var address = !string.IsNullOrWhiteSpace(record.FullAddress)
-            ? record.FullAddress
-            : string.Join("\n", new[] { record.City, record.County, record.Postcode }
-                .Where(part => !string.IsNullOrWhiteSpace(part)));
-
         return new DeliveryCustomer
         {
             Id = record.Id,
             Name = record.Name,
             PhoneNumber = record.PhoneNumber,
-            Address = address,
+            Address = record.FullAddress,
+            City = record.City,
+            Postcode = record.Postcode,
             CreatedAt = record.CreatedAt,
             LastOrderDate = record.LastOrderDate
         };
+    }
+
+    private static (string Premise, string Road) SplitLookupAddress(AddressResult address)
+    {
+        var line1 = address.AddressLine1?.Trim() ?? string.Empty;
+        var remainingLines = new[] { address.AddressLine2, address.AddressLine3 }
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Select(line => line.Trim())
+            .ToList();
+
+        if (remainingLines.Count > 0 && IsPremiseOnly(line1))
+        {
+            return (line1, string.Join(", ", remainingLines));
+        }
+
+        var (premise, road) = SplitPremiseAndRoad(line1);
+        if (remainingLines.Count > 0)
+        {
+            road = string.Join(", ", new[] { road }.Concat(remainingLines)
+                .Where(line => !string.IsNullOrWhiteSpace(line)));
+        }
+
+        return (premise, road);
+    }
+
+    private static (string Premise, string Road) SplitPremiseAndRoad(string? streetAddress)
+    {
+        var value = streetAddress?.Trim().Trim(',') ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var numberedAddress = Regex.Match(
+            value,
+            @"^(?<premise>(?:(?:flat|apartment|unit|suite)\s+[a-z0-9-]+(?:\s*,?\s*)?)?\d+[a-z]?)\s*,?\s+(?<road>.+)$",
+            RegexOptions.IgnoreCase);
+        if (numberedAddress.Success)
+        {
+            return (
+                numberedAddress.Groups["premise"].Value.Trim().TrimEnd(','),
+                numberedAddress.Groups["road"].Value.Trim());
+        }
+
+        var namedProperty = Regex.Match(
+            value,
+            @"^(?<premise>.+?\b(?:cottage|house|lodge|farm|hall|manor|court))\s*,?\s+(?<road>.+)$",
+            RegexOptions.IgnoreCase);
+        if (namedProperty.Success)
+        {
+            return (
+                namedProperty.Groups["premise"].Value.Trim().TrimEnd(','),
+                namedProperty.Groups["road"].Value.Trim());
+        }
+
+        return (string.Empty, value);
+    }
+
+    private static bool IsPremiseOnly(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(value, @"^\d+[a-z]?$", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(value, @"^(flat|apartment|unit|suite)\b", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(value, @"\b(cottage|house|lodge|farm|hall|manor|court)$", RegexOptions.IgnoreCase);
     }
 }

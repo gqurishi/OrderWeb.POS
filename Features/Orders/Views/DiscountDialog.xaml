@@ -6,16 +6,16 @@
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
     
-    <Grid VerticalOptions="Center"
-          HorizontalOptions="Center"
-          Padding="36">
+    <Grid VerticalOptions="Fill"
+          HorizontalOptions="Fill"
+          Padding="16,12">
         <Border BackgroundColor="White"
                 Stroke="{StaticResource DialogShellStrokeColor}"
                 StrokeThickness="1"
-                Padding="30"
-                WidthRequest="500"
-                VerticalOptions="Center"
-                HorizontalOptions="Center">
+                Padding="20"
+                MaximumWidthRequest="540"
+                VerticalOptions="Fill"
+                HorizontalOptions="Fill">
             <Border.StrokeShape>
                 <RoundRectangle CornerRadius="22"/>
             </Border.StrokeShape>
@@ -23,19 +23,20 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
 
-            <VerticalStackLayout Spacing="18">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+                <VerticalStackLayout Grid.Row="0" Spacing="6">
                 <Border BackgroundColor="{StaticResource DialogPrimaryColor}"
                         Stroke="#FFFFFF"
                         StrokeThickness="2"
-                        WidthRequest="74"
-                        HeightRequest="74"
+                        WidthRequest="58"
+                        HeightRequest="58"
                         HorizontalOptions="Center"
-                        Margin="0,0,0,4">
+                        Margin="0,0,0,2">
                     <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="37"/>
+                        <RoundRectangle CornerRadius="29"/>
                     </Border.StrokeShape>
                     <Label Text="%"
-                           FontSize="28"
+                           FontSize="24"
                            FontAttributes="Bold"
                            TextColor="White"
                            HorizontalOptions="Center"
@@ -47,9 +48,14 @@
                 
                 <Label Text="Choose discount type and amount for this order."
                        Style="{StaticResource DialogMessageStyle}"/>
-                
+                </VerticalStackLayout>
+
+                <ScrollView Grid.Row="1"
+                            Orientation="Vertical"
+                            VerticalScrollBarVisibility="Always">
+                    <VerticalStackLayout Spacing="12" Padding="2,2,2,8">
                 <!-- Subtotal Display -->
-                <Frame BackgroundColor="#F8F8F8" BorderColor="#DDDDDD" CornerRadius="8" Padding="15" HasShadow="False">
+                <Frame BackgroundColor="#F8F8F8" BorderColor="#DDDDDD" CornerRadius="8" Padding="12" HasShadow="False">
                     <HorizontalStackLayout HorizontalOptions="Center" Spacing="10">
                         <Label Text="Subtotal:"
                                FontSize="16"
@@ -189,18 +195,28 @@
                                VerticalOptions="Center"/>
                     </Grid>
                 </Frame>
-                
+                    </VerticalStackLayout>
+                </ScrollView>
+
                 <!-- Action Buttons -->
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                    <Button Text="Remove Discount"
+                <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                    <Button Text="Cancel"
+                            BackgroundColor="#E2E8F0"
+                            TextColor="#334155"
+                            FontSize="13"
+                            HeightRequest="48"
+                            CornerRadius="12"
+                            Clicked="OnCancelClicked"/>
+                    <Button Grid.Column="1"
+                            Text="Remove"
                             BackgroundColor="#FFEEEE"
                             TextColor="#CC4444"
-                            FontSize="14"
+                            FontSize="13"
                             HeightRequest="48"
-                            CornerRadius="14"
+                            CornerRadius="12"
                             Clicked="OnRemoveDiscountClicked"/>
                     <Button x:Name="ApplyButton"
-                            Grid.Column="1"
+                            Grid.Column="2"
                             Text="Apply"
                             BackgroundColor="#4CAF50"
                             TextColor="White"
@@ -210,8 +226,8 @@
                             CornerRadius="14"
                             Clicked="OnApplyClicked"/>
                 </Grid>
-                
-            </VerticalStackLayout>
+
+            </Grid>
         </Border>
     </Grid>
     

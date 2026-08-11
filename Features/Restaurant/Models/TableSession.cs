@@ -63,9 +63,9 @@ namespace POS_in_NET.Models
         public RestaurantTable? Table { get; set; }
         
         // Calculated properties
-        public int MinutesOccupied => EndTime.HasValue 
-            ? (int)(EndTime.Value - StartTime).TotalMinutes 
-            : (int)(DateTime.Now - StartTime).TotalMinutes;
+        public int MinutesOccupied => Math.Max(0, EndTime.HasValue
+            ? (int)(EndTime.Value - StartTime).TotalMinutes
+            : (int)(DateTime.Now - StartTime).TotalMinutes);
             
         public string StatusDisplay => Status switch
         {

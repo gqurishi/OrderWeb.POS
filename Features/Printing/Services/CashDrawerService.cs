@@ -138,6 +138,7 @@ public sealed class CashDrawerService
 
     public async Task EnsureTableExistsAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_schemaReady)
         {
             return;

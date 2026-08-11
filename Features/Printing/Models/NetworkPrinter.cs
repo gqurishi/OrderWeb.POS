@@ -22,6 +22,7 @@ public class NetworkPrinter
     public bool HasCashDrawer { get; set; }
     public bool HasCutter { get; set; } = true;
     public bool HasBuzzer { get; set; }
+    public bool SupportsTwoColor { get; set; }
     
     // Status
     public bool IsEnabled { get; set; } = true;

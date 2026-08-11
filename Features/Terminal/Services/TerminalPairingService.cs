@@ -139,6 +139,7 @@ public static class TerminalPairingService
 
     public static async Task EnsureTableAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         const string sql = @"
             CREATE TABLE IF NOT EXISTS terminal_pairings (
                 terminal_name VARCHAR(120) NOT NULL PRIMARY KEY,

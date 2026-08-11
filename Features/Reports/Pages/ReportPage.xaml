@@ -6,7 +6,8 @@
                       xmlns:chart="clr-namespace:Syncfusion.Maui.Charts;assembly=Syncfusion.Maui.Charts"
                       x:Class="POS_in_NET.Pages.ReportPage"
                       Title="Reports"
-                                                                             BackgroundColor="#F8F9FA">
+                      SizeChanged="OnReportPageSizeChanged"
+                      BackgroundColor="#F8F9FA">
 
        <ContentPage.Resources>
               <ResourceDictionary>
@@ -43,10 +44,13 @@
 
               <views:TopBar x:Name="TopBar" Grid.Row="0" />
 
-              <ScrollView Grid.Row="1"
-                          Orientation="Both"
+              <ScrollView x:Name="ReportScrollView"
+                          Grid.Row="1"
+                          Orientation="Vertical"
+                          HorizontalScrollBarVisibility="Never"
                           VerticalScrollBarVisibility="Always">
-                     <VerticalStackLayout Spacing="0"
+                     <VerticalStackLayout x:Name="ReportContentStack"
+                                          Spacing="0"
                                           Padding="0,0,0,20">
 
               <Border Grid.Row="1"
@@ -79,6 +83,17 @@
                                    <Button x:Name="StaffHoursButton" Grid.Row="1" Grid.ColumnSpan="2" Text="Staff Hours" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="VoidCancelledButton" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Text="Void / Cancelled" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="HistoricalReportsButton" Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="2" Text="Historical Reports" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="ZReportPrintTodayButton"
+                                           Grid.Row="1"
+                                           Grid.Column="6"
+                                           Text="Z Print Today"
+                                           Clicked="OnPrintZReportTodayClicked"
+                                           BackgroundColor="#0F766E"
+                                           TextColor="White"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="12"
+                                           CornerRadius="12"
+                                           Padding="16,12" />
                             </Grid>
 
                             <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12" IsVisible="{Binding IsCustomRangeVisible, FallbackValue=False}" RowSpacing="8">
@@ -191,7 +206,7 @@
                                           TextColor="#64748B" />
                             </VerticalStackLayout>
 
-                            <Grid ColumnDefinitions="*,*,*,*,*,*" ColumnSpacing="10">
+                            <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
                                    <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
                                           <VerticalStackLayout Spacing="4">
                                                  <Label Text="Orders" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#64748B" />
@@ -230,7 +245,63 @@
                                    </Border>
                             </Grid>
 
-                            <Border Stroke="#E2E8F0"
+                            <Grid ColumnDefinitions="*,*,*,*,*,*" ColumnSpacing="10">
+                                   <Border Stroke="#E2E8F0" BackgroundColor="#F0FDFA" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Service charges" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryServiceChargeText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#047857"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#E2E8F0" BackgroundColor="#FFF7ED" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Removed / potential" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryRemovedChargeText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#C2410C"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#E2E8F0" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Cash tips" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCashTipsText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#0F172A"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="3" Stroke="#E2E8F0" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Card tips" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCardTipsText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#0F172A"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Row="1" Stroke="#E2E8F0" BackgroundColor="#ECFDF5" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Total tips" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryTotalTipsText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#047857"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Row="1" Grid.Column="1" Stroke="#E2E8F0" BackgroundColor="#FEF2F2" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Refunds" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryRefundsText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#B91C1C"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Stroke="#E2E8F0" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Money collected" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCollectedText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#1D4ED8"/></VerticalStackLayout>
+                                   </Border>
+                             </Grid>
+
+                             <Border IsVisible="{Binding HasServiceChargeRemovalAudits}"
+                                     Stroke="#FED7AA"
+                                     StrokeThickness="1"
+                                     BackgroundColor="#FFFBEB"
+                                     StrokeShape="RoundRectangle 14"
+                                     Padding="12">
+                                    <VerticalStackLayout Spacing="8">
+                                           <Label Text="Service charge removal audit"
+                                                  FontFamily="OpenSansSemibold"
+                                                  FontSize="14"
+                                                  TextColor="#9A3412" />
+                                           <CollectionView ItemsSource="{Binding ServiceChargeRemovalAudits}"
+                                                           SelectionMode="None"
+                                                           HeightRequest="150">
+                                                  <CollectionView.ItemTemplate>
+                                                         <DataTemplate>
+                                                                <Grid ColumnDefinitions="120,90,100,*,130,130"
+                                                                      ColumnSpacing="8"
+                                                                      Padding="4,7">
+                                                                       <Label Text="{Binding EventAt, StringFormat='{0:dd MMM HH:mm}'}" FontSize="11" TextColor="#475569" />
+                                                                       <Label Grid.Column="1" Text="{Binding OrderNumber}" FontSize="11" FontAttributes="Bold" TextColor="#0F172A" />
+                                                                       <Label Grid.Column="2" Text="{Binding Amount, StringFormat='Removed £{0:F2}'}" FontSize="11" TextColor="#C2410C" />
+                                                                       <Label Grid.Column="3" Text="{Binding Reason}" FontSize="11" TextColor="#334155" LineBreakMode="TailTruncation" />
+                                                                       <Label Grid.Column="4" Text="{Binding PerformedBy, StringFormat='By: {0}'}" FontSize="11" TextColor="#475569" />
+                                                                       <Label Grid.Column="5" Text="{Binding ApprovedBy, StringFormat='Approved: {0}'}" FontSize="11" TextColor="#475569" />
+                                                                </Grid>
+                                                         </DataTemplate>
+                                                  </CollectionView.ItemTemplate>
+                                           </CollectionView>
+                                    </VerticalStackLayout>
+                             </Border>
+
+                             <Border Stroke="#E2E8F0"
                                     StrokeThickness="1"
                                     BackgroundColor="#F8FAFC"
                                     StrokeShape="RoundRectangle 14"
@@ -428,11 +499,11 @@
                             StrokeShape="RoundRectangle 20"
                             Padding="16">
                      <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
-                            <Grid ColumnDefinitions="*,420" ColumnSpacing="16">
+                            <Grid ColumnDefinitions="1.7*,1*" ColumnSpacing="16">
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Detailed All Orders Report"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Complete order listing with corrected VAT breakdown for HMRC compliance. Menu prices shown as net amounts (VAT exclusive) with VAT added separately."
                                                  FontFamily="OpenSansRegular"
@@ -447,9 +518,15 @@
                                                  StrokeShape="RoundRectangle 14"
                                                  Padding="12,8"
                                                  BackgroundColor="#FFFFFF">
-                                                 <Entry Placeholder="Search orders..."
+                                                 <Border.GestureRecognizers>
+                                                        <TapGestureRecognizer Tapped="OnOrdersSearchFieldTapped" />
+                                                 </Border.GestureRecognizers>
+                                                 <Entry x:Name="OrdersSearchEntry"
+                                                        Placeholder="Search orders..."
                                                         Text="{Binding SearchText}"
                                                         Completed="OnSearchCompleted"
+                                                        IsReadOnly="True"
+                                                        InputTransparent="True"
                                                         FontFamily="OpenSansRegular"
                                                         FontSize="13"
                                                         TextColor="#0F172A"
@@ -508,7 +585,7 @@
                             <CollectionView x:Name="OrdersCollection"
                                             Grid.Row="3"
                                             ItemsSource="{Binding Orders}"
-                                            HeightRequest="560"
+                                            HeightRequest="{DynamicResource ResponsiveLongListHeight}"
                                             SelectionMode="Single"
                                             SelectionChanged="OnOrderSelectionChanged">
                                    <CollectionView.EmptyView>
@@ -572,7 +649,7 @@
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Void / Cancelled Audit"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Voided and cancelled orders are excluded from sales totals, VAT, top sellers, and sales trend. Their original amounts stay here for audit only."
                                                  FontFamily="OpenSansRegular"
@@ -633,7 +710,7 @@
 
                             <CollectionView Grid.Row="3"
                                             ItemsSource="{Binding VoidCancelledOrders}"
-                                            HeightRequest="560"
+                                            HeightRequest="{DynamicResource ResponsiveLongListHeight}"
                                             SelectionMode="None">
                                    <CollectionView.EmptyView>
                                           <VerticalStackLayout Padding="24" HorizontalOptions="Center" VerticalOptions="Center">
@@ -682,7 +759,7 @@
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Cash Drawer Report"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Audit every cash drawer open plus till expenses: shopping take/settle, delivery payouts, cash counts, and other money out."
                                                  FontFamily="OpenSansRegular"
@@ -758,7 +835,7 @@
                                                  </Border>
                                           </Grid>
 
-                                          <CollectionView ItemsSource="{Binding CashDrawerAudits}" SelectionMode="None" HeightRequest="520">
+                                          <CollectionView ItemsSource="{Binding CashDrawerAudits}" SelectionMode="None" HeightRequest="{DynamicResource ResponsiveLongListHeight}">
                                                  <CollectionView.EmptyView>
                                                         <Label Text="No cash drawer activity in the selected date range."
                                                                FontFamily="OpenSansRegular"
@@ -951,7 +1028,7 @@
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Discount Audit Report"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Review every discount event with reason, user, approval status, percentage, amount, and order context."
                                                  FontFamily="OpenSansRegular"
@@ -1027,7 +1104,7 @@
                                                  </Border>
                                           </Grid>
 
-                                          <CollectionView ItemsSource="{Binding DiscountAudits}" SelectionMode="None" HeightRequest="520">
+                                          <CollectionView ItemsSource="{Binding DiscountAudits}" SelectionMode="None" HeightRequest="{DynamicResource ResponsiveLongListHeight}">
                                                  <CollectionView.EmptyView>
                                                         <Label Text="No discount audit activity in the selected date range."
                                                                FontFamily="OpenSansRegular"
@@ -1101,7 +1178,7 @@
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Staff Hours"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Payroll-ready labour report with clock in/out times, hours worked, and cloud sync status."
                                                  FontFamily="OpenSansRegular"
@@ -1163,7 +1240,7 @@
                                    </Border>
                             </Grid>
 
-                            <CollectionView ItemsSource="{Binding StaffHoursRows}" SelectionMode="None" HeightRequest="520">
+                            <CollectionView ItemsSource="{Binding StaffHoursRows}" SelectionMode="None" HeightRequest="{DynamicResource ResponsiveLongListHeight}">
                                    <CollectionView.EmptyView>
                                           <Label Text="No staff clock sessions in the selected date range."
                                                  FontFamily="OpenSansRegular"
@@ -1240,11 +1317,11 @@
                             StrokeShape="RoundRectangle 20"
                             Padding="16">
                      <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="14">
-                            <Grid ColumnDefinitions="*,420" ColumnSpacing="16">
+                            <Grid ColumnDefinitions="1.7*,1*" ColumnSpacing="16">
                                    <VerticalStackLayout Spacing="6">
                                           <Label Text="Top Sell Item Report"
                                                  FontFamily="AlegreyaBold"
-                                                 FontSize="40"
+                                                 FontSize="32"
                                                  TextColor="#0F172A" />
                                           <Label Text="Top selling category and item performance for the selected trading period. Use the 30, 60, or 90 day window to review trends."
                                                  FontFamily="OpenSansRegular"

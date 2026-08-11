@@ -6,75 +6,108 @@
              BackgroundColor="#F1F5F9">
 
     <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" BackgroundColor="White" StrokeThickness="0" Padding="24,20">
+        <Border Grid.Row="0" BackgroundColor="White" StrokeThickness="0" Padding="20,16">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
-                <Button Text="Back"
-                        BackgroundColor="#E2E8F0"
-                        TextColor="#334155"
-                        FontAttributes="Bold"
-                        CornerRadius="10"
-                        Clicked="OnBackClicked"/>
-                <VerticalStackLayout Grid.Column="1" Spacing="4">
-                    <Label x:Name="PageTitle" Text="Create Tasting Menu" FontSize="24" FontAttributes="Bold" TextColor="#0F172A"/>
-                    <Label Text="Build package prices, courses, and dish choices" FontSize="13" TextColor="#64748B"/>
+                <Button Text="Back" BackgroundColor="#E2E8F0" TextColor="#334155"
+                        FontAttributes="Bold" CornerRadius="10" HeightRequest="48"
+                        Clicked="OnBackClicked" />
+                <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                    <Label x:Name="PageTitle" Text="Create Tasting Menu" FontSize="24"
+                           FontAttributes="Bold" TextColor="#0F172A" />
+                    <Label Text="Create one priced tasting-menu package and its serving order"
+                           FontSize="13" TextColor="#64748B" />
                 </VerticalStackLayout>
-                <Button Grid.Column="2"
-                        x:Name="SaveButton"
-                        Text="Save"
-                        BackgroundColor="#0EA5E9"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        CornerRadius="10"
-                        Padding="22,12"
-                        Clicked="OnSaveClicked"/>
+                <Button Grid.Column="2" x:Name="SaveButton" Text="Save"
+                        BackgroundColor="#0EA5E9" TextColor="White" FontAttributes="Bold"
+                        CornerRadius="10" HeightRequest="48" Padding="22,0" Clicked="OnSaveClicked" />
             </Grid>
         </Border>
 
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="24" Spacing="18">
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="22">
+            <VerticalStackLayout Padding="20" Spacing="18">
+                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
+                        StrokeShape="RoundRectangle 16" Padding="20">
+                    <VerticalStackLayout Spacing="16">
+                        <VerticalStackLayout Spacing="3">
+                            <Label Text="Tasting Menu Package" FontSize="19" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="The package carries the full price; individual courses have no extra price."
+                                   FontSize="13" TextColor="#64748B" />
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="2*,*,*,*" ColumnSpacing="14">
+                            <VerticalStackLayout Grid.Column="0" Spacing="5">
+                                <Label Text="Menu name" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Entry x:Name="NameEntry" Placeholder="e.g. Non-Veg 4 Course" FontSize="16" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="5">
+                                <Label Text="Package price" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Entry x:Name="PriceEntry" Placeholder="30.00" Keyboard="Numeric" FontSize="16" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="2" Spacing="5">
+                                <Label Text="Number of courses" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Entry x:Name="CourseCountEntry" Placeholder="e.g. 2, 5 or 10"
+                                       Keyboard="Numeric" FontSize="16"
+                                       TextChanged="OnCourseCountChanged" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="3" Spacing="5">
+                                <Label Text="VAT rate" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Picker x:Name="VatCategoryPicker" Title="Select VAT" />
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                            <Switch x:Name="IncludesWineSwitch" IsToggled="False" Toggled="OnWineToggled" />
+                            <Label Grid.Column="1" Text="With Wine" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center" />
+                            <Switch Grid.Column="2" x:Name="ActiveSwitch" IsToggled="True" Margin="24,0,0,0" />
+                            <Label Grid.Column="3" Text="Active" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
+                        StrokeShape="RoundRectangle 16" Padding="20">
                     <VerticalStackLayout Spacing="14">
-                        <Label Text="Menu Details" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
-                        <Entry x:Name="NameEntry" Placeholder="e.g., Chef's Signature Tasting Menu" FontSize="16"/>
-                        <Editor x:Name="DescriptionEditor" Placeholder="Short description" AutoSize="TextChanges" MinimumHeightRequest="70"/>
+                        <VerticalStackLayout Spacing="3">
+                            <Label Text="Printer Routing" FontSize="19" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Choose print groups for this menu, or leave Automatic to use the restaurant defaults."
+                                   FontSize="13" TextColor="#64748B" />
+                        </VerticalStackLayout>
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
-                            <Entry x:Name="ColorEntry" Text="#0EA5E9" Placeholder="Color hex"/>
-                            <Entry Grid.Column="1" x:Name="VatCategoryEntry" Text="HotFood" Placeholder="VAT category"/>
+                            <VerticalStackLayout Spacing="5">
+                                <Label Text="Food destination" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Picker x:Name="FoodPrintGroupPicker" Title="Automatic Kitchen"
+                                        ItemDisplayBinding="{Binding DisplayName}" />
+                                <Label Text="Course food prints here. Automatic selects the active Kitchen group."
+                                       FontSize="11" TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout x:Name="WineRoutingField" Grid.Column="1" Spacing="5" IsVisible="False">
+                                <Label Text="Wine destination" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                                <Picker x:Name="WinePrintGroupPicker" Title="Automatic Bar"
+                                        ItemDisplayBinding="{Binding DisplayName}" />
+                                <Label Text="Wine prints here. If unavailable, it is combined with the food ticket."
+                                       FontSize="11" TextColor="#64748B" />
+                            </VerticalStackLayout>
                         </Grid>
-                        <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="ActiveSwitch" IsToggled="True"/>
-                            <Label Text="Active" VerticalOptions="Center" FontSize="14" TextColor="#334155"/>
-                            <Switch x:Name="ManualCallSwitch" IsToggled="True" Margin="24,0,0,0"/>
-                            <Label Text="Manual course calling" VerticalOptions="Center" FontSize="14" TextColor="#334155"/>
-                        </HorizontalStackLayout>
+                        <Border BackgroundColor="#FFF7ED" Stroke="#FED7AA" StrokeThickness="1"
+                                StrokeShape="RoundRectangle 12" Padding="12">
+                            <Label Text="One-printer mode automatically produces one combined food-and-wine ticket."
+                                   FontSize="12" TextColor="#9A3412" />
+                        </Border>
                     </VerticalStackLayout>
                 </Border>
 
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="22">
+                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
+                        StrokeShape="RoundRectangle 16" Padding="20">
                     <VerticalStackLayout Spacing="14">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <VerticalStackLayout Spacing="4">
-                                <Label Text="Price Options" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
-                                <Label Text="Examples: 4 Course Without Wine, 4 Course With Wine" FontSize="13" TextColor="#64748B"/>
-                            </VerticalStackLayout>
-                            <Button Grid.Column="1" Text="+ Add Option" BackgroundColor="#0EA5E9" TextColor="White" CornerRadius="10" Clicked="OnAddOptionClicked"/>
-                        </Grid>
-                        <VerticalStackLayout x:Name="OptionsContainer" Spacing="10"/>
+                        <VerticalStackLayout Spacing="3">
+                            <Label Text="Courses and Wine Pairings" FontSize="19" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label x:Name="CoursesHelpLabel" FontSize="13" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout x:Name="CoursesContainer" Spacing="10" />
                     </VerticalStackLayout>
                 </Border>
 
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="22">
-                    <VerticalStackLayout Spacing="14">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <VerticalStackLayout Spacing="4">
-                                <Label Text="Courses" FontSize="18" FontAttributes="Bold" TextColor="#0F172A"/>
-                                <Label Text="Add course names and dish choices separated by commas" FontSize="13" TextColor="#64748B"/>
-                            </VerticalStackLayout>
-                            <Button Grid.Column="1" Text="+ Add Course" BackgroundColor="#10B981" TextColor="White" CornerRadius="10" Clicked="OnAddCourseClicked"/>
-                        </Grid>
-                        <VerticalStackLayout x:Name="CoursesContainer" Spacing="10"/>
-                    </VerticalStackLayout>
-                </Border>
+                <BoxView HeightRequest="20" Color="Transparent" />
             </VerticalStackLayout>
         </ScrollView>
     </Grid>

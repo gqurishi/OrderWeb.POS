@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using POS_in_NET.Helpers;
 
 namespace POS_in_NET.Views
 {
@@ -13,9 +14,10 @@ namespace POS_in_NET.Views
         public MoreOptionsDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 650, 760);
         }
 
-        public void SetOptions(List<(string Text, string Icon, bool IsEnabled)> options)
+        public void SetOptions(List<(string Text, string Icon, bool IsEnabled, bool IsDestructive)> options)
         {
             OptionsGrid.Children.Clear();
             OptionsGrid.RowDefinitions.Clear();
@@ -35,16 +37,31 @@ namespace POS_in_NET.Views
                 int row = i / columns;
                 int col = i % columns;
 
+                var isRestoreAction = string.Equals(option.Text, "RESTORE SERVICE CHARGE", StringComparison.Ordinal);
                 var button = new Button
                 {
-                    Text = option.Text, // No emoji, just text
-                    BackgroundColor = option.IsEnabled ? Color.FromArgb("#F9FAFB") : Color.FromArgb("#F3F4F6"),
-                    TextColor = option.IsEnabled ? Color.FromArgb("#1F2937") : Color.FromArgb("#9CA3AF"),
+                    Text = option.Text,
+                    BackgroundColor = !option.IsEnabled
+                        ? Color.FromArgb("#F3F4F6")
+                        : option.IsDestructive
+                            ? Color.FromArgb("#DC2626")
+                            : isRestoreAction
+                                ? Color.FromArgb("#059669")
+                                : Color.FromArgb("#F9FAFB"),
+                    TextColor = !option.IsEnabled
+                        ? Color.FromArgb("#9CA3AF")
+                        : option.IsDestructive || isRestoreAction
+                            ? Colors.White
+                            : Color.FromArgb("#1F2937"),
                     FontSize = 15,
                     FontAttributes = FontAttributes.Bold,
                     CornerRadius = 12,
                     HeightRequest = 70,
-                    BorderColor = Color.FromArgb("#E5E7EB"),
+                    BorderColor = option.IsDestructive
+                        ? Color.FromArgb("#B91C1C")
+                        : isRestoreAction
+                            ? Color.FromArgb("#047857")
+                            : Color.FromArgb("#E5E7EB"),
                     BorderWidth = 1.5,
                     HorizontalOptions = LayoutOptions.Fill,
                     VerticalOptions = LayoutOptions.Fill,

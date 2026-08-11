@@ -984,6 +984,25 @@
                                         Clicked="OnSelectPrintGroupClicked" />
                             </Border>
                         </VerticalStackLayout>
+
+                        <!-- Kitchen ink colour -->
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="Print Kitchen Item in Red"
+                                       FontSize="14"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Label Text="Prints the item, modifiers and item notes in red on a configured two-colour kitchen printer"
+                                       FontSize="12"
+                                       TextColor="#94A3B8"
+                                       LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                            <Switch x:Name="PrintInRedSwitch"
+                                    Grid.Column="1"
+                                    OnColor="#EF4444"
+                                    ThumbColor="White"
+                                    VerticalOptions="Center" />
+                        </Grid>
                     </VerticalStackLayout>
                 </Border>
 

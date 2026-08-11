@@ -18,6 +18,8 @@ public sealed class TimeClockService
 
     public async Task<(bool Success, string Message)> EnsureSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged)
+            return (true, "Schema verified by startup migrations.");
         try
         {
             await using var connection = await _databaseService.GetConnectionAsync();

@@ -339,16 +339,6 @@ public class OnlineOrderAutoPrintService
     {
         using var connection = await _databaseService.GetConnectionAsync();
 
-        using (var schemaCommand = connection.CreateCommand())
-        {
-            schemaCommand.CommandText = @"
-                ALTER TABLE orders
-                ADD COLUMN IF NOT EXISTS print_status VARCHAR(20) DEFAULT 'pending',
-                ADD COLUMN IF NOT EXISTS printed_at DATETIME NULL,
-                ADD COLUMN IF NOT EXISTS print_error TEXT NULL";
-            await schemaCommand.ExecuteNonQueryAsync();
-        }
-
         using var command = connection.CreateCommand();
         command.CommandText = @"
             UPDATE orders
@@ -547,13 +537,34 @@ public class OnlineOrderAutoPrintService
 
         // Totals
         decimal.TryParse(order.Subtotal, out var subtotal);
+        decimal.TryParse(order.DiscountAmount, out var discountAmount);
         decimal.TryParse(order.DeliveryFee, out var deliveryFee);
+        decimal.TryParse(order.ServiceChargeAmount, out var serviceChargeAmount);
+        decimal.TryParse(order.Tax, out var taxAmount);
+        decimal.TryParse(order.CashTips, out var cashTip);
+        decimal.TryParse(order.CardTips, out var cardTip);
         decimal.TryParse(order.Total, out var total);
+        decimal? amountPaid = decimal.TryParse(order.AmountPaid, out var paidValue) ? paidValue : null;
 
         builder.PrintColumns("Subtotal:", $"£{subtotal:F2}");
+
+        if (discountAmount > 0)
+            builder.PrintColumns("Discount:", $"-£{discountAmount:F2}");
         
         if (deliveryFee > 0)
             builder.PrintColumns("Delivery:", $"£{deliveryFee:F2}");
+
+        if (serviceChargeAmount > 0)
+            builder.PrintColumns("Service charge:", $"£{serviceChargeAmount:F2}");
+
+        if (cashTip > 0)
+            builder.PrintColumns("Cash tip:", $"£{cashTip:F2}");
+
+        if (cardTip > 0)
+            builder.PrintColumns("Card tip:", $"£{cardTip:F2}");
+
+        if (taxAmount > 0)
+            builder.PrintColumns("VAT:", $"£{taxAmount:F2}");
 
         builder.PrintLine(new string('=', lineWidth))
                .SetFontSize(2, 1)
@@ -563,25 +574,61 @@ public class OnlineOrderAutoPrintService
                .SetBold(false)
                .PrintLine("(VAT included in item prices)");
 
-        // Payment method/status. Cash from OrderWeb is only the requested tender until staff confirms payment.
+        // Payment details received from OrderWeb. An explicit pending/failed
+        // status always wins over assumptions based on the tender name.
         builder.PrintLine(new string('-', lineWidth));
         var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
-        if (OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus))
+        var isPaid = OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus);
+        builder.SetAlign(TextAlign.Left)
+               .PrintLine($"Payment: {paymentMethod}")
+               .PrintLine($"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, order.PaymentStatus)}");
+
+        if (isPaid)
         {
-            builder.SetAlign(TextAlign.Center)
-                   .SetBold(true)
-                   .PrintLine("PAID")
-                   .SetBold(false)
-                   .PrintLine($"Payment: {paymentMethod}")
-                   .FeedLines(1);
+            builder.SetBold(true)
+                   .PrintColumns("Amount paid:", $"£{(amountPaid ?? total):F2}")
+                   .SetBold(false);
         }
         else
         {
-            builder.SetAlign(TextAlign.Left)
-                   .PrintLine($"Payment: {paymentMethod}")
-                   .PrintColumns("Amount Due:", $"Â£{total:F2}")
-                   .FeedLines(1);
+            var amountDue = Math.Max(0m, total - (amountPaid ?? 0m));
+            builder.SetBold(true)
+                   .PrintColumns("Amount due:", $"£{amountDue:F2}")
+                   .SetBold(false);
         }
+
+        if (!string.IsNullOrWhiteSpace(order.PaymentProvider))
+            builder.PrintLine($"Provider: {order.PaymentProvider.Trim()}");
+
+        var paymentReference = OnlineOrderPaymentHelper.FormatReceiptReference(order.PaymentReference);
+        if (paymentReference != null)
+            builder.PrintLine($"Reference: {paymentReference}");
+
+        var isGiftCardPayment = OnlineOrderPaymentHelper.NormalizeMethod(order.PaymentMethod) == "gift_card";
+        var voucherReference = isGiftCardPayment
+            ? OnlineOrderPaymentHelper.MaskVoucherCode(order.VoucherCode)
+            : null;
+        if (voucherReference != null)
+        {
+            builder.PrintLine($"Gift card: {voucherReference}");
+        }
+
+        var promoCode = order.PromoCode ?? (!isGiftCardPayment ? order.VoucherCode : null);
+        if (!string.IsNullOrWhiteSpace(promoCode))
+            builder.PrintLine($"Promo code: {promoCode.Trim()}");
+        var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(order.GiftCard?.CardNumberMasked);
+        if (safeGiftCardNumber != null)
+            builder.PrintLine($"Gift card: {safeGiftCardNumber}");
+        if (decimal.TryParse(order.GiftCard?.RemainingBalance, out var giftCardBalance))
+            builder.PrintColumns("Gift card balance:", $"£{giftCardBalance:F2}");
+        if ((order.Loyalty?.PointsEarned ?? 0) > 0)
+            builder.PrintLine($"Loyalty earned: {order.Loyalty!.PointsEarned} points");
+        if ((order.Loyalty?.PointsRedeemed ?? 0) > 0)
+            builder.PrintLine($"Loyalty redeemed: {order.Loyalty!.PointsRedeemed} points");
+        if (order.Loyalty?.BalanceAfter is int loyaltyBalance)
+            builder.PrintLine($"Loyalty balance: {loyaltyBalance} points");
+
+        builder.FeedLines(1);
 
         // Special instructions for entire order
         if (!string.IsNullOrEmpty(order.SpecialInstructions))

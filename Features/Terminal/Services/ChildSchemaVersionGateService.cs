@@ -10,8 +10,8 @@ public sealed record SchemaVersionGateResult(
     string Message);
 
 /// <summary>
-/// Child terminals connect to the mother database and must not run migrations.
-/// This gate reads app_schema_version on connect and blocks when the mother DB is behind.
+/// Reads schema metadata for diagnostics. Version differences are intentionally
+/// non-blocking so mixed app/database versions can continue to connect.
 /// </summary>
 public static class ChildSchemaVersionGateService
 {
@@ -23,25 +23,24 @@ public static class ChildSchemaVersionGateService
     {
         if (!await TableExistsAsync(connection, "app_schema_version", cancellationToken))
         {
-            return Incompatible(
+            return Compatible(
                 null,
-                "The mother terminal database is not installed. On the mother PC, run OrderWeb.DatabaseSetup.exe install-mother.");
+                "Connected in compatibility mode (database version is not recorded).");
         }
 
         var current = await ReadSchemaVersionAsync(connection, cancellationToken);
         if (current == null)
         {
-            return Incompatible(
+            return Compatible(
                 null,
-                "The mother terminal database has no schema version recorded. On the mother PC, run OrderWeb.DatabaseSetup.exe migrate.");
+                "Connected in compatibility mode (database version is not recorded).");
         }
 
         if (current.Value < RequiredSchemaVersion)
         {
-            return Incompatible(
+            return Compatible(
                 current,
-                $"This app requires database schema version {RequiredSchemaVersion}, but the mother terminal database is on version {current.Value}. " +
-                "Update the mother terminal first: run OrderWeb.DatabaseSetup.exe migrate on the mother PC, then restart this terminal.");
+                $"Connected in compatibility mode to database schema version {current.Value}; app schema version is {RequiredSchemaVersion}.");
         }
 
         return Compatible(
@@ -56,11 +55,6 @@ public static class ChildSchemaVersionGateService
             return Incompatible(null, "Terminal setup is not complete.");
         }
 
-        if (!TerminalConfigurationService.IsChildTerminal)
-        {
-            return Compatible(null, "Schema version gate applies to child terminals only.");
-        }
-
         try
         {
             await using var connection = new MySqlConnection(
@@ -72,7 +66,7 @@ public static class ChildSchemaVersionGateService
         }
         catch (Exception ex)
         {
-            AppDiagnostics.LogFatal("ChildSchemaVersionGate", ex);
+            AppDiagnostics.LogFatal("SchemaVersionGate", ex);
             return Incompatible(null, $"Could not read mother database schema version: {ex.Message}");
         }
     }

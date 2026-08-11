@@ -179,6 +179,7 @@ public sealed class DiscountAuditService
 
     public async Task EnsureTableExistsAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_schemaReady)
         {
             return;

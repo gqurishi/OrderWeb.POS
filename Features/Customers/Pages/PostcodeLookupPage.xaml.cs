@@ -41,7 +41,7 @@ public partial class PostcodeLookupPage : ContentPage
         catch (Exception ex)
         {
             await AppAlertService.ShowAlertAsync("Setup Required", $"Could not load address lookup settings: {ex.Message}");
-            await Navigation.PopAsync();
+            await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
         }
     }
 
@@ -108,7 +108,7 @@ public partial class PostcodeLookupPage : ContentPage
             if (await _postcodeLookupService.SaveSettingsAsync(settings))
             {
                 await AppAlertService.ShowAlertAsync("Saved", "OrderWeb address lookup settings saved.");
-                await Navigation.PopAsync();
+                await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
             }
             else
             {
@@ -137,24 +137,24 @@ public partial class PostcodeLookupPage : ContentPage
 
     private async void OnCancelClicked(object sender, EventArgs e)
     {
-        await Navigation.PopAsync();
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
     }
 
     private async void OnBusinessTabClicked(object? sender, EventArgs e)
     {
-        try { await Shell.Current.GoToAsync("//settings"); }
+        try { await NavigationCoordinator.Shared.NavigateShellAsync("settings", source: sender as VisualElement); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}"); }
     }
 
     private async void OnUserTabClicked(object? sender, EventArgs e)
     {
-        try { await Shell.Current.GoToAsync("//settings?tab=UserManagement"); }
+        try { await NavigationCoordinator.Shared.NavigateShellAsync("settings?tab=UserManagement", source: sender as VisualElement); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}"); }
     }
 
     private async void OnCloudTabClicked(object? sender, EventArgs e)
     {
-        await Navigation.PopAsync();
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
     }
 
     private void OnPostcodeTabClicked(object? sender, EventArgs e)

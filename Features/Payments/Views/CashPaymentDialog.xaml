@@ -7,7 +7,7 @@
              HorizontalOptions="Fill">
     
     <Grid VerticalOptions="Fill" HorizontalOptions="Fill">
-        <Border BackgroundColor="White"
+        <Border x:Name="DialogCard" BackgroundColor="White"
                Stroke="{StaticResource DialogShellStrokeColor}"
                StrokeThickness="1"
                Padding="30"
@@ -24,18 +24,19 @@
                 <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
             </Border.Shadow>
             
-            <ScrollView VerticalScrollBarVisibility="Default">
-            <VerticalStackLayout Spacing="18">
+            <Grid RowDefinitions="*,Auto" RowSpacing="12">
+            <ScrollView Grid.Row="0" VerticalScrollBarVisibility="Default">
+            <VerticalStackLayout x:Name="DialogContent" Spacing="18">
                 
                 <!-- Header with Close Button -->
                 <Grid ColumnDefinitions="*,Auto">
-                    <Label Text="CASH PAYMENT"
+                    <Label x:Name="DialogTitle" Text="CASH PAYMENT"
                            FontSize="30"
                            FontAttributes="Bold"
                            TextColor="#111827"
                            VerticalOptions="Center"/>
                     <!-- Close Button - Rectangle -->
-                    <Button Grid.Column="1"
+                    <Button x:Name="CloseButton" Grid.Column="1"
                             Text="CLOSE"
                             BackgroundColor="#DC2626"
                             TextColor="White"
@@ -51,7 +52,7 @@
                 <BoxView HeightRequest="2" Color="#E5E7EB"/>
                 
                 <!-- Amount Due -->
-                <Border BackgroundColor="#FFFBEB" Stroke="#F59E0B" StrokeThickness="2" Padding="18">
+                <Border x:Name="AmountDueCard" BackgroundColor="#FFFBEB" Stroke="#F59E0B" StrokeThickness="2" Padding="18">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
@@ -71,7 +72,7 @@
                     </Grid>
                 </Border>
                 
-                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
+                <Grid x:Name="QuickCashGrid" ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
                     <Button Grid.Column="0"
                             x:Name="QuickExactButton"
                             Text="Exact £0.00"
@@ -187,8 +188,9 @@
                     </Grid>
                 </Border>
                 
-                <!-- Confirm Payment Button -->
-                <Button x:Name="ConfirmButton"
+            </VerticalStackLayout>
+            </ScrollView>
+                <Button Grid.Row="1" x:Name="ConfirmButton"
                         Text="CONFIRM PAYMENT"
                         BackgroundColor="#059669"
                         TextColor="White"
@@ -198,9 +200,7 @@
                         HeightRequest="60"
                         IsEnabled="False"
                         Clicked="OnConfirmClicked"/>
-                
-            </VerticalStackLayout>
-            </ScrollView>
+            </Grid>
         </Border>
     </Grid>
     

@@ -67,7 +67,8 @@ public partial class AddEditMealDealPage : ContentPage
         }
     }
 
-    private void OnBackClicked(object sender, EventArgs e) => Navigation.PopAsync();
+    private async void OnBackClicked(object sender, EventArgs e) =>
+        await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation, source: sender as VisualElement);
 
     private void OnAddChoiceClicked(object sender, EventArgs e)
     {
@@ -262,7 +263,7 @@ public partial class AddEditMealDealPage : ContentPage
                 }
 
                 OrderPlacementPageSimple.InvalidateMenuCache();
-                await Navigation.PopAsync();
+                await NavigationCoordinator.Shared.PopTemporaryPageAsync(Navigation);
             }
             finally
             {

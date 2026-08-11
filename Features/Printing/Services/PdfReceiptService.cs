@@ -114,6 +114,37 @@ public class PdfReceiptService
                 graphics.DrawString("Subtotal:", boldFont, PdfBrushes.Black, new PointF(350, yPosition));
                 graphics.DrawString($"£{subtotal:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
                 yPosition += 20;
+
+                var discount = ReadDecimal(order, "DiscountAmount", "Discount");
+                if (discount > 0m)
+                {
+                    graphics.DrawString("Discount:", normalFont, PdfBrushes.Black, new PointF(350, yPosition));
+                    graphics.DrawString($"-£{discount:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
+                    yPosition += 20;
+                }
+
+                var deliveryFee = ReadDecimal(order, "DeliveryFee");
+                if (deliveryFee > 0m)
+                {
+                    graphics.DrawString("Delivery Fee:", normalFont, PdfBrushes.Black, new PointF(350, yPosition));
+                    graphics.DrawString($"£{deliveryFee:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
+                    yPosition += 20;
+                }
+
+                var serviceStatus = ReadString(order, "ServiceChargeStatus");
+                var servicePercentage = ReadDecimal(order, "ServiceChargePercentage", "ServiceChargePercent");
+                var serviceAmount = ReadDecimal(order, "ServiceChargeAmount", "ServiceCharge");
+                if (string.Equals(serviceStatus, "applied", StringComparison.OrdinalIgnoreCase) && serviceAmount > 0m)
+                {
+                    graphics.DrawString($"Service Charge ({servicePercentage:0.##}%):", normalFont, PdfBrushes.Black, new PointF(300, yPosition));
+                    graphics.DrawString($"£{serviceAmount:F2}", normalFont, PdfBrushes.Black, new PointF(480, yPosition));
+                    yPosition += 20;
+                }
+                else if (string.Equals(serviceStatus, "removed", StringComparison.OrdinalIgnoreCase))
+                {
+                    graphics.DrawString($"Service Charge ({servicePercentage:0.##}%): Removed", normalFont, PdfBrushes.Black, new PointF(300, yPosition));
+                    yPosition += 20;
+                }
                 
                 graphics.DrawString("TOTAL:", titleFont, PdfBrushes.Black, new PointF(350, yPosition));
                 graphics.DrawString($"£{total:F2}", titleFont, PdfBrushes.Black, new PointF(480, yPosition));
@@ -154,6 +185,23 @@ public class PdfReceiptService
             throw;
         }
     }
+
+    private static decimal ReadDecimal(object value, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            var property = value.GetType().GetProperty(propertyName);
+            if (property?.GetValue(value) is { } raw && decimal.TryParse(raw.ToString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return 0m;
+    }
+
+    private static string ReadString(object value, string propertyName) =>
+        value.GetType().GetProperty(propertyName)?.GetValue(value)?.ToString() ?? string.Empty;
     
     /// <summary>
     /// Save PDF receipt to file

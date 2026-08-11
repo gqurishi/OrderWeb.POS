@@ -22,8 +22,8 @@
                 <Shadow Brush="#E5E7EB" Radius="4" Opacity="0.1" Offset="0,2"/>
             </Border.Shadow>
             
-            <Grid Padding="16"
-                  HeightRequest="78">
+            <Grid Padding="{DynamicResource ResponsiveCompactPadding}"
+                  MinimumHeightRequest="64">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -117,7 +117,7 @@
             <StackLayout Spacing="0" 
                          VerticalOptions="Center"
                          x:Name="MainStackLayout"
-                         Padding="18"
+                         Padding="{DynamicResource ResponsivePagePadding}"
                          HorizontalOptions="Center"
                          MaximumWidthRequest="900">
                 
@@ -140,7 +140,7 @@
                     </Grid.ColumnDefinitions>
                     
                     <!-- Restaurant Button -->
-                    <Border Grid.Row="0" Grid.Column="0"
+                    <Border x:Name="RestaurantServiceButton" Grid.Row="0" Grid.Column="0"
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
@@ -172,7 +172,7 @@
                     </Border>
                     
                     <!-- Delivery Button -->
-                    <Border Grid.Row="0" Grid.Column="1"
+                    <Border x:Name="DeliveryServiceButton" Grid.Row="0" Grid.Column="1"
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
@@ -204,7 +204,7 @@
                     </Border>
                     
                     <!-- Collection Button -->
-                    <Border Grid.Row="0" Grid.Column="2"
+                    <Border x:Name="CollectionServiceButton" Grid.Row="0" Grid.Column="2"
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"
@@ -236,7 +236,7 @@
                     </Border>
 
                     <!-- Live Order Button -->
-                    <Border Grid.Row="1" Grid.Column="1"
+                    <Border x:Name="LiveOrderServiceButton" Grid.Row="1" Grid.Column="1"
                             BackgroundColor="Transparent"
                             Stroke="Transparent"
                             StrokeThickness="0"

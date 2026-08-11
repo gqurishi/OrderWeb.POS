@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using MySqlConnector;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using System.Text.Json;
 
 namespace POS_in_NET.Pages;
 
@@ -160,21 +161,36 @@ public partial class RefundModal : ContentPage
             using var refundedTotalCommand = new MySqlCommand(refundedTotalQuery, connection, transaction);
             refundedTotalCommand.Parameters.AddWithValue("@orderId", _orderId);
             var alreadyRefunded = Convert.ToDecimal(await refundedTotalCommand.ExecuteScalarAsync() ?? 0m);
-            var remainingRefundable = Math.Max(0m, authoritativeOrderTotal - alreadyRefunded);
+            var remainingRefundable = RefundAmountPolicy.Remaining(authoritativeOrderTotal, alreadyRefunded);
+
+            const string duplicateReferenceQuery = """
+                SELECT COUNT(*) FROM order_refunds
+                WHERE order_id = @orderId AND external_reference = @externalReference
+                """;
+            using (var duplicateReferenceCommand = new MySqlCommand(duplicateReferenceQuery, connection, transaction))
+            {
+                duplicateReferenceCommand.Parameters.AddWithValue("@orderId", _orderId);
+                duplicateReferenceCommand.Parameters.AddWithValue("@externalReference", externalReference);
+                if (Convert.ToInt32(await duplicateReferenceCommand.ExecuteScalarAsync() ?? 0) > 0)
+                {
+                    await transaction.RollbackAsync();
+                    await AppAlertService.ShowAlertAsync("Duplicate Refund", "This refund reference has already been recorded.");
+                    return;
+                }
+            }
 
             if (_isFullRefund)
             {
                 refundAmount = remainingRefundable;
             }
 
-            if (refundAmount <= 0 || refundAmount > remainingRefundable)
+            var refundValidation = RefundAmountPolicy.Validate(refundAmount, authoritativeOrderTotal, alreadyRefunded);
+            if (!refundValidation.IsValid)
             {
                 await transaction.RollbackAsync();
                 await AppAlertService.ShowAlertAsync(
                     "Invalid Amount",
-                    remainingRefundable <= 0
-                        ? "This order has already been fully refunded."
-                        : $"Only £{remainingRefundable:F2} remains available to refund.");
+                    refundValidation.Message);
                 return;
             }
 
@@ -201,6 +217,66 @@ public partial class RefundModal : ContentPage
             insertCommand.Parameters.AddWithValue("@terminalName", terminalName);
             insertCommand.Parameters.AddWithValue("@externalReference", externalReference);
             await insertCommand.ExecuteNonQueryAsync();
+
+            const string tipTotalsQuery = """
+                SELECT
+                    COALESCE(SUM(CASE WHEN payment_method = 'cash' AND status = 'approved' THEN tip_amount ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN payment_method = 'card' AND status = 'approved' THEN tip_amount ELSE 0 END), 0),
+                    COALESCE(ABS(SUM(CASE WHEN payment_method = 'refund' AND status = 'approved' THEN tip_amount ELSE 0 END)), 0),
+                    COALESCE(MAX(attempt_no), 0) + 1
+                FROM order_payments
+                WHERE order_id = @orderId
+                """;
+            decimal approvedTips;
+            decimal approvedCashTips;
+            decimal approvedCardTips;
+            decimal alreadyReversedTips;
+            int nextAttempt;
+            using (var tipTotalsCommand = new MySqlCommand(tipTotalsQuery, connection, transaction))
+            {
+                tipTotalsCommand.Parameters.AddWithValue("@orderId", _orderId);
+                using var tipReader = await tipTotalsCommand.ExecuteReaderAsync();
+                await tipReader.ReadAsync();
+                approvedCashTips = tipReader.GetDecimal(0);
+                approvedCardTips = tipReader.GetDecimal(1);
+                approvedTips = approvedCashTips + approvedCardTips;
+                alreadyReversedTips = tipReader.GetDecimal(2);
+                nextAttempt = tipReader.GetInt32(3);
+            }
+
+            var remainingTip = Math.Max(0m, approvedTips - alreadyReversedTips);
+            var reversedTip = refundAmount >= remainingRefundable - 0.009m
+                ? remainingTip
+                : Math.Min(remainingTip, decimal.Round(approvedTips * refundAmount / authoritativeOrderTotal, 2, MidpointRounding.AwayFromZero));
+            var cashTipReversed = approvedTips <= 0m
+                ? 0m
+                : decimal.Round(reversedTip * approvedCashTips / approvedTips, 2, MidpointRounding.AwayFromZero);
+            var cardTipReversed = reversedTip - cashTipReversed;
+            const string refundPaymentQuery = """
+                INSERT INTO order_payments
+                    (order_id, attempt_no, payment_method, amount, currency_code, status,
+                     reference, tip_amount, metadata_json, created_at, created_by)
+                VALUES
+                    (@orderId, @attemptNo, 'refund', @amount, 'GBP', 'approved',
+                     @reference, @tipAmount, @metadataJson, NOW(), @createdBy)
+                """;
+            using (var refundPaymentCommand = new MySqlCommand(refundPaymentQuery, connection, transaction))
+            {
+                refundPaymentCommand.Parameters.AddWithValue("@orderId", _orderId);
+                refundPaymentCommand.Parameters.AddWithValue("@attemptNo", nextAttempt);
+                refundPaymentCommand.Parameters.AddWithValue("@amount", -refundAmount);
+                refundPaymentCommand.Parameters.AddWithValue("@reference", externalReference);
+                refundPaymentCommand.Parameters.AddWithValue("@tipAmount", -reversedTip);
+                refundPaymentCommand.Parameters.AddWithValue("@metadataJson", JsonSerializer.Serialize(new
+                {
+                    refundType = refundAmount >= remainingRefundable ? "full" : "partial",
+                    tipReversed = reversedTip,
+                    cashTipReversed,
+                    cardTipReversed
+                }));
+                refundPaymentCommand.Parameters.AddWithValue("@createdBy", refundedBy);
+                await refundPaymentCommand.ExecuteNonQueryAsync();
+            }
 
             const string updateOrderQuery = """
                 UPDATE orders

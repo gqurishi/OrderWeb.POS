@@ -84,6 +84,7 @@ installer/staging/
 installer/output/
 publish/
 ReadyToCopy/
+artifacts/
 
 # IDE files
 *.swp

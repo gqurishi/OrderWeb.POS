@@ -144,6 +144,7 @@ public sealed class PrinterRoutingService
 
     private async Task EnsureSettingsTableAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = @"

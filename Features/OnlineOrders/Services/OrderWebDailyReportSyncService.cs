@@ -9,7 +9,8 @@ namespace POS_in_NET.Services;
 
 /// <summary>
 /// Uploads in-restaurant end-of-day totals and labour to OrderWeb.net POS API.
-/// Scheduled 2 AM job also syncs pending customers and reservations before upload.
+/// An Administrator normally sends the financial report from Reports. The
+/// mother terminal provides a 2 AM safety upload and startup catch-up.
 /// POST https://orderweb.net/api/pos/reports/daily
 /// </summary>
 public sealed class OrderWebDailyReportSyncService
@@ -17,6 +18,7 @@ public sealed class OrderWebDailyReportSyncService
     private const string PendingUploadPreferenceKey = "OrderWebPendingDailyReportDate";
     private const string DailyReportEndpoint = "/pos/reports/daily";
     private const int MaxAttempts = 3;
+    private const int StartupCatchUpDays = 30;
 
     private readonly HttpClient _httpClient;
     private readonly DatabaseService _databaseService;
@@ -54,12 +56,6 @@ public sealed class OrderWebDailyReportSyncService
         };
     }
 
-    public async Task<OrderWebDailyReportSyncResult> UploadAfterZReportAsync(DateTime reportDate)
-    {
-        MarkPendingUpload(reportDate);
-        return await UploadAsync(reportDate, trigger: "z-report", forceReupload: false);
-    }
-
     public void MarkPendingUpload(DateTime reportDate)
     {
         Preferences.Set(PendingUploadPreferenceKey, reportDate.Date.ToString("yyyy-MM-dd"));
@@ -86,7 +82,9 @@ public sealed class OrderWebDailyReportSyncService
     }
 
     /// <summary>
-    /// Nightly end-of-day cloud sync (2 AM): pending customers, pending reservations, then daily report + labour.
+    /// Nightly safety upload. The Admin button remains the normal end-of-day action;
+    /// this path sends a missed report only after its trading day has ended and all
+    /// local orders for that day are finalized.
     /// </summary>
     public async Task<OrderWebDailyReportSyncResult> UploadScheduledAsync(DateTime reportDate)
     {
@@ -128,29 +126,99 @@ public sealed class OrderWebDailyReportSyncService
             }
         }
 
-        var result = await UploadAsync(reportDate, trigger: "scheduled", forceReupload: false);
+        if (await HasUnfinalizedLocalOrdersAsync(reportDate.Date))
+        {
+            var deferred = new OrderWebDailyReportSyncResult
+            {
+                Success = true,
+                Skipped = true,
+                Message = $"Automatic upload for {reportDate:yyyy-MM-dd} was deferred because the day still has open or unfinished orders."
+            };
+            AppDiagnostics.Log($"Scheduled OrderWeb report deferred for {reportDate:yyyy-MM-dd}: {deferred.Message}");
+            return deferred;
+        }
+
+        var result = await UploadAsync(reportDate.Date, trigger: "automatic_2am");
         if (syncNotes.Count > 0)
         {
             result.Message = $"{result.Message} {string.Join(" ", syncNotes)}".Trim();
         }
 
-        AppDiagnostics.Log(
-            result.Success
-                ? $"Scheduled OrderWeb upload for {reportDate:yyyy-MM-dd}: {result.Message}"
-                : $"Scheduled OrderWeb upload failed for {reportDate:yyyy-MM-dd}: {result.Message}");
+        AppDiagnostics.Log($"Scheduled OrderWeb report upload for {reportDate:yyyy-MM-dd}: {result.Message}");
 
         return result;
     }
 
-    public async Task<OrderWebDailyReportSyncResult> UploadManualAsync(DateTime reportDate, bool forceReupload = false)
+    /// <summary>
+    /// Returns local-POS business dates that contain orders, have ended, and do not
+    /// yet have a confirmed successful OrderWeb daily report. This also provides the
+    /// startup catch-up when the mother terminal was switched off at 2 AM.
+    /// </summary>
+    public async Task<IReadOnlyList<DateTime>> GetMissingCompletedReportDatesAsync(DateTime localNow)
     {
-        return await UploadAsync(reportDate, trigger: "manual", forceReupload: forceReupload);
+        await EnsureSchemaAsync();
+
+        var latestEligibleBusinessDate = localNow.TimeOfDay >= TimeSpan.FromHours(2)
+            ? localNow.Date.AddDays(-1)
+            : localNow.Date.AddDays(-2);
+        var earliestBusinessDate = latestEligibleBusinessDate.AddDays(-(StartupCatchUpDays - 1));
+
+        await using var connection = await _databaseService.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT DISTINCT DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date
+            FROM orders o
+            LEFT JOIN orderweb_daily_report_sync_log sync_log
+              ON sync_log.report_date = DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR))
+             AND sync_log.success = 1
+            WHERE COALESCE(o.source_channel, 'local') = 'local'
+              AND o.created_at >= @earliestStart
+              AND o.created_at < @eligibleEnd
+              AND sync_log.id IS NULL
+            ORDER BY business_date";
+        command.Parameters.AddWithValue("@earliestStart", TradingDayHelper.GetBusinessDayStart(earliestBusinessDate));
+        command.Parameters.AddWithValue("@eligibleEnd", TradingDayHelper.GetBusinessDayEnd(latestEligibleBusinessDate));
+
+        var dates = new List<DateTime>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            dates.Add(reader.GetDateTime("business_date").Date);
+        }
+
+        return dates;
     }
 
-    public async Task<OrderWebDailyReportSyncResult> UploadAsync(
+    public async Task<OrderWebDailyReportSyncResult> UploadManualAsync(DateTime reportDate)
+    {
+        return await UploadAsync(reportDate, trigger: "manual");
+    }
+
+    private async Task<bool> HasUnfinalizedLocalOrdersAsync(DateTime businessDate)
+    {
+        await using var connection = await _databaseService.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT COUNT(*)
+            FROM orders
+            WHERE COALESCE(source_channel, 'local') = 'local'
+              AND created_at >= @dayStart
+              AND created_at < @dayEnd
+              AND (
+                    COALESCE(is_open, 1) = 1
+                    OR NOT (
+                        COALESCE(LOWER(local_lifecycle_state), '') IN ('paid', 'voided')
+                        OR LOWER(COALESCE(status, '')) IN ('completed', 'closed', 'paid', 'cancelled', 'voided')
+                    )
+              )";
+        command.Parameters.AddWithValue("@dayStart", TradingDayHelper.GetBusinessDayStart(businessDate));
+        command.Parameters.AddWithValue("@dayEnd", TradingDayHelper.GetBusinessDayEnd(businessDate));
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private async Task<OrderWebDailyReportSyncResult> UploadAsync(
         DateTime reportDate,
-        string trigger,
-        bool forceReupload)
+        string trigger)
     {
         if (!TerminalRoleService.CanRunMotherJobs)
         {
@@ -189,14 +257,13 @@ public sealed class OrderWebDailyReportSyncService
             System.Diagnostics.Debug.WriteLine($" [OrderWeb Report] Auto-closed {autoClosedSessions} staff clock session(s) before daily upload.");
         }
 
-        var hasPendingLabour = await _timeClockService.HasPendingClosedSessionsAsync(businessDate);
-        if (!forceReupload && !hasPendingLabour && await WasSuccessfullyUploadedAsync(businessDate))
+        if (await WasSuccessfullyUploadedAsync(businessDate))
         {
             return new OrderWebDailyReportSyncResult
             {
                 Success = true,
                 Skipped = true,
-                Message = $"Daily report for {businessDate:yyyy-MM-dd} was already uploaded."
+                Message = $"Daily report for {businessDate:yyyy-MM-dd} was already uploaded and is immutable."
             };
         }
 
@@ -212,12 +279,24 @@ public sealed class OrderWebDailyReportSyncService
                 var url = $"{_baseUrl}{DailyReportEndpoint}";
                 var requestBody = new OrderWebDailyReportApiRequest
                 {
+                    ContractVersion = payload.ContractVersion,
                     Tenant = payload.Tenant,
                     ReportDate = payload.ReportDateValue,
                     TotalSales = payload.TotalSales,
                     TotalOrders = payload.TotalOrders,
                     CashSales = payload.CashSales,
                     CardSales = payload.CardSales,
+                    ItemSales = payload.ItemSales,
+                    Discounts = payload.Discounts,
+                    ServiceCharges = payload.ServiceCharges,
+                    RemovedServiceChargeCount = payload.RemovedServiceChargeCount,
+                    RemovedServiceChargeValue = payload.RemovedServiceChargeValue,
+                    CashTips = payload.CashTips,
+                    CardTips = payload.CardTips,
+                    DeliveryFees = payload.DeliveryFees,
+                    Refunds = payload.Refunds,
+                    Vat = payload.Vat,
+                    FinalMoneyCollected = payload.FinalMoneyCollected,
                     Labour = payload.Labour
                 };
 
@@ -333,6 +412,7 @@ public sealed class OrderWebDailyReportSyncService
 
     private async Task EnsureSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_schemaEnsured)
         {
             return;
@@ -371,12 +451,24 @@ public sealed class OrderWebDailyReportSyncService
         var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("daily-report", payload.Tenant, payload.ReportDateValue);
         var requestBody = new OrderWebDailyReportApiRequest
         {
+            ContractVersion = payload.ContractVersion,
             Tenant = payload.Tenant,
             ReportDate = payload.ReportDateValue,
             TotalSales = payload.TotalSales,
             TotalOrders = payload.TotalOrders,
             CashSales = payload.CashSales,
             CardSales = payload.CardSales,
+            ItemSales = payload.ItemSales,
+            Discounts = payload.Discounts,
+            ServiceCharges = payload.ServiceCharges,
+            RemovedServiceChargeCount = payload.RemovedServiceChargeCount,
+            RemovedServiceChargeValue = payload.RemovedServiceChargeValue,
+            CashTips = payload.CashTips,
+            CardTips = payload.CardTips,
+            DeliveryFees = payload.DeliveryFees,
+            Refunds = payload.Refunds,
+            Vat = payload.Vat,
+            FinalMoneyCollected = payload.FinalMoneyCollected,
             Labour = payload.Labour
         };
 
@@ -453,6 +545,8 @@ public sealed class OrderWebDailyReportSyncService
 
     private sealed class OrderWebDailyReportApiRequest
     {
+        [JsonPropertyName("contractVersion")]
+        public int ContractVersion { get; set; } = 2;
         [JsonPropertyName("tenant")]
         public string Tenant { get; set; } = string.Empty;
 
@@ -470,6 +564,18 @@ public sealed class OrderWebDailyReportSyncService
 
         [JsonPropertyName("cardSales")]
         public decimal CardSales { get; set; }
+
+        [JsonPropertyName("itemSales")] public decimal ItemSales { get; set; }
+        [JsonPropertyName("discounts")] public decimal Discounts { get; set; }
+        [JsonPropertyName("serviceCharges")] public decimal ServiceCharges { get; set; }
+        [JsonPropertyName("removedServiceChargeCount")] public int RemovedServiceChargeCount { get; set; }
+        [JsonPropertyName("removedServiceChargeValue")] public decimal RemovedServiceChargeValue { get; set; }
+        [JsonPropertyName("cashTips")] public decimal CashTips { get; set; }
+        [JsonPropertyName("cardTips")] public decimal CardTips { get; set; }
+        [JsonPropertyName("deliveryFees")] public decimal DeliveryFees { get; set; }
+        [JsonPropertyName("refunds")] public decimal Refunds { get; set; }
+        [JsonPropertyName("vat")] public decimal Vat { get; set; }
+        [JsonPropertyName("finalMoneyCollected")] public decimal FinalMoneyCollected { get; set; }
 
         [JsonPropertyName("labour")]
         public OrderWebLabourUploadPayload? Labour { get; set; }

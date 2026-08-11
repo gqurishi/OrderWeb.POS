@@ -480,6 +480,7 @@ public sealed partial class ReservationSyncService : IDisposable
 
     private async Task EnsureSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         await using var connection = await _databaseService.GetConnectionAsync();
 
         await using (var command = new MySqlCommand(

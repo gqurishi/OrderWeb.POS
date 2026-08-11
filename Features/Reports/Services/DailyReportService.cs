@@ -46,6 +46,16 @@ public sealed class ReportSummary
 	public decimal NetSales { get; set; }
 	public decimal VatAmount { get; set; }
 	public decimal DeliveryChargeTotal { get; set; }
+	public decimal ItemSales { get; set; }
+	public decimal DiscountTotal { get; set; }
+	public decimal ServiceChargeTotal { get; set; }
+	public decimal RemovedServiceChargeValue { get; set; }
+	public int RemovedServiceChargeCount { get; set; }
+	public decimal CashTips { get; set; }
+	public decimal CardTips { get; set; }
+	public decimal TotalTips => CashTips + CardTips;
+	public decimal RefundTotal { get; set; }
+	public decimal FinalMoneyCollected { get; set; }
 	public decimal AverageOrderValue { get; set; }
 }
 
@@ -208,6 +218,18 @@ public sealed class DailyReportSnapshot
 	public ReportSummary Summary { get; set; } = new();
 	public List<ReportOrderRow> Orders { get; set; } = new();
 	public List<ReportTopItemRow> TopItems { get; set; } = new();
+	public List<ServiceChargeRemovalAuditRow> ServiceChargeRemovalAudits { get; set; } = new();
+}
+
+public sealed class ServiceChargeRemovalAuditRow
+{
+	public string OrderNumber { get; set; } = string.Empty;
+	public decimal Percentage { get; set; }
+	public decimal Amount { get; set; }
+	public string Reason { get; set; } = string.Empty;
+	public string PerformedBy { get; set; } = string.Empty;
+	public string ApprovedBy { get; set; } = string.Empty;
+	public DateTime EventAt { get; set; }
 }
 
 public sealed class DailyReportService
@@ -223,9 +245,13 @@ public sealed class DailyReportService
 		_orderService = new OrderService();
 	}
 
-	public async Task<bool> HardDeleteOrderAsync(int orderDbId)
+	public async Task<bool> HardDeleteOrderAsync(
+		int orderDbId,
+		int deletedByUserId,
+		string deletedByName,
+		string deletionReason)
 	{
-		if (orderDbId <= 0)
+		if (orderDbId <= 0 || deletedByUserId <= 0 || string.IsNullOrWhiteSpace(deletionReason))
 		{
 			return false;
 		}
@@ -243,6 +269,28 @@ public sealed class DailyReportService
 				await transaction.RollbackAsync();
 				return false;
 			}
+
+			if (!string.Equals(orderInfo.SourceChannel, "local", StringComparison.OrdinalIgnoreCase))
+			{
+				throw new InvalidOperationException(
+					"OrderWeb orders are cloud records and cannot be permanently deleted from the POS report. " +
+					"The seven-day cache cleanup will remove finalized local copies automatically.");
+			}
+
+			if (await WasBusinessDateUploadedAsync(connection, transaction, TradingDayHelper.GetBusinessDate(orderInfo.CreatedAt)))
+			{
+				throw new InvalidOperationException(
+					$"The report for {orderInfo.CreatedAt:dd MMM yyyy} has already been uploaded to OrderWeb. " +
+					"To keep the original cloud financial record immutable, this local order can no longer be deleted.");
+			}
+
+			await InsertLocalDeletionAuditAsync(
+				connection,
+				transaction,
+				orderInfo,
+				deletedByUserId,
+				deletedByName,
+				deletionReason.Trim());
 
 			var identityValues = new[]
 			{
@@ -277,8 +325,8 @@ public sealed class DailyReportService
 
 	public async Task<OperationalAnalyticsSnapshot> GetOperationalAnalyticsAsync(DateTime startDate, DateTime endDate)
 	{
-		var normalizedStart = startDate.Date;
-		var normalizedEndExclusive = endDate.Date.AddDays(1);
+		var normalizedStart = TradingDayHelper.GetBusinessDayStart(startDate);
+		var normalizedEndExclusive = TradingDayHelper.GetBusinessDayEnd(endDate);
 		return await _orderService.GetOperationalAnalyticsAsync(normalizedStart, normalizedEndExclusive);
 	}
 
@@ -289,6 +337,12 @@ public sealed class DailyReportService
 		public string OrderNumber { get; set; } = string.Empty;
 		public string CloudOrderId { get; set; } = string.Empty;
 		public int? TableSessionId { get; set; }
+		public string SourceChannel { get; set; } = string.Empty;
+		public string Status { get; set; } = string.Empty;
+		public string LifecycleState { get; set; } = string.Empty;
+		public string PaymentMethod { get; set; } = string.Empty;
+		public decimal TotalAmount { get; set; }
+		public DateTime CreatedAt { get; set; }
 	}
 
 	private static async Task<OrderDeleteIdentity?> LoadOrderIdentityForDeleteAsync(
@@ -297,7 +351,9 @@ public sealed class DailyReportService
 		int orderDbId)
 	{
 		await using var command = new MySqlCommand(@"
-			SELECT id, order_id, order_number, cloud_order_id, table_session_id
+			SELECT id, order_id, order_number, cloud_order_id, table_session_id,
+			       source_channel, status, local_lifecycle_state, payment_method,
+			       total_amount, created_at
 			FROM orders
 			WHERE id = @orderDbId
 			LIMIT 1", connection, transaction);
@@ -315,8 +371,65 @@ public sealed class DailyReportService
 			OrderId = GetString(reader, "order_id"),
 			OrderNumber = GetString(reader, "order_number"),
 			CloudOrderId = GetString(reader, "cloud_order_id"),
-			TableSessionId = reader["table_session_id"] == DBNull.Value ? null : Convert.ToInt32(reader["table_session_id"])
+			TableSessionId = reader["table_session_id"] == DBNull.Value ? null : Convert.ToInt32(reader["table_session_id"]),
+			SourceChannel = GetString(reader, "source_channel"),
+			Status = GetString(reader, "status"),
+			LifecycleState = GetString(reader, "local_lifecycle_state"),
+			PaymentMethod = GetString(reader, "payment_method"),
+			TotalAmount = reader["total_amount"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["total_amount"]),
+			CreatedAt = Convert.ToDateTime(reader["created_at"])
 		};
+	}
+
+	private static async Task<bool> WasBusinessDateUploadedAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		DateTime businessDate)
+	{
+		await using var command = new MySqlCommand(@"
+			SELECT EXISTS(
+				SELECT 1
+				FROM orderweb_daily_report_sync_log
+				WHERE report_date = @businessDate
+				  AND success = 1
+			)", connection, transaction);
+		command.Parameters.AddWithValue("@businessDate", businessDate.Date);
+		return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+	}
+
+	private static async Task InsertLocalDeletionAuditAsync(
+		MySqlConnection connection,
+		MySqlTransaction transaction,
+		OrderDeleteIdentity order,
+		int deletedByUserId,
+		string deletedByName,
+		string deletionReason)
+	{
+		await using var command = new MySqlCommand(@"
+			INSERT INTO local_order_deletion_audit
+				(action_type, original_order_db_id, order_id, order_number, cloud_order_id,
+				 source_channel, order_status, lifecycle_state, total_amount, payment_method,
+				 business_date, deletion_reason, deleted_by_user_id, deleted_by_name, terminal_name)
+			VALUES
+				('admin_test_delete', @orderDbId, @orderId, @orderNumber, @cloudOrderId,
+				 @sourceChannel, @status, @lifecycleState, @totalAmount, @paymentMethod,
+				 @businessDate, @reason, @deletedByUserId, @deletedByName, @terminalName)", connection, transaction);
+		command.Parameters.AddWithValue("@orderDbId", order.OrderDbId);
+		command.Parameters.AddWithValue("@orderId", string.IsNullOrWhiteSpace(order.OrderId) ? DBNull.Value : order.OrderId);
+		command.Parameters.AddWithValue("@orderNumber", string.IsNullOrWhiteSpace(order.OrderNumber) ? DBNull.Value : order.OrderNumber);
+		command.Parameters.AddWithValue("@cloudOrderId", string.IsNullOrWhiteSpace(order.CloudOrderId) ? DBNull.Value : order.CloudOrderId);
+		command.Parameters.AddWithValue("@sourceChannel", order.SourceChannel);
+		command.Parameters.AddWithValue("@status", string.IsNullOrWhiteSpace(order.Status) ? DBNull.Value : order.Status);
+		command.Parameters.AddWithValue("@lifecycleState", string.IsNullOrWhiteSpace(order.LifecycleState) ? DBNull.Value : order.LifecycleState);
+		command.Parameters.AddWithValue("@totalAmount", order.TotalAmount);
+		command.Parameters.AddWithValue("@paymentMethod", string.IsNullOrWhiteSpace(order.PaymentMethod) ? DBNull.Value : order.PaymentMethod);
+		command.Parameters.AddWithValue("@businessDate", TradingDayHelper.GetBusinessDate(order.CreatedAt));
+		command.Parameters.AddWithValue("@reason", deletionReason);
+		command.Parameters.AddWithValue("@deletedByUserId", deletedByUserId);
+		command.Parameters.AddWithValue("@deletedByName", string.IsNullOrWhiteSpace(deletedByName) ? $"Admin #{deletedByUserId}" : deletedByName.Trim());
+		var terminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
+		command.Parameters.AddWithValue("@terminalName", string.IsNullOrWhiteSpace(terminalName) ? Environment.MachineName : terminalName);
+		await command.ExecuteNonQueryAsync();
 	}
 
 	private static async Task DeleteOrderCoreRowsAsync(MySqlConnection connection, MySqlTransaction transaction, int orderDbId)
@@ -575,15 +688,15 @@ public sealed class DailyReportService
 	{
 		await EnsureLiveReportViewsAsync();
 
-		var normalizedStart = startDate.Date;
-		var normalizedEndExclusive = endDate.Date.AddDays(1);
+		var normalizedStart = TradingDayHelper.GetBusinessDayStart(startDate);
+		var normalizedEndExclusive = TradingDayHelper.GetBusinessDayEnd(endDate);
 
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
 		var bucketExpression = groupByHour
 			? "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')"
-			: "business_date";
+			: "DATE(DATE_SUB(created_at, INTERVAL 1 HOUR))";
 
 		var query = new StringBuilder($@"
 			SELECT
@@ -662,20 +775,78 @@ public sealed class DailyReportService
 			OrderTypeFilter = orderTypeFilter
 		};
 
-		var queryEndDate = snapshot.EndDate.AddDays(1);
-		var summaryTask = LoadSummaryWithConnectionAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
-		var deliveryChargeTask = LoadDeliveryChargeTotalAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
-		var ordersTask = LoadOrdersWithConnectionAsync(snapshot.StartDate, queryEndDate, snapshot.SearchText, sourceFilter, orderTypeFilter);
-		var topItemsTask = LoadTopItemsWithConnectionAsync(snapshot.StartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var queryStartDate = TradingDayHelper.GetBusinessDayStart(snapshot.StartDate);
+		var queryEndDate = TradingDayHelper.GetBusinessDayEnd(snapshot.EndDate);
+		var summaryTask = LoadSummaryWithConnectionAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var deliveryChargeTask = LoadDeliveryChargeTotalAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var financialTotalsTask = LoadFinancialTotalsAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var ordersTask = LoadOrdersWithConnectionAsync(queryStartDate, queryEndDate, snapshot.SearchText, sourceFilter, orderTypeFilter);
+		var topItemsTask = LoadTopItemsWithConnectionAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
+		var removalAuditTask = LoadServiceChargeRemovalAuditsAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
 
-		await Task.WhenAll(summaryTask, deliveryChargeTask, ordersTask, topItemsTask);
+		await Task.WhenAll(summaryTask, deliveryChargeTask, financialTotalsTask, ordersTask, topItemsTask, removalAuditTask);
 
 		snapshot.Summary = await summaryTask;
 		snapshot.Summary.DeliveryChargeTotal = await deliveryChargeTask;
+		var financialTotals = await financialTotalsTask;
+		snapshot.Summary.ItemSales = financialTotals.ItemSales;
+		snapshot.Summary.DiscountTotal = financialTotals.Discounts;
+		snapshot.Summary.ServiceChargeTotal = financialTotals.ServiceCharges;
+		snapshot.Summary.RemovedServiceChargeValue = financialTotals.RemovedServiceChargeValue;
+		snapshot.Summary.RemovedServiceChargeCount = financialTotals.RemovedServiceChargeCount;
+		snapshot.Summary.CashTips = financialTotals.CashTips;
+		snapshot.Summary.CardTips = financialTotals.CardTips;
+		snapshot.Summary.RefundTotal = financialTotals.Refunds;
+		snapshot.Summary.FinalMoneyCollected = financialTotals.FinalMoneyCollected;
 		snapshot.Orders = await ordersTask;
 		snapshot.TopItems = await topItemsTask;
+		snapshot.ServiceChargeRemovalAudits = await removalAuditTask;
 
 		return snapshot;
+	}
+
+	private async Task<List<ServiceChargeRemovalAuditRow>> LoadServiceChargeRemovalAuditsAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+		var query = new StringBuilder("""
+			SELECT COALESCE(orders.order_number, orders.order_id) AS order_number,
+			       sc.service_charge_percentage, sc.service_charge_amount,
+			       COALESCE(sc.reason, '') AS reason,
+			       sc.performed_by_name, COALESCE(sc.approved_by_name, '') AS approved_by_name,
+			       sc.event_at
+			FROM order_service_charge_events sc
+			INNER JOIN orders ON orders.id = sc.order_id
+			WHERE sc.event_type = 'removed'
+			  AND sc.event_at >= @startDate AND sc.event_at < @endDate
+			""");
+		AppendOptionalFilters(query, sourceFilter, orderTypeFilter);
+		query.Append(" ORDER BY sc.event_at DESC");
+
+		await using var command = new MySqlCommand(query.ToString(), connection);
+		command.Parameters.AddWithValue("@startDate", startDate);
+		command.Parameters.AddWithValue("@endDate", endDate);
+		AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+		var rows = new List<ServiceChargeRemovalAuditRow>();
+		await using var reader = await command.ExecuteReaderAsync();
+		while (await reader.ReadAsync())
+		{
+			rows.Add(new ServiceChargeRemovalAuditRow
+			{
+				OrderNumber = GetString(reader, "order_number"),
+				Percentage = GetDecimal(reader, "service_charge_percentage"),
+				Amount = GetDecimal(reader, "service_charge_amount"),
+				Reason = GetString(reader, "reason"),
+				PerformedBy = GetString(reader, "performed_by_name"),
+				ApprovedBy = GetString(reader, "approved_by_name"),
+				EventAt = reader.GetDateTime("event_at")
+			});
+		}
+		return rows;
 	}
 
 	private async Task<ReportSummary> LoadSummaryWithConnectionAsync(
@@ -729,6 +900,126 @@ public sealed class DailyReportService
 		return Convert.ToDecimal(await command.ExecuteScalarAsync() ?? 0m, CultureInfo.InvariantCulture);
 	}
 
+	private async Task<ReportFinancialTotals> LoadFinancialTotalsAsync(
+		DateTime startDate,
+		DateTime endDate,
+		ReportSourceFilter sourceFilter,
+		ReportOrderTypeFilter orderTypeFilter)
+	{
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+
+		var result = new ReportFinancialTotals();
+		var orderQuery = new StringBuilder("""
+			SELECT COALESCE(SUM(subtotal_amount), 0) AS item_sales,
+			       COALESCE(SUM(discount_amount), 0) AS discounts,
+			       COALESCE(SUM(CASE WHEN service_charge_status = 'applied' THEN service_charge_amount ELSE 0 END), 0) AS service_charges
+			FROM orders
+			WHERE created_at >= @startDate AND created_at < @endDate
+			  AND local_lifecycle_state = 'paid'
+			""");
+		AppendOptionalFilters(orderQuery, sourceFilter, orderTypeFilter);
+		await using (var command = new MySqlCommand(orderQuery.ToString(), connection))
+		{
+			command.Parameters.AddWithValue("@startDate", startDate);
+			command.Parameters.AddWithValue("@endDate", endDate);
+			AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+			await using var reader = await command.ExecuteReaderAsync();
+			if (await reader.ReadAsync())
+			{
+				result.ItemSales = GetDecimal(reader, "item_sales");
+				result.Discounts = GetDecimal(reader, "discounts");
+				result.ServiceCharges = GetDecimal(reader, "service_charges");
+			}
+		}
+
+		// Service charge is collected when the order is paid, which can be a
+		// different business day from when a table was first opened.
+		var serviceChargeQuery = new StringBuilder("""
+			SELECT COALESCE(SUM(service_charge_amount), 0) AS service_charges
+			FROM orders
+			WHERE local_lifecycle_state = 'paid'
+			  AND service_charge_status = 'applied'
+			  AND COALESCE(paid_at, updated_at, created_at) >= @startDate
+			  AND COALESCE(paid_at, updated_at, created_at) < @endDate
+			""");
+		AppendOptionalFilters(serviceChargeQuery, sourceFilter, orderTypeFilter);
+		await using (var command = new MySqlCommand(serviceChargeQuery.ToString(), connection))
+		{
+			command.Parameters.AddWithValue("@startDate", startDate);
+			command.Parameters.AddWithValue("@endDate", endDate);
+			AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+			result.ServiceCharges = Convert.ToDecimal(
+				await command.ExecuteScalarAsync() ?? 0m,
+				CultureInfo.InvariantCulture);
+		}
+
+		var paymentQuery = new StringBuilder("""
+			SELECT
+			  COALESCE(SUM(CASE WHEN op.payment_method = 'cash' THEN op.tip_amount ELSE 0 END), 0)
+			    - COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cashTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS cash_tips,
+			  COALESCE(SUM(CASE WHEN op.payment_method = 'card' THEN op.tip_amount ELSE 0 END), 0)
+			    - COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cardTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS card_tips,
+			  COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN op.amount ELSE 0 END), 0) AS refunds,
+			  COALESCE(SUM(op.amount), 0) AS money_collected
+			FROM order_payments op
+			INNER JOIN orders ON orders.id = op.order_id
+			WHERE op.status = 'approved'
+			  AND op.created_at >= @startDate AND op.created_at < @endDate
+			""");
+		AppendOptionalFilters(paymentQuery, sourceFilter, orderTypeFilter);
+		await using (var command = new MySqlCommand(paymentQuery.ToString(), connection))
+		{
+			command.Parameters.AddWithValue("@startDate", startDate);
+			command.Parameters.AddWithValue("@endDate", endDate);
+			AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+			await using var reader = await command.ExecuteReaderAsync();
+			if (await reader.ReadAsync())
+			{
+				result.CashTips = GetDecimal(reader, "cash_tips");
+				result.CardTips = GetDecimal(reader, "card_tips");
+				result.Refunds = GetDecimal(reader, "refunds");
+				result.FinalMoneyCollected = GetDecimal(reader, "money_collected");
+			}
+		}
+
+		var removedQuery = new StringBuilder("""
+			SELECT COUNT(*) AS removed_count,
+			       COALESCE(SUM(sc.service_charge_amount), 0) AS removed_value
+			FROM order_service_charge_events sc
+			INNER JOIN orders ON orders.id = sc.order_id
+			WHERE sc.event_type = 'removed' AND sc.event_at >= @startDate AND sc.event_at < @endDate
+			""");
+		AppendOptionalFilters(removedQuery, sourceFilter, orderTypeFilter);
+		await using (var command = new MySqlCommand(removedQuery.ToString(), connection))
+		{
+			command.Parameters.AddWithValue("@startDate", startDate);
+			command.Parameters.AddWithValue("@endDate", endDate);
+			AddOptionalParameters(command, sourceFilter, orderTypeFilter);
+			await using var reader = await command.ExecuteReaderAsync();
+			if (await reader.ReadAsync())
+			{
+				result.RemovedServiceChargeCount = reader.GetInt32("removed_count");
+				result.RemovedServiceChargeValue = GetDecimal(reader, "removed_value");
+			}
+		}
+
+		return result;
+	}
+
+	private sealed class ReportFinancialTotals
+	{
+		public decimal ItemSales { get; set; }
+		public decimal Discounts { get; set; }
+		public decimal ServiceCharges { get; set; }
+		public decimal RemovedServiceChargeValue { get; set; }
+		public int RemovedServiceChargeCount { get; set; }
+		public decimal CashTips { get; set; }
+		public decimal CardTips { get; set; }
+		public decimal Refunds { get; set; }
+		public decimal FinalMoneyCollected { get; set; }
+	}
+
 	private async Task<List<ReportOrderRow>> LoadOrdersWithConnectionAsync(
 		DateTime startDate,
 		DateTime endDate,
@@ -772,7 +1063,12 @@ public sealed class DailyReportService
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
-		snapshot.TopItems = await LoadTopSellItemsAsync(connection, snapshot.StartDate, snapshot.EndDate.AddDays(1), section, snapshot.SearchText);
+		snapshot.TopItems = await LoadTopSellItemsAsync(
+			connection,
+			TradingDayHelper.GetBusinessDayStart(snapshot.StartDate),
+			TradingDayHelper.GetBusinessDayEnd(snapshot.EndDate),
+			section,
+			snapshot.SearchText);
 		snapshot.Summary = new ReportSummary
 		{
 			OrderCount = 0,
@@ -797,7 +1093,8 @@ public sealed class DailyReportService
 			SearchText = searchText?.Trim() ?? string.Empty
 		};
 
-		var queryEndDate = snapshot.EndDate.AddDays(1);
+		var queryStartDate = TradingDayHelper.GetBusinessDayStart(snapshot.StartDate);
+		var queryEndDate = TradingDayHelper.GetBusinessDayEnd(snapshot.EndDate);
 		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 		await connection.OpenAsync();
 
@@ -866,7 +1163,7 @@ public sealed class DailyReportService
 		query.Append(" ORDER BY audit_at DESC, o.created_at DESC LIMIT 500");
 
 		await using var command = new MySqlCommand(query.ToString(), connection);
-		command.Parameters.AddWithValue("@startDate", snapshot.StartDate);
+		command.Parameters.AddWithValue("@startDate", queryStartDate);
 		command.Parameters.AddWithValue("@endDate", queryEndDate);
 		if (!string.IsNullOrWhiteSpace(snapshot.SearchText))
 		{
@@ -930,8 +1227,8 @@ public sealed class DailyReportService
 		builder.AppendLine($"Search,{EscapeCsv(report.SearchText)}");
 		builder.AppendLine();
 		builder.AppendLine("Summary");
-		builder.AppendLine("Order Count,Gross Sales,Net Sales,VAT,Delivery Charges,Average Order Value");
-		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.VatAmount:F2},{report.Summary.DeliveryChargeTotal:F2},{report.Summary.AverageOrderValue:F2}");
+		builder.AppendLine("Order Count,Item Sales,Gross Sales,Net Sales,Discounts,Service Charges,Removed Service Charge Count,Potential Removed Value,Cash Tips,Card Tips,Total Tips,Delivery Fees,Refunds,VAT,Final Money Collected,Average Order Value");
+		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.ItemSales:F2},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.DiscountTotal:F2},{report.Summary.ServiceChargeTotal:F2},{report.Summary.RemovedServiceChargeCount},{report.Summary.RemovedServiceChargeValue:F2},{report.Summary.CashTips:F2},{report.Summary.CardTips:F2},{report.Summary.TotalTips:F2},{report.Summary.DeliveryChargeTotal:F2},{report.Summary.RefundTotal:F2},{report.Summary.VatAmount:F2},{report.Summary.FinalMoneyCollected:F2},{report.Summary.AverageOrderValue:F2}");
 		builder.AppendLine();
 		builder.AppendLine("Orders");
 		builder.AppendLine("Created At,Order Number,Customer,Phone,Source,Type,Status,Items,Gross,Net,VAT");
@@ -951,6 +1248,23 @@ public sealed class DailyReportService
 				order.GrossSales.ToString("F2", CultureInfo.InvariantCulture),
 				order.NetSales.ToString("F2", CultureInfo.InvariantCulture),
 				order.VatAmount.ToString("F2", CultureInfo.InvariantCulture)
+			}));
+		}
+
+		builder.AppendLine();
+		builder.AppendLine("Service Charge Removal Audit");
+		builder.AppendLine("Time,Order,Percentage,Potential Removed Value,Reason,Performed By,Approved By");
+		foreach (var audit in report.ServiceChargeRemovalAudits)
+		{
+			builder.AppendLine(string.Join(',', new[]
+			{
+				EscapeCsv(audit.EventAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+				EscapeCsv(audit.OrderNumber),
+				audit.Percentage.ToString("F2", CultureInfo.InvariantCulture),
+				audit.Amount.ToString("F2", CultureInfo.InvariantCulture),
+				EscapeCsv(audit.Reason),
+				EscapeCsv(audit.PerformedBy),
+				EscapeCsv(audit.ApprovedBy)
 			}));
 		}
 
@@ -1067,6 +1381,18 @@ public sealed class DailyReportService
 		DrawMetricBlock(graphics, "Delivery", $"£{report.Summary.DeliveryChargeTotal:F2}", 20 + ((metricWidth + 8) * 4), y, metricWidth);
 		DrawMetricBlock(graphics, "AOV", $"£{report.Summary.AverageOrderValue:F2}", 20 + ((metricWidth + 8) * 5), y, metricWidth);
 		y += 72;
+		graphics.DrawString(
+			$"Service charges £{report.Summary.ServiceChargeTotal:F2}  |  Removed £{report.Summary.RemovedServiceChargeValue:F2} ({report.Summary.RemovedServiceChargeCount})  |  Cash tips £{report.Summary.CashTips:F2}  |  Card tips £{report.Summary.CardTips:F2}",
+			smallFont,
+			PdfBrushes.Black,
+			new PdfPointF(20, y));
+		y += 16;
+		graphics.DrawString(
+			$"Delivery fees £{report.Summary.DeliveryChargeTotal:F2}  |  Refunds £{Math.Abs(report.Summary.RefundTotal):F2}  |  Final money collected £{report.Summary.FinalMoneyCollected:F2}",
+			smallFont,
+			PdfBrushes.Black,
+			new PdfPointF(20, y));
+		y += 24;
 
 		graphics.DrawString("Top Items", headingFont, PdfBrushes.Black, new PdfPointF(20, y));
 		y += 16;
@@ -1084,6 +1410,19 @@ public sealed class DailyReportService
 			var line = $"{order.CreatedAtDisplay}  |  {order.OrderNumber}  |  {order.CustomerName}  |  {order.OrderMeta}  |  £{order.GrossSales:F2}";
 			graphics.DrawString(line, smallFont, PdfBrushes.Black, new PdfPointF(24, y));
 			y += 12;
+		}
+
+		if (report.ServiceChargeRemovalAudits.Count > 0)
+		{
+			y += 10;
+			graphics.DrawString("Service Charge Removal Audit", headingFont, PdfBrushes.Black, new PdfPointF(20, y));
+			y += 16;
+			foreach (var audit in report.ServiceChargeRemovalAudits.Take(8))
+			{
+				var line = $"{audit.EventAt:dd MMM HH:mm} | {audit.OrderNumber} | £{audit.Amount:F2} | {audit.Reason} | Approved: {audit.ApprovedBy}";
+				graphics.DrawString(line, smallFont, PdfBrushes.Black, new PdfPointF(24, y));
+				y += 12;
+			}
 		}
 
 		await using var stream = File.Create(filePath);
@@ -1557,6 +1896,11 @@ public sealed class DailyReportService
 
 	private async Task EnsureLiveReportViewsAsync()
 	{
+		if (RuntimeSchemaPolicy.IsMigrationManaged)
+		{
+			_viewSchemaReady = true;
+			return;
+		}
 		if (_viewSchemaReady)
 		{
 			return;
@@ -1590,7 +1934,7 @@ public sealed class DailyReportService
 					o.order_number,
 					o.cloud_order_id,
 					o.created_at,
-					DATE(o.created_at) AS business_date,
+					DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date,
 					o.source_channel,
 					o.order_type,
 					o.status,
@@ -1660,7 +2004,7 @@ public sealed class DailyReportService
 					o.order_number,
 					o.cloud_order_id,
 					o.created_at,
-					DATE(o.created_at) AS business_date,
+					DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date,
 					o.source_channel,
 					o.order_type,
 					o.status,

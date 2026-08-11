@@ -388,6 +388,12 @@ public class CloudOrderService
 
     public async Task<bool> ProcessIncomingCloudOrderAsync(CloudOrderResponse cloudOrder, bool notifyUi = true)
     {
+        if (!TryValidateCloudOrder(cloudOrder, out var validationError))
+        {
+            System.Diagnostics.Debug.WriteLine($"Rejected invalid OrderWeb order '{cloudOrder?.OrderNumber}': {validationError}");
+            return false;
+        }
+
         var config = await _databaseService.GetCloudConfigAsync();
         var autoPrintEnabled = config.GetValueOrDefault("auto_print_enabled", "True") == "True";
 
@@ -407,6 +413,16 @@ public class CloudOrderService
             if (await OrderAlreadyExistsAsync(cloudOrder.Id))
             {
                 System.Diagnostics.Debug.WriteLine($"Order {cloudOrder.OrderNumber} ({cloudOrder.Id}) already exists");
+
+                // WebSocket delivery may arrive before the fuller REST payload.
+                // Enrich the saved row instead of allowing the first partial payload
+                // to permanently win the duplicate race.
+                var incomingDetails = await ConvertCloudOrderToLocalAsync(cloudOrder);
+                var enrichment = await _orderService.EnrichCloudOrderAsync(incomingDetails);
+                if (!enrichment.Success)
+                {
+                    System.Diagnostics.Debug.WriteLine($" Cloud enrichment warning for {cloudOrder.OrderNumber}: {enrichment.Message}");
+                }
 
                 if (autoPrintEnabled && !await OrderHasPrintJobsAsync(cloudOrder.Id))
                 {
@@ -498,7 +514,7 @@ public class CloudOrderService
     /// Smart payment method detection with multiple fallbacks
     /// Checks multiple fields from OrderWeb.net to determine the correct payment method
     /// </summary>
-    private string DeterminePaymentMethod(CloudOrderResponse cloudOrder)
+    private string? DeterminePaymentMethod(CloudOrderResponse cloudOrder)
     {
         // Log ALL payment-related fields from OrderWeb.net
         System.Diagnostics.Debug.WriteLine($" PAYMENT DEBUG for {cloudOrder.OrderNumber}:");
@@ -506,11 +522,12 @@ public class CloudOrderService
         System.Diagnostics.Debug.WriteLine($"   PaymentStatus: '{cloudOrder.PaymentStatus}'");
         System.Diagnostics.Debug.WriteLine($"   VoucherCode: '{cloudOrder.VoucherCode}'");
         
-        // Priority 1: Check if voucher/gift card is used
-        if (!string.IsNullOrWhiteSpace(cloudOrder.VoucherCode))
+        // Contract v2 makes the payment method authoritative. A promo code must
+        // never cause an otherwise-card order to be reclassified as gift card.
+        if (cloudOrder.ContractVersion < 2 && !string.IsNullOrWhiteSpace(cloudOrder.VoucherCode))
         {
             System.Diagnostics.Debug.WriteLine($" DETECTED: Gift Card (has voucher code: {cloudOrder.VoucherCode})");
-            return "voucher";
+            return "gift_card";
         }
         
         // Priority 2: Use PaymentMethod if it exists and is not generic
@@ -552,8 +569,8 @@ public class CloudOrderService
         }
         
         // Priority 3: Default fallback
-        System.Diagnostics.Debug.WriteLine($" NO payment info found - defaulting to: cash");
-        return "cash";
+        System.Diagnostics.Debug.WriteLine($" NO payment info found - leaving payment method unconfirmed");
+        return null;
     }
 
     /// <summary>
@@ -565,7 +582,16 @@ public class CloudOrderService
         decimal.TryParse(cloudOrder.Total, out var total);
         decimal.TryParse(cloudOrder.Subtotal, out var subtotal);
         decimal.TryParse(cloudOrder.DeliveryFee, out var deliveryFee);
+        decimal.TryParse(cloudOrder.DiscountAmount, out var discountAmount);
+        decimal.TryParse(cloudOrder.ServiceChargePercentage, out var serviceChargePercentage);
+        decimal.TryParse(cloudOrder.ServiceChargeBasis, out var serviceChargeBasis);
+        decimal.TryParse(cloudOrder.ServiceChargeAmount, out var serviceChargeAmount);
+        decimal.TryParse(cloudOrder.CashTips, out var cashTips);
+        decimal.TryParse(cloudOrder.CardTips, out var cardTips);
         decimal.TryParse(cloudOrder.Tax, out var tax);
+        decimal? amountPaid = decimal.TryParse(cloudOrder.AmountPaid, out var parsedAmountPaid)
+            ? parsedAmountPaid
+            : null;
         
         var localOrder = new Order
         {
@@ -583,7 +609,23 @@ public class CloudOrderService
             // Financial information
             TotalAmount = total,
             SubtotalAmount = subtotal,
+            DiscountAmount = discountAmount,
             DeliveryFee = deliveryFee,
+            ServiceChargePercentage = serviceChargePercentage,
+            ServiceChargeBasis = serviceChargeBasis,
+            ServiceChargeAmount = serviceChargeAmount,
+            ServiceChargeStatus = cloudOrder.ContractVersion >= 2
+                ? cloudOrder.ServiceChargeStatus
+                : "not_configured",
+            ServiceChargeClassification = cloudOrder.ServiceChargeClassification,
+            ServiceChargeRemovalReason = cloudOrder.ServiceChargeRemovalReason,
+            ServiceChargeRemovedByUserId = cloudOrder.ServiceChargeRemovedByUserId,
+            ServiceChargeRemovedByName = cloudOrder.ServiceChargeRemovedByName,
+            ServiceChargeApprovedByUserId = cloudOrder.ServiceChargeApprovedByUserId,
+            ServiceChargeApprovedByName = cloudOrder.ServiceChargeApprovedByName,
+            ServiceChargeRemovedAt = cloudOrder.ServiceChargeRemovedAt,
+            CashTipAmount = cashTips,
+            CardTipAmount = cardTips,
             TaxAmount = tax,
             
             // Order details
@@ -592,6 +634,23 @@ public class CloudOrderService
             
             // PAYMENT METHOD - requested method on arrival; actual method replaces it when POS payment closes.
             PaymentMethod = DeterminePaymentMethod(cloudOrder),
+            PaymentStatusRaw = cloudOrder.PaymentStatus,
+            AmountPaid = amountPaid,
+            PaymentProvider = cloudOrder.PaymentProvider,
+            TransactionId = cloudOrder.PaymentReference,
+            CurrencyCode = string.IsNullOrWhiteSpace(cloudOrder.CurrencyCode) ? "GBP" : cloudOrder.CurrencyCode.Trim().ToUpperInvariant(),
+            VoucherCode = OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card"
+                ? cloudOrder.VoucherCode
+                : null,
+            PromoCode = cloudOrder.PromoCode ??
+                (OnlineOrderPaymentHelper.NormalizeMethod(cloudOrder.PaymentMethod) == "gift_card" ? null : cloudOrder.VoucherCode),
+            GiftCardNumberMasked = NormalizeMaskedGiftCardNumber(cloudOrder.GiftCard?.CardNumberMasked),
+            GiftCardAmountPaid = ParseNullableMoney(cloudOrder.GiftCard?.AmountPaid),
+            GiftCardRemainingBalance = ParseNullableMoney(cloudOrder.GiftCard?.RemainingBalance),
+            LoyaltyPointsEarned = cloudOrder.Loyalty?.PointsEarned ?? 0,
+            LoyaltyPointsRedeemed = cloudOrder.Loyalty?.PointsRedeemed ?? 0,
+            LoyaltyPointsDiscount = ParseNullableMoney(cloudOrder.Loyalty?.PointsDiscount) ?? 0m,
+            LoyaltyBalanceAfter = cloudOrder.Loyalty?.BalanceAfter,
             
             ScheduledTime = cloudOrder.ScheduledTime,
             SpecialInstructions = cloudOrder.SpecialInstructions,
@@ -605,6 +664,7 @@ public class CloudOrderService
             UpdatedAt = DateTime.Now,
             KitchenTime = DateTime.Now, // Send to kitchen immediately
             PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus),
+            OrderData = JsonSerializer.Serialize(cloudOrder),
             
             // Initialize items list
             Items = new List<Models.OrderItem>()
@@ -632,7 +692,8 @@ public class CloudOrderService
                 var localItem = new Models.OrderItem
                 {
                     OrderId = cloudOrder.Id, // Use UUID, not OrderNumber
-                    CloudItemId = cloudItem.Id,
+                    CloudItemId = int.TryParse(cloudItem.Id, out var numericCloudItemId) ? numericCloudItemId : null,
+                    CloudItemExternalId = cloudItem.Id,
                     MenuItemId = cloudItem.MenuItemId,
                     VariantId = variantId,
                     VariantName = variantName,
@@ -771,6 +832,7 @@ public class CloudOrderService
     {
         return new CloudOrderResponse
         {
+            ContractVersion = 2,
             Id = !string.IsNullOrWhiteSpace(order.CloudOrderId) ? order.CloudOrderId! : order.OrderId,
             OrderNumber = order.OrderNumber ?? order.OrderId,
             CustomerName = order.CustomerName,
@@ -780,12 +842,49 @@ public class CloudOrderService
             Total = order.TotalAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
             Subtotal = order.SubtotalAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
             DeliveryFee = order.DeliveryFee.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            DiscountAmount = order.DiscountAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ServiceChargePercentage = order.ServiceChargePercentage.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ServiceChargeBasis = order.ServiceChargeBasis.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ServiceChargeAmount = order.ServiceChargeAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ServiceChargeStatus = order.ServiceChargeStatus,
+            ServiceChargeClassification = order.ServiceChargeClassification,
+            ServiceChargeRemovalReason = order.ServiceChargeRemovalReason,
+            ServiceChargeRemovedByUserId = order.ServiceChargeRemovedByUserId,
+            ServiceChargeRemovedByName = order.ServiceChargeRemovedByName,
+            ServiceChargeApprovedByUserId = order.ServiceChargeApprovedByUserId,
+            ServiceChargeApprovedByName = order.ServiceChargeApprovedByName,
+            ServiceChargeRemovedAt = order.ServiceChargeRemovedAt,
+            CashTips = order.CashTipAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            CardTips = order.CardTipAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
             Tax = order.TaxAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
             OrderType = order.OrderType,
             PaymentMethod = order.PaymentMethod,
-            PaymentStatus = order.LocalLifecycleState == LocalLifecycleState.Paid
-                || order.PaidAt.HasValue
-                || !OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
+            PaymentProvider = order.PaymentProvider,
+            PaymentReference = order.TransactionId,
+            AmountPaid = order.AmountPaid?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            CurrencyCode = order.CurrencyCode,
+            VoucherCode = order.VoucherCode,
+            PromoCode = order.PromoCode,
+            GiftCard = HasGiftCardSummary(order)
+                ? new CloudGiftCardSummary
+                {
+                    CardNumberMasked = order.GiftCardNumberMasked,
+                    AmountPaid = order.GiftCardAmountPaid?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+                    RemainingBalance = order.GiftCardRemainingBalance?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                }
+                : null,
+            Loyalty = HasLoyaltySummary(order)
+                ? new CloudLoyaltySummary
+                {
+                    PointsEarned = order.LoyaltyPointsEarned,
+                    PointsRedeemed = order.LoyaltyPointsRedeemed,
+                    PointsDiscount = order.LoyaltyPointsDiscount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+                    BalanceAfter = order.LoyaltyBalanceAfter
+                }
+                : null,
+            PaymentStatus = !string.IsNullOrWhiteSpace(order.PaymentStatusRaw)
+                ? order.PaymentStatusRaw
+                : order.LocalLifecycleState == LocalLifecycleState.Paid || order.PaidAt.HasValue
                     ? "paid"
                     : "pending",
             SpecialInstructions = order.SpecialInstructions,
@@ -793,7 +892,7 @@ public class CloudOrderService
             CreatedAt = order.CreatedAt,
             Items = order.Items.Select(item => new CloudOrderItem
             {
-                Id = item.CloudItemId ?? item.Id,
+                Id = item.CloudItemExternalId ?? (item.CloudItemId ?? item.Id).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 MenuItemId = item.MenuItemId,
                 VariantId = item.VariantId,
                 VariantName = item.VariantName,
@@ -811,6 +910,85 @@ public class CloudOrderService
             }).ToList()
         };
     }
+
+    private static decimal? ParseNullableMoney(string? value)
+    {
+        return decimal.TryParse(
+            value,
+            System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var amount)
+            ? amount
+            : null;
+    }
+
+    private static bool TryValidateCloudOrder(CloudOrderResponse? order, out string error)
+    {
+        error = string.Empty;
+        if (order == null) { error = "Order object missing."; return false; }
+        if (string.IsNullOrWhiteSpace(order.Id)) { error = "id is required."; return false; }
+        if (order.ContractVersion < 2) return true;
+        if (order.ContractVersion != 2) { error = $"Unsupported contract_version {order.ContractVersion}."; return false; }
+        if (string.IsNullOrWhiteSpace(order.OrderNumber)) { error = "order_number is required."; return false; }
+        if (string.IsNullOrWhiteSpace(order.OrderType)) { error = "order_type is required."; return false; }
+        if (string.IsNullOrWhiteSpace(order.PaymentMethod)) { error = "payment_method is required."; return false; }
+        if (string.IsNullOrWhiteSpace(order.PaymentStatus)) { error = "payment_status is required."; return false; }
+        if (string.IsNullOrWhiteSpace(order.CurrencyCode) || order.CurrencyCode.Trim().Length != 3)
+        {
+            error = "currency must be a three-letter code.";
+            return false;
+        }
+
+        foreach (var (name, value) in new[]
+                 {
+                     ("subtotal", order.Subtotal), ("discount_amount", order.DiscountAmount),
+                     ("delivery_fee", order.DeliveryFee), ("service_charge_percentage", order.ServiceChargePercentage),
+                     ("service_charge_basis", order.ServiceChargeBasis), ("service_charge_amount", order.ServiceChargeAmount),
+                     ("cash_tips", order.CashTips), ("card_tips", order.CardTips), ("tax", order.Tax),
+                     ("total", order.Total), ("amount_paid", order.AmountPaid ?? string.Empty)
+                 })
+        {
+            if (!decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var amount)
+                || amount < 0)
+            {
+                error = $"{name} must be a non-negative decimal string.";
+                return false;
+            }
+        }
+
+        if (order.Items == null || order.Items.Count == 0) { error = "items must contain at least one item."; return false; }
+        if (order.Items.Any(item => string.IsNullOrWhiteSpace(item.Id)
+                                    || string.IsNullOrWhiteSpace(item.Name)
+                                    || item.Quantity <= 0
+                                    || !item.Price.HasValue
+                                    || item.Price.Value < 0))
+        {
+            error = "Each item requires id, name, positive quantity, and non-negative price.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? NormalizeMaskedGiftCardNumber(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= 8 && trimmed.Contains('*')
+            ? trimmed
+            : OnlineOrderPaymentHelper.MaskVoucherCode(trimmed);
+    }
+
+    private static bool HasGiftCardSummary(Order order) =>
+        !string.IsNullOrWhiteSpace(order.GiftCardNumberMasked)
+        || order.GiftCardAmountPaid.HasValue
+        || order.GiftCardRemainingBalance.HasValue;
+
+    private static bool HasLoyaltySummary(Order order) =>
+        order.LoyaltyPointsEarned != 0
+        || order.LoyaltyPointsRedeemed != 0
+        || order.LoyaltyPointsDiscount != 0
+        || order.LoyaltyBalanceAfter.HasValue;
 
     /// <summary>
     /// Send confirmation to cloud that order was received
@@ -1921,6 +2099,7 @@ public class CloudOrderService
 
     private static async Task EnsureOrderSettlementSchemaAsync(MySqlConnection connection)
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         try
         {
             using var command = connection.CreateCommand();
@@ -1951,11 +2130,30 @@ public class CloudOrderService
     {
         var payload = new Dictionary<string, object>
         {
+            ["contract_version"] = 2,
             ["tenant"] = tenant,
             ["order_id"] = orderWebOrderId,
             ["status"] = status,
             ["device_id"] = deviceId,
             ["idempotency_key"] = idempotencyKey
+        };
+
+        payload["financials"] = new Dictionary<string, object?>
+        {
+            ["service_charge_percentage"] = order.ServiceChargePercentage,
+            ["service_charge_basis"] = order.ServiceChargeBasis,
+            ["service_charge_amount"] = order.ServiceChargeAmount,
+            ["service_charge_status"] = order.ServiceChargeStatus,
+            ["service_charge_classification"] = order.ServiceChargeClassification,
+            ["service_charge_removal_reason"] = order.ServiceChargeRemovalReason,
+            ["service_charge_removed_by_user_id"] = order.ServiceChargeRemovedByUserId,
+            ["service_charge_removed_by"] = order.ServiceChargeRemovedByName,
+            ["service_charge_approved_by_user_id"] = order.ServiceChargeApprovedByUserId,
+            ["service_charge_approved_by"] = order.ServiceChargeApprovedByName,
+            ["service_charge_removed_at"] = order.ServiceChargeRemovedAt?.ToUniversalTime().ToString("O"),
+            ["cash_tips"] = order.CashTipAmount,
+            ["card_tips"] = order.CardTipAmount,
+            ["delivery_fee"] = order.DeliveryFee
         };
 
         if (status == "paid")
@@ -2406,11 +2604,27 @@ public class CloudOrderService
             
             TotalAmount = (decimal)(dto.Payment?.Total ?? 0),
             SubtotalAmount = (decimal)(dto.Payment?.Subtotal ?? 0),
+            DiscountAmount = (decimal)(dto.Payment?.DiscountAmount ?? 0),
+            DeliveryFee = (decimal)(dto.Payment?.DeliveryFee ?? 0),
+            ServiceChargePercentage = (decimal)(dto.Payment?.ServiceChargePercentage ?? 0),
+            ServiceChargeBasis = (decimal)(dto.Payment?.ServiceChargeBasis ?? 0),
+            ServiceChargeAmount = (decimal)(dto.Payment?.ServiceChargeAmount ?? 0),
+            ServiceChargeStatus = dto.Payment?.ServiceChargeStatus ?? "not_configured",
+            CashTipAmount = (decimal)(dto.Payment?.CashTips ?? 0),
+            CardTipAmount = (decimal)(dto.Payment?.CardTips ?? 0),
             TaxAmount = (decimal)(dto.Payment?.Tax ?? 0),
             
             OrderType = dto.OrderType ?? "online",
             SourceChannel = "web",
-            PaymentMethod = OnlineOrderPaymentHelper.GetStorageMethod(dto.Payment?.Method ?? "card"),
+            PaymentMethod = string.IsNullOrWhiteSpace(dto.Payment?.Method)
+                ? null
+                : OnlineOrderPaymentHelper.GetStorageMethod(dto.Payment.Method),
+            PaymentStatusRaw = dto.Payment?.Status,
+            AmountPaid = dto.Payment?.AmountPaid is double amountPaid ? (decimal)amountPaid : null,
+            PaymentProvider = dto.Payment?.Provider,
+            TransactionId = dto.Payment?.TransactionId ?? dto.Payment?.Reference,
+            CurrencyCode = string.IsNullOrWhiteSpace(dto.Payment?.Currency) ? "GBP" : dto.Payment.Currency.Trim().ToUpperInvariant(),
+            VoucherCode = dto.Payment?.VoucherCode,
             PaymentStatus = OnlineOrderPaymentHelper.ToPaymentStatus(dto.Payment?.Method, dto.Payment?.Status),
             SpecialInstructions = dto.SpecialInstructions,
             ScheduledTime = DateTime.TryParse(dto.ScheduledFor, out var scheduledTime) ? scheduledTime : null,
@@ -2420,6 +2634,7 @@ public class CloudOrderService
             IsOpen = true,
             SyncStatus = Models.SyncStatus.Synced,
             KitchenTime = DateTime.Now,
+            OrderData = JsonSerializer.Serialize(dto),
             
             Items = new List<Models.OrderItem>()
         };

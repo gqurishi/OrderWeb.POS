@@ -53,7 +53,7 @@ If a Mother config already exists, the unified setup treats it as a Mother updat
 3. If config exists, run a non-blocking `check-version`
 4. Launch app -> Child pairing in Terminal Setup
 5. Enter Mother IP + pairing code created from Terminal Health on the Mother PC
-6. App blocks login if the Mother DB schema is below version `26` (`ChildSchemaVersionGateService`)
+6. App blocks login if the Mother DB schema is below version `27` (`ChildSchemaVersionGateService`)
 
 ## Build (Windows)
 
@@ -70,7 +70,20 @@ powershell -ExecutionPolicy Bypass -File Installer\build-installer-inputs.ps1
 powershell -ExecutionPolicy Bypass -File Installer\compile-installers.ps1
 ```
 
-Output: `Installer\Output\OrderWebPOS-Setup-1.0.0.exe`
+Output: `Installer\Output\OrderWebPOS-Setup-1.0.1.exe`
+
+Production installers must be Authenticode-signed and timestamped. Configure the
+signing command in the deployment environment (never commit a PFX or its password):
+
+```powershell
+$env:ORDERWEB_SIGNTOOL_COMMAND = 'signtool.exe sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /sha1 <certificate-thumbprint> $f'
+powershell -ExecutionPolicy Bypass -File Installer\compile-installers.ps1
+```
+
+The compiler signs both setup and uninstaller when this variable is supplied.
+Verify the finished file with `Get-AuthenticodeSignature` before distribution.
+Unsigned local validation builds require the explicit `-AllowUnsigned` switch and
+must never be distributed to a customer till.
 
 To also compile the legacy split installers:
 

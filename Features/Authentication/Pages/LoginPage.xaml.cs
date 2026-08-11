@@ -15,13 +15,14 @@ public partial class LoginPage : ContentPage
     private bool _terminalConnectionOk;
     private Task<TerminalConnectionTestResult>? _connectionCheckTask;
     private DateTime _lastConnectionCheckUtc = DateTime.MinValue;
+    private bool _isLoginInProgress;
     private static readonly TimeSpan ConnectionCheckCache = TimeSpan.FromSeconds(45);
 
     public LoginPage()
     {
         InitializeComponent();
         _authService = AuthenticationService.Instance;
-        _businessService = new BusinessSettingsService();
+        _businessService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
         StartAuthCacheWarmup();
         
         // Start time updates
@@ -58,7 +59,7 @@ public partial class LoginPage : ContentPage
 
         if (!TerminalConfigurationService.IsConfigured)
         {
-            await Shell.Current.GoToAsync("//terminalsetup", false);
+            await NavigationCoordinator.Shared.NavigateShellAsync("terminalsetup", animated: false);
             return;
         }
 
@@ -86,8 +87,12 @@ public partial class LoginPage : ContentPage
 
     private async Task PerformLoginAsync()
     {
-        // Prevent multiple simultaneous login attempts
-        if (LoadingIndicator.IsVisible) return;
+        if (_isLoginInProgress)
+        {
+            return;
+        }
+
+        var pin = PasswordEntry.Text?.Trim() ?? string.Empty;
 
         // Reset error message
         ErrorFrame.IsVisible = false;
@@ -95,46 +100,47 @@ public partial class LoginPage : ContentPage
         LoginStatusLabel.IsVisible = false;
 
         // Validate PIN (4 digits)
-        if (string.IsNullOrWhiteSpace(PasswordEntry.Text) || PasswordEntry.Text.Length != 4 || !PasswordEntry.Text.All(char.IsDigit))
+        if (pin.Length != 4 || !pin.All(char.IsDigit))
         {
             ShowError("Please enter a 4-digit PIN.");
             return;
         }
 
+        _isLoginInProgress = true;
         SetLoadingState(true, "Logging in...");
         await Task.Yield();
 
-        if (!TerminalConfigurationService.IsConfigured)
+        try
         {
-            SetLoadingState(false);
-            await Shell.Current.GoToAsync("//terminalsetup", false);
-            return;
-        }
-
-        if (TerminalConfigurationService.IsChildTerminal)
-        {
-            var connectionResult = await TerminalConnectionTestService.TestAsync();
-            if (!connectionResult.Success)
+            if (!TerminalConfigurationService.IsConfigured)
             {
-                SetLoadingState(false);
-                ShowChildTerminalStatus(connectionResult.Message);
-                ShowError(connectionResult.Message);
+                await NavigationCoordinator.Shared.NavigateShellAsync("terminalsetup", animated: false);
                 return;
             }
 
-            Preferences.Default.Remove("child_schema_gate_message");
-        }
+            if (TerminalConfigurationService.IsChildTerminal)
+            {
+                var connectionResult = _connectionCheckTask != null
+                    ? await _connectionCheckTask
+                    : await RefreshTerminalConnectionStatusAsync();
+                if (!connectionResult.Success)
+                {
+                    ShowChildTerminalStatus(connectionResult.Message);
+                    ShowError(connectionResult.Message);
+                    return;
+                }
 
-        try
-        {
+                Preferences.Default.Remove("child_schema_gate_message");
+            }
+
             // Use PIN as both username and password for authentication
-            var pin = PasswordEntry.Text.Trim();
             var result = await _authService.LoginAsync(pin, pin);
 
             if (result.Success && result.User != null)
             {
                 if (result.User.Role == UserRole.Staff)
                 {
+                    await _authService.LogoutAsync();
                     ShowError("Staff PIN is for Clock In/Out only.");
                     ClearPIN();
                     return;
@@ -148,27 +154,23 @@ public partial class LoginPage : ContentPage
                 // Navigate to appropriate dashboard based on user role
                 try
                 {
-                    // No animation for a faster PIN-to-dashboard transition.
-                    await Shell.Current.GoToAsync(navigationRoute, false);
+                    // Never leave an accepted PIN on the reusable login page.
+                    ClearPIN();
+                    if (!await NavigateAfterLoginAsync(navigationRoute))
+                    {
+                        throw new InvalidOperationException("The dashboard navigation did not complete.");
+                    }
                 }
                 catch (Exception navEx)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Navigation error: {navEx.Message}");
-                    // Fallback: Try direct navigation
+                    AppDiagnostics.Log($"[Login] Dashboard navigation failed after successful PIN: {navEx}");
                     if (Application.Current != null)
                     {
-                        if (result.User.Role == UserRole.User)
-                        {
-                            // For User role, create a simple shell with just user dashboard
-                            var userShell = new AppShell();
-                            Application.Current.MainPage = userShell;
-                            await userShell.GoToAsync("//userdashboard");
-                        }
-                        else
-                        {
-                            // For Admin/Manager, use full shell
-                            Application.Current.MainPage = new AppShell();
-                        }
+                        // A fresh shell is the final recovery path. Always navigate
+                        // every role explicitly; the shell's default page is login.
+                        var recoveryShell = new AppShell();
+                        Application.Current.MainPage = recoveryShell;
+                        await recoveryShell.GoToAsync(navigationRoute, false);
                     }
                 }
             }
@@ -186,8 +188,38 @@ public partial class LoginPage : ContentPage
         }
         finally
         {
+            _isLoginInProgress = false;
             SetLoadingState(false);
         }
+    }
+
+    private static async Task<bool> NavigateAfterLoginAsync(string navigationRoute)
+    {
+        // Logout/startup navigation can still be completing when the fourth PIN
+        // digit is tapped. Wait briefly for that shared transition instead of
+        // silently dropping the authenticated dashboard navigation.
+        for (var attempt = 0; attempt < 20 && NavigationCoordinator.Shared.IsNavigating; attempt++)
+        {
+            await Task.Delay(50);
+        }
+
+        var navigated = await NavigationCoordinator.Shared.NavigateShellAsync(navigationRoute, animated: false);
+        if (navigated)
+        {
+            return true;
+        }
+
+        var expectedRoute = navigationRoute.Trim('/');
+        var currentLocation = Shell.Current?.CurrentState?.Location?.OriginalString ?? string.Empty;
+        if (currentLocation.Contains(expectedRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // A navigation rejected as busy gets one bounded retry. Authentication
+        // has already succeeded, so the user must not be asked for the PIN again.
+        await Task.Delay(150);
+        return await NavigationCoordinator.Shared.NavigateShellAsync(navigationRoute, animated: false);
     }
 
     private void ShowError(string message)
@@ -217,11 +249,20 @@ public partial class LoginPage : ContentPage
     {
         base.OnAppearing();
 
+        _isLoginInProgress = false;
+        SetLoadingState(false);
+        ClearPIN();
+
+        if (_timeTimer == null)
+        {
+            StartTimeUpdates();
+        }
+
         if (TerminalConfigurationService.IsConfigured &&
             TerminalConfigurationService.IsMotherTerminal &&
             !await _authService.HasAnyUserAsync())
         {
-            await Shell.Current.GoToAsync("//initialadminsetup", false);
+            await NavigationCoordinator.Shared.NavigateShellAsync("initialadminsetup", animated: false);
             return;
         }
 

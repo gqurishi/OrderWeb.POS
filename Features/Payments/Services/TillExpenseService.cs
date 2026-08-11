@@ -19,6 +19,7 @@ public sealed class TillExpenseService
 
     public async Task EnsureSchemaAsync()
     {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
         if (_schemaEnsured)
         {
             return;

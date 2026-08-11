@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using MySqlConnector;
 using MyFirstMauiApp.Models.FoodMenu;
+using POS_in_NET.Services;
 
 namespace MyFirstMauiApp.Services
 {
@@ -22,6 +23,7 @@ namespace MyFirstMauiApp.Services
 
         private async Task EnsureSchemaAsync(MySqlConnection connection)
         {
+            if (RuntimeSchemaPolicy.IsMigrationManaged) return;
             if (_schemaEnsured)
             {
                 return;

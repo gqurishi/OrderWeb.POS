@@ -20,8 +20,8 @@ namespace POS_in_NET.Pages
             // Set the page title in the TopBar
             TopBar.SetPageTitle("Restaurant");
             
-            _floorService = new FloorService();
-            _tableService = new RestaurantTableService();
+            _floorService = ServiceHelper.GetService<FloorService>() ?? new FloorService();
+            _tableService = ServiceHelper.GetService<RestaurantTableService>() ?? new RestaurantTableService();
         }
 
         protected override async void OnAppearing()
@@ -62,7 +62,6 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested += OnRefreshRequested;
             AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
@@ -74,15 +73,8 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
             AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
-        }
-
-        private async void OnRefreshRequested(object? sender, EventArgs e)
-        {
-            await LoadRestaurantStatsAsync();
-            UpdateConnectionStatus();
         }
 
         private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
@@ -114,7 +106,7 @@ namespace POS_in_NET.Pages
             try
             {
                 // Navigate to Floor Management page
-                await Shell.Current.GoToAsync("//floor");
+                await NavigationCoordinator.Shared.NavigateShellAsync("floor", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -129,7 +121,7 @@ namespace POS_in_NET.Pages
             try
             {
                 // Navigate to Table Management page
-                await Shell.Current.GoToAsync("//table");
+                await NavigationCoordinator.Shared.NavigateShellAsync("table", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -146,7 +138,7 @@ namespace POS_in_NET.Pages
                 ClearShellDetailStacks();
 
                 // Navigate to Visual Table Layout page
-                await Shell.Current.GoToAsync("//visuallayout");
+                await NavigationCoordinator.Shared.NavigateShellAsync("visuallayout", source: sender as VisualElement);
             }
             catch (Exception ex)
             {
@@ -194,13 +186,13 @@ namespace POS_in_NET.Pages
                 }
 
                 // Navigate to login page immediately
-                await Shell.Current.GoToAsync("//login");
+                await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($" Logout error: {ex.Message}");
                 // Still navigate to login even if logout service fails
-                await Shell.Current.GoToAsync("//login");
+                await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
             }
         }
 

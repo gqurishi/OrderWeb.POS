@@ -1,4 +1,5 @@
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System.Linq;
 
 namespace POS_in_NET.Pages;
@@ -9,7 +10,9 @@ public partial class ManagerDashboardPage : ContentPage
     private readonly RoleAccessService _roleAccessService;
     private readonly InactivityService _inactivityService;
     private readonly BusinessSettingsService _businessSettingsService;
-    private IDispatcherTimer _timer;
+    private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
+    private readonly NavigationCoordinator _navigationCoordinator;
+    private IDispatcherTimer? _timer;
 
     public ManagerDashboardPage()
     {
@@ -17,7 +20,10 @@ public partial class ManagerDashboardPage : ContentPage
         _authService = AuthenticationService.Instance;
         _roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         _inactivityService = ServiceHelper.GetService<InactivityService>() ?? new InactivityService(_authService, _roleAccessService);
-        _businessSettingsService = new BusinessSettingsService();
+        _businessSettingsService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+        _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
+        _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+            ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), _authService);
     }
 
     protected override async void OnAppearing()
@@ -32,14 +38,39 @@ public partial class ManagerDashboardPage : ContentPage
         if (!_roleAccessService.IsManagerOrAdmin(user?.Role))
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access Manager Dashboard.");
-            await Shell.Current.GoToAsync($"//{_roleAccessService.ResolveDashboardRoute(user?.Role)}");
+            await _navigationCoordinator.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(user?.Role));
             return;
         }
 
-        await LoadBusinessNameAsync();
-
         StartTimeUpdates();
         OnPageSizeChanged(this, null);
+        await Task.WhenAll(LoadBusinessNameAsync(), RefreshOrderServiceButtonsAsync());
+    }
+
+    private async Task RefreshOrderServiceButtonsAsync()
+    {
+        try
+        {
+            var settings = await _orderServiceAvailabilityService.GetAsync();
+            RestaurantServiceButton.IsVisible = settings.TableEnabled;
+            CollectionServiceButton.IsVisible = settings.CollectionEnabled;
+            DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
+            ArrangeDashboardTiles();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Dashboard service availability error: {ex.Message}");
+        }
+    }
+
+    private void ArrangeDashboardTiles()
+    {
+        DashboardTileLayoutHelper.Arrange(
+            ButtonGrid,
+            RestaurantServiceButton,
+            DeliveryServiceButton,
+            CollectionServiceButton,
+            LiveOrderServiceButton);
     }
 
     private async Task LoadBusinessNameAsync()
@@ -72,8 +103,9 @@ public partial class ManagerDashboardPage : ContentPage
 
     private void StartTimeUpdates()
     {
+        _timer?.Stop();
         _timer = Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromSeconds(1);
+        _timer.Interval = TimeSpan.FromMinutes(1);
         _timer.Tick += (s, e) =>
         {
             DateLabel.Text = DateTime.Now.ToString("dddd, MMMM d, yyyy");
@@ -183,8 +215,11 @@ public partial class ManagerDashboardPage : ContentPage
             var grid = this.FindByName<Grid>("ButtonGrid");
             if (grid != null)
             {
-                grid.RowSpacing = 38 * scaleFactor;
-                grid.ColumnSpacing = 80 * scaleFactor;
+                TabletLayoutHelper.ApplyDashboardGrid(
+                    grid,
+                    new View[] { RestaurantServiceButton, DeliveryServiceButton, CollectionServiceButton, LiveOrderServiceButton },
+                    screenWidth,
+                    screenHeight);
             }
 
             var mainStack = this.FindByName<StackLayout>("MainStackLayout");
@@ -202,13 +237,20 @@ public partial class ManagerDashboardPage : ContentPage
         }
     }
 
-    private async Task NavigateToAsync(string route, bool isModal = false)
+    private async Task NavigateToAsync(string route, bool isModal = false, VisualElement? source = null)
     {
         try
         {
             _inactivityService.ResetActivity();
 
             var resolvedRoute = _roleAccessService.ResolveRouteForRole(_authService.CurrentUser?.Role, route);
+            await _orderServiceAvailabilityService.GetAsync();
+            if (!_orderServiceAvailabilityService.IsRouteEnabled(resolvedRoute))
+            {
+                await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled by the Administrator.");
+                return;
+            }
+
             if (!_roleAccessService.CanAccessRoute(_authService.CurrentUser?.Role, resolvedRoute))
             {
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this module.");
@@ -217,7 +259,7 @@ public partial class ManagerDashboardPage : ContentPage
 
             if (isModal)
             {
-                await Shell.Current.GoToAsync(resolvedRoute);
+                await _navigationCoordinator.NavigateTemporaryRouteAsync(resolvedRoute, source: source);
             }
             else
             {
@@ -226,7 +268,7 @@ public partial class ManagerDashboardPage : ContentPage
                     ClearShellDetailStacks();
                 }
 
-                await Shell.Current.GoToAsync($"//{resolvedRoute}", false);
+                await _navigationCoordinator.NavigateShellAsync(resolvedRoute, animated: false, source: source);
             }
         }
         catch (Exception ex)
@@ -235,10 +277,10 @@ public partial class ManagerDashboardPage : ContentPage
         }
     }
 
-    private async void OnRestaurantClicked(object sender, EventArgs e) => await NavigateToAsync("visuallayout");
-    private async void OnCollectionClicked(object sender, EventArgs e) => await NavigateToAsync("collection", isModal: true);
-    private async void OnDeliveryClicked(object sender, EventArgs e) => await NavigateToAsync("delivery", isModal: true);
-    private async void OnLiveOrderClicked(object sender, EventArgs e) => await NavigateToAsync("liveorder");
+    private async void OnRestaurantClicked(object sender, EventArgs e) => await NavigateToAsync("visuallayout", source: sender as VisualElement);
+    private async void OnCollectionClicked(object sender, EventArgs e) => await NavigateToAsync("collection", isModal: true, source: sender as VisualElement);
+    private async void OnDeliveryClicked(object sender, EventArgs e) => await NavigateToAsync("delivery", isModal: true, source: sender as VisualElement);
+    private async void OnLiveOrderClicked(object sender, EventArgs e) => await NavigateToAsync("liveorder", source: sender as VisualElement);
     private async void OnWebOrdersClicked(object sender, EventArgs e) => await NavigateToAsync("weborders");
     private async void OnGiftCardsClicked(object sender, EventArgs e) => await NavigateToAsync("giftcards");
     private async void OnLoyaltyClicked(object sender, EventArgs e) => await NavigateToAsync("loyalty");
@@ -259,27 +301,7 @@ public partial class ManagerDashboardPage : ContentPage
 
     private static void ClearShellDetailStacks()
     {
-        if (Shell.Current is not Shell shell)
-        {
-            return;
-        }
-
-        foreach (var shellItem in shell.Items)
-        {
-            foreach (var shellSection in shellItem.Items)
-            {
-                var nav = shellSection.Navigation;
-                if (nav?.NavigationStack == null || nav.NavigationStack.Count <= 1)
-                {
-                    continue;
-                }
-
-                foreach (var page in nav.NavigationStack.Skip(1).ToList())
-                {
-                    nav.RemovePage(page);
-                }
-            }
-        }
+        NavigationCoordinator.PruneTemporaryPages();
     }
 
     private async void OnLogoutClicked(object sender, EventArgs e)
@@ -287,6 +309,6 @@ public partial class ManagerDashboardPage : ContentPage
         _inactivityService.ResetActivity();
         _timer?.Stop();
         await _authService.LogoutAsync();
-        await Shell.Current.GoToAsync("//login");
+        await _navigationCoordinator.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
     }
 }

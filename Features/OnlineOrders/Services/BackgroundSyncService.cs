@@ -17,9 +17,16 @@ public class BackgroundSyncService : IDisposable
     public event EventHandler<string>? StatusTransitionProcessed;
 
     public BackgroundSyncService()
+        : this(
+            ServiceHelper.GetService<OnlineOrderApiService>() ?? new OnlineOrderApiService(),
+            ServiceHelper.GetService<OrderService>() ?? new OrderService())
     {
-        _apiService = new OnlineOrderApiService();
-        _orderService = new OrderService();
+    }
+
+    public BackgroundSyncService(OnlineOrderApiService apiService, OrderService orderService)
+    {
+        _apiService = apiService;
+        _orderService = orderService;
     }
 
     public async Task<bool> InitializeAsync()

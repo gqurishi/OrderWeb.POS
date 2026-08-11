@@ -26,7 +26,7 @@ namespace POS_in_NET.Pages
             
             _floors = new ObservableCollection<Floor>();
             FloorsCollectionView.ItemsSource = _floors;
-            _floorService = new FloorService();
+            _floorService = ServiceHelper.GetService<FloorService>() ?? new FloorService();
         }
 
         protected override void OnAppearing()
@@ -49,7 +49,6 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested += OnRefreshRequested;
             AppDataRefreshService.DataChanged += OnAppDataChanged;
             _isSubscribedToRefreshEvents = true;
         }
@@ -61,14 +60,8 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
             AppDataRefreshService.DataChanged -= OnAppDataChanged;
             _isSubscribedToRefreshEvents = false;
-        }
-
-        private async void OnRefreshRequested(object? sender, EventArgs e)
-        {
-            await RefreshFloorsIfReadyAsync();
         }
 
         private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)
@@ -121,21 +114,8 @@ namespace POS_in_NET.Pages
                 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    _floors.Clear();
-                    
-                    if (floors.Count > 0)
-                    {
-                        foreach (var floor in floors)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"    Adding floor: {floor.Name} (ID: {floor.Id}, Tables: {floor.TableCount})");
-                            _floors.Add(floor);
-                        }
-                        System.Diagnostics.Debug.WriteLine($" Successfully added {_floors.Count} floors to UI");
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine("Info: No floors found in database - empty state will be shown");
-                    }
+                    _floors = new ObservableCollection<Floor>(floors);
+                    FloorsCollectionView.ItemsSource = _floors;
                 });
                 
                 System.Diagnostics.Debug.WriteLine($" LoadFloorsAsync COMPLETE");

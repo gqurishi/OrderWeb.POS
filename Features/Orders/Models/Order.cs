@@ -26,6 +26,19 @@ public class Order
     public decimal SubtotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
     public decimal DeliveryFee { get; set; }
+    public decimal ServiceChargePercentage { get; set; }
+    public decimal ServiceChargeBasis { get; set; }
+    public decimal ServiceChargeAmount { get; set; }
+    public string ServiceChargeStatus { get; set; } = "not_configured";
+    public string? ServiceChargeClassification { get; set; }
+    public string? ServiceChargeRemovalReason { get; set; }
+    public int? ServiceChargeRemovedByUserId { get; set; }
+    public string? ServiceChargeRemovedByName { get; set; }
+    public int? ServiceChargeApprovedByUserId { get; set; }
+    public string? ServiceChargeApprovedByName { get; set; }
+    public DateTime? ServiceChargeRemovedAt { get; set; }
+    public decimal CashTipAmount { get; set; }
+    public decimal CardTipAmount { get; set; }
     public decimal TaxAmount { get; set; }
     
     // Order details
@@ -33,6 +46,20 @@ public class Order
     public string SourceChannel { get; set; } = "local"; // local/web
     public int? TableSessionId { get; set; }
     public string? PaymentMethod { get; set; }
+    public string? PaymentStatusRaw { get; set; }
+    public decimal? AmountPaid { get; set; }
+    public string? PaymentProvider { get; set; }
+    public string? TransactionId { get; set; }
+    public string? CurrencyCode { get; set; }
+    public string? VoucherCode { get; set; }
+    public string? PromoCode { get; set; }
+    public string? GiftCardNumberMasked { get; set; }
+    public decimal? GiftCardAmountPaid { get; set; }
+    public decimal? GiftCardRemainingBalance { get; set; }
+    public int LoyaltyPointsEarned { get; set; }
+    public int LoyaltyPointsRedeemed { get; set; }
+    public decimal LoyaltyPointsDiscount { get; set; }
+    public int? LoyaltyBalanceAfter { get; set; }
     public DateTime? ScheduledTime { get; set; }
     public string? SpecialInstructions { get; set; }
 
@@ -136,8 +163,6 @@ public class Order
     
     // Payment information
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Pending;
-    public string? TransactionId { get; set; }
-    
     // Print tracking (NEW for acknowledgment system)
     public string PrintStatus { get; set; } = "pending"; // pending, sent_to_pos, printing, printed, failed
     public DateTime? PrintedAt { get; set; }
@@ -153,11 +178,16 @@ public class OrderItem
     
     // OrderWeb.net fields
     public int? CloudItemId { get; set; }
+    public string? CloudItemExternalId { get; set; }
     public string? MenuItemId { get; set; }
     public string? VariantId { get; set; }
     public string? VariantName { get; set; }
     public string? DisplayName { get; set; }
     public string? PrintGroupId { get; set; }
+    public bool PrintInRed { get; set; }
+    public string? CourseType { get; set; }
+    public DateTime? FiredAt { get; set; }
+    public string? FiredBy { get; set; }
     
     [Required]
     public string ItemName { get; set; } = string.Empty;

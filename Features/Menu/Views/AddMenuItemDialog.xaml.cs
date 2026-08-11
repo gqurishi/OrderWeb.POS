@@ -64,12 +64,30 @@ namespace POS_in_NET.Views
 
                 if (!string.IsNullOrEmpty(_editingItem.CategoryId))
                 {
-                    _selectedCategory = _categories.FirstOrDefault(c => c.Id == _editingItem.CategoryId);
-                    if (_selectedCategory != null)
+                    var savedCategory = _categories.FirstOrDefault(category =>
+                        CategoryIdsEqual(category.Id, _editingItem.CategoryId));
+                    if (savedCategory != null)
                     {
-                        CategoryLabel.Text = _selectedCategory.Name;
-                        CategoryLabel.TextColor = Color.FromArgb("#1E293B");
-                        LoadSubCategoriesForSelected();
+                        _selectedCategory = IsTopLevelCategory(savedCategory)
+                            ? savedCategory
+                            : _categories.FirstOrDefault(category => CategoryIdsEqual(category.Id, savedCategory.ParentId));
+                        _selectedSubCategory = IsTopLevelCategory(savedCategory) ? null : savedCategory;
+
+                        if (_selectedCategory == null)
+                        {
+                            NotificationService.Instance.ShowWarning("The item's parent category no longer exists.", "Category Missing");
+                        }
+                        else
+                        {
+                            CategoryLabel.Text = _selectedCategory.Name;
+                            CategoryLabel.TextColor = Color.FromArgb("#1E293B");
+                            LoadSubCategoriesForSelected();
+                            if (_selectedSubCategory != null)
+                            {
+                                SubCategoryLabel.Text = _selectedSubCategory.Name;
+                                SubCategoryLabel.TextColor = Color.FromArgb("#0F172A");
+                            }
+                        }
                     }
                 }
                 
@@ -119,7 +137,7 @@ namespace POS_in_NET.Views
         private async void OnCategoryClicked(object sender, EventArgs e)
         {
             // Only show MAIN categories (those without a parent)
-            var mainCategories = _categories.Where(c => string.IsNullOrEmpty(c.ParentId)).ToList();
+            var mainCategories = _categories.Where(IsTopLevelCategory).ToList();
             
             if (!mainCategories.Any())
             {
@@ -145,7 +163,11 @@ namespace POS_in_NET.Views
             if (_selectedCategory == null) return;
 
             // Use already loaded categories instead of fetching again
-            _subCategories = _categories.Where(c => c.ParentId == _selectedCategory.Id).ToList();
+            _subCategories = _categories
+                .Where(category => CategoryIdsEqual(category.ParentId, _selectedCategory.Id))
+                .OrderBy(category => category.DisplayOrder)
+                .ThenBy(category => category.Name)
+                .ToList();
 
             if (_subCategories.Any())
             {
@@ -166,6 +188,15 @@ namespace POS_in_NET.Views
                 SubCategoryBorder.Stroke = Color.FromArgb("#E2E8F0");
             }
         }
+
+        private static bool IsTopLevelCategory(MenuCategory category) =>
+            string.IsNullOrWhiteSpace(category.ParentId)
+            || string.Equals(category.ParentId.Trim(), "NULL", StringComparison.OrdinalIgnoreCase);
+
+        private static bool CategoryIdsEqual(string? left, string? right) =>
+            !string.IsNullOrWhiteSpace(left)
+            && !string.IsNullOrWhiteSpace(right)
+            && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
 
         private async void OnSubCategoryClicked(object sender, EventArgs e)
         {

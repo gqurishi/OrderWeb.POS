@@ -7,14 +7,32 @@ namespace POS_in_NET.Pages;
 public partial class CollectionCustomerModal : ContentPage
 {
     private readonly CollectionCustomerService _customerService;
-    private readonly CustomerDataService _customerDataService = new();
+    private readonly CustomerDataService _customerDataService;
+    private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
+    private readonly NavigationCoordinator _navigationCoordinator;
     private CollectionCustomer? _selectedCustomer;
     private bool _isOpeningKeyboard;
+    private bool _isContinuing;
 
     public CollectionCustomerModal()
     {
         InitializeComponent();
         _customerService = new CollectionCustomerService();
+        _customerDataService = ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService();
+        _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
+        _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
+            ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), AuthenticationService.Instance);
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        var settings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+        if (!settings.CollectionEnabled)
+        {
+            await AppAlertService.ShowAlertAsync("Collection Unavailable", "Collection orders are disabled by the Administrator.");
+            await _navigationCoordinator.GoBackAsync(animated: false);
+        }
     }
 
     private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
@@ -138,6 +156,11 @@ public partial class CollectionCustomerModal : ContentPage
 
     private async void OnContinueClicked(object sender, EventArgs e)
     {
+        if (_isContinuing)
+        {
+            return;
+        }
+
         var name = CustomerNameEntry.Text?.Trim();
         var phone = PhoneNumberEntry.Text?.Trim();
 
@@ -154,6 +177,15 @@ public partial class CollectionCustomerModal : ContentPage
             await ToastNotification.ShowAsync("Required", "Phone Number is required to continue.", NotificationType.Warning, 3000);
             PhoneNumberEntry.Focus();
             return;
+        }
+
+        var button = sender as Button;
+        var originalText = button?.Text;
+        _isContinuing = true;
+        if (button != null)
+        {
+            button.IsEnabled = false;
+            button.Text = "Opening order...";
         }
 
         try
@@ -182,11 +214,20 @@ public partial class CollectionCustomerModal : ContentPage
             // Pass customer info to order placement page
             orderPlacementPage.SetCollectionOrderInfo(customer.Id, customer.Name, customer.PhoneNumber);
 
-            await Navigation.PushAsync(orderPlacementPage);
+            await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage, source: button);
         }
         catch (Exception ex)
         {
             await ToastNotification.ShowAsync("Error", $"Failed to proceed: {ex.Message}", NotificationType.Error, 4000);
+        }
+        finally
+        {
+            _isContinuing = false;
+            if (button != null)
+            {
+                button.Text = originalText ?? "Continue";
+                button.IsEnabled = true;
+            }
         }
     }
 
@@ -195,7 +236,7 @@ public partial class CollectionCustomerModal : ContentPage
         var authService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
         var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
-        await Shell.Current.GoToAsync($"//{dashboardRoute}");
+        await _navigationCoordinator.NavigateShellAsync(dashboardRoute, source: sender as VisualElement);
     }
 
     private static CollectionCustomer ToCollectionCustomer(CustomerDataRecord record)

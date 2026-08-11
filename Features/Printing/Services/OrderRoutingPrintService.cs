@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using MyFirstMauiApp.Models;
+using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using POS_in_NET.Models;
 using POS_in_NET.Pages;
@@ -18,6 +19,17 @@ public sealed class OrderRoutingPrintResult
 
     public bool AnyPrinted => PrintedItemIds.Count > 0;
     public bool HasFailures => FailedRoutes.Count > 0;
+}
+
+public sealed class TastingCoursePrintResult
+{
+    public bool FoodPrinted { get; init; }
+    public bool WinePrinted { get; init; }
+    public bool WineRequested { get; init; }
+    public bool WineRedirected { get; init; }
+    public bool CombinedOnSinglePrinter { get; init; }
+    public string? WineDestination { get; init; }
+    public OrderRoutingPrintResult RoutingResult { get; init; } = new();
 }
 
 public sealed class PrintRouteFailure
@@ -277,6 +289,153 @@ public sealed class OrderRoutingPrintService
         return await HandleNormalRoutingAsync(order, itemsToPrint, routeTarget);
     }
 
+    public async Task<TastingCoursePrintResult> PrintTastingCourseAsync(
+        TableOrder source,
+        TableOrderItem package,
+        TableOrderItem course)
+    {
+        var activeGroups = await _printGroupService.GetActivePrintGroupsAsync();
+        var routableGroups = activeGroups
+            .Where(group => !string.IsNullOrWhiteSpace(group.PrinterIp))
+            .ToList();
+        var availableGroups = routableGroups.Count > 0 ? routableGroups : activeGroups;
+        var configuredFoodGroupId = TastingMenuNotesHelper.GetFoodPrintGroupId(package.Notes);
+        var configuredWineGroupId = TastingMenuNotesHelper.GetWinePrintGroupId(package.Notes);
+        var singleGroup = routableGroups.Count == 1 ? routableGroups[0] : null;
+        var foodGroup = singleGroup
+            ?? ResolvePreferredTastingGroup(availableGroups, configuredFoodGroupId, "kitchen")
+            ?? availableGroups.FirstOrDefault();
+        var wineGroup = singleGroup
+            ?? ResolvePreferredTastingGroup(availableGroups, configuredWineGroupId, "bar")
+            ?? foodGroup;
+        var courseNumber = course.VariantName?.Split('/', StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+        var courseCount = course.VariantName?.Split('/', StringSplitOptions.TrimEntries).Skip(1).FirstOrDefault() ?? "";
+        var fireTitle = !string.IsNullOrWhiteSpace(courseNumber) && !string.IsNullOrWhiteSpace(courseCount)
+            ? $"FIRE COURSE {courseNumber} OF {courseCount}"
+            : "FIRE TASTING COURSE";
+        var foodItemId = $"{course.Id}::tasting-food";
+        var wineItemId = $"{course.Id}::tasting-wine";
+        var includesWine = TastingMenuIncludesWine(package);
+
+        var fireOrder = new TableOrder
+        {
+            Id = source.Id,
+            OrderNumber = source.OrderNumber,
+            TableNumber = source.TableNumber,
+            CoverCount = source.CoverCount,
+            StaffName = source.StaffName,
+            StaffId = source.StaffId,
+            StartTime = source.StartTime,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = DateTime.Now,
+            OrderMode = source.OrderMode,
+            Status = source.Status,
+            KitchenTicketType = fireTitle
+        };
+
+        fireOrder.Items.Add(new TableOrderItem
+        {
+            Id = foodItemId,
+            OrderId = source.Id,
+            MenuItemId = string.Empty,
+            DisplayName = course.Name,
+            Name = course.Name,
+            Quantity = Math.Max(1, course.Quantity),
+            UnitPrice = 0m,
+            VatCategory = course.VatCategory,
+            PrintGroupId = foodGroup?.Id ?? course.PrintGroupId,
+            PrintInRed = course.PrintInRed,
+            Notes = course.Notes,
+            CourseType = fireTitle,
+            SendStatus = ItemSendStatus.NotSent,
+            KitchenAction = KitchenChangeAction.New,
+            CreatedAt = DateTime.Now
+        });
+
+        if (includesWine)
+        {
+            fireOrder.Items.Add(new TableOrderItem
+            {
+                Id = wineItemId,
+                OrderId = source.Id,
+                MenuItemId = string.Empty,
+                DisplayName = GetWinePairingName(course) ?? $"Wine Pairing - {course.Name}",
+                Name = GetWinePairingName(course) ?? $"Wine Pairing - {course.Name}",
+                Quantity = Math.Max(1, course.Quantity),
+                UnitPrice = 0m,
+                VatCategory = "Alcohol",
+                PrintGroupId = wineGroup?.Id ?? foodGroup?.Id,
+                Notes = package.DisplayName,
+                CourseType = fireTitle,
+                SendStatus = ItemSendStatus.NotSent,
+                KitchenAction = KitchenChangeAction.New,
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        var routing = await PrintOrderAsync(fireOrder);
+        var foodPrinted = routing.PrintedItemIds.Contains(foodItemId);
+        var winePrinted = !includesWine || routing.PrintedItemIds.Contains(wineItemId);
+        var runtimeWineRedirected = false;
+        if (includesWine
+            && foodPrinted
+            && !winePrinted
+            && foodGroup != null
+            && wineGroup != null
+            && !string.Equals(foodGroup.Id, wineGroup.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            var wineItem = fireOrder.Items.First(item => string.Equals(item.Id, wineItemId, StringComparison.OrdinalIgnoreCase));
+            wineItem.PrintGroupId = foodGroup.Id;
+            var fallbackOrder = new TableOrder
+            {
+                Id = source.Id,
+                OrderNumber = source.OrderNumber,
+                TableNumber = source.TableNumber,
+                CoverCount = source.CoverCount,
+                StaffName = source.StaffName,
+                StaffId = source.StaffId,
+                StartTime = source.StartTime,
+                CreatedAt = source.CreatedAt,
+                UpdatedAt = DateTime.Now,
+                OrderMode = source.OrderMode,
+                Status = source.Status,
+                KitchenTicketType = fireTitle
+            };
+            fallbackOrder.Items.Add(wineItem);
+
+            var fallbackRouting = await PrintOrderAsync(fallbackOrder);
+            winePrinted = fallbackRouting.PrintedItemIds.Contains(wineItemId);
+            runtimeWineRedirected = winePrinted;
+            foreach (var printedId in fallbackRouting.PrintedItemIds)
+            {
+                routing.PrintedItemIds.Add(printedId);
+            }
+            if (!winePrinted)
+            {
+                routing.FailedRoutes.AddRange(fallbackRouting.FailedRoutes);
+                routing.FailedRouteDetails.AddRange(fallbackRouting.FailedRouteDetails);
+            }
+        }
+
+        var wineRedirected = includesWine
+            && (runtimeWineRedirected
+                || (singleGroup == null
+                    && wineGroup != null
+                    && (!string.IsNullOrWhiteSpace(configuredWineGroupId)
+                        ? !string.Equals(wineGroup.Id, configuredWineGroupId, StringComparison.OrdinalIgnoreCase)
+                        : !string.Equals(wineGroup.PrinterType, "bar", StringComparison.OrdinalIgnoreCase))));
+        return new TastingCoursePrintResult
+        {
+            FoodPrinted = foodPrinted,
+            WineRequested = includesWine,
+            WinePrinted = winePrinted,
+            WineRedirected = wineRedirected,
+            CombinedOnSinglePrinter = includesWine && singleGroup != null,
+            WineDestination = runtimeWineRedirected ? foodGroup?.Name : wineGroup?.Name,
+            RoutingResult = routing
+        };
+    }
+
     public async Task<OrderRoutingPrintResult> PrintTakeawayOrderAsync(TableOrder order, string orderType)
     {
         var result = new OrderRoutingPrintResult();
@@ -304,10 +463,18 @@ public sealed class OrderRoutingPrintService
         }
 
         var routingService = ServiceHelper.GetService<PrinterRoutingService>();
+        // Prefer the dedicated takeaway route. A normal kitchen printer is the
+        // next-best destination, while receipt/online printers provide the
+        // one-printer fallback used by smaller sites. The kitchen ticket has
+        // its own cut command, so two copies remain physically separated when
+        // the receipt and kitchen destinations are the same device.
         var takeawayPrinter = routingService != null
-            ? await routingService.ResolvePrinterAsync(NetworkPrinterType.Takeaway)
-            : (await printerDb.GetPrintersByTypeAsync(NetworkPrinterType.Takeaway))
-                .FirstOrDefault(printer => printer.IsEnabled);
+            ? await routingService.ResolvePrinterAsync(
+                NetworkPrinterType.Takeaway,
+                NetworkPrinterType.Kitchen,
+                NetworkPrinterType.Receipt,
+                NetworkPrinterType.Online)
+            : await ResolveTakeawayFallbackPrinterAsync(printerDb);
 
         if (takeawayPrinter == null)
         {
@@ -415,7 +582,8 @@ public sealed class OrderRoutingPrintService
         }
 
         var kitchenTemplateSettings = await _kitchenTemplateSettingsService.GetSettingsAsync();
-        var ticketData = BuildTicket(order, singlePrinter, itemsToPrint, kitchenTemplateSettings);
+        var printerConfig = await ResolveNetworkPrinterAsync(singlePrinter.PrinterIp, singlePrinter.PrinterPort);
+        var ticketData = BuildTicket(order, singlePrinter, itemsToPrint, kitchenTemplateSettings, printerConfig);
         var sent = await QueueKitchenTicketAsync(
             singlePrinter.PrinterIp,
             singlePrinter.PrinterPort,
@@ -507,7 +675,8 @@ public sealed class OrderRoutingPrintService
                 continue;
             }
 
-            var ticketData = BuildTicket(order, group, batchItems, kitchenTemplateSettings);
+            var printerConfig = await ResolveNetworkPrinterAsync(group.PrinterIp, group.PrinterPort);
+            var ticketData = BuildTicket(order, group, batchItems, kitchenTemplateSettings, printerConfig);
             var sent = await QueueKitchenTicketAsync(
                 group.PrinterIp,
                 group.PrinterPort,
@@ -536,6 +705,28 @@ public sealed class OrderRoutingPrintService
 
         ConsolidateSplitPrintResults(result, splitPrintItemIds);
         return result;
+    }
+
+    private static async Task<NetworkPrinter?> ResolveTakeawayFallbackPrinterAsync(
+        NetworkPrinterDatabaseService printerDb)
+    {
+        foreach (var printerType in new[]
+                 {
+                     NetworkPrinterType.Takeaway,
+                     NetworkPrinterType.Kitchen,
+                     NetworkPrinterType.Receipt,
+                     NetworkPrinterType.Online
+                 })
+        {
+            var printer = (await printerDb.GetPrintersByTypeAsync(printerType))
+                .FirstOrDefault(candidate => candidate.IsEnabled);
+            if (printer != null)
+            {
+                return printer;
+            }
+        }
+
+        return null;
     }
 
     private async Task<bool> QueueKitchenTicketAsync(
@@ -593,13 +784,44 @@ public sealed class OrderRoutingPrintService
         List<PrintGroup> activeGroups,
         OrderRoutingPrintResult result)
     {
+        if (IsMealDealOrderItem(item))
+        {
+            var mealKitchenGroup = FindFirstGroupByType(activeGroups, "kitchen");
+            if (mealKitchenGroup == null)
+            {
+                result.FailedRoutes.Add($"{item.DisplayName}: kitchen print group not configured");
+                result.FailedRouteDetails.Add(new PrintRouteFailure
+                {
+                    RouteTarget = string.Empty,
+                    RouteName = item.DisplayName ?? item.Name,
+                    Reason = "kitchen print group not configured"
+                });
+                yield return CreateTastingMenuStationItem(
+                    item,
+                    "__missing_kitchen__",
+                    item.DisplayName ?? item.Name,
+                    BuildMealDealKitchenNotes(item));
+            }
+            else
+            {
+                yield return CreateTastingMenuStationItem(
+                    item,
+                    mealKitchenGroup.Id,
+                    item.DisplayName ?? item.Name,
+                    BuildMealDealKitchenNotes(item));
+            }
+
+            yield break;
+        }
+
         if (!IsTastingMenuOrderItem(item))
         {
             yield return item;
             yield break;
         }
 
-        var kitchenGroup = FindFirstGroupByType(activeGroups, "kitchen");
+        var configuredFoodGroupId = TastingMenuNotesHelper.GetFoodPrintGroupId(item.Notes);
+        var kitchenGroup = ResolvePreferredTastingGroup(activeGroups, configuredFoodGroupId, "kitchen");
         if (kitchenGroup == null)
         {
             result.FailedRoutes.Add($"{item.DisplayName}: kitchen print group not configured");
@@ -616,25 +838,8 @@ public sealed class OrderRoutingPrintService
             yield return CreateTastingMenuStationItem(item, kitchenGroup.Id, item.DisplayName ?? item.Name, BuildTastingKitchenNotes(item));
         }
 
-        if (TastingMenuIncludesWine(item))
-        {
-            var barGroup = FindFirstGroupByType(activeGroups, "bar");
-            if (barGroup == null)
-            {
-                result.FailedRoutes.Add($"{item.DisplayName}: bar print group not configured");
-                result.FailedRouteDetails.Add(new PrintRouteFailure
-                {
-                    RouteTarget = string.Empty,
-                    RouteName = item.DisplayName ?? item.Name,
-                    Reason = "bar print group not configured"
-                });
-                yield return CreateTastingMenuStationItem(item, "__missing_bar__", "Wine Pairing", BuildTastingBarNotes(item));
-            }
-            else
-            {
-                yield return CreateTastingMenuStationItem(item, barGroup.Id, "Wine Pairing", BuildTastingBarNotes(item));
-            }
-        }
+        // Wine packages are sent to the bar only when a specific course is fired.
+        // The initial package ticket is a kitchen HOLD notice.
     }
 
     private static TableOrderItem CreateTastingMenuStationItem(TableOrderItem source, string printGroupId, string displayName, string? notes)
@@ -652,6 +857,7 @@ public sealed class OrderRoutingPrintService
             UnitPrice = 0m,
             VatCategory = source.VatCategory,
             PrintGroupId = printGroupId,
+            PrintInRed = source.PrintInRed,
             Notes = notes,
             SendStatus = source.SendStatus,
             SentAt = source.SentAt,
@@ -705,11 +911,45 @@ public sealed class OrderRoutingPrintService
     private static bool IsTastingMenuOrderItem(TableOrderItem item) =>
         item.MenuItemId.StartsWith("tasting:", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsMealDealOrderItem(TableOrderItem item) =>
+        item.MenuItemId.StartsWith("mealdeal:", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildMealDealKitchenNotes(TableOrderItem item)
+    {
+        var selections = (item.Notes ?? string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(selections)
+            ? "MEAL DEAL"
+            : $"MEAL DEAL{Environment.NewLine}{selections}";
+    }
+
     private static PrintGroup? FindFirstGroupByType(IEnumerable<PrintGroup> groups, string printerType) =>
         groups
             .Where(group => group.IsActive)
             .OrderBy(group => group.DisplayOrder)
             .FirstOrDefault(group => string.Equals(group.PrinterType, printerType, StringComparison.OrdinalIgnoreCase));
+
+    private static PrintGroup? ResolvePreferredTastingGroup(
+        IEnumerable<PrintGroup> groups,
+        string? configuredGroupId,
+        string defaultPrinterType)
+    {
+        var candidates = groups
+            .Where(group => group.IsActive)
+            .OrderBy(group => group.DisplayOrder)
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(configuredGroupId))
+        {
+            var configured = candidates.FirstOrDefault(group =>
+                string.Equals(group.Id, configuredGroupId, StringComparison.OrdinalIgnoreCase));
+            if (configured != null)
+            {
+                return configured;
+            }
+        }
+
+        return candidates.FirstOrDefault(group =>
+            string.Equals(group.PrinterType, defaultPrinterType, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static bool TastingMenuIncludesWine(TableOrderItem item)
     {
@@ -727,13 +967,35 @@ public sealed class OrderRoutingPrintService
 
     private static string BuildTastingKitchenNotes(TableOrderItem item)
     {
-        var lines = (item.Notes ?? string.Empty)
+        var noteLines = (item.Notes ?? string.Empty)
             .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
-            .Where(line => line.StartsWith("Course ", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        var packageLine = noteLines
+            .FirstOrDefault(line => line.StartsWith("Package:", StringComparison.OrdinalIgnoreCase));
+        var orderNote = noteLines
+            .FirstOrDefault(line => line.StartsWith("Order note:", StringComparison.OrdinalIgnoreCase));
 
-        return lines.Count == 0 ? "Tasting menu food courses" : string.Join(Environment.NewLine, lines);
+        return string.Join(
+            Environment.NewLine,
+            new[] { packageLine, orderNote, "NEW TASTING MENU - HOLD", "WAIT FOR COURSES TO BE FIRED" }
+                .Where(line => !string.IsNullOrWhiteSpace(line)));
+    }
+
+    private static bool IsWinePairingLine(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Trim().StartsWith("Wine pairing:", StringComparison.OrdinalIgnoreCase);
+
+    private static string? GetWinePairingName(TableOrderItem course)
+    {
+        if (!IsWinePairingLine(course.Notes))
+        {
+            return null;
+        }
+
+        var separator = course.Notes!.IndexOf(':');
+        var wineName = separator >= 0 ? course.Notes[(separator + 1)..].Trim() : string.Empty;
+        return string.IsNullOrWhiteSpace(wineName) ? null : wineName;
     }
 
     private static string BuildTastingBarNotes(TableOrderItem item)
@@ -785,20 +1047,35 @@ public sealed class OrderRoutingPrintService
         return null;
     }
 
-    private byte[] BuildTicket(TableOrder order, PrintGroup group, List<TableOrderItem> items, KitchenTemplateSettings kitchenTemplateSettings)
+    private byte[] BuildTicket(
+        TableOrder order,
+        PrintGroup group,
+        List<TableOrderItem> items,
+        KitchenTemplateSettings kitchenTemplateSettings,
+        NetworkPrinter? printerConfig)
     {
+        if (!string.IsNullOrWhiteSpace(order.KitchenTicketType)
+            && order.KitchenTicketType.StartsWith("FIRE ", StringComparison.OrdinalIgnoreCase))
+        {
+            return KitchenTicketTemplateService.BuildCourseFireCallTicket(order, items, printerConfig);
+        }
+
         var printerType = string.IsNullOrWhiteSpace(group.PrinterType) ? "kitchen" : group.PrinterType.Trim().ToLowerInvariant();
         if (printerType == "kitchen")
         {
-            return KitchenTicketTemplateService.BuildTableSectionTickets(order, group, items, kitchenTemplateSettings);
+            return KitchenTicketTemplateService.BuildTableSectionTickets(order, group, items, kitchenTemplateSettings, printerConfig);
         }
 
-        var headerText = printerType switch
+        var defaultHeaderText = printerType switch
         {
             "bar" => "BAR",
             "receipt" => "RECEIPT",
             _ => "KITCHEN"
         };
+        var headerText = !string.IsNullOrWhiteSpace(order.KitchenTicketType)
+            && order.KitchenTicketType.StartsWith("FIRE ", StringComparison.OrdinalIgnoreCase)
+                ? order.KitchenTicketType.ToUpperInvariant()
+                : defaultHeaderText;
         var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80);
         var lineWidth = 48;
 
@@ -863,6 +1140,20 @@ public sealed class OrderRoutingPrintService
         }
 
         return builder.Build();
+    }
+
+    private async Task<NetworkPrinter?> ResolveNetworkPrinterAsync(string printerIp, int printerPort)
+    {
+        if (_printerDatabaseService == null)
+        {
+            return null;
+        }
+
+        var printers = await _printerDatabaseService.GetAllPrintersAsync();
+        return printers.FirstOrDefault(printer =>
+            printer.IsEnabled
+            && printer.Port == printerPort
+            && string.Equals(printer.IpAddress, printerIp, StringComparison.OrdinalIgnoreCase));
     }
 
     private byte[] BuildTakeawayTicket(

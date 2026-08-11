@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
+using POS_in_NET.Helpers;
 using System;
 using System.Threading.Tasks;
 
@@ -11,10 +12,25 @@ namespace POS_in_NET.Views
         private Grid? _parentGrid;
         private decimal _orderTotal;
         private decimal _selectedTip;
+        private bool _isCustomTipKeyboardOpen;
 
         public TipSelectionDialog()
         {
             InitializeComponent();
+            TabletLayoutHelper.AttachDialog(this, DialogCard, 560, 720, ApplyResponsiveLayout);
+        }
+
+        private void ApplyResponsiveLayout(bool tablet, bool shortWindow)
+        {
+            DialogContent.Spacing = shortWindow ? 10 : tablet ? 12 : 16;
+            DialogTitle.FontSize = tablet ? 24 : 27;
+            CloseButton.WidthRequest = tablet ? 78 : 84;
+            CloseButton.HeightRequest = 45;
+            OrderTotalCard.Padding = shortWindow ? 12 : tablet ? 16 : 20;
+            OrderTotalLabel.FontSize = shortWindow ? 28 : tablet ? 31 : 34;
+            TipOptionsGrid.ColumnSpacing = tablet ? 10 : 15;
+            TipOptionsGrid.RowSpacing = tablet ? 10 : 15;
+            ContinueButton.HeightRequest = tablet ? 54 : 60;
         }
 
         public void SetOrderTotal(decimal total)
@@ -107,6 +123,42 @@ namespace POS_in_NET.Views
             {
                 _selectedTip = 0;
                 UpdateTipDisplay();
+            }
+        }
+
+        private async void OnCustomTipFocused(object? sender, FocusEventArgs e)
+        {
+            CustomTipEntry.Unfocus();
+            await ShowCustomTipKeyboardAsync();
+        }
+
+        private async void OnCustomTipButtonClicked(object? sender, EventArgs e)
+        {
+            await ShowCustomTipKeyboardAsync();
+        }
+
+        private async Task ShowCustomTipKeyboardAsync()
+        {
+            if (_isCustomTipKeyboardOpen)
+            {
+                return;
+            }
+
+            _isCustomTipKeyboardOpen = true;
+            try
+            {
+                var keyboard = new NumericKeyboardDialog();
+                var amount = await keyboard.ShowCurrencyAsync(_selectedTip > 0 ? _selectedTip : null);
+                if (amount.HasValue)
+                {
+                    _selectedTip = amount.Value;
+                    CustomTipEntry.Text = amount.Value.ToString("0.00");
+                    UpdateTipDisplay();
+                }
+            }
+            finally
+            {
+                _isCustomTipKeyboardOpen = false;
             }
         }
 

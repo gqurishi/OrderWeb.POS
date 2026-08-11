@@ -40,7 +40,7 @@
             <VerticalStackLayout x:Name="KeyboardRootLayout" Spacing="0">
                 
                 <!-- Header -->
-                <Grid BackgroundColor="#2563EB" Padding="18,12" ColumnDefinitions="*,Auto">
+                <Grid x:Name="KeyboardHeader" BackgroundColor="#2563EB" Padding="18,12" ColumnDefinitions="*,Auto">
                     <Label x:Name="KeyboardTitleLabel"
                            Text="Search"
                            FontSize="17"
@@ -54,34 +54,34 @@
                             TextColor="#1D4ED8"
                             BackgroundColor="White"
                             WidthRequest="92"
-                            HeightRequest="34"
+                            HeightRequest="44"
                             CornerRadius="17"
                             Clicked="OnCancelClicked"/>
                 </Grid>
                 
                 <!-- Search Input Display -->
-                <Border BackgroundColor="#F8FAFC" 
+                <Border x:Name="KeyboardInputBorder"
+                        BackgroundColor="#F8FAFC"
                         Stroke="#DCE3EE" 
                         StrokeThickness="1" 
                         Margin="20,14,20,8"
-                        Padding="14,10"
-                        HeightRequest="46">
+                        Padding="12,0"
+                        HeightRequest="52">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="14"/>
                     </Border.StrokeShape>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Label x:Name="SearchTextLabel"
-                               Text=""
-                               FontSize="18"
-                               TextColor="#1E293B"
-                               VerticalOptions="Center"/>
-                        <Label x:Name="CursorLabel"
-                               Text="|"
-                               FontSize="18"
-                               TextColor="#2563EB"
-                               VerticalOptions="Center"
-                               Margin="0,0,0,0"/>
-                    </Grid>
+                    <Entry x:Name="KeyboardInputEntry"
+                           Text=""
+                           FontSize="18"
+                           TextColor="#1E293B"
+                           BackgroundColor="Transparent"
+                           HeightRequest="50"
+                           VerticalOptions="Fill"
+                           VerticalTextAlignment="Center"
+                           ClearButtonVisibility="Never"
+                           ReturnType="Done"
+                           TextChanged="OnPhysicalTextChanged"
+                           Completed="OnPhysicalEnterPressed"/>
                 </Border>
                 
                 <!-- Keyboard Grid -->
@@ -142,7 +142,7 @@
                     
                     <!-- Row 5: Common punctuation -->
                     <Grid ColumnDefinitions="*,*,*,*,*,*,*,*" ColumnSpacing="5">
-                        <Button Grid.Column="0" Text="+" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="0" Text="+" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="44" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
                         <Button Grid.Column="1" Text="-" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
                         <Button Grid.Column="2" Text="/" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
                         <Button Grid.Column="3" Text="." Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
@@ -154,7 +154,7 @@
 
                     <!-- Row 6: Space and Action Buttons -->
                     <Grid ColumnDefinitions="1.5*,1.5*,5*,2*" ColumnSpacing="6">
-                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnCancelClicked"/>
+                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="44" CornerRadius="14" Clicked="OnCancelClicked"/>
                         <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
                         <Button Grid.Column="2" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="15" HeightRequest="42" CornerRadius="14" Clicked="OnSpacePressed"/>
                         <Button x:Name="EnterButton" Grid.Column="3" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>

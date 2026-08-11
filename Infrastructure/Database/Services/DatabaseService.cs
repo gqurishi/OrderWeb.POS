@@ -114,12 +114,6 @@ public class DatabaseService
                     return (false, schemaGate.Message);
                 }
 
-                if (!await TableExistsAsync(connection, "migration_history"))
-                {
-                    return (false,
-                        "The mother terminal database is missing migration history. On the mother PC, run OrderWeb.DatabaseSetup.exe migrate.");
-                }
-
                 if (!await TableExistsAsync(connection, "users"))
                 {
                     return (false,
@@ -129,38 +123,27 @@ public class DatabaseService
                 return (true, schemaGate.Message);
             }
 
-            if (!await TableExistsAsync(connection, "app_schema_version"))
-            {
-                return (false, "Database not installed. On the mother terminal, run OrderWeb.DatabaseSetup.exe install-mother.");
-            }
-
-            await using var versionCommand = new MySqlCommand(
-                "SELECT schema_version FROM app_schema_version WHERE id = 1 LIMIT 1",
-                connection);
-            var versionValue = await versionCommand.ExecuteScalarAsync();
-            if (versionValue == null || versionValue == DBNull.Value)
-            {
-                return (false, "Database schema version is missing. Run OrderWeb.DatabaseSetup.exe migrate on the mother terminal.");
-            }
-
-            var schemaVersion = Convert.ToInt32(versionValue);
-            if (schemaVersion < PosDatabaseDefaults.RequiredSchemaVersion)
-            {
-                return (false,
-                    $"Database schema version {schemaVersion} is outdated. Required {PosDatabaseDefaults.RequiredSchemaVersion}. Run OrderWeb.DatabaseSetup.exe migrate on this terminal.");
-            }
-
-            if (!await TableExistsAsync(connection, "migration_history"))
-            {
-                return (false, "Database migration history is missing. Run OrderWeb.DatabaseSetup.exe migrate on the mother terminal.");
-            }
-
             if (!await TableExistsAsync(connection, "users"))
             {
                 return (false, "Database schema is incomplete. Run OrderWeb.DatabaseSetup.exe verify on the mother terminal.");
             }
 
-            return (true, $"Production database schema ready (version {schemaVersion}).");
+            int? schemaVersion = null;
+            if (await TableExistsAsync(connection, "app_schema_version"))
+            {
+                await using var versionCommand = new MySqlCommand(
+                    "SELECT schema_version FROM app_schema_version WHERE id = 1 LIMIT 1",
+                    connection);
+                var versionValue = await versionCommand.ExecuteScalarAsync();
+                if (versionValue != null && versionValue != DBNull.Value)
+                {
+                    schemaVersion = Convert.ToInt32(versionValue);
+                }
+            }
+
+            return schemaVersion.HasValue
+                ? (true, $"Production database connected in compatibility mode (schema {schemaVersion.Value}).")
+                : (true, "Production database connected in compatibility mode (unversioned schema).");
         }
         catch (Exception ex)
         {

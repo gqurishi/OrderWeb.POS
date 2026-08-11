@@ -8,13 +8,16 @@ namespace POS_in_NET.Services;
 public class BusinessSettingsService
 {
     private const string LogoCacheFolderName = "business-logos";
+    private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(10);
     private readonly string _connectionString;
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private BusinessInfo? _cachedBusinessInfo;
+    private DateTime _cacheUpdatedAt = DateTime.MinValue;
 
     public BusinessSettingsService()
     {
         _connectionString = TerminalConfigurationService.GetPosConnectionString();
-        EnsureBusinessInfoTableExists();
-        EnsureBusinessInfoColumnsExist();
+        // Startup migrations own production schema; constructors must stay I/O free.
     }
 
     private void EnsureBusinessInfoTableExists()
@@ -108,7 +111,43 @@ public class BusinessSettingsService
         }
     }
 
-    public async Task<BusinessInfo?> GetBusinessInfoAsync()
+    public async Task<BusinessInfo?> GetBusinessInfoAsync(bool forceRefresh = false)
+    {
+        if (!forceRefresh
+            && _cachedBusinessInfo != null
+            && DateTime.UtcNow - _cacheUpdatedAt < CacheLifetime)
+        {
+            return Clone(_cachedBusinessInfo);
+        }
+
+        await _cacheLock.WaitAsync();
+        try
+        {
+            if (!forceRefresh
+                && _cachedBusinessInfo != null
+                && DateTime.UtcNow - _cacheUpdatedAt < CacheLifetime)
+            {
+                return Clone(_cachedBusinessInfo);
+            }
+
+            var loaded = await LoadBusinessInfoAsync();
+            _cachedBusinessInfo = loaded == null ? null : Clone(loaded);
+            _cacheUpdatedAt = DateTime.UtcNow;
+            return loaded == null ? null : Clone(loaded);
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    public void InvalidateCache()
+    {
+        _cachedBusinessInfo = null;
+        _cacheUpdatedAt = DateTime.MinValue;
+    }
+
+    private async Task<BusinessInfo?> LoadBusinessInfoAsync()
     {
         try
         {
@@ -227,7 +266,7 @@ public class BusinessSettingsService
             var rowsAffected = await command.ExecuteNonQueryAsync();
             if (rowsAffected > 0)
             {
-                businessInfo.Id = (int)command.LastInsertedId;
+                InvalidateCache();
             }
 
             return rowsAffected > 0;
@@ -278,6 +317,10 @@ public class BusinessSettingsService
             command.Parameters.AddWithValue("@updatedBy", createdBy);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
+            if (rowsAffected > 0)
+            {
+                InvalidateCache();
+            }
             return rowsAffected > 0;
         }
         catch (Exception ex)
@@ -322,6 +365,10 @@ public class BusinessSettingsService
             command.Parameters.Add("@logoData", MySqlDbType.MediumBlob).Value = imageBytes;
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
+            if (rowsAffected > 0)
+            {
+                InvalidateCache();
+            }
             return rowsAffected > 0 ? localPath : null;
         }
         catch (Exception ex)
@@ -357,6 +404,10 @@ public class BusinessSettingsService
             command.Parameters.AddWithValue("@id", businessInfoId);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
+            if (rowsAffected > 0)
+            {
+                InvalidateCache();
+            }
             return rowsAffected > 0;
         }
         catch (Exception ex)
@@ -405,4 +456,27 @@ public class BusinessSettingsService
 
         return localPath;
     }
+
+    private static BusinessInfo Clone(BusinessInfo source) => new()
+    {
+        Id = source.Id,
+        RestaurantName = source.RestaurantName,
+        Address = source.Address,
+        City = source.City,
+        County = source.County,
+        Country = source.Country,
+        Postcode = source.Postcode,
+        PhoneNumber = source.PhoneNumber,
+        Email = source.Email,
+        Website = source.Website,
+        VATNumber = source.VATNumber,
+        TaxCode = source.TaxCode,
+        Description = source.Description,
+        LogoPath = source.LogoPath,
+        UpdatedAt = source.UpdatedAt,
+        UpdatedBy = source.UpdatedBy,
+        LabelPrinterIp = source.LabelPrinterIp,
+        LabelPrinterPort = source.LabelPrinterPort,
+        LabelPrinterEnabled = source.LabelPrinterEnabled
+    };
 }

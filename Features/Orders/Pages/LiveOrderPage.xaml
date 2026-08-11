@@ -21,7 +21,8 @@
                CornerRadius="0"
                HasShadow="False"
                BorderColor="#E5E7EB">
-            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" Padding="24,16">
+            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center"
+                                   Padding="{DynamicResource ResponsiveCompactPadding}">
                 <Border x:Name="AllTabBorder"
                         BackgroundColor="#10B981"
                         StrokeThickness="0"
@@ -105,7 +106,8 @@
         </Frame>
 
         <ScrollView Grid.Row="2">
-            <VerticalStackLayout Padding="24" Spacing="16">
+            <VerticalStackLayout Padding="{DynamicResource ResponsivePagePadding}"
+                                 Spacing="{DynamicResource ResponsiveSectionSpacing}">
                 <VerticalStackLayout x:Name="AllOrdersLayout" IsVisible="True" Spacing="12">
                     <FlexLayout x:Name="AllOrdersGrid"
                                 Direction="Row"

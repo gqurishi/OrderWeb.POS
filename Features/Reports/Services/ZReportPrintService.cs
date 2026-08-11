@@ -7,18 +7,14 @@ public sealed class ZReportPrintService
     private readonly ZReportService _zReportService;
     private readonly NetworkPrinterDatabaseService _printerDatabaseService;
     private readonly NetworkPrinterService _networkPrinterService;
-    private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
-
     public ZReportPrintService(
         ZReportService zReportService,
         NetworkPrinterDatabaseService printerDatabaseService,
-        NetworkPrinterService networkPrinterService,
-        OrderWebDailyReportSyncService orderWebDailyReportSyncService)
+        NetworkPrinterService networkPrinterService)
     {
         _zReportService = zReportService;
         _printerDatabaseService = printerDatabaseService;
         _networkPrinterService = networkPrinterService;
-        _orderWebDailyReportSyncService = orderWebDailyReportSyncService;
     }
 
     public async Task<ZReportPrintResult> PrintAsync(
@@ -58,7 +54,7 @@ public sealed class ZReportPrintService
 
             var slipsPrinted = 1;
 
-            if (includeDetailSlip && snapshot.TopItems.Count > 0)
+            if (includeDetailSlip && (snapshot.TopItems.Count > 0 || snapshot.ServiceChargeRemovals.Count > 0))
             {
                 var detailData = BuildDetailSlip(snapshot, printer);
                 var detailOk = await _networkPrinterService.SendToPrinterAsync(printer, detailData);
@@ -79,12 +75,6 @@ public sealed class ZReportPrintService
             };
 
             await _zReportService.LogPrintAsync(snapshot, printer.Name, includeDetailSlip, true, null, printedByUserId);
-
-            var uploadResult = await _orderWebDailyReportSyncService.UploadAfterZReportAsync(snapshot.ReportDate);
-            System.Diagnostics.Debug.WriteLine(
-                uploadResult.Success
-                    ? $" [OrderWeb Report] {uploadResult.Message}"
-                    : $" [OrderWeb Report] {uploadResult.Message}");
 
             return success;
         }
@@ -162,6 +152,9 @@ public sealed class ZReportPrintService
             .PrintColumns("Gross", snapshot.GrossDisplay)
             .PrintColumns("Net", snapshot.NetDisplay)
             .PrintColumns("VAT", snapshot.VatDisplay)
+            .PrintColumns("Item sales", FormatMoney(snapshot.ItemSales))
+            .PrintColumns("Service charges", snapshot.ServiceChargeDisplay)
+            .PrintColumns("Delivery fees", snapshot.DeliveryFeesDisplay)
             .PrintColumns("Average", snapshot.AvgDisplay)
             .PrintLine(snapshot.SalesVsYesterdayDisplay);
 
@@ -172,8 +165,11 @@ public sealed class ZReportPrintService
             .PrintColumns("Cash", snapshot.CashDisplay)
             .PrintColumns("Card", snapshot.CardDisplay)
             .PrintColumns("Gift Card", snapshot.GiftCardDisplay)
-            .PrintColumns("Tips", snapshot.TipsDisplay)
-            .PrintColumns("Refunds", snapshot.RefundDisplay);
+            .PrintColumns("Cash tips", snapshot.CashTipsDisplay)
+            .PrintColumns("Card tips", snapshot.CardTipsDisplay)
+            .PrintColumns("Total tips", snapshot.TipsDisplay)
+            .PrintColumns("Refunds", snapshot.RefundDisplay)
+            .PrintColumns("Money collected", snapshot.FinalMoneyDisplay);
 
         builder.PrintDivider('-')
             .SetBold(true)
@@ -233,6 +229,7 @@ public sealed class ZReportPrintService
             .PrintLine("ADJUSTMENTS")
             .SetBold(false)
             .PrintColumns($"Discounts ({snapshot.DiscountEventCount})", snapshot.DiscountDisplay)
+            .PrintColumns($"Service removed ({snapshot.RemovedServiceChargeCount})", snapshot.RemovedServiceChargeDisplay)
             .PrintColumns("Voids", snapshot.VoidCount.ToString());
 
         builder.PrintDivider('=')
@@ -265,6 +262,23 @@ public sealed class ZReportPrintService
         foreach (var item in snapshot.TopItems)
         {
             builder.PrintColumns(item.DisplayLine, item.AmountDisplay);
+        }
+
+        if (snapshot.ServiceChargeRemovals.Count > 0)
+        {
+            builder.PrintDivider('-')
+                .SetBold(true)
+                .PrintLine("SERVICE CHARGE REMOVALS")
+                .SetBold(false);
+
+            foreach (var removal in snapshot.ServiceChargeRemovals)
+            {
+                builder.PrintColumns(
+                    $"{removal.RemovedAt:HH:mm} {removal.OrderNumber}",
+                    FormatMoney(removal.Amount));
+                builder.PrintLine($"Reason: {removal.Reason}");
+                builder.PrintLine($"Approved: {removal.ApprovedBy}");
+            }
         }
 
         builder.PrintDivider('=')

@@ -14,6 +14,9 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
     private readonly BackgroundSyncService _syncService;
     private System.Timers.Timer? _refreshTimer;
     private bool _isSubscribedToRefreshEvents;
+    private bool _isSubscribedToSyncEvents;
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private CancellationTokenSource? _loadCts;
     
     private ObservableCollection<OrderDisplayModel> _orders = new();
     private List<Order> _allOrders = new();
@@ -36,9 +39,9 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
         // Set the page title in the TopBar
         TopBar.SetPageTitle("Order Tracking");
         
-        _orderService = new OrderService();
-        _apiService = new OnlineOrderApiService();
-        _syncService = new BackgroundSyncService();
+        _orderService = ServiceHelper.GetService<OrderService>() ?? new OrderService();
+        _apiService = ServiceHelper.GetService<OnlineOrderApiService>() ?? new OnlineOrderApiService();
+        _syncService = ServiceHelper.GetService<BackgroundSyncService>() ?? new BackgroundSyncService();
         
         // Initialize commands
         SendToKitchenCommand = new Command<OrderDisplayModel>(async order => await SendToKitchen(order));
@@ -51,17 +54,14 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
         // Set default filter
         StatusFilterPicker.SelectedIndex = 0;
         
-        // Start refresh timer (every 30 seconds)
-        StartRefreshTimer();
-        
-        // Subscribe to sync service events
-        _syncService.SyncStatusChanged += OnSyncStatusChanged;
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
         SubscribeToRefreshEvents();
+        SubscribeToSyncEvents();
+        StartRefreshTimer();
         await LoadOrders();
         await CheckApiStatus();
     }
@@ -73,7 +73,6 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
             return;
         }
 
-        AppDataRefreshService.RefreshRequested += OnRefreshRequested;
         AppDataRefreshService.DataChanged += OnAppDataChanged;
         _isSubscribedToRefreshEvents = true;
     }
@@ -85,7 +84,6 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
             return;
         }
 
-        AppDataRefreshService.RefreshRequested -= OnRefreshRequested;
         AppDataRefreshService.DataChanged -= OnAppDataChanged;
         _isSubscribedToRefreshEvents = false;
     }
@@ -106,16 +104,24 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
         UpdateLastSyncTime();
     }
 
-    private async void OnRefreshRequested(object? sender, EventArgs e)
+    private void SubscribeToSyncEvents()
     {
-        await LoadOrders();
-        UpdateLastSyncTime();
-        await CheckApiStatus();
+        if (_isSubscribedToSyncEvents) return;
+        _syncService.SyncStatusChanged += OnSyncStatusChanged;
+        _isSubscribedToSyncEvents = true;
+    }
+
+    private void UnsubscribeFromSyncEvents()
+    {
+        if (!_isSubscribedToSyncEvents) return;
+        _syncService.SyncStatusChanged -= OnSyncStatusChanged;
+        _isSubscribedToSyncEvents = false;
     }
 
     private void StartRefreshTimer()
     {
-        _refreshTimer = new System.Timers.Timer(30000); // 30 seconds
+        if (_refreshTimer != null) return;
+        _refreshTimer = new System.Timers.Timer(TimeSpan.FromMinutes(5));
         _refreshTimer.Elapsed += async (sender, e) =>
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
@@ -143,14 +149,34 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
 
     private async Task LoadOrders()
     {
+        var nextCts = new CancellationTokenSource();
+        var previousCts = Interlocked.Exchange(ref _loadCts, nextCts);
+        previousCts?.Cancel();
+
         try
         {
-            _allOrders = await _orderService.GetOrdersAsync();
-            ApplyStatusFilter();
+            await _loadGate.WaitAsync(nextCts.Token);
+            try
+            {
+                var rows = await _orderService.GetOrdersAsync();
+                nextCts.Token.ThrowIfCancellationRequested();
+                _allOrders = rows;
+                ApplyStatusFilter();
+            }
+            finally
+            {
+                _loadGate.Release();
+            }
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to load orders: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _loadCts, null, nextCts), nextCts))
+                nextCts.Dispose();
         }
     }
 
@@ -181,11 +207,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
             .Select(o => new OrderDisplayModel(o))
             .ToList();
         
-        Orders.Clear();
-        foreach (var order in displayOrders)
-        {
-            Orders.Add(order);
-        }
+        Orders = new ObservableCollection<OrderDisplayModel>(displayOrders);
     }
 
     private async Task SendToKitchen(OrderDisplayModel order)
@@ -308,7 +330,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
 
     private async void OnApiSettingsClicked(object sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync("//apiconfig");
+        await NavigationCoordinator.Shared.NavigateShellAsync("apiconfig", source: sender as VisualElement);
     }
 
     private async void OnTestConnectionClicked(object sender, EventArgs e)
@@ -335,11 +357,13 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
 
     protected override void OnDisappearing()
     {
+        _loadCts?.Cancel();
         UnsubscribeFromRefreshEvents();
+        UnsubscribeFromSyncEvents();
         base.OnDisappearing();
         _refreshTimer?.Stop();
         _refreshTimer?.Dispose();
-        _syncService.SyncStatusChanged -= OnSyncStatusChanged;
+        _refreshTimer = null;
     }
 
     private bool SetProperty<T>(ref T backingStore, T value, [CallerMemberName] string propertyName = "")

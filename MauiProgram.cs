@@ -57,8 +57,17 @@ public static class MauiProgram
 		builder.Services.AddSingleton<RoleAccessService>();
 		builder.Services.AddSingleton<PermissionService>();
 		builder.Services.AddSingleton<InactivityService>();
+		builder.Services.AddSingleton(_ => NavigationCoordinator.Shared);
 		builder.Services.AddSingleton<BackgroundSyncManager>();
 		builder.Services.AddSingleton<BusinessSettingsService>();
+		builder.Services.AddSingleton<TableServiceChargeSettingsService>();
+		builder.Services.AddSingleton<TableServiceChargeOrderAuditService>();
+		builder.Services.AddSingleton<OrderServiceAvailabilityService>();
+		builder.Services.AddSingleton<MenuItemService>();
+		builder.Services.AddSingleton<MenuCategoryService>();
+		builder.Services.AddSingleton<MealDealService>();
+		builder.Services.AddSingleton<TastingMenuService>();
+		builder.Services.AddSingleton<OrderRoutingPrintService>();
 		builder.Services.AddSingleton<TerminalHealthService>();
 		builder.Services.AddSingleton<DatabaseBackupService>();
 		

@@ -24,8 +24,16 @@ public sealed class ZReportSnapshot
     public decimal GiftCardTotal { get; set; }
     public int GiftCardTransactionCount { get; set; }
     public decimal TipsTotal { get; set; }
+    public decimal CashTips { get; set; }
+    public decimal CardTips { get; set; }
     public decimal RefundTotal { get; set; }
     public int RefundCount { get; set; }
+    public decimal ItemSales { get; set; }
+    public decimal TableServiceCharges { get; set; }
+    public decimal RemovedServiceChargeValue { get; set; }
+    public int RemovedServiceChargeCount { get; set; }
+    public decimal DeliveryFees { get; set; }
+    public decimal FinalMoneyCollected { get; set; }
 
     public int PosOrderCount { get; set; }
     public decimal PosGrossSales { get; set; }
@@ -61,6 +69,7 @@ public sealed class ZReportSnapshot
     public decimal? SalesVsYesterdayPercent { get; set; }
 
     public List<ZReportTopItemRow> TopItems { get; set; } = new();
+    public List<ZReportServiceChargeRemovalRow> ServiceChargeRemovals { get; set; } = new();
     public string ReportReference { get; set; } = string.Empty;
 
     public string DateDisplay => ReportDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
@@ -72,6 +81,12 @@ public sealed class ZReportSnapshot
     public string CardDisplay => FormatMoney(CardTotal);
     public string GiftCardDisplay => FormatMoney(GiftCardTotal);
     public string TipsDisplay => FormatMoney(TipsTotal);
+    public string CashTipsDisplay => FormatMoney(CashTips);
+    public string CardTipsDisplay => FormatMoney(CardTips);
+    public string ServiceChargeDisplay => FormatMoney(TableServiceCharges);
+    public string RemovedServiceChargeDisplay => FormatMoney(RemovedServiceChargeValue);
+    public string DeliveryFeesDisplay => FormatMoney(DeliveryFees);
+    public string FinalMoneyDisplay => FormatMoney(FinalMoneyCollected);
     public string RefundDisplay => FormatMoney(RefundTotal);
     public string PosDisplay => FormatMoney(PosGrossSales);
     public string OnlineDisplay => FormatMoney(OnlineGrossSales);
@@ -105,6 +120,15 @@ public sealed class ZReportTopItemRow
 
     public string DisplayLine => $"{Quantity}x {ItemName}";
     public string AmountDisplay => $"£{GrossSales:F2}";
+}
+
+public sealed class ZReportServiceChargeRemovalRow
+{
+    public DateTime RemovedAt { get; set; }
+    public string OrderNumber { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string ApprovedBy { get; set; } = string.Empty;
 }
 
 public sealed class ZReportPrintResult

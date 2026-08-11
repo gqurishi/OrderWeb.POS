@@ -222,7 +222,7 @@ public partial class TerminalSetupPage : ContentPage
         }
 
         var nextRoute = await StartupNavigationService.GetPostSetupRouteAsync();
-        await Shell.Current.GoToAsync(nextRoute, false);
+        await NavigationCoordinator.Shared.NavigateShellAsync(nextRoute, animated: false, source: sender as VisualElement);
     }
 
     private void OnGenerateDatabaseCredentialsClicked(object sender, EventArgs e)
