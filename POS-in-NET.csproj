@@ -22,6 +22,8 @@
 		<SingleProject>true</SingleProject>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<!-- Local verification builds are written here and must never be compiled as source. -->
+		<DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
 		
 		<!-- Suppress platform-specific and nullable reference warnings -->
 		<NoWarn>CA1416;CS8892;CS1998;CS8604;CS8601;CS0067</NoWarn>
@@ -73,6 +75,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+
 		<!-- Exclude future services from compilation -->
 		<Compile Remove="FutureServices\**" />
 		<EmbeddedResource Remove="FutureServices\**" />

@@ -1,10 +1,16 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using System.Net.Http.Json;
 
 namespace POS_in_NET.Pages;
 
 public partial class TerminalSetupPage : ContentPage
 {
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new(System.Text.Json.JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private TerminalMode _selectedMode = TerminalMode.Mother;
     private bool _installerConfigApplied;
 
@@ -30,6 +36,9 @@ public partial class TerminalSetupPage : ContentPage
         _selectedMode = config.Mode;
         TerminalNameEntry.Text = config.TerminalName;
         MotherIpEntry.Text = config.IsChild ? config.DatabaseHost : string.Empty;
+        MotherApiPortEntry.Text = config.MotherApiPort <= 0
+            ? ClientWebSocketBroadcastService.DefaultPort.ToString()
+            : config.MotherApiPort.ToString();
         PairingCodeEntry.Text = string.Empty;
 
         DatabaseNameEntry.Text = config.DatabaseName;
@@ -76,12 +85,11 @@ public partial class TerminalSetupPage : ContentPage
         ChildCard.Stroke = Color.FromArgb(isMother ? "#CBD5E1" : "#2563EB");
         ChildCard.StrokeThickness = isMother ? 2 : 3;
 
-        MotherDatabaseSection.IsVisible = true;
-        MotherIpSection.IsVisible = !isMother;
-        PairingCodeSection.IsVisible = !isMother;
+        MotherDatabaseSection.IsVisible = isMother;
+        ClientApiSection.IsVisible = !isMother;
         StatusLabel.Text = isMother
-            ? "This terminal will use its own local database."
-            : "Enter the mother terminal IP, database connection, and pairing code.";
+            ? "This terminal will use its own local database and host the Mother API."
+            : "Client setup uses only Mother IP, API port, and pairing code.";
     }
 
     private async void OnContinueClicked(object sender, EventArgs e)
@@ -101,6 +109,16 @@ public partial class TerminalSetupPage : ContentPage
         if (_selectedMode == TerminalMode.Child && string.IsNullOrWhiteSpace(PairingCodeEntry.Text))
         {
             ShowError("Please enter the pairing code from the mother terminal.");
+            return;
+        }
+
+        var apiPortText = string.IsNullOrWhiteSpace(MotherApiPortEntry.Text)
+            ? ClientWebSocketBroadcastService.DefaultPort.ToString()
+            : MotherApiPortEntry.Text.Trim();
+        if (_selectedMode == TerminalMode.Child &&
+            (!int.TryParse(apiPortText, out var motherApiPort) || motherApiPort <= 0 || motherApiPort > 65535))
+        {
+            ShowError("API port must be between 1 and 65535.");
             return;
         }
 
@@ -141,29 +159,43 @@ public partial class TerminalSetupPage : ContentPage
             }
         }
 
-        if (string.IsNullOrWhiteSpace(databasePassword))
+        if (_selectedMode == TerminalMode.Mother && string.IsNullOrWhiteSpace(databasePassword))
         {
             ShowError("Database password is required. Run the installer or enter credentials from orderweb-database.json.");
             return;
         }
 
         ContinueButton.IsEnabled = false;
-        ContinueButton.Text = "Testing...";
+        ContinueButton.Text = _selectedMode == TerminalMode.Mother ? "Testing..." : "Pairing...";
         StatusLabel.TextColor = Color.FromArgb("#64748B");
-        StatusLabel.Text = "Testing database connection...";
+        StatusLabel.Text = _selectedMode == TerminalMode.Mother
+            ? "Testing database connection..."
+            : "Connecting to Mother API...";
 
-        var existing = TerminalConfigurationService.GetConfiguration();
-        var config = new TerminalConfiguration
+        var config = _selectedMode == TerminalMode.Mother
+            ? new TerminalConfiguration
+            {
+                IsConfigured = true,
+                Mode = _selectedMode,
+                TerminalName = TerminalNameEntry.Text.Trim(),
+                DatabaseHost = "localhost",
+                DatabasePort = databasePort,
+                DatabaseName = databaseName,
+                DatabaseUser = databaseUser,
+                DatabasePassword = databasePassword,
+                MotherApiPort = ClientWebSocketBroadcastService.DefaultPort
+            }
+            : await BootstrapClientTerminalAsync(
+                TerminalNameEntry.Text.Trim(),
+                MotherIpEntry.Text.Trim(),
+                int.Parse(apiPortText),
+                PairingCodeEntry.Text.Trim());
+
+        if (config == null)
         {
-            IsConfigured = true,
-            Mode = _selectedMode,
-            TerminalName = TerminalNameEntry.Text.Trim(),
-            DatabaseHost = _selectedMode == TerminalMode.Mother ? "localhost" : MotherIpEntry.Text.Trim(),
-            DatabasePort = databasePort,
-            DatabaseName = databaseName,
-            DatabaseUser = databaseUser,
-            DatabasePassword = databasePassword
-        };
+            ResetContinueButton();
+            return;
+        }
 
         try
         {
@@ -176,40 +208,36 @@ public partial class TerminalSetupPage : ContentPage
             return;
         }
 
-        var schemaResult = await new DatabaseService().EnsureProductionSchemaAsync();
-        if (!schemaResult.Success)
+        TerminalConnectionTestResult testResult;
+        if (config.IsMother)
         {
-            TerminalConfigurationService.SetConfigured(false);
-            ResetContinueButton();
-            ShowError(schemaResult.Message);
-            return;
-        }
-
-        var testResult = await TerminalConnectionTestService.TestAsync();
-        if (!testResult.Success)
-        {
-            TerminalConfigurationService.SetConfigured(false);
-            ResetContinueButton();
-            ShowError(testResult.Message);
-            return;
-        }
-
-        if (config.IsChild)
-        {
-            StatusLabel.Text = "Validating pairing code...";
-            var pairingResult = await TerminalPairingService.ValidateAndActivateChildAsync(
-                config.TerminalName,
-                PairingCodeEntry.Text);
-            if (!pairingResult.Success)
+            var schemaResult = await new DatabaseService().EnsureProductionSchemaAsync();
+            if (!schemaResult.Success)
             {
                 TerminalConfigurationService.SetConfigured(false);
                 ResetContinueButton();
-                ShowError(pairingResult.Message);
+                ShowError(schemaResult.Message);
+                return;
+            }
+
+            testResult = await TerminalConnectionTestService.TestAsync();
+            if (!testResult.Success)
+            {
+                TerminalConfigurationService.SetConfigured(false);
+                ResetContinueButton();
+                ShowError(testResult.Message);
                 return;
             }
         }
+        else
+        {
+            testResult = new TerminalConnectionTestResult(true, "Paired", "Client POS paired with the Mother API.");
+        }
 
-        await EnsureStartupDataAsync();
+        if (config.IsMother)
+        {
+            await EnsureStartupDataAsync();
+        }
 
         StatusLabel.TextColor = Color.FromArgb("#059669");
         StatusLabel.Text = testResult.Message;
@@ -219,10 +247,77 @@ public partial class TerminalSetupPage : ContentPage
         {
             await BackgroundSyncJobRegistrar.RegisterDefaultJobsAsync(services);
             ServiceHelper.GetService<BackgroundSyncManager>()?.Start();
+            var motherConnectionStartup = ServiceHelper.GetService<MotherConnectionStartupService>();
+            if (motherConnectionStartup != null)
+            {
+                await motherConnectionStartup.StartAsync();
+            }
         }
 
         var nextRoute = await StartupNavigationService.GetPostSetupRouteAsync();
         await NavigationCoordinator.Shared.NavigateShellAsync(nextRoute, animated: false, source: sender as VisualElement);
+    }
+
+    private async Task<TerminalConfiguration?> BootstrapClientTerminalAsync(
+        string terminalName,
+        string motherIp,
+        int apiPort,
+        string pairingCode)
+    {
+        try
+        {
+            using var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+
+            var response = await httpClient.PostAsJsonAsync(
+                $"http://{motherIp}:{apiPort}/api/client/bootstrap",
+                new
+                {
+                    terminalName,
+                    pairingCode,
+                    deviceType = "Client",
+                    platform = DeviceInfo.Platform.ToString(),
+                    deviceId = AppInfo.PackageName,
+                    deviceName = DeviceInfo.Name,
+                    appVersion = AppInfo.Current.VersionString
+                },
+                JsonOptions);
+
+            var payload = await response.Content.ReadFromJsonAsync<ClientBootstrapSetupResponse>(JsonOptions);
+            if (!response.IsSuccessStatusCode || payload == null || !payload.Success)
+            {
+                ShowError(payload?.Message ?? $"Mother API rejected pairing ({(int)response.StatusCode}).");
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(payload.TerminalId) || string.IsNullOrWhiteSpace(payload.TerminalToken))
+            {
+                ShowError("Mother API did not return a terminal identity.");
+                return null;
+            }
+
+            return new TerminalConfiguration
+            {
+                IsConfigured = true,
+                Mode = TerminalMode.Child,
+                TerminalName = string.IsNullOrWhiteSpace(payload.TerminalName) ? terminalName : payload.TerminalName.Trim(),
+                DatabaseHost = motherIp,
+                DatabasePort = 3306,
+                DatabaseName = payload.Restaurant?.Name ?? PosDatabaseDefaults.ProductionDatabaseName,
+                DatabaseUser = PosDatabaseDefaults.ProductionDatabaseUser,
+                DatabasePassword = string.Empty,
+                MotherApiPort = apiPort,
+                TerminalId = payload.TerminalId,
+                TerminalToken = payload.TerminalToken
+            };
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Cannot reach Mother API at {motherIp}:{apiPort}. {ex.Message}");
+            return null;
+        }
     }
 
     private void OnGenerateDatabaseCredentialsClicked(object sender, EventArgs e)
@@ -293,4 +388,14 @@ public partial class TerminalSetupPage : ContentPage
             AppDiagnostics.LogFatal("TerminalSetupStartupData", ex);
         }
     }
+
+    private sealed record ClientBootstrapSetupResponse(
+        bool Success,
+        string? Message,
+        string TerminalId,
+        string TerminalToken,
+        string TerminalName,
+        BootstrapRestaurantSetupResponse? Restaurant);
+
+    private sealed record BootstrapRestaurantSetupResponse(string Name, string? Slug);
 }

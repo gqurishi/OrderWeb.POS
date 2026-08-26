@@ -8,11 +8,13 @@ namespace POS_in_NET.Pages;
 public partial class TerminalHealthPage : ContentPage
 {
     private readonly TerminalHealthService _terminalHealthService;
+    private readonly ClientWebSocketBroadcastService _clientApiService;
     private readonly DatabaseBackupService _databaseBackupService;
     private bool _isLoading;
     private string _summaryText = "Loading terminal health...";
     private string _onlineCountText = "0";
     private string _offlineCountText = "0";
+    private string _pairedClientsText = "0";
     private string _lastCheckText = "Never";
     private string _backupStatusText = "Full database backups run every 3 days on the mother terminal; the latest 15 are retained.";
 
@@ -57,6 +59,19 @@ public partial class TerminalHealthPage : ContentPage
         }
     }
 
+    public string PairedClientsText
+    {
+        get => _pairedClientsText;
+        set
+        {
+            if (_pairedClientsText != value)
+            {
+                _pairedClientsText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public string LastCheckText
     {
         get => _lastCheckText;
@@ -95,19 +110,30 @@ public partial class TerminalHealthPage : ContentPage
     public bool CanRunBackup => TerminalRoleService.CanRunMotherJobs;
     public bool CanAddChildTerminal => TerminalRoleService.CanRunMotherJobs;
 
+    public string ApiStatusText => TerminalConfigurationService.IsMotherTerminal
+        ? _clientApiService.IsRunning
+            ? $"API running on port {_clientApiService.Port}"
+            : $"API stopped: {_clientApiService.StatusMessage}"
+        : "Client terminals do not run the Mother API.";
+
+    public string WebSocketStatusText => TerminalConfigurationService.IsMotherTerminal
+        ? _clientApiService.IsRunning
+            ? $"/ws ready, connected clients: {_clientApiService.ConnectedClientCount}"
+            : "/ws stopped"
+        : "/ws is hosted by the Mother terminal.";
+
     public string MotherConnectionText
     {
         get
         {
-            var config = TerminalConfigurationService.GetConfiguration();
             var ipAddress = TerminalNetworkInfoService.GetBestLocalIpAddress();
-            return $"Use this on each child terminal:\nMother IP: {ipAddress}\nPort: {config.DatabasePort}\nDatabase: {config.DatabaseName}\nEach child needs its own pairing code.";
+            return $"Use this on each Client POS:\nMother IP: {ipAddress}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing code: create one per Client POS.";
         }
     }
 
     public string SleepSafetyText => TerminalConfigurationService.IsMotherTerminal
         ? "Mother terminal sleep is disabled while the app is running, keeping reports, backups, printing, and live updates awake."
-        : "Sleep safety is controlled on the mother terminal. Keep this child terminal awake during service if it is used for active ordering.";
+        : "Sleep safety is controlled on the Mother terminal. Keep this Client terminal awake during service if it is used for active ordering.";
 
     public TerminalHealthPage()
     {
@@ -117,6 +143,8 @@ public partial class TerminalHealthPage : ContentPage
 
         _terminalHealthService = ServiceHelper.GetService<TerminalHealthService>()
             ?? new TerminalHealthService(new DatabaseService());
+        _clientApiService = ServiceHelper.GetService<ClientWebSocketBroadcastService>()
+            ?? new ClientWebSocketBroadcastService(new DatabaseService(), AuthenticationService.Instance, new PermissionService(new DatabaseService(), AuthenticationService.Instance));
         _databaseBackupService = ServiceHelper.GetService<DatabaseBackupService>()
             ?? new DatabaseBackupService(new DatabaseService());
     }
@@ -142,9 +170,10 @@ public partial class TerminalHealthPage : ContentPage
             var statuses = await _terminalHealthService.GetTerminalStatusesAsync();
 
             var onlineCount = statuses.Count(status => status.IsOnline);
+            var pairedClients = statuses.Count(status => !status.IsMother && status.PairedAt.HasValue);
             var offlineCount = statuses.Count - onlineCount;
             var lastCheck = DateTime.Now.ToString("HH:mm:ss");
-            var summary = $"{statuses.Count} terminal(s) registered in the shared database.";
+            var summary = $"{pairedClients} paired Client POS terminal(s). Mother API port {ClientWebSocketBroadcastService.DefaultPort}.";
             var backupStatus = BuildBackupStatus();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -157,9 +186,12 @@ public partial class TerminalHealthPage : ContentPage
 
                 OnlineCountText = onlineCount.ToString();
                 OfflineCountText = offlineCount.ToString();
+                PairedClientsText = pairedClients.ToString();
                 LastCheckText = lastCheck;
                 SummaryText = summary;
                 BackupStatusText = backupStatus;
+                OnPropertyChanged(nameof(ApiStatusText));
+                OnPropertyChanged(nameof(WebSocketStatusText));
             });
         }
         catch (Exception ex)
@@ -214,14 +246,14 @@ public partial class TerminalHealthPage : ContentPage
     {
         if (!TerminalRoleService.CanRunMotherJobs)
         {
-            await AppAlertService.ShowAlertAsync("Mother Terminal Only", "Child terminals are added from the mother terminal.");
+            await AppAlertService.ShowAlertAsync("Mother Terminal Only", "Client POS terminals are added from the mother terminal.");
             return;
         }
 
         var terminalPrompt = new StyledPromptDialog();
         terminalPrompt.SetDialog(
-            "Add Child Terminal",
-            "Enter a unique child terminal name, e.g. Floor 1, Bar, Counter 2.",
+            "Add Client POS",
+            "Enter a unique Client POS name, e.g. Floor 1, Bar, Counter 2.",
             "Floor 1",
             Keyboard.Text,
             "Floor 1");
@@ -240,20 +272,19 @@ public partial class TerminalHealthPage : ContentPage
             var result = await TerminalPairingService.CreateChildPairingAsync(terminalName);
             if (!result.Success)
             {
-                await AppAlertService.ShowAlertAsync("Add Child Terminal", result.Message);
+                await AppAlertService.ShowAlertAsync("Add Client POS", result.Message);
                 return;
             }
 
-            var config = TerminalConfigurationService.GetConfiguration();
             var motherIp = TerminalNetworkInfoService.GetBestLocalIpAddress();
             await LoadAsync();
             await AppAlertService.ShowAlertAsync(
-                "Child Pairing Code",
-                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\nExpires: {result.ExpiresAt:HH:mm}\n\nOn the child terminal choose Child Terminal and enter:\nMother IP: {motherIp}\nPort: {config.DatabasePort}\nDatabase: {config.DatabaseName}\nPairing Code: {result.PairingCode}");
+                "Client POS Pairing Code",
+                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\nExpires: {result.ExpiresAt:HH:mm}\n\nUse this on each Client POS:\nMother IP: {motherIp}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing Code: {result.PairingCode}");
         }
         catch (Exception ex)
         {
-            await AppAlertService.ShowAlertAsync("Add Child Terminal", ex.Message);
+            await AppAlertService.ShowAlertAsync("Add Client POS", ex.Message);
         }
     }
 
@@ -292,7 +323,7 @@ public partial class TerminalHealthPage : ContentPage
 
         if (!terminal.CanDeleteTerminal)
         {
-            await AppAlertService.ShowAlertAsync("Cannot Delete Terminal", "Only offline or pending child terminals can be deleted.");
+            await AppAlertService.ShowAlertAsync("Cannot Delete Terminal", "Only offline, pending, disabled, or revoked Client terminals can be deleted.");
             return;
         }
 
@@ -326,6 +357,113 @@ public partial class TerminalHealthPage : ContentPage
         catch (Exception ex)
         {
             await AppAlertService.ShowAlertAsync("Delete Terminal", ex.Message);
+        }
+    }
+
+    private async void OnDisableTerminalClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.BindingContext is not TerminalHealthStatus terminal)
+        {
+            return;
+        }
+
+        var confirm = await ConfirmClientActionAsync(
+            "Disable Client POS",
+            $"Disable {terminal.TerminalName}? The Client will no longer be allowed to use the Mother API.",
+            "Disable",
+            "#DC2626");
+        if (!confirm)
+        {
+            return;
+        }
+
+        await RunClientActionAsync(() => _terminalHealthService.DisableTerminalAsync(terminal.TerminalName), "Disable Client POS");
+    }
+
+    private async void OnRevokeTerminalClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.BindingContext is not TerminalHealthStatus terminal)
+        {
+            return;
+        }
+
+        var confirm = await ConfirmClientActionAsync(
+            "Revoke Token",
+            $"Revoke the saved terminal token for {terminal.TerminalName}? It must be paired again before it can connect.",
+            "Revoke",
+            "#DC2626");
+        if (!confirm)
+        {
+            return;
+        }
+
+        await RunClientActionAsync(() => _terminalHealthService.RevokeTerminalTokenAsync(terminal.TerminalName), "Revoke Token");
+    }
+
+    private async void OnForceLogoutTerminalClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.BindingContext is not TerminalHealthStatus terminal)
+        {
+            return;
+        }
+
+        await RunClientActionAsync(() => _terminalHealthService.ForceLogoutTerminalAsync(terminal.TerminalName), "Force Logout");
+    }
+
+    private async void OnRenameTerminalClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.BindingContext is not TerminalHealthStatus terminal)
+        {
+            return;
+        }
+
+        var prompt = new StyledPromptDialog();
+        prompt.SetDialog(
+            "Rename Client POS",
+            "Enter the new Client terminal name.",
+            terminal.TerminalName,
+            Keyboard.Text,
+            terminal.TerminalName);
+        prompt.SetOkText("Rename");
+        prompt.SetCancelText("Cancel");
+
+        var newName = await prompt.ShowAsync();
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            return;
+        }
+
+        await RunClientActionAsync(() => _terminalHealthService.RenameTerminalAsync(terminal.TerminalName, newName), "Rename Client POS");
+    }
+
+    private static async Task<bool> ConfirmClientActionAsync(string title, string message, string okText, string color)
+    {
+        var confirmDialog = new ModernConfirmDialog();
+        confirmDialog.SetConfirm(title, message, okText, "Cancel", "!", color);
+        return await confirmDialog.ShowAsync();
+    }
+
+    private async Task RunClientActionAsync(Func<Task<(bool Success, string Message)>> action, string title)
+    {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            await AppAlertService.ShowAlertAsync("Mother Terminal Only", "Client terminals are managed from the mother terminal.");
+            return;
+        }
+
+        try
+        {
+            var result = await action();
+            if (result.Success)
+            {
+                await LoadAsync();
+            }
+
+            await AppAlertService.ShowAlertAsync(title, result.Message);
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync(title, ex.Message);
         }
     }
 

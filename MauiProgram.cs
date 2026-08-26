@@ -69,6 +69,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TastingMenuService>();
 		builder.Services.AddSingleton<OrderRoutingPrintService>();
 		builder.Services.AddSingleton<TerminalHealthService>();
+		builder.Services.AddSingleton<ClientWebSocketBroadcastService>();
+		builder.Services.AddSingleton<MotherConnectionStartupService>();
 		builder.Services.AddSingleton<DatabaseBackupService>();
 		
 		// Note: OrderService registered after PrintService for dependency injection
@@ -153,6 +155,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<OrderWebCustomerCloudService>();
 		builder.Services.AddSingleton<CustomerDataService>();
 		builder.Services.AddSingleton<DeliveryZoneService>();
+		builder.Services.AddSingleton<RiderOperationsService>();
 		
 		// Register Database Cleanup Services (3-month rolling data)
 		builder.Services.AddSingleton<DatabaseCleanupService>();
@@ -188,6 +191,8 @@ public static class MauiProgram
 		builder.Services.AddTransient<CloudSettingsPage>();
 		builder.Services.AddTransient<PostcodeLookupPage>();
 		builder.Services.AddTransient<WebOrdersPage>();
+		builder.Services.AddTransient<WebOrderHistoryPage>();
+		builder.Services.AddTransient<RiderPage>();
 		builder.Services.AddTransient<GiftCardPage>();
 		builder.Services.AddTransient<LoyaltyPointsPage>();
 		builder.Services.AddTransient<ReportPage>();
@@ -211,6 +216,9 @@ public static class MauiProgram
 				await BackgroundSyncJobRegistrar.RegisterDefaultJobsAsync(app.Services);
 				backgroundSyncManager.Start();
 				System.Diagnostics.Debug.WriteLine("Background sync manager started");
+
+				var motherConnectionStartup = app.Services.GetRequiredService<MotherConnectionStartupService>();
+				await motherConnectionStartup.StartAsync();
 			}
 			catch (Exception ex)
 			{

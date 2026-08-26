@@ -10,16 +10,16 @@
 
         <ScrollView Grid.Row="1">
             <VerticalStackLayout Padding="20" Spacing="14">
-                <Border Stroke="#E2E8F0"
+                <Border Stroke="#CBD5E1"
                         StrokeThickness="1"
-                        BackgroundColor="#FFFFFF"
+                        BackgroundColor="#F8FAFC"
                         StrokeShape="RoundRectangle 18"
                         Padding="16">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <VerticalStackLayout Spacing="4">
-                            <Label Text="Terminal Safety"
+                            <Label Text="Mother Connection"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="34"
+                                   FontSize="32"
                                    TextColor="#0F172A" />
                             <Label Text="{Binding SummaryText}"
                                    FontFamily="OpenSansRegular"
@@ -28,7 +28,7 @@
                         </VerticalStackLayout>
 
                         <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
-                            <Button Text="Add Child Terminal"
+                            <Button Text="Add Client POS"
                                     IsVisible="{Binding CanAddChildTerminal}"
                                     Clicked="OnAddChildTerminalClicked"
                                     BackgroundColor="#0F766E"
@@ -55,25 +55,49 @@
                 </Border>
 
                 <Border IsVisible="{Binding CanAddChildTerminal}"
-                        Stroke="#BFDBFE"
+                        Stroke="#99F6E4"
                         StrokeThickness="1"
-                        BackgroundColor="#EFF6FF"
+                        BackgroundColor="#F0FDFA"
                         StrokeShape="RoundRectangle 14"
-                        Padding="14">
-                    <VerticalStackLayout Spacing="4">
-                        <Label Text="Mother Connection Details"
+                        Padding="16">
+                    <Grid ColumnDefinitions="1.2*,*,*" ColumnSpacing="16">
+                        <VerticalStackLayout Spacing="4">
+                        <Label Text="Client Pairing Details"
                                FontFamily="OpenSansSemibold"
                                FontSize="15"
-                               TextColor="#1E40AF" />
+                               TextColor="#0F766E" />
                         <Label Text="{Binding MotherConnectionText}"
                                FontFamily="OpenSansRegular"
                                FontSize="13"
                                TextColor="#334155"
                                LineBreakMode="WordWrap" />
-                    </VerticalStackLayout>
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                        <Label Text="API"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="13"
+                               TextColor="#0F766E" />
+                        <Label Text="{Binding ApiStatusText}"
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#334155"
+                               LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="2" Spacing="4">
+                        <Label Text="WebSocket"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="13"
+                               TextColor="#0F766E" />
+                        <Label Text="{Binding WebSocketStatusText}"
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#334155"
+                               LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Grid>
                 </Border>
 
-                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
                     <Border Stroke="#BBF7D0" StrokeThickness="1" BackgroundColor="#F0FDF4" StrokeShape="RoundRectangle 14" Padding="14">
                         <VerticalStackLayout Spacing="4">
                             <Label Text="Online"
@@ -102,14 +126,27 @@
 
                     <Border Grid.Column="2" Stroke="#BFDBFE" StrokeThickness="1" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="14">
                         <VerticalStackLayout Spacing="4">
-                            <Label Text="Last Check"
+                            <Label Text="Paired Clients"
                                    FontFamily="OpenSansSemibold"
                                    FontSize="12"
                                    TextColor="#1E40AF" />
+                            <Label Text="{Binding PairedClientsText}"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="28"
+                                   TextColor="#1D4ED8" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="3" Stroke="#E9D5FF" StrokeThickness="1" BackgroundColor="#FAF5FF" StrokeShape="RoundRectangle 14" Padding="14">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Last Check"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="12"
+                                   TextColor="#6B21A8" />
                             <Label Text="{Binding LastCheckText}"
                                    FontFamily="OpenSansSemibold"
                                    FontSize="22"
-                                   TextColor="#1D4ED8" />
+                                   TextColor="#7E22CE" />
                         </VerticalStackLayout>
                     </Border>
                 </Grid>
@@ -126,7 +163,7 @@
                                        FontFamily="OpenSansSemibold"
                                        FontSize="16"
                                        TextColor="#0F172A" />
-                                <Label Text="A terminal is online when its shared database heartbeat was seen in the last 45 seconds."
+                                <Label Text="A Client terminal is online when its Mother API heartbeat was seen in the last 60 seconds."
                                        FontFamily="OpenSansRegular"
                                        FontSize="12"
                                        TextColor="#64748B" />
@@ -139,7 +176,7 @@
                                    VerticalTextAlignment="Center" />
                         </Grid>
 
-                        <CollectionView ItemsSource="{Binding Terminals}" HeightRequest="360" SelectionMode="None">
+                        <CollectionView ItemsSource="{Binding Terminals}" HeightRequest="480" SelectionMode="None">
                             <CollectionView.EmptyView>
                                 <Label Text="No terminal heartbeat records yet."
                                        FontFamily="OpenSansRegular"
@@ -155,7 +192,10 @@
                                             StrokeShape="RoundRectangle 12"
                                             Padding="12"
                                             Margin="0,0,0,8">
-                                        <Grid ColumnDefinitions="1.4*,1.0*,1.2*,Auto,Auto" ColumnSpacing="12">
+                                        <Grid RowDefinitions="Auto,Auto"
+                                              ColumnDefinitions="1.2*,0.95*,0.95*,0.95*,0.95*,Auto"
+                                              ColumnSpacing="12"
+                                              RowSpacing="8">
                                             <VerticalStackLayout Spacing="2">
                                                 <Label Text="{Binding TerminalName}"
                                                        FontFamily="OpenSansSemibold"
@@ -168,21 +208,60 @@
                                                        LineBreakMode="TailTruncation" />
                                             </VerticalStackLayout>
 
-                                            <Label Grid.Column="1"
-                                                   Text="{Binding ModeDisplay}"
-                                                   FontFamily="OpenSansSemibold"
-                                                   FontSize="12"
-                                                   TextColor="#334155"
-                                                   VerticalTextAlignment="Center" />
+                                            <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                                <Label Text="Pairing"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="10"
+                                                       TextColor="#64748B" />
+                                                <Label Text="{Binding PairingDisplay}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="12"
+                                                       TextColor="#334155"
+                                                       LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
 
-                                            <Label Grid.Column="2"
-                                                   Text="{Binding LastSeenDisplay}"
-                                                   FontFamily="OpenSansRegular"
-                                                   FontSize="12"
-                                                   TextColor="#64748B"
-                                                   VerticalTextAlignment="Center" />
+                                            <VerticalStackLayout Grid.Column="2" Spacing="2">
+                                                <Label Text="Last Seen"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="10"
+                                                       TextColor="#64748B" />
+                                                <Label Text="{Binding LastSeenDisplay}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="12"
+                                                       TextColor="#334155"
+                                                       LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
 
-                                            <Border Grid.Column="3"
+                                            <VerticalStackLayout Grid.Column="3" Spacing="2">
+                                                <Label Text="Device"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="10"
+                                                       TextColor="#64748B" />
+                                                <Label Text="{Binding DeviceDisplayOrDash}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="12"
+                                                       TextColor="#334155"
+                                                       LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
+
+                                            <VerticalStackLayout Grid.Column="4" Spacing="2">
+                                                <Label Text="WebSocket"
+                                                       FontFamily="OpenSansSemibold"
+                                                       FontSize="10"
+                                                       TextColor="#64748B" />
+                                                <Label Text="{Binding WebSocketDisplay}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="12"
+                                                       TextColor="#334155"
+                                                       LineBreakMode="TailTruncation" />
+                                                <Label Text="{Binding WebSocketLastMessageDisplay}"
+                                                       FontFamily="OpenSansRegular"
+                                                       FontSize="10"
+                                                       TextColor="#64748B"
+                                                       LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
+
+                                            <Border Grid.Column="5"
                                                     BackgroundColor="#F8FAFC"
                                                     Stroke="{Binding StatusColor}"
                                                     StrokeThickness="1"
@@ -195,19 +274,65 @@
                                                        TextColor="{Binding StatusColor}" />
                                             </Border>
 
-                                            <Button Grid.Column="4"
-                                                    Text="Delete"
-                                                    IsVisible="{Binding CanDeleteTerminal}"
-                                                    Clicked="OnDeleteTerminalClicked"
-                                                    BackgroundColor="#FEF2F2"
-                                                    TextColor="#DC2626"
-                                                    BorderColor="#FECACA"
-                                                    BorderWidth="1"
-                                                    CornerRadius="10"
-                                                    Padding="12,7"
-                                                    FontSize="12"
-                                                    FontFamily="OpenSansSemibold"
-                                                    VerticalOptions="Center" />
+                                            <HorizontalStackLayout Grid.Row="1"
+                                                                   Grid.ColumnSpan="6"
+                                                                   IsVisible="{Binding CanManageClient}"
+                                                                   Spacing="8">
+                                                <Button Text="Rename"
+                                                        Clicked="OnRenameTerminalClicked"
+                                                        BackgroundColor="#F8FAFC"
+                                                        TextColor="#334155"
+                                                        BorderColor="#CBD5E1"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
+                                                <Button Text="Disable"
+                                                        IsVisible="{Binding CanDisableTerminal}"
+                                                        Clicked="OnDisableTerminalClicked"
+                                                        BackgroundColor="#FEF2F2"
+                                                        TextColor="#DC2626"
+                                                        BorderColor="#FECACA"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
+                                                <Button Text="Revoke"
+                                                        IsVisible="{Binding CanRevokeTerminal}"
+                                                        Clicked="OnRevokeTerminalClicked"
+                                                        BackgroundColor="#FFF7ED"
+                                                        TextColor="#C2410C"
+                                                        BorderColor="#FED7AA"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
+                                                <Button Text="Force Logout"
+                                                        IsVisible="{Binding CanForceLogout}"
+                                                        Clicked="OnForceLogoutTerminalClicked"
+                                                        BackgroundColor="#EFF6FF"
+                                                        TextColor="#1D4ED8"
+                                                        BorderColor="#BFDBFE"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
+                                                <Button Text="Delete"
+                                                        IsVisible="{Binding CanDeleteTerminal}"
+                                                        Clicked="OnDeleteTerminalClicked"
+                                                        BackgroundColor="#FEF2F2"
+                                                        TextColor="#DC2626"
+                                                        BorderColor="#FECACA"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
+                                            </HorizontalStackLayout>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

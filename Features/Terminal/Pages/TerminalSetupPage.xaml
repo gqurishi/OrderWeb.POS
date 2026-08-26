@@ -27,21 +27,21 @@
 
         <ScrollView Margin="0,48,0,12"
                     VerticalScrollBarVisibility="Default">
-        <Border WidthRequest="760"
-                MaximumWidthRequest="760"
+                <Border WidthRequest="820"
+                MaximumWidthRequest="820"
                 BackgroundColor="White"
                 Stroke="#E2E8F0"
                 StrokeThickness="1"
-                StrokeShape="RoundRectangle 28"
+                StrokeShape="RoundRectangle 18"
                 Padding="40"
                 HorizontalOptions="Center">
             <VerticalStackLayout Spacing="24">
                 <VerticalStackLayout Spacing="6">
                     <Label Text="Terminal Setup"
                            FontFamily="OpenSansSemibold"
-                           FontSize="42"
+                           FontSize="38"
                            TextColor="#0F172A" />
-                    <Label Text="Choose how this POS terminal connects to your restaurant network."
+                    <Label Text="Mother uses the local restaurant database. Client POS connects only through the Mother API."
                            FontFamily="OpenSansRegular"
                            FontSize="18"
                            TextColor="#64748B" />
@@ -80,11 +80,11 @@
                             <TapGestureRecognizer Tapped="OnChildTapped" />
                         </Border.GestureRecognizers>
                         <VerticalStackLayout Spacing="10">
-                            <Label Text="Child Terminal"
+                            <Label Text="Client Terminal"
                                    FontFamily="OpenSansSemibold"
                                    FontSize="24"
                                    TextColor="#1E3A8A" />
-                            <Label Text="Floor/bar POS. Connects to the mother terminal database over LAN."
+                            <Label Text="Floor/bar POS. Pairs through the Mother API using IP, port, and code."
                                    FontFamily="OpenSansRegular"
                                    FontSize="15"
                                    TextColor="#475569" />
@@ -205,7 +205,18 @@
                     </VerticalStackLayout>
                 </VerticalStackLayout>
 
-                <VerticalStackLayout x:Name="MotherIpSection" Spacing="8" IsVisible="False">
+                <VerticalStackLayout x:Name="ClientApiSection" Spacing="14" IsVisible="False">
+                    <Label Text="Mother API Connection"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="18"
+                           TextColor="#0F172A" />
+                    <Label Text="Use the values shown on the Mother POS Terminal Health page. No MariaDB username or password is needed."
+                           FontFamily="OpenSansRegular"
+                           FontSize="14"
+                           TextColor="#64748B"
+                           LineBreakMode="WordWrap" />
+
+                <VerticalStackLayout x:Name="MotherIpSection" Spacing="8">
                     <Label Text="Mother Terminal IP Address"
                            FontFamily="OpenSansSemibold"
                            FontSize="16"
@@ -222,7 +233,20 @@
                            TextColor="#64748B" />
                 </VerticalStackLayout>
 
-                <VerticalStackLayout x:Name="PairingCodeSection" Spacing="8" IsVisible="False">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="API Port"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="MotherApiPortEntry"
+                               Text="5055"
+                               Keyboard="Numeric"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="PairingCodeSection" Spacing="8">
                     <Label Text="Pairing Code"
                            FontFamily="OpenSansSemibold"
                            FontSize="16"
@@ -234,10 +258,11 @@
                            FontSize="18"
                            HeightRequest="58"
                            BackgroundColor="#F8FAFC" />
-                    <Label Text="Ask the admin to create this child terminal on the mother terminal first."
+                    <Label Text="Ask the admin to create this Client POS on the Mother Terminal Health page first."
                            FontFamily="OpenSansRegular"
                            FontSize="14"
                            TextColor="#64748B" />
+                </VerticalStackLayout>
                 </VerticalStackLayout>
 
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">

@@ -15,6 +15,36 @@ public static class TerminalConnectionTestService
         }
 
         var config = TerminalConfigurationService.GetConfiguration();
+        if (config.Mode == TerminalMode.Child)
+        {
+            try
+            {
+                using var httpClient = new HttpClient
+                {
+                    Timeout = TimeSpan.FromSeconds(timeoutSeconds)
+                };
+
+                using var response = await httpClient.GetAsync(
+                    $"http://{config.DatabaseHost}:{config.MotherApiPort}/health");
+
+                return response.IsSuccessStatusCode
+                    ? new TerminalConnectionTestResult(
+                        true,
+                        "Connected",
+                        $"Connected to Mother API at {config.DatabaseHost}:{config.MotherApiPort}.")
+                    : new TerminalConnectionTestResult(
+                        false,
+                        "Mother API Unavailable",
+                        $"Mother API returned {(int)response.StatusCode}. Check Mother POS and pairing setup.");
+            }
+            catch (Exception ex)
+            {
+                return new TerminalConnectionTestResult(
+                    false,
+                    "Mother API Offline",
+                    $"Cannot connect to Mother API at {config.DatabaseHost}:{config.MotherApiPort}. {ex.Message}");
+            }
+        }
 
         try
         {
@@ -29,38 +59,14 @@ public static class TerminalConnectionTestService
             await using var command = new MySqlCommand("SELECT 1", connection);
             await command.ExecuteScalarAsync(cts.Token);
 
-            if (config.Mode == TerminalMode.Child)
-            {
-                var schemaGate = await ChildSchemaVersionGateService.CheckAsync(connection, cts.Token);
-                if (!schemaGate.IsCompatible)
-                {
-                    return new TerminalConnectionTestResult(
-                        false,
-                        "Mother Database Unavailable",
-                        schemaGate.Message);
-                }
-
-                return new TerminalConnectionTestResult(
-                    true,
-                    "Connected",
-                    schemaGate.CurrentSchemaVersion.HasValue
-                        ? $"Connected to mother terminal ({config.DatabaseHost}). Database schema version {schemaGate.CurrentSchemaVersion.Value}."
-                        : $"Connected to mother terminal ({config.DatabaseHost}) using an unversioned compatible database.");
-            }
-
             return new TerminalConnectionTestResult(true, "Connected", "Connected to Local Mother Database");
         }
         catch (Exception ex)
         {
-            return config.Mode == TerminalMode.Child
-                ? new TerminalConnectionTestResult(
-                    false,
-                    "Mother Terminal Offline",
-                    $"Cannot connect to Mother Terminal at {config.DatabaseHost}. Check LAN cable/Wi-Fi, IP address, firewall, and MariaDB.")
-                : new TerminalConnectionTestResult(
-                    false,
-                    "Local Database Offline",
-                    $"Cannot connect to the local database. {ex.Message}");
+            return new TerminalConnectionTestResult(
+                false,
+                "Local Database Offline",
+                $"Cannot connect to the local database. {ex.Message}");
         }
     }
 }

@@ -5,6 +5,8 @@ namespace POS_in_NET.Services;
 
 public sealed class TerminalHealthService : IDisposable
 {
+    public const int OnlineHeartbeatWindowSeconds = 60;
+
     private readonly DatabaseService _databaseService;
     private readonly object _syncRoot = new();
     private Timer? _timer;
@@ -121,9 +123,10 @@ public sealed class TerminalHealthService : IDisposable
         await connection.OpenAsync();
         await EnsureTableAsync(connection);
         await TerminalPairingService.EnsureTableAsync(connection);
+        await EnsureClientPairingColumnsAsync(connection);
 
         const string sql = @"
-            SELECT terminal_name, terminal_mode, database_host, last_seen_at, last_status, last_error
+            SELECT terminal_name, terminal_mode, database_host, app_version, last_seen_at, last_status, last_error
             FROM terminal_health
             ORDER BY terminal_mode = 'Mother' DESC, terminal_name";
 
@@ -137,6 +140,7 @@ public sealed class TerminalHealthService : IDisposable
                     TerminalName = reader.GetString("terminal_name"),
                     Mode = reader.GetString("terminal_mode"),
                     DatabaseHost = reader.GetString("database_host"),
+                    AppVersion = reader.IsDBNull(reader.GetOrdinal("app_version")) ? string.Empty : reader.GetString("app_version"),
                     LastSeenAt = reader.GetDateTime("last_seen_at"),
                     LastStatus = reader.GetString("last_status"),
                     LastError = reader.IsDBNull(reader.GetOrdinal("last_error")) ? string.Empty : reader.GetString("last_error")
@@ -145,7 +149,10 @@ public sealed class TerminalHealthService : IDisposable
         }
 
         const string pairingsSql = @"
-            SELECT terminal_name, pairing_code, pairing_expires_at, paired_at, disabled_at
+            SELECT terminal_name, terminal_id, device_type, platform, device_name, app_version,
+                   pairing_code, pairing_expires_at, paired_at, disabled_at, enabled,
+                   last_seen_at, last_ip_address, last_sync_event_id, revoked_at, current_user_id,
+                   websocket_status, websocket_connected_at, websocket_disconnected_at, websocket_last_message_at
             FROM terminal_pairings
             ORDER BY terminal_name";
 
@@ -156,10 +163,6 @@ public sealed class TerminalHealthService : IDisposable
             var terminalName = pairingsReader.GetString("terminal_name");
             var existing = rows.FirstOrDefault(status =>
                 string.Equals(status.TerminalName, terminalName, StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
-            {
-                continue;
-            }
 
             var disabledAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("disabled_at"))
                 ? (DateTime?)null
@@ -173,28 +176,79 @@ public sealed class TerminalHealthService : IDisposable
             var pairingCode = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("pairing_code"))
                 ? string.Empty
                 : pairingsReader.GetString("pairing_code");
+            var pairingLastSeenAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("last_seen_at"))
+                ? (DateTime?)null
+                : pairingsReader.GetDateTime("last_seen_at");
+            var enabled = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("enabled")) || pairingsReader.GetBoolean("enabled");
+            var revokedAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("revoked_at"))
+                ? (DateTime?)null
+                : pairingsReader.GetDateTime("revoked_at");
 
-            var pairingStatus = disabledAt.HasValue
+            var isFreshHeartbeat = pairingLastSeenAt.HasValue &&
+                DateTime.Now - pairingLastSeenAt.Value <= TimeSpan.FromSeconds(OnlineHeartbeatWindowSeconds);
+            var pairingStatus = disabledAt.HasValue || !enabled
                 ? "Disabled"
+                : revokedAt.HasValue
+                    ? "Revoked"
                 : pairedAt.HasValue
-                    ? "Offline"
+                    ? isFreshHeartbeat ? "Online" : "Offline"
                     : expiresAt.HasValue && expiresAt.Value <= DateTime.Now
                         ? "Expired"
                         : "Pending";
 
-            rows.Add(new TerminalHealthStatus
+            var target = existing ?? new TerminalHealthStatus
             {
                 TerminalName = terminalName,
                 Mode = "Child",
                 DatabaseHost = TerminalNetworkInfoService.GetBestLocalIpAddress(),
-                LastSeenAt = DateTime.MinValue,
-                LastStatus = pairingStatus,
-                PairingStatus = pairingStatus,
-                PairingCode = pairingCode,
-                PairingExpiresAt = expiresAt,
-                PairedAt = pairedAt,
-                IsDisabled = disabledAt.HasValue
-            });
+                LastSeenAt = DateTime.MinValue
+            };
+
+            target.PairingStatus = pairingStatus;
+            target.PairingCode = pairingCode;
+            target.PairingExpiresAt = expiresAt;
+            target.PairedAt = pairedAt;
+            target.IsDisabled = disabledAt.HasValue || !enabled;
+            target.RevokedAt = revokedAt;
+            target.TerminalId = ReadString(pairingsReader, "terminal_id");
+            target.DeviceType = ReadString(pairingsReader, "device_type");
+            target.Platform = ReadString(pairingsReader, "platform");
+            target.DeviceName = ReadString(pairingsReader, "device_name");
+            target.AppVersion = string.IsNullOrWhiteSpace(target.AppVersion)
+                ? ReadString(pairingsReader, "app_version")
+                : target.AppVersion;
+            target.LastIpAddress = ReadString(pairingsReader, "last_ip_address");
+            target.LastSyncEventId = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("last_sync_event_id"))
+                ? 0
+                : pairingsReader.GetInt64("last_sync_event_id");
+            target.CurrentUserId = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("current_user_id"))
+                ? null
+                : pairingsReader.GetInt32("current_user_id");
+            target.WebSocketStatus = ReadString(pairingsReader, "websocket_status");
+            target.WebSocketConnectedAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("websocket_connected_at"))
+                ? null
+                : pairingsReader.GetDateTime("websocket_connected_at");
+            target.WebSocketDisconnectedAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("websocket_disconnected_at"))
+                ? null
+                : pairingsReader.GetDateTime("websocket_disconnected_at");
+            target.WebSocketLastMessageAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("websocket_last_message_at"))
+                ? null
+                : pairingsReader.GetDateTime("websocket_last_message_at");
+
+            if (pairingLastSeenAt.HasValue && (target.LastSeenAt <= DateTime.MinValue.AddDays(1) || pairingLastSeenAt > target.LastSeenAt))
+            {
+                target.LastSeenAt = pairingLastSeenAt.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(target.LastStatus))
+            {
+                target.LastStatus = pairingStatus;
+            }
+
+            if (existing == null)
+            {
+                rows.Add(target);
+            }
         }
 
         rows = rows
@@ -203,6 +257,109 @@ public sealed class TerminalHealthService : IDisposable
             .ToList();
 
         return rows;
+    }
+
+    public async Task<(bool Success, string Message)> DisableTerminalAsync(string terminalName)
+    {
+        return await UpdateClientTerminalAsync(
+            terminalName,
+            "UPDATE terminal_pairings SET enabled = FALSE, disabled_at = NOW(), client_status = 'disabled', updated_at = NOW() WHERE terminal_name = @terminalName",
+            "disabled");
+    }
+
+    public async Task<(bool Success, string Message)> RevokeTerminalTokenAsync(string terminalName)
+    {
+        return await UpdateClientTerminalAsync(
+            terminalName,
+            "UPDATE terminal_pairings SET token_hash = NULL, revoked_at = NOW(), client_status = 'revoked', updated_at = NOW() WHERE terminal_name = @terminalName",
+            "revoked");
+    }
+
+    public async Task<(bool Success, string Message)> ForceLogoutTerminalAsync(string terminalName)
+    {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            return (false, "Client sessions can be managed from the mother terminal only.");
+        }
+
+        var cleanName = (terminalName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cleanName))
+        {
+            return (false, "Terminal name is missing.");
+        }
+
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync();
+        await EnsureClientPairingColumnsAsync(connection);
+
+        const string sql = @"
+            UPDATE client_user_sessions s
+            INNER JOIN terminal_pairings p ON p.terminal_id = s.terminal_id
+            SET s.revoked_at = NOW()
+            WHERE p.terminal_name = @terminalName
+              AND s.revoked_at IS NULL";
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@terminalName", cleanName);
+        var rows = await command.ExecuteNonQueryAsync();
+        return (true, rows > 0 ? $"{cleanName} has been logged out." : $"{cleanName} has no active Client session.");
+    }
+
+    public async Task<(bool Success, string Message)> RenameTerminalAsync(string terminalName, string newTerminalName)
+    {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            return (false, "Terminals can be renamed from the mother terminal only.");
+        }
+
+        var cleanName = (terminalName ?? string.Empty).Trim();
+        var cleanNewName = (newTerminalName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cleanName) || string.IsNullOrWhiteSpace(cleanNewName))
+        {
+            return (false, "Terminal name is missing.");
+        }
+
+        if (string.Equals(cleanName, cleanNewName, StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, "Terminal name is unchanged.");
+        }
+
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync();
+        await EnsureTableAsync(connection);
+        await TerminalPairingService.EnsureTableAsync(connection);
+
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            await using (var pairingCommand = new MySqlCommand(
+                "UPDATE terminal_pairings SET terminal_name = @newTerminalName, updated_at = NOW() WHERE terminal_name = @terminalName",
+                connection,
+                transaction))
+            {
+                pairingCommand.Parameters.AddWithValue("@terminalName", cleanName);
+                pairingCommand.Parameters.AddWithValue("@newTerminalName", cleanNewName);
+                await pairingCommand.ExecuteNonQueryAsync();
+            }
+
+            await using (var healthCommand = new MySqlCommand(
+                "UPDATE terminal_health SET terminal_name = @newTerminalName, updated_at = NOW() WHERE terminal_name = @terminalName AND terminal_mode <> 'Mother'",
+                connection,
+                transaction))
+            {
+                healthCommand.Parameters.AddWithValue("@terminalName", cleanName);
+                healthCommand.Parameters.AddWithValue("@newTerminalName", cleanNewName);
+                await healthCommand.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+            return (true, $"{cleanName} renamed to {cleanNewName}.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<(bool Success, string Message)> DeleteTerminalAsync(string terminalName)
@@ -248,7 +405,7 @@ public sealed class TerminalHealthService : IDisposable
                 }
 
                 var lastSeenAt = reader.GetDateTime("last_seen_at");
-                if (DateTime.Now - lastSeenAt <= TimeSpan.FromSeconds(45))
+                if (DateTime.Now - lastSeenAt <= TimeSpan.FromSeconds(OnlineHeartbeatWindowSeconds))
                 {
                     return (false, "This terminal is online. Disconnect it first, then refresh and delete.");
                 }
@@ -278,7 +435,7 @@ public sealed class TerminalHealthService : IDisposable
 
             return deletedRows > 0
                 ? (true, $"{cleanName} has been removed from Terminal Health.")
-                : (false, "No matching child terminal was found.");
+                : (false, "No matching Client POS terminal was found.");
         }
         catch
         {
@@ -307,6 +464,92 @@ public sealed class TerminalHealthService : IDisposable
 
         await using var command = new MySqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<(bool Success, string Message)> UpdateClientTerminalAsync(
+        string terminalName,
+        string sql,
+        string action)
+    {
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            return (false, "Client terminals can be managed from the mother terminal only.");
+        }
+
+        var cleanName = (terminalName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cleanName))
+        {
+            return (false, "Terminal name is missing.");
+        }
+
+        var currentConfig = TerminalConfigurationService.GetConfiguration();
+        if (string.Equals(cleanName, currentConfig.TerminalName, StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "This Mother terminal cannot be managed as a Client terminal.");
+        }
+
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync();
+        await EnsureClientPairingColumnsAsync(connection);
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@terminalName", cleanName);
+        var rows = await command.ExecuteNonQueryAsync();
+        return rows > 0
+            ? (true, $"{cleanName} has been {action}.")
+            : (false, "No matching Client POS terminal was found.");
+    }
+
+    private static async Task EnsureClientPairingColumnsAsync(MySqlConnection connection)
+    {
+        if (RuntimeSchemaPolicy.IsMigrationManaged) return;
+
+        await TerminalPairingService.EnsureTableAsync(connection);
+
+        var statements = new[]
+        {
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS terminal_id VARCHAR(64) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS device_type VARCHAR(80) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS platform VARCHAR(80) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS device_name VARCHAR(160) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS app_version VARCHAR(40) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS current_user_id INT NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS last_ip_address VARCHAR(45) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS last_sync_event_id BIGINT NOT NULL DEFAULT 0",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS revoked_at DATETIME NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS websocket_status VARCHAR(40) NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS websocket_connected_at DATETIME NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS websocket_disconnected_at DATETIME NULL",
+            "ALTER TABLE terminal_pairings ADD COLUMN IF NOT EXISTS websocket_last_message_at DATETIME NULL",
+            @"CREATE TABLE IF NOT EXISTS client_user_sessions (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                terminal_id VARCHAR(64) NOT NULL,
+                user_id INT NOT NULL,
+                session_token_hash VARCHAR(128) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                revoked_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at DATETIME NULL,
+                INDEX idx_client_user_sessions_terminal (terminal_id),
+                INDEX idx_client_user_sessions_user (user_id),
+                INDEX idx_client_user_sessions_token (session_token_hash),
+                INDEX idx_client_user_sessions_expiry (expires_at)
+            ) ENGINE=InnoDB"
+        };
+
+        foreach (var statement in statements)
+        {
+            await using var command = new MySqlCommand(statement, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static string ReadString(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? string.Empty : reader.GetString(ordinal);
     }
 
     public void Dispose()

@@ -18,6 +18,10 @@ public static class TerminalConfigurationService
     private const string DatabasePasswordKey = Prefix + "database_password";
     private const string ProtectedDatabasePasswordKey = Prefix + "database_password_protected";
     private const string DatabaseSslModeKey = Prefix + "database_ssl_mode";
+    private const string MotherApiPortKey = Prefix + "mother_api_port";
+    private const string TerminalIdKey = Prefix + "terminal_id";
+    private const string TerminalTokenKey = Prefix + "terminal_token";
+    private const string ProtectedTerminalTokenKey = Prefix + "terminal_token_protected";
     private const string InstallerConfigAppliedKey = Prefix + "installer_db_applied";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -48,7 +52,10 @@ public static class TerminalConfigurationService
             DatabaseName = Preferences.Default.Get(DatabaseNameKey, PosDatabaseDefaults.ProductionDatabaseName),
             DatabaseUser = Preferences.Default.Get(DatabaseUserKey, PosDatabaseDefaults.ProductionDatabaseUser),
             DatabasePassword = ReadDatabasePassword(),
-            DatabaseSslMode = Preferences.Default.Get(DatabaseSslModeKey, nameof(MySqlSslMode.Preferred))
+            DatabaseSslMode = Preferences.Default.Get(DatabaseSslModeKey, nameof(MySqlSslMode.Preferred)),
+            MotherApiPort = Preferences.Default.Get(MotherApiPortKey, ClientWebSocketBroadcastService.DefaultPort),
+            TerminalId = Preferences.Default.Get(TerminalIdKey, string.Empty),
+            TerminalToken = ReadTerminalToken()
         };
     }
 
@@ -132,10 +139,13 @@ public static class TerminalConfigurationService
             : configuration.DatabaseUser.Trim();
         var databasePassword = configuration.DatabasePassword ?? string.Empty;
 
-        var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
-        if (!validation.IsValid)
+        if (configuration.IsMother)
         {
-            throw new InvalidOperationException(validation.Message);
+            var validation = ProductionDatabaseCredentialPolicy.Validate(databaseUser, databasePassword);
+            if (!validation.IsValid)
+            {
+                throw new InvalidOperationException(validation.Message);
+            }
         }
 
         var host = configuration.IsMother ? "localhost" : configuration.DatabaseHost.Trim();
@@ -158,6 +168,11 @@ public static class TerminalConfigurationService
         Preferences.Default.Set(DatabaseSslModeKey, string.IsNullOrWhiteSpace(configuration.DatabaseSslMode)
             ? nameof(MySqlSslMode.Preferred)
             : configuration.DatabaseSslMode);
+        Preferences.Default.Set(MotherApiPortKey, configuration.MotherApiPort <= 0
+            ? ClientWebSocketBroadcastService.DefaultPort
+            : configuration.MotherApiPort);
+        Preferences.Default.Set(TerminalIdKey, configuration.TerminalId ?? string.Empty);
+        SaveTerminalToken(configuration.TerminalToken ?? string.Empty);
     }
 
     public static void SetConfigured(bool isConfigured)
@@ -206,6 +221,28 @@ public static class TerminalConfigurationService
         return Preferences.Default.Get(DatabasePasswordKey, string.Empty);
     }
 
+    private static string ReadTerminalToken()
+    {
+        if (WindowsCredentialProtectionService.IsSupported)
+        {
+            var protectedValue = Preferences.Default.Get(ProtectedTerminalTokenKey, string.Empty);
+            if (!string.IsNullOrWhiteSpace(protectedValue))
+            {
+                try
+                {
+                    return WindowsCredentialProtectionService.Unprotect(protectedValue);
+                }
+                catch (Exception ex)
+                {
+                    AppDiagnostics.LogFatal("Read protected terminal token", ex);
+                    return string.Empty;
+                }
+            }
+        }
+
+        return Preferences.Default.Get(TerminalTokenKey, string.Empty);
+    }
+
     private static void SaveDatabasePassword(string password)
     {
         if (WindowsCredentialProtectionService.IsSupported)
@@ -218,6 +255,27 @@ public static class TerminalConfigurationService
         }
 
         Preferences.Default.Set(DatabasePasswordKey, password);
+    }
+
+    private static void SaveTerminalToken(string token)
+    {
+        if (WindowsCredentialProtectionService.IsSupported)
+        {
+            if (string.IsNullOrEmpty(token))
+            {
+                Preferences.Default.Remove(ProtectedTerminalTokenKey);
+                Preferences.Default.Remove(TerminalTokenKey);
+                return;
+            }
+
+            Preferences.Default.Set(
+                ProtectedTerminalTokenKey,
+                WindowsCredentialProtectionService.Protect(token));
+            Preferences.Default.Remove(TerminalTokenKey);
+            return;
+        }
+
+        Preferences.Default.Set(TerminalTokenKey, token);
     }
 
     public static string GetPosConnectionString(
@@ -275,6 +333,10 @@ public static class TerminalConfigurationService
         Preferences.Default.Remove(DatabasePasswordKey);
         Preferences.Default.Remove(ProtectedDatabasePasswordKey);
         Preferences.Default.Remove(DatabaseSslModeKey);
+        Preferences.Default.Remove(MotherApiPortKey);
+        Preferences.Default.Remove(TerminalIdKey);
+        Preferences.Default.Remove(TerminalTokenKey);
+        Preferences.Default.Remove(ProtectedTerminalTokenKey);
         Preferences.Default.Remove(InstallerConfigAppliedKey);
     }
 
