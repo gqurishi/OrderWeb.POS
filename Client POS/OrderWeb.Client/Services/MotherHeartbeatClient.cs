@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -67,9 +68,11 @@ public sealed class MotherHeartbeatClient : IAsyncDisposable
             {
                 await SendOnceAsync(cancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
-                // Heartbeat is best-effort; login and POS actions show user-facing errors.
+                // Heartbeat remains best-effort, but keep the failure visible to
+                // diagnostics so a connected WebSocket cannot hide auth errors.
+                System.Diagnostics.Debug.WriteLine($"Mother heartbeat failed: {ex.Message}");
             }
 
             await Task.Delay(HeartbeatInterval, cancellationToken);
@@ -99,6 +102,9 @@ public sealed class MotherHeartbeatClient : IAsyncDisposable
             "online");
 
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.TerminalToken);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);
         using var content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(endpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();
