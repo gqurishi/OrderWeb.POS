@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:orders="clr-namespace:OrderWeb.Client.Views.Orders"
+             x:Class="OrderWeb.Client.Pages.Orders.OrderPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#F6F8FB"
+             Title="Order">
+    <Grid RowDefinitions="230,*"
+          BackgroundColor="#F6F8FB">
+        <Border Grid.Row="0"
+                BackgroundColor="#F6F9FC"
+                StrokeThickness="0">
+            <Grid Padding="28,0"
+                  ColumnDefinitions="120,*,270">
+                <ImageButton Source="mian.png"
+                             WidthRequest="66"
+                             HeightRequest="66"
+                             Padding="0"
+                             BackgroundColor="Transparent"
+                             Aspect="AspectFit"
+                             HorizontalOptions="Start"
+                             VerticalOptions="Center"
+                             Clicked="OnMenuClicked" />
+
+                <Label x:Name="PageTitleLabel"
+                       Grid.Column="1"
+                       Text="Table Order"
+                       FontSize="34"
+                       TextColor="#1F2937"
+                       HorizontalTextAlignment="Center"
+                       VerticalTextAlignment="Center" />
+
+                <VerticalStackLayout Grid.Column="2"
+                                     Spacing="5"
+                                     VerticalOptions="Center"
+                                     HorizontalOptions="End">
+	                    <Label x:Name="DateLabel"
+	                           FontSize="17"
+	                           FontAttributes="Bold"
+                           TextColor="#1F2937"
+                           HorizontalTextAlignment="End"
+                           HorizontalOptions="End" />
+	                    <Label x:Name="TimeLabel"
+	                           FontSize="31"
+                           TextColor="#0369A1"
+                           HorizontalTextAlignment="End"
+                           HorizontalOptions="End" />
+	                    <ImageButton Source="outred.png"
+	                                 WidthRequest="62"
+	                                 HeightRequest="62"
+                                 Padding="0"
+	                                 Margin="0,16,0,0"
+                                 BackgroundColor="Transparent"
+                                 Aspect="AspectFit"
+                                 HorizontalOptions="End"
+                                 Clicked="OnLogoutClicked" />
+                </VerticalStackLayout>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="OrderLayout"
+              Grid.Row="1"
+	              Padding="24"
+	              RowDefinitions="*"
+	              ColumnDefinitions="*,560"
+	              ColumnSpacing="24"
+	              BackgroundColor="#F6F8FB">
+            <Border x:Name="MenuPanel"
+                    BackgroundColor="#FFFFFF"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 10"
+	                    Padding="18">
+	                <Grid RowDefinitions="Auto,Auto,*"
+	                      RowSpacing="18">
+                    <Border BackgroundColor="#F1F5F9"
+                            Stroke="#CBD5E1"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="12,0"
+	                            HeightRequest="60">
+                        <Entry x:Name="SearchEntry"
+                               Placeholder="Search menu items..."
+                               BackgroundColor="Transparent"
+                               TextColor="#1F2937"
+                               PlaceholderColor="#94A3B8"
+                               FontFamily="OpenSansRegular"
+                               FontSize="16"
+                               ClearButtonVisibility="WhileEditing"
+                               TextChanged="OnSearchTextChanged" />
+                    </Border>
+
+                    <Border Grid.Row="1"
+                            BackgroundColor="#EEF2F7"
+                            StrokeThickness="0"
+                            Padding="4"
+	                            HeightRequest="58">
+                        <ScrollView Orientation="Horizontal"
+                                    HorizontalScrollBarVisibility="Never"
+                                    VerticalOptions="Center">
+                            <HorizontalStackLayout x:Name="CategoryTabs"
+                                                   Spacing="12" />
+                        </ScrollView>
+                    </Border>
+
+                    <orders:MenuItemGridView x:Name="MenuGrid"
+                                             Grid.Row="2" />
+                </Grid>
+            </Border>
+
+            <orders:OrderSummaryView x:Name="Summary"
+                                     Grid.Column="1" />
+        </Grid>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             x:Class="OrderWeb.Client.Pages.Manager.GiftCardPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#FFFFFF"
+             Title="Gift Cards">
+    <Grid RowDefinitions="90,*" BackgroundColor="#FFFFFF">
+        <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="32,28,32,80" Spacing="22" MaximumWidthRequest="980" HorizontalOptions="Center">
+                <Label Text="Gift Cards" FontFamily="InterBold" FontSize="28" TextColor="#1F2937" HorizontalTextAlignment="Center" />
+
+                <Grid ColumnDefinitions="*,170" ColumnSpacing="12">
+                    <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                        <Entry Placeholder="Gift card number or scan..." FontFamily="OpenSansRegular" FontSize="15" HeightRequest="50" BackgroundColor="Transparent" />
+                    </Border>
+                    <Button Grid.Column="1" Text="Lookup" BackgroundColor="#6366F1" TextColor="#FFFFFF" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="8" HeightRequest="52" Clicked="OnLookupClicked" />
+                </Grid>
+
+                <Border BackgroundColor="#F8FAFC" Stroke="#E5E7EB" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="20">
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                        <Label x:Name="GiftCardNameLabel" Text="Gift Card" FontFamily="OpenSansSemibold" FontSize="20" TextColor="#1F2937" />
+                        <Label x:Name="GiftCardStatusLabel" Grid.Column="1" Text="Active" FontFamily="OpenSansSemibold" FontSize="14" TextColor="#059669" />
+                        <Label x:Name="GiftCardNumberLabel" Grid.Row="1" Text="Card: -" FontFamily="OpenSansRegular" FontSize="14" TextColor="#64748B" />
+                        <Label Grid.Row="2" Text="Balance" FontFamily="OpenSansRegular" FontSize="14" TextColor="#64748B" />
+                        <Label x:Name="GiftCardBalanceLabel" Grid.Row="2" Grid.Column="1" Text="£0.00" FontFamily="OpenSansBold" FontSize="30" TextColor="#1F2937" />
+                    </Grid>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+                    <Button Text="Redeem" BackgroundColor="#6366F1" TextColor="#FFFFFF" FontFamily="OpenSansSemibold" FontSize="17" CornerRadius="8" HeightRequest="58" Clicked="OnRedeemClicked" />
+                    <Button Grid.Column="1" Text="Add Balance" BackgroundColor="#F1F5F9" TextColor="#334155" FontFamily="OpenSansSemibold" FontSize="17" CornerRadius="8" HeightRequest="58" Clicked="OnAddBalanceClicked" />
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+            <BoxView BackgroundColor="Transparent">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar" HorizontalOptions="Start" TranslationX="-280" Role="Manager" SelectedMenu="Gift Cards" ShowFooter="True" />
+        </Grid>
+    </Grid>
+</ContentPage>

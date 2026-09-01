@@ -194,10 +194,12 @@ Security level: **moderate business-app security**.
 ## Repository Layout
 
 - `Features/` contains the main app features such as Authentication, Menu, Orders, Payments, Printing, Reports, Restaurant, Settings, Terminal, and TimeClock.
+- `Client POS/` is the authoritative, independently buildable .NET 9 MAUI Client POS application. It uses Mother POS APIs and WebSockets and never connects directly to MariaDB.
 - `OrderWeb.DatabaseSetup/` contains the standalone database administration tool.
 - `OrderWeb.DatabaseSetup.Tests/` contains tests for the database setup tool.
 - `Installer/` contains the installer scripts and packaging assets.
 - `Database/` contains SQL migrations, seeds, and schema documentation.
+- `docs/MOTHER_CLIENT_POS_INTEGRATION.md` defines the ownership and compatibility rules between Mother POS and Client POS.
 
 ## Notes
 

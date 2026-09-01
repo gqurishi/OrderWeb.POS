@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.Client.Dialogs.PaymentMethodDialog"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#80000000"
+             Title="Payment Method">
+    <ContentPage.Resources>
+        <Style TargetType="Button"
+               Class="PaymentChoice">
+            <Setter Property="BackgroundColor" Value="#6366F1" />
+            <Setter Property="TextColor" Value="#FFFFFF" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="HeightRequest" Value="60" />
+        </Style>
+    </ContentPage.Resources>
+    <Grid Padding="32">
+        <Border WidthRequest="480"
+                BackgroundColor="#FFFFFF"
+                Stroke="#E5E7EB"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 16"
+                Padding="24"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+            <VerticalStackLayout Spacing="18">
+                <Grid ColumnDefinitions="*,54">
+                    <VerticalStackLayout Spacing="3">
+                        <Label Text="Payment Method"
+                               FontFamily="OpenSansBold"
+                               FontSize="24"
+                               TextColor="#1F2937" />
+                        <Label Text="Choose how the customer is paying"
+                               FontFamily="OpenSansRegular"
+                               FontSize="14"
+                               TextColor="#6B7280" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1"
+                            Text="X"
+                            BackgroundColor="#FEE2E2"
+                            TextColor="#DC2626"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="18"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                </Grid>
+
+                <Grid RowDefinitions="60,60"
+                      ColumnDefinitions="*,*"
+                      RowSpacing="12"
+                      ColumnSpacing="12">
+                    <Button Text="Cash"
+                            StyleClass="PaymentChoice"
+                            Clicked="OnCashClicked" />
+                    <Button Grid.Column="1"
+                            Text="Card"
+                            StyleClass="PaymentChoice"
+                            Clicked="OnCardClicked" />
+                    <Button Grid.Row="1"
+                            Text="Gift Card"
+                            StyleClass="PaymentChoice"
+                            Clicked="OnGiftCardClicked" />
+                    <Button Grid.Row="1"
+                            Grid.Column="1"
+                            Text="Split"
+                            StyleClass="PaymentChoice"
+                            Clicked="OnSplitClicked" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

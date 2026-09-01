@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.Client.Dialogs.MoreOptionsDialog"
+             BackgroundColor="#80000000"
+             Title="More Options">
+    <Grid Padding="32">
+        <Border WidthRequest="640"
+                BackgroundColor="#FFFFFF"
+                Stroke="#E5E7EB"
+                StrokeShape="RoundRectangle 18"
+                Padding="28"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+            <VerticalStackLayout Spacing="20">
+                <Border WidthRequest="72"
+                        HeightRequest="72"
+                        BackgroundColor="#2563EB"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 36"
+                        HorizontalOptions="Center">
+                    <Label Text="i"
+                           FontFamily="OpenSansRegular"
+                           FontSize="30"
+                           TextColor="#FFFFFF"
+                           HorizontalTextAlignment="Center"
+                           VerticalTextAlignment="Center" />
+                </Border>
+
+                <Label Text="More Options"
+                       FontFamily="OpenSansRegular"
+                       FontSize="24"
+                       TextColor="#1F2937"
+                       HorizontalTextAlignment="Center" />
+
+                <Grid RowDefinitions="64,64"
+                      ColumnDefinitions="*,*,*"
+                      RowSpacing="12"
+                      ColumnSpacing="12">
+                    <Button Text="Discount"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#1F2937"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                    <Button Grid.Column="1"
+                            Text="Table Transfer"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#1F2937"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                    <Button Grid.Column="2"
+                            Text="Merge Tables"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#1F2937"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                    <Button Grid.Row="1"
+                            Text="Fire Course"
+                            IsEnabled="False"
+                            BackgroundColor="#F3F4F6"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#94A3B8"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8" />
+                    <Button Grid.Row="1"
+                            Grid.Column="1"
+                            Text="Loyalty Points"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#1F2937"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                    <Button Grid.Row="1"
+                            Grid.Column="2"
+                            Text="Cash Drawer"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#E5E7EB"
+                            BorderWidth="1"
+                            TextColor="#1F2937"
+                            FontFamily="OpenSansRegular"
+                            FontSize="15"
+                            CornerRadius="8"
+                            Clicked="OnCloseClicked" />
+                </Grid>
+
+                <Button Text="Cancel"
+                        HeightRequest="58"
+                        BackgroundColor="#E2E8F0"
+                        TextColor="#334155"
+                        FontFamily="OpenSansRegular"
+                        FontSize="16"
+                        CornerRadius="0"
+                        Clicked="OnCloseClicked" />
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

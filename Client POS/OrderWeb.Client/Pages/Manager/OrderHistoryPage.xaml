@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             x:Class="OrderWeb.Client.Pages.Manager.OrderHistoryPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#FFFFFF"
+             Title="Order History">
+    <Grid RowDefinitions="90,*" BackgroundColor="#FFFFFF">
+        <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="32,28,32,80" Spacing="22" MaximumWidthRequest="1120" HorizontalOptions="Center">
+                <Label Text="Order History" FontFamily="InterBold" FontSize="28" TextColor="#1F2937" HorizontalTextAlignment="Center" />
+
+                <Grid ColumnDefinitions="*,150,150" ColumnSpacing="12">
+                    <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
+                        <Entry Placeholder="Search order number, customer, phone..." FontFamily="OpenSansRegular" FontSize="15" HeightRequest="50" BackgroundColor="Transparent" />
+                    </Border>
+                    <Button Grid.Column="1" Text="Today" BackgroundColor="#F1F5F9" TextColor="#334155" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="8" HeightRequest="52" Clicked="OnFilterClicked" />
+                    <Button Grid.Column="2" Text="Search" BackgroundColor="#6366F1" TextColor="#FFFFFF" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="8" HeightRequest="52" Clicked="OnSearchClicked" />
+                </Grid>
+
+                <VerticalStackLayout x:Name="OrderHistoryStack" Spacing="12" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+            <BoxView BackgroundColor="Transparent">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar" HorizontalOptions="Start" TranslationX="-280" Role="Manager" SelectedMenu="Order History" ShowFooter="True" />
+        </Grid>
+    </Grid>
+</ContentPage>

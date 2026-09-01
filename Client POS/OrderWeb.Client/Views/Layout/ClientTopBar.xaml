@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:OrderWeb.Client.Views.Layout"
+             x:Class="OrderWeb.Client.Views.Layout.ClientTopBar">
+    <Border BackgroundColor="#FFFFFF"
+            StrokeThickness="0"
+            Padding="0">
+        <Border.Shadow>
+            <Shadow Brush="#E5E7EB"
+                    Radius="4"
+                    Opacity="0.1"
+                    Offset="0,2" />
+        </Border.Shadow>
+        <Grid HeightRequest="90"
+              Padding="20"
+              BackgroundColor="#FFFFFF"
+              ColumnDefinitions="Auto,*,Auto,Auto">
+            <ImageButton x:Name="MenuButton"
+                         Source="mian.png"
+                         WidthRequest="44"
+                         HeightRequest="44"
+                         MinimumWidthRequest="44"
+                         MinimumHeightRequest="44"
+                         Padding="4"
+                         BackgroundColor="Transparent"
+                         Aspect="AspectFit"
+                         VerticalOptions="Center"
+                         Clicked="OnMenuClicked" />
+            <VerticalStackLayout Grid.Column="1"
+                                 VerticalOptions="Center"
+                                 Margin="18,0,0,0">
+                <Label Text="Welcome to"
+                       FontFamily="InterMedium"
+                       FontSize="14"
+                       TextColor="#6B7280" />
+                <Label x:Name="RestaurantNameLabel"
+                       Text="Restaurant POS"
+                       FontFamily="InterBold"
+                       FontSize="24"
+                       TextColor="#1F2937" />
+            </VerticalStackLayout>
+            <VerticalStackLayout Grid.Column="2"
+                                 VerticalOptions="Center"
+                                 HorizontalOptions="End"
+                                 Margin="0,0,20,0"
+                                 Spacing="3">
+                <Label x:Name="DateLabel"
+                       Text="Tuesday, August 18, 2026"
+                       FontFamily="InterMedium"
+                       FontSize="13"
+                       TextColor="#374151"
+                       HorizontalTextAlignment="End" />
+                <Label x:Name="TimeLabel"
+                       Text="10:43:04"
+                       FontFamily="InterBold"
+                       FontSize="18"
+                       TextColor="#3B82F6"
+                       HorizontalTextAlignment="End" />
+            </VerticalStackLayout>
+            <views:ConnectionStatusView x:Name="ConnectionPill"
+                                        Grid.Column="2"
+                                        IsVisible="False" />
+            <ImageButton Grid.Column="3"
+                         Source="outred.png"
+                         WidthRequest="44"
+                         HeightRequest="44"
+                         MinimumWidthRequest="44"
+                         MinimumHeightRequest="44"
+                         Margin="0,0,6,0"
+                         Padding="1"
+                         BackgroundColor="Transparent"
+                         Aspect="AspectFit"
+                         VerticalOptions="Center"
+                         Clicked="OnLogoutClicked" />
+        </Grid>
+    </Border>
+</ContentView>

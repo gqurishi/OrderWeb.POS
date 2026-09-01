@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             x:Class="OrderWeb.Client.Pages.Manager.ReservationPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#F6F8FB"
+             Title="Reservation">
+    <Grid RowDefinitions="150,*" BackgroundColor="#F6F8FB">
+        <Border Grid.Row="0" BackgroundColor="#F6F9FC" StrokeThickness="0">
+            <Grid Padding="20,0" ColumnDefinitions="120,*,270">
+                <ImageButton x:Name="MenuButton"
+                             Source="mian.png"
+                             WidthRequest="35"
+                             HeightRequest="35"
+                             Padding="0"
+                             BackgroundColor="Transparent"
+                             Aspect="AspectFit"
+                             HorizontalOptions="Start"
+                             VerticalOptions="Center"
+                             Clicked="OnMenuClicked" />
+
+                <Label Grid.Column="1"
+                       Text="Reservation"
+                       FontSize="32"
+                       FontAttributes="Bold"
+                       TextColor="#1F2937"
+                       HorizontalTextAlignment="Center"
+                       VerticalTextAlignment="Center" />
+
+                <VerticalStackLayout Grid.Column="2"
+                                     Spacing="5"
+                                     VerticalOptions="Center"
+                                     HorizontalOptions="End">
+                    <Label x:Name="DateLabel"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="#1F2937"
+                           HorizontalTextAlignment="End"
+                           HorizontalOptions="End" />
+                    <Label x:Name="TimeLabel"
+                           FontSize="28"
+                           FontAttributes="Bold"
+                           TextColor="#0369A1"
+                           HorizontalTextAlignment="End"
+                           HorizontalOptions="End" />
+                    <ImageButton Source="outred.png"
+                                 WidthRequest="40"
+                                 HeightRequest="40"
+                                 Padding="0"
+                                 Margin="0,10,0,0"
+                                 BackgroundColor="Transparent"
+                                 Aspect="AspectFit"
+                                 HorizontalOptions="End"
+                                 Clicked="OnLogoutClicked" />
+                </VerticalStackLayout>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Padding="22"
+              ColumnDefinitions="390,*"
+              RowDefinitions="Auto,*"
+              ColumnSpacing="20"
+              RowSpacing="16">
+
+            <Grid Grid.Row="0" Grid.ColumnSpan="2" ColumnDefinitions="*,*,*,Auto" ColumnSpacing="12">
+                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" Padding="18,16" StrokeShape="RoundRectangle 12">
+                    <Border.Shadow>
+                        <Shadow Brush="#CBD5E1" Radius="8" Opacity="0.06" Offset="0,2" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Bookings Today" FontSize="12" FontAttributes="Bold" TextColor="#64748B" />
+                        <Label Text="{Binding TodayCountText}" FontSize="26" FontAttributes="Bold" TextColor="#0F172A" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Grid.Column="1" BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" Padding="18,16" StrokeShape="RoundRectangle 12">
+                    <Border.Shadow>
+                        <Shadow Brush="#CBD5E1" Radius="8" Opacity="0.06" Offset="0,2" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="People Today" FontSize="12" FontAttributes="Bold" TextColor="#64748B" />
+                        <Label Text="{Binding GuestCountText}" FontSize="26" FontAttributes="Bold" TextColor="#0F766E" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Grid.Column="2" BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" Padding="18,16" StrokeShape="RoundRectangle 12">
+                    <Border.Shadow>
+                        <Shadow Brush="#CBD5E1" Radius="8" Opacity="0.06" Offset="0,2" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Next Booking" FontSize="12" FontAttributes="Bold" TextColor="#64748B" />
+                        <Label Text="{Binding NextReservationText}" FontSize="26" FontAttributes="Bold" TextColor="#1D4ED8" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <HorizontalStackLayout Grid.Column="3" Spacing="10" VerticalOptions="Center">
+                    <Button Text="Update"
+                            BackgroundColor="#EEF2FF"
+                            TextColor="#3730A3"
+                            FontAttributes="Bold"
+                            FontSize="16"
+                            CornerRadius="12"
+                            HeightRequest="56"
+                            WidthRequest="118"
+                            Clicked="OnUpdateClicked" />
+                    <Button Text="+ New"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            FontSize="16"
+                            CornerRadius="12"
+                            HeightRequest="56"
+                            WidthRequest="118"
+                            Clicked="OnNewReservationClicked" />
+                </HorizontalStackLayout>
+            </Grid>
+
+            <Border Grid.Row="1"
+                    Grid.Column="0"
+                    BackgroundColor="White"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    Padding="18"
+                    StrokeShape="RoundRectangle 18">
+                <Border.Shadow>
+                    <Shadow Brush="#CBD5E1" Radius="10" Opacity="0.06" Offset="0,2" />
+                </Border.Shadow>
+                <VerticalStackLayout Spacing="14">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Button Text="‹"
+                                WidthRequest="42"
+                                HeightRequest="38"
+                                BackgroundColor="#F1F5F9"
+                                TextColor="#0F172A"
+                                CornerRadius="10"
+                                Clicked="OnPreviousMonthClicked" />
+                        <Label Grid.Column="1"
+                               Text="{Binding CalendarMonthText}"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+                        <Button Grid.Column="2"
+                                Text="›"
+                                WidthRequest="42"
+                                HeightRequest="38"
+                                BackgroundColor="#F1F5F9"
+                                TextColor="#0F172A"
+                                CornerRadius="10"
+                                Clicked="OnNextMonthClicked" />
+                    </Grid>
+
+                    <Button Text="Today"
+                            BackgroundColor="#EFF6FF"
+                            TextColor="#1D4ED8"
+                            FontAttributes="Bold"
+                            CornerRadius="10"
+                            HeightRequest="38"
+                            Clicked="OnTodayClicked" />
+
+                    <Grid ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="4">
+                        <Label Text="Mon" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="1" Text="Tue" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="2" Text="Wed" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="3" Text="Thu" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="4" Text="Fri" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="5" Text="Sat" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Label Grid.Column="6" Text="Sun" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                    </Grid>
+
+                    <CollectionView x:Name="CalendarCollectionView"
+                                    ItemsSource="{Binding CalendarDays}"
+                                    SelectionMode="Single"
+                                    SelectionChanged="OnCalendarDaySelected"
+                                    HeightRequest="398"
+                                    ItemSizingStrategy="MeasureFirstItem">
+                        <CollectionView.ItemsLayout>
+                            <GridItemsLayout Orientation="Vertical" Span="7" HorizontalItemSpacing="4" VerticalItemSpacing="4" />
+                        </CollectionView.ItemsLayout>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border BackgroundColor="{Binding BackgroundColor}"
+                                        Stroke="{Binding BorderColor}"
+                                        StrokeThickness="1"
+                                        Padding="6"
+                                        HeightRequest="61"
+                                        StrokeShape="RoundRectangle 10">
+                                    <Label Text="{Binding DayText}"
+                                           FontSize="16"
+                                           FontAttributes="Bold"
+                                           TextColor="{Binding TextColor}"
+                                           HorizontalTextAlignment="Center"
+                                           VerticalTextAlignment="Center" />
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Border>
+
+            <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="14">
+                <Border BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="16,14"
+                        StrokeShape="RoundRectangle 18">
+                    <Border.Shadow>
+                        <Shadow Brush="#CBD5E1" Radius="10" Opacity="0.06" Offset="0,2" />
+                    </Border.Shadow>
+                    <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding SelectedDateDisplay}"
+                                       FontSize="18"
+                                       FontAttributes="Bold"
+                                       TextColor="#0F172A" />
+                                <HorizontalStackLayout Spacing="10">
+                                    <Label Text="{Binding SyncStatusText}"
+                                           FontSize="12"
+                                           TextColor="#64748B" />
+                                    <Label Text="{Binding LastUpdatedText}"
+                                           FontSize="12"
+                                           TextColor="#94A3B8" />
+                                </HorizontalStackLayout>
+                            </VerticalStackLayout>
+                            <ActivityIndicator Grid.Column="1"
+                                               WidthRequest="24"
+                                               HeightRequest="24"
+                                               IsRunning="{Binding IsLoading}"
+                                               IsVisible="{Binding IsLoading}"
+                                               Color="#2563EB"
+                                               VerticalOptions="Center" />
+                            <Button Grid.Column="2"
+                                    Text="Today"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#0F172A"
+                                    FontAttributes="Bold"
+                                    CornerRadius="10"
+                                    HeightRequest="40"
+                                    WidthRequest="90"
+                                    Clicked="OnTodayClicked" />
+                        </Grid>
+
+                        <Border Grid.Row="1"
+                                BackgroundColor="#F8FAFC"
+                                Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                Padding="12,8"
+                                StrokeShape="RoundRectangle 10">
+                            <Entry x:Name="SearchEntry"
+                                   Placeholder="Search name or phone"
+                                   BackgroundColor="Transparent"
+                                   TextColor="#0F172A"
+                                   PlaceholderColor="#94A3B8"
+                                   FontSize="14"
+                                   Keyboard="Text"
+                                   TextChanged="OnSearchTextChanged" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="0"
+                        StrokeShape="RoundRectangle 18">
+                    <Border.Shadow>
+                        <Shadow Brush="#CBD5E1" Radius="10" Opacity="0.06" Offset="0,2" />
+                    </Border.Shadow>
+                    <Grid RowDefinitions="Auto,*">
+                        <Grid Padding="18,16"
+                              ColumnDefinitions="90,*,80,150,90,130,150"
+                              ColumnSpacing="12"
+                              BackgroundColor="#F8FAFC">
+                            <Label Text="Time" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                            <Label Grid.Column="1" Text="Guest" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                            <Label Grid.Column="2" Text="Cover" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="3" Text="Phone" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
+                            <Label Grid.Column="4" Text="Table" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="5" Text="Promo" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="6" Text="Actions" FontSize="12" FontAttributes="Bold" TextColor="#475569" HorizontalTextAlignment="Center" />
+                        </Grid>
+
+                        <CollectionView Grid.Row="1"
+                                        ItemsSource="{Binding Reservations}"
+                                        SelectionMode="None"
+                                        ItemSizingStrategy="MeasureFirstItem">
+                            <CollectionView.EmptyView>
+                                <VerticalStackLayout Padding="40" Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                                    <Label Text="No reservations for this date"
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="#0F172A"
+                                           HorizontalTextAlignment="Center" />
+                                    <Label Text="Website reservations will appear here when synced."
+                                           FontSize="14"
+                                           TextColor="#64748B"
+                                           HorizontalTextAlignment="Center" />
+                                    <Button Text="Update Reservations"
+                                            BackgroundColor="#EEF2FF"
+                                            TextColor="#3730A3"
+                                            FontAttributes="Bold"
+                                            CornerRadius="12"
+                                            HeightRequest="44"
+                                            WidthRequest="190"
+                                            Clicked="OnUpdateClicked" />
+                                </VerticalStackLayout>
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="18,14"
+                                          ColumnDefinitions="90,*,80,150,90,130,150"
+                                          ColumnSpacing="12">
+                                        <Label Text="{Binding TimeText}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                            <Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" />
+                                            <Label Text="{Binding StatusDisplay}" FontSize="12" TextColor="#64748B" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="2" Text="{Binding Guests}" FontSize="15" FontAttributes="Bold" TextColor="#0F766E" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+                                        <Label Grid.Column="3" Text="{Binding Phone}" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
+                                        <Label Grid.Column="4" Text="{Binding Table}" FontSize="15" FontAttributes="Bold" TextColor="#1D4ED8" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+                                        <Label Grid.Column="5" Text="{Binding PromoColumnText}" FontSize="13" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+                                        <Button Grid.Column="6"
+                                                Text="Details"
+                                                BackgroundColor="#EEF2FF"
+                                                TextColor="#3730A3"
+                                                FontAttributes="Bold"
+                                                CornerRadius="10"
+                                                HeightRequest="38"
+                                                Clicked="OnReservationDetailsClicked" />
+                                    </Grid>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+            <BoxView BackgroundColor="Transparent">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar" HorizontalOptions="Start" TranslationX="-280" Role="Manager" SelectedMenu="Reservation" ShowFooter="True" />
+        </Grid>
+    </Grid>
+</ContentPage>

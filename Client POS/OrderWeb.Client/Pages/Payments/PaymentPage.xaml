@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             xmlns:printing="clr-namespace:OrderWeb.Client.Views.Printing"
+             x:Class="OrderWeb.Client.Pages.Payments.PaymentPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#FFFFFF"
+             Title="Payment">
+    <Grid RowDefinitions="90,*"
+          BackgroundColor="#FFFFFF">
+        <layout:ClientTopBar x:Name="TopBar"
+                             RestaurantName="Restaurant POS" />
+
+        <Grid Grid.Row="1"
+              Padding="32,28,32,80"
+              RowDefinitions="Auto,*"
+              RowSpacing="22">
+            <Label Text="Payment"
+                   FontFamily="InterBold"
+                   FontSize="28"
+                   TextColor="#1F2937"
+                   HorizontalTextAlignment="Center" />
+
+            <Grid Grid.Row="1"
+                  ColumnDefinitions="*,360"
+                  ColumnSpacing="22"
+                  MaximumWidthRequest="980"
+                  HorizontalOptions="Center"
+                  VerticalOptions="Center">
+                <Border BackgroundColor="#F8FAFC"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="22">
+                    <VerticalStackLayout Spacing="18">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Total Due"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="14"
+                                   TextColor="#6B7280" />
+                            <Label x:Name="TotalLabel"
+                                   Text="£0.00"
+                                   FontFamily="OpenSansBold"
+                                   FontSize="36"
+                                   TextColor="#1F2937" />
+                        </VerticalStackLayout>
+
+                        <Grid RowDefinitions="60,60"
+                              ColumnDefinitions="*,*"
+                              RowSpacing="12"
+                              ColumnSpacing="12">
+                            <Button x:Name="CashButton"
+                                    Text="Cash"
+                                    Clicked="OnMethodClicked" />
+                            <Button x:Name="CardButton"
+                                    Grid.Column="1"
+                                    Text="Card"
+                                    Clicked="OnMethodClicked" />
+                            <Button x:Name="GiftCardButton"
+                                    Grid.Row="1"
+                                    Text="Gift Card"
+                                    Clicked="OnMethodClicked" />
+                            <Button x:Name="SplitButton"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Text="Split"
+                                    Clicked="OnMethodClicked" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,*"
+                              ColumnSpacing="14">
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Amount Paid"
+                                       FontFamily="OpenSansRegular"
+                                       FontSize="14"
+                                       TextColor="#374151" />
+                                <Border BackgroundColor="#FFFFFF"
+                                        Stroke="#CBD5E1"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="12,0">
+                                    <Entry x:Name="TenderedEntry"
+                                           Placeholder="0.00"
+                                           Keyboard="Numeric"
+                                           BackgroundColor="Transparent"
+                                           FontFamily="OpenSansRegular"
+                                           FontSize="15"
+                                           HeightRequest="50"
+                                           TextChanged="OnTenderedChanged" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout Grid.Column="1"
+                                                 Spacing="6">
+                                <Label Text="Change Due"
+                                       FontFamily="OpenSansRegular"
+                                       FontSize="14"
+                                       TextColor="#374151" />
+                                <Border BackgroundColor="#FFFFFF"
+                                        Stroke="#E5E7EB"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="12,0"
+                                        HeightRequest="52">
+                                    <Label x:Name="ChangeLabel"
+                                           Text="£0.00"
+                                           FontFamily="OpenSansBold"
+                                           FontSize="18"
+                                           TextColor="#059669"
+                                           VerticalTextAlignment="Center" />
+                                </Border>
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <HorizontalStackLayout Spacing="10">
+                            <CheckBox x:Name="PrintReceiptCheckBox"
+                                      IsChecked="True"
+                                      Color="#6366F1" />
+                            <Label Text="Print receipt"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="14"
+                                   TextColor="#374151"
+                                   VerticalTextAlignment="Center" />
+                        </HorizontalStackLayout>
+
+                        <Button Text="Confirm Payment"
+                                BackgroundColor="#6366F1"
+                                TextColor="#FFFFFF"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="17"
+                                CornerRadius="8"
+                                HeightRequest="58"
+                                Clicked="OnConfirmClicked" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Grid.Column="1"
+                        BackgroundColor="#F8FAFC"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="18">
+                    <VerticalStackLayout Spacing="16">
+                        <Label Text="Mother Printing"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="20"
+                               TextColor="#1F2937" />
+                        <printing:PrintStatusView x:Name="PrintStatus" />
+                        <Label x:Name="MethodLabel"
+                               Text="Method: Cash"
+                               FontFamily="OpenSansRegular"
+                               FontSize="14"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             x:Class="OrderWeb.Client.Pages.Dashboards.UserDashboardPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#FFFFFF"
+             Title="User Dashboard">
+    <Grid x:Name="Root"
+          BackgroundColor="#FFFFFF">
+        <Grid RowDefinitions="90,*"
+              BackgroundColor="#FFFFFF">
+            <layout:ClientTopBar x:Name="TopBar"
+                                 RestaurantName="Restaurant POS" />
+
+            <Grid x:Name="TileGrid"
+                  Grid.Row="1"
+                  Padding="30"
+                  RowDefinitions="Auto,Auto"
+                  ColumnDefinitions="Auto,Auto,Auto"
+                  RowSpacing="80"
+                  ColumnSpacing="150"
+                  HorizontalOptions="Center"
+                  VerticalOptions="Center"
+                  MaximumWidthRequest="900">
+                <VerticalStackLayout x:Name="RestaurantTile"
+                                     Spacing="14"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                    <VerticalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnRestaurantTapped" />
+                    </VerticalStackLayout.GestureRecognizers>
+                    <Image x:Name="RestaurantIcon"
+                           Source="restaurant.png"
+                           WidthRequest="190"
+                           HeightRequest="190"
+                           Aspect="AspectFit" />
+                    <Label Text="Restaurant"
+                           FontFamily="InterBold"
+                           FontSize="18"
+                           TextColor="#1D4ED8"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="DeliveryTile"
+                                     Grid.Column="1"
+                                     Spacing="14"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                    <VerticalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnDeliveryTapped" />
+                    </VerticalStackLayout.GestureRecognizers>
+                    <Image x:Name="DeliveryIcon"
+                           Source="delivery.png"
+                           WidthRequest="190"
+                           HeightRequest="190"
+                           Aspect="AspectFit" />
+                    <Label Text="Delivery"
+                           FontFamily="InterBold"
+                           FontSize="18"
+                           TextColor="#1D4ED8"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="CollectionTile"
+                                     Grid.Column="2"
+                                     Spacing="14"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                    <VerticalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCollectionTapped" />
+                    </VerticalStackLayout.GestureRecognizers>
+                    <Image x:Name="CollectionIcon"
+                           Source="collection.png"
+                           WidthRequest="190"
+                           HeightRequest="190"
+                           Aspect="AspectFit" />
+                    <Label Text="Collection"
+                           FontFamily="InterBold"
+                           FontSize="18"
+                           TextColor="#1D4ED8"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="LiveOrderTile"
+                                     Grid.Row="1"
+                                     Grid.Column="1"
+                                     Spacing="14"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                    <VerticalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnLiveOrderTapped" />
+                    </VerticalStackLayout.GestureRecognizers>
+                    <Image x:Name="LiveOrderIcon"
+                           Source="liveorder.png"
+                           WidthRequest="190"
+                           HeightRequest="190"
+                           Aspect="AspectFit" />
+                    <Label Text="Live Order"
+                           FontFamily="InterBold"
+                           FontSize="18"
+                           TextColor="#1D4ED8"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Grid>
+        </Grid>
+
+        <Grid x:Name="SidebarLayer"
+              IsVisible="False"
+              BackgroundColor="Transparent">
+            <BoxView BackgroundColor="#01FFFFFF"
+                     Margin="280,0,0,0">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnSidebarBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar"
+                                  Role="User"
+                                  SelectedMenu="Dashboard"
+                                  TranslationX="-280"
+                                  HorizontalOptions="Start" />
+        </Grid>
+    </Grid>
+</ContentPage>

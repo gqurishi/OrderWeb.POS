@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.Client.Views.Layout.ClientSidebar"
+             WidthRequest="280">
+    <Grid RowDefinitions="Auto,*,Auto"
+          BackgroundColor="#FFFFFF">
+        <VerticalStackLayout Padding="20,32,20,28"
+                             Spacing="16">
+            <Image Source="companylogo.png"
+                   WidthRequest="100"
+                   HeightRequest="100"
+                   HorizontalOptions="Center" />
+            <Label Text="Restaurant Management"
+                   FontFamily="OpenSansRegular"
+                   FontSize="16"
+                   TextColor="#718096"
+                   HorizontalOptions="Center" />
+        </VerticalStackLayout>
+        <ScrollView Grid.Row="1"
+                    Margin="0,8,0,0"
+                    BackgroundColor="#FFFFFF">
+            <VerticalStackLayout x:Name="MenuStack"
+                                 Padding="16,12"
+                                 Spacing="6" />
+        </ScrollView>
+        <VerticalStackLayout x:Name="Footer"
+                             Grid.Row="2"
+                             IsVisible="False"
+                             Padding="14,12,14,14"
+                             BackgroundColor="#FFFFFF">
+            <Button Text="Update All"
+                    FontFamily="OpenSansSemibold"
+                    FontSize="15"
+                    TextColor="White"
+                    CornerRadius="11"
+                    HeightRequest="46"
+                    BackgroundColor="#6366F1"
+                    Clicked="OnUpdateAllClicked" />
+        </VerticalStackLayout>
+    </Grid>
+</ContentView>

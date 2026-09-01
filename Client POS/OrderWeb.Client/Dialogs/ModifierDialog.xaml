@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.Client.Dialogs.ModifierDialog"
+             BackgroundColor="#80000000"
+             Title="Modifiers">
+    <Grid Padding="32">
+        <Border WidthRequest="520"
+                BackgroundColor="#FFFFFF"
+                Stroke="#E5E7EB"
+                StrokeShape="RoundRectangle 18"
+                Padding="28"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+            <VerticalStackLayout Spacing="18">
+                <Grid ColumnDefinitions="*,52">
+                    <VerticalStackLayout>
+                        <Label Text="Modifiers"
+                               FontFamily="InterBold"
+                               FontSize="24"
+                               TextColor="#1F2937" />
+                        <Label Text="Choose item options"
+                               FontFamily="OpenSansRegular"
+                               FontSize="14"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1"
+                            Text="X"
+                            WidthRequest="48"
+                            HeightRequest="48"
+                            CornerRadius="24"
+                            BackgroundColor="#FEE2E2"
+                            TextColor="#DC2626"
+                            FontFamily="InterBold"
+                            Clicked="OnCloseClicked" />
+                </Grid>
+                <Grid RowDefinitions="56,56,56"
+                      RowSpacing="12">
+                    <Button Text="No garnish"
+                            BackgroundColor="#F1F5F9"
+                            TextColor="#334155"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="15"
+                            CornerRadius="8" />
+                    <Button Grid.Row="1"
+                            Text="Extra sauce"
+                            BackgroundColor="#F1F5F9"
+                            TextColor="#334155"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="15"
+                            CornerRadius="8" />
+                    <Button Grid.Row="2"
+                            Text="Well done"
+                            BackgroundColor="#F1F5F9"
+                            TextColor="#334155"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="15"
+                            CornerRadius="8" />
+                </Grid>
+                <Button Text="Done"
+                        HeightRequest="54"
+                        BackgroundColor="#6366F1"
+                        TextColor="#FFFFFF"
+                        FontFamily="OpenSansSemibold"
+                        FontSize="16"
+                        CornerRadius="8"
+                        Clicked="OnCloseClicked" />
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

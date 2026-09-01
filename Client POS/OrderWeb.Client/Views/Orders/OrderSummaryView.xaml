@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+	             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+	             x:Class="OrderWeb.Client.Views.Orders.OrderSummaryView"
+	             WidthRequest="560"
+	             MinimumWidthRequest="520"
+	             BackgroundColor="Transparent">
+	    <Border BackgroundColor="#FFFFFF"
+	            StrokeThickness="0"
+	            StrokeShape="RoundRectangle 10"
+	            Padding="18">
+	        <Grid RowDefinitions="Auto,*,Auto"
+	              RowSpacing="18">
+            <Border BackgroundColor="#F8FAFC"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 8"
+                    Padding="14">
+	                <Grid ColumnDefinitions="*,170"
+	                      ColumnSpacing="12">
+                    <VerticalStackLayout Spacing="2"
+                                         VerticalOptions="Center">
+	                        <Label x:Name="TitleLabel"
+	                               Text="Order # New"
+	                               FontFamily="OpenSansSemibold"
+	                               FontSize="20"
+	                               MaxLines="1"
+	                               LineBreakMode="NoWrap"
+	                               TextColor="#1F2937" />
+                        <Label x:Name="DetailLabel"
+                               Text="Table order"
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1"
+                            Text="PAYMENT"
+                            BackgroundColor="#F59E0B"
+                            TextColor="#FFFFFF"
+	                            FontFamily="OpenSansSemibold"
+	                            FontSize="15"
+	                            CornerRadius="8"
+	                            HeightRequest="58"
+	                            Padding="0"
+                            Clicked="OnPaymentClicked" />
+                </Grid>
+            </Border>
+
+            <ScrollView Grid.Row="1"
+                        Margin="0,8">
+                <VerticalStackLayout x:Name="LinesStack"
+                                     Spacing="10" />
+            </ScrollView>
+
+            <Border Grid.Row="2"
+                    BackgroundColor="#FFFFFF"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 8"
+                    Padding="16">
+	                <VerticalStackLayout Spacing="16">
+		                    <Border BackgroundColor="#F8FAFC"
+		                            StrokeThickness="0"
+		                            StrokeShape="RoundRectangle 8"
+		                            Padding="18">
+		                        <Grid ColumnDefinitions="*,Auto">
+		                            <Label Text="TOTAL"
+		                                   FontFamily="OpenSansRegular"
+		                                   FontSize="15"
+		                                   TextColor="#64748B"
+		                                   VerticalTextAlignment="Center" />
+		                            <Label x:Name="TotalLabel"
+		                                   Grid.Column="1"
+		                                   Text="£0.00"
+                                   FontFamily="OpenSansBold"
+                                   FontSize="24"
+                                   TextColor="#10B981"
+                                   VerticalTextAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+	                    <Grid RowDefinitions="68,76"
+	                          ColumnDefinitions="*,*,*,*"
+	                          RowSpacing="12"
+	                          ColumnSpacing="12">
+                        <Button Text="SERVICE"
+                                BackgroundColor="#8B5CF6"
+                                TextColor="#FFFFFF"
+	                                FontFamily="OpenSansSemibold"
+		                                FontSize="14"
+		                                CornerRadius="8"
+		                                Padding="0"
+                                Clicked="OnServiceClicked" />
+                        <Button Grid.Column="1"
+                                Text="NOTES"
+                                BackgroundColor="#3B82F6"
+                                TextColor="#FFFFFF"
+	                                FontFamily="OpenSansSemibold"
+		                                FontSize="14"
+		                                CornerRadius="8"
+		                                Padding="0"
+                                Clicked="OnNotesClicked" />
+                        <Button Grid.Column="2"
+                                Text="VOID"
+                                BackgroundColor="#EF4444"
+                                TextColor="#FFFFFF"
+	                                FontFamily="OpenSansSemibold"
+		                                FontSize="14"
+		                                CornerRadius="8"
+		                                Padding="0"
+                                Clicked="OnVoidClicked" />
+                        <Button Grid.Column="3"
+                                Text="MORE ▼"
+                                BackgroundColor="#64748B"
+                                TextColor="#FFFFFF"
+	                                FontFamily="OpenSansSemibold"
+		                                FontSize="14"
+		                                CornerRadius="8"
+		                                Padding="0"
+                                Clicked="OnMoreClicked" />
+
+                        <Button Grid.Row="1"
+                                Grid.ColumnSpan="2"
+                                Text="SEND TO KITCHEN"
+                                BackgroundColor="#10B981"
+                                TextColor="#FFFFFF"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                CornerRadius="8"
+                                Padding="0"
+                                Clicked="OnSendClicked" />
+                        <Button Grid.Row="1"
+                                Grid.Column="2"
+                                Grid.ColumnSpan="2"
+                                Text="PRINT"
+                                BackgroundColor="#6366F1"
+                                TextColor="#FFFFFF"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                CornerRadius="8"
+                                Padding="0"
+                                Clicked="OnPrintClicked" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Border>
+</ContentView>
