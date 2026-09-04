@@ -1,15 +1,15 @@
 using Microsoft.Maui.Storage;
-using POS_in_NET.Services;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
+using POS_in_NET.Services;
 
 namespace POS_in_NET.Pages;
 
 public partial class LoginPage : ContentPage
 {
-    private readonly AuthenticationService _authService;
+    private readonly MotherAuthenticationService _authService;
     private readonly BusinessSettingsService _businessService;
-    private System.Timers.Timer? _timeTimer;
-    private Entry? _currentFocusedEntry;
+    private IDispatcherTimer? _clockTimer;
     private bool _businessInfoLoaded;
     private bool _authCacheWarmStarted;
     private bool _terminalConnectionOk;
@@ -21,38 +21,27 @@ public partial class LoginPage : ContentPage
     public LoginPage()
     {
         InitializeComponent();
-        _authService = AuthenticationService.Instance;
+        _authService = MotherAuthenticationService.Instance;
         _businessService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
         StartAuthCacheWarmup();
-        
-        // Start time updates
-        StartTimeUpdates();
+        StartClockUpdates();
     }
 
-    private void StartTimeUpdates()
+    private void StartClockUpdates()
     {
-        // Update time immediately
-        UpdateTimeDisplay();
-        
-        // Update every second
-        _timeTimer = new System.Timers.Timer(1000);
-        _timeTimer.Elapsed += (sender, e) =>
-        {
-            MainThread.BeginInvokeOnMainThread(UpdateTimeDisplay);
-        };
-        _timeTimer.Start();
+        LoginView.UpdateClock();
+        _clockTimer = Dispatcher.CreateTimer();
+        _clockTimer.Interval = TimeSpan.FromSeconds(1);
+        _clockTimer.Tick += (_, _) => LoginView.UpdateClock();
+        _clockTimer.Start();
     }
 
-    private void UpdateTimeDisplay()
-    {
-        var now = DateTime.Now;
-        CurrentTimeLabel.Text = now.ToString("h:mm tt").ToLowerInvariant();
-        CurrentDateLabel.Text = now.ToString("dddd, MMM d, yyyy");
-    }
+    private async void OnPinCompleted(object? sender, string pin)
+        => await PerformLoginAsync(pin);
 
-    private async void OnClockInOutClicked(object sender, EventArgs e)
+    private async void OnClockActionRequested(object? sender, EventArgs e)
     {
-        if (LoadingIndicator.IsVisible)
+        if (LoginView.IsBusy)
         {
             return;
         }
@@ -66,48 +55,30 @@ public partial class LoginPage : ContentPage
         await Navigation.PushModalAsync(new ClockTimeModal(), false);
     }
 
-    private void OnMinimizeClicked(object sender, EventArgs e)
-    {
-        PosWindowService.MinimizeMainWindow();
-    }
+    private void OnMinimizeRequested(object? sender, EventArgs e)
+        => PosWindowService.MinimizeMainWindow();
 
-    private void OnUsernameCompleted(object sender, EventArgs e)
-    {
-        // Not used in PIN mode
-    }
-
-    private async void OnPasswordCompleted(object sender, EventArgs e)
-    {
-        // Auto-login when 4 digits entered
-        if (PasswordEntry.Text?.Length == 4)
-        {
-            await PerformLoginAsync();
-        }
-    }
-
-    private async Task PerformLoginAsync()
+    private async Task PerformLoginAsync(string pin)
     {
         if (_isLoginInProgress)
         {
             return;
         }
 
-        var pin = PasswordEntry.Text?.Trim() ?? string.Empty;
+        pin = pin?.Trim() ?? string.Empty;
+        LoginView.ClearMessages();
+        LoginView.BannerMessage = string.Empty;
 
-        // Reset error message
-        ErrorFrame.IsVisible = false;
-        ErrorLabel.Text = "";
-        LoginStatusLabel.IsVisible = false;
-
-        // Validate PIN (4 digits)
         if (pin.Length != 4 || !pin.All(char.IsDigit))
         {
-            ShowError("Please enter a 4-digit PIN.");
+            LoginView.ErrorMessage = "Please enter a 4-digit PIN.";
+            LoginView.ClearPin();
             return;
         }
 
         _isLoginInProgress = true;
-        SetLoadingState(true, "Logging in...");
+        LoginView.BusyMessage = "Logging in...";
+        LoginView.IsBusy = true;
         await Task.Yield();
 
         try
@@ -126,36 +97,30 @@ public partial class LoginPage : ContentPage
                 if (!connectionResult.Success)
                 {
                     ShowChildTerminalStatus(connectionResult.Message);
-                    ShowError(connectionResult.Message);
+                    LoginView.ErrorMessage = connectionResult.Message;
+                    LoginView.ClearPin();
                     return;
                 }
 
                 Preferences.Default.Remove("child_schema_gate_message");
             }
 
-            // Use PIN as both username and password for authentication
-            var result = await _authService.LoginAsync(pin, pin);
-
+            var result = await _authService.LoginWithPinAsync(pin);
             if (result.Success && result.User != null)
             {
                 if (result.User.Role == UserRole.Staff)
                 {
                     await _authService.LogoutAsync();
-                    ShowError("Staff PIN is for Clock In/Out only.");
-                    ClearPIN();
+                    LoginView.ErrorMessage = "Staff PIN is for Clock In/Out only.";
+                    LoginView.ClearPin();
                     return;
                 }
 
-                SetLoadingState(true, "Logging in...");
-
-                // Role-based navigation
-                string navigationRoute = GetNavigationRouteForRole(result.User.Role);
-
-                // Navigate to appropriate dashboard based on user role
+                LoginView.BusyMessage = "Logging in...";
+                var navigationRoute = GetNavigationRouteForRole(result.User.Role);
                 try
                 {
-                    // Never leave an accepted PIN on the reusable login page.
-                    ClearPIN();
+                    LoginView.ClearPin();
                     if (!await NavigateAfterLoginAsync(navigationRoute))
                     {
                         throw new InvalidOperationException("The dashboard navigation did not complete.");
@@ -166,8 +131,6 @@ public partial class LoginPage : ContentPage
                     AppDiagnostics.Log($"[Login] Dashboard navigation failed after successful PIN: {navEx}");
                     if (Application.Current != null)
                     {
-                        // A fresh shell is the final recovery path. Always navigate
-                        // every role explicitly; the shell's default page is login.
                         var recoveryShell = new AppShell();
                         Application.Current.MainPage = recoveryShell;
                         await recoveryShell.GoToAsync(navigationRoute, false);
@@ -176,28 +139,27 @@ public partial class LoginPage : ContentPage
             }
             else
             {
-                ShowError("Wrong PIN. Try again.");
-                ClearPIN();
+                LoginView.ErrorMessage = string.IsNullOrWhiteSpace(result.Message)
+                    ? "Wrong PIN. Try again."
+                    : result.Message;
+                LoginView.ClearPin();
             }
         }
         catch (Exception ex)
         {
-            ShowError($"Login error: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"Login error: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"Full exception: {ex}");
+            LoginView.ErrorMessage = $"Login error: {ex.Message}";
+            LoginView.ClearPin();
+            System.Diagnostics.Debug.WriteLine($"Login error: {ex}");
         }
         finally
         {
             _isLoginInProgress = false;
-            SetLoadingState(false);
+            LoginView.IsBusy = false;
         }
     }
 
     private static async Task<bool> NavigateAfterLoginAsync(string navigationRoute)
     {
-        // Logout/startup navigation can still be completing when the fourth PIN
-        // digit is tapped. Wait briefly for that shared transition instead of
-        // silently dropping the authenticated dashboard navigation.
         for (var attempt = 0; attempt < 20 && NavigationCoordinator.Shared.IsNavigating; attempt++)
         {
             await Task.Delay(50);
@@ -216,46 +178,22 @@ public partial class LoginPage : ContentPage
             return true;
         }
 
-        // A navigation rejected as busy gets one bounded retry. Authentication
-        // has already succeeded, so the user must not be asked for the PIN again.
         await Task.Delay(150);
         return await NavigationCoordinator.Shared.NavigateShellAsync(navigationRoute, animated: false);
-    }
-
-    private void ShowError(string message)
-    {
-        LoginStatusLabel.IsVisible = false;
-        ErrorLabel.Text = message;
-        ErrorLabel.IsVisible = true;
-        ErrorFrame.IsVisible = true;
-    }
-
-    private void SetLoadingState(bool isLoading, string? message = null)
-    {
-        LoadingIndicator.IsVisible = isLoading;
-        ClockInOutButton.IsEnabled = !isLoading;
-        UsernameEntry.IsEnabled = !isLoading;
-        PasswordEntry.IsEnabled = !isLoading;
-        LoginStatusLabel.Text = message ?? "Checking PIN...";
-        LoginStatusLabel.IsVisible = isLoading;
-
-        if (!isLoading)
-        {
-            LoginStatusLabel.IsVisible = false;
-        }
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
-
         _isLoginInProgress = false;
-        SetLoadingState(false);
-        ClearPIN();
+        LoginView.IsBusy = false;
+        LoginView.ClearPin();
+        LoginView.ClearMessages();
+        LoginView.UpdateClock();
 
-        if (_timeTimer == null)
+        if (_clockTimer is { IsRunning: false })
         {
-            StartTimeUpdates();
+            _clockTimer.Start();
         }
 
         if (TerminalConfigurationService.IsConfigured &&
@@ -274,24 +212,18 @@ public partial class LoginPage : ContentPage
                 ShowChildTerminalStatus(startupMessage);
             }
         }
-        
+
         _connectionCheckTask ??= RefreshTerminalConnectionStatusAsync();
 
-        // Focus on username field IMMEDIATELY - don't wait for anything
-        Dispatcher.Dispatch(() => UsernameEntry.Focus());
-        
         if (!_authCacheWarmStarted)
         {
             StartAuthCacheWarmup();
         }
 
-        if (_businessInfoLoaded)
+        if (!_businessInfoLoaded)
         {
-            return;
+            _ = LoadBusinessInfoOnceAsync();
         }
-
-        // Load business info once in background.
-        _ = LoadBusinessInfoOnceAsync();
     }
 
     private async Task<TerminalConnectionTestResult> RefreshTerminalConnectionStatusAsync(bool forceRefresh = false)
@@ -299,22 +231,14 @@ public partial class LoginPage : ContentPage
         if (!TerminalConfigurationService.IsConfigured)
         {
             _terminalConnectionOk = false;
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                TerminalStatusFrame.IsVisible = false;
-                TerminalStatusLabel.Text = string.Empty;
-            });
+            await MainThread.InvokeOnMainThreadAsync(() => LoginView.BannerMessage = string.Empty);
             return new TerminalConnectionTestResult(false, "Terminal Not Setup", "Please complete terminal setup first.");
         }
 
         if (!TerminalConfigurationService.IsChildTerminal)
         {
             _terminalConnectionOk = true;
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                TerminalStatusFrame.IsVisible = false;
-                TerminalStatusLabel.Text = string.Empty;
-            });
+            await MainThread.InvokeOnMainThreadAsync(() => LoginView.BannerMessage = string.Empty);
             return new TerminalConnectionTestResult(true, "Connected", string.Empty);
         }
 
@@ -322,7 +246,7 @@ public partial class LoginPage : ContentPage
             _terminalConnectionOk &&
             DateTime.UtcNow - _lastConnectionCheckUtc < ConnectionCheckCache)
         {
-            await MainThread.InvokeOnMainThreadAsync(() => TerminalStatusFrame.IsVisible = false);
+            await MainThread.InvokeOnMainThreadAsync(() => LoginView.BannerMessage = string.Empty);
             return new TerminalConnectionTestResult(true, "Connected", string.Empty);
         }
 
@@ -335,8 +259,7 @@ public partial class LoginPage : ContentPage
         {
             if (!TerminalConfigurationService.IsChildTerminal || result.Success)
             {
-                TerminalStatusFrame.IsVisible = false;
-                TerminalStatusLabel.Text = string.Empty;
+                LoginView.BannerMessage = string.Empty;
                 return;
             }
 
@@ -347,13 +270,7 @@ public partial class LoginPage : ContentPage
     }
 
     private void ShowChildTerminalStatus(string message)
-    {
-        TerminalStatusFrame.IsVisible = true;
-        TerminalStatusFrame.BackgroundColor = Color.FromArgb("#FEF2F2");
-        TerminalStatusFrame.Stroke = Color.FromArgb("#EF4444");
-        TerminalStatusLabel.TextColor = Color.FromArgb("#B91C1C");
-        TerminalStatusLabel.Text = message;
-    }
+        => LoginView.BannerMessage = message;
 
     private async Task LoadBusinessInfoOnceAsync()
     {
@@ -376,7 +293,7 @@ public partial class LoginPage : ContentPage
         }
 
         _authCacheWarmStarted = true;
-        _ = _authService.WarmAuthenticationCacheAsync();
+        _ = _authService.WarmCacheAsync();
     }
 
     private async Task LoadBusinessInfoAsync()
@@ -384,167 +301,36 @@ public partial class LoginPage : ContentPage
         try
         {
             var businessInfo = await _businessService.GetBusinessInfoAsync();
-            
-            // Update UI on main thread
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                if (businessInfo != null)
-                {
-                    WelcomeSubtitleLabel.Text = string.IsNullOrWhiteSpace(businessInfo.RestaurantName)
-                        ? "Restaurant POS"
-                        : businessInfo.RestaurantName;
-
-                    RestaurantNameLabel.Text = businessInfo.RestaurantName;
-                    RestaurantDescriptionLabel.Text = string.IsNullOrWhiteSpace(businessInfo.Description) 
-                        ? "Premium Dining Experience" 
-                        : businessInfo.Description;
-                }
-                else
-                {
-                    // Keep default values if no business info found
-                    WelcomeSubtitleLabel.Text = "Restaurant POS";
-                    RestaurantNameLabel.Text = "Restaurant POS";
-                    RestaurantDescriptionLabel.Text = "Premium Dining Experience";
-                }
+                LoginView.RestaurantName = string.IsNullOrWhiteSpace(businessInfo?.RestaurantName)
+                    ? "Restaurant POS"
+                    : businessInfo!.RestaurantName;
             });
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error loading business info: {ex.Message}");
-            
-            // Keep default values on error
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                WelcomeSubtitleLabel.Text = "Restaurant POS";
-                RestaurantNameLabel.Text = "Restaurant POS";
-                RestaurantDescriptionLabel.Text = "Premium Dining Experience";
-            });
+            await MainThread.InvokeOnMainThreadAsync(() => LoginView.RestaurantName = "Restaurant POS");
         }
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
-        
-        // Stop timer when leaving page
-        _timeTimer?.Stop();
-        _timeTimer?.Dispose();
-        _timeTimer = null;
-    }
-
-    #region PIN Entry Methods
-
-    private void UpdatePINDisplay()
-    {
-        var pinLength = PasswordEntry.Text?.Length ?? 0;
-
-        // Update dot colors based on PIN length
-        Dot1.BackgroundColor = pinLength >= 1 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
-        Dot2.BackgroundColor = pinLength >= 2 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
-        Dot3.BackgroundColor = pinLength >= 3 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
-        Dot4.BackgroundColor = pinLength >= 4 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
-        
-        // Auto-login when 4 digits entered
-        if (pinLength == 4)
+        if (_clockTimer is not null)
         {
-            // Instant login once 4 digits are entered.
-            _ = PerformLoginAsync();
+            _clockTimer.Stop();
         }
     }
 
-    private void ClearPIN()
-    {
-        PasswordEntry.Text = "";
-        UpdatePINDisplay();
-    }
-
-    #endregion
-
-    #region Virtual Keyboard Events
-
-    private void OnEntryFocused(object sender, FocusEventArgs e)
-    {
-        if (sender is Entry entry)
+    private static string GetNavigationRouteForRole(UserRole role)
+        => role switch
         {
-            _currentFocusedEntry = entry;
-        }
-    }
-
-    private void OnEntryUnfocused(object sender, FocusEventArgs e)
-    {
-        // Keep keyboard visible
-    }
-
-    private void OnKeyClicked(object sender, EventArgs e)
-    {
-        if (LoadingIndicator.IsVisible) return;
-
-        if (sender is Button button)
-        {
-            var key = button.Text;
-            var currentText = PasswordEntry.Text ?? "";
-            
-            // Only allow 4 digits
-            if (currentText.Length < 4)
-            {
-                PasswordEntry.Text = currentText + key;
-                UpdatePINDisplay();
-            }
-        }
-    }
-
-    private void OnSharedKeyPressed(object? sender, OrderWeb.SharedUI.Controls.KeypadKeyEventArgs e)
-    {
-        OnKeyClicked(new Button { Text = e.Key }, EventArgs.Empty);
-    }
-
-    private void OnBackspaceClicked(object sender, EventArgs e)
-    {
-        if (LoadingIndicator.IsVisible) return;
-
-        var currentText = PasswordEntry.Text ?? "";
-        if (currentText.Length > 0)
-        {
-            PasswordEntry.Text = currentText.Substring(0, currentText.Length - 1);
-            UpdatePINDisplay();
-        }
-    }
-
-    private void OnClearClicked(object sender, EventArgs e)
-    {
-        if (LoadingIndicator.IsVisible) return;
-
-        ClearPIN();
-    }
-
-    private void OnDoubleZeroClicked(object sender, EventArgs e)
-    {
-        if (LoadingIndicator.IsVisible) return;
-
-        var currentText = PasswordEntry.Text ?? "";
-        
-        // Only add if we have room for 2 more digits
-        if (currentText.Length <= 2)
-        {
-            PasswordEntry.Text = currentText + "00";
-            UpdatePINDisplay();
-        }
-    }
-
-    /// <summary>
-    /// Determines the navigation route based on user role
-    /// </summary>
-    private string GetNavigationRouteForRole(UserRole role)
-    {
-        return role switch
-        {
-            UserRole.User => "//userdashboard",      // Simple 3-button dashboard
-            UserRole.Manager => "//managerdashboard", // Manager operations dashboard
-            UserRole.Admin => "//dashboard",         // Full admin dashboard
-            UserRole.Staff => "//login",             // Clock-only staff do not enter POS screens
-            _ => "//dashboard"                       // Default to admin dashboard
+            UserRole.User => "//userdashboard",
+            UserRole.Manager => "//managerdashboard",
+            UserRole.Admin => "//dashboard",
+            UserRole.Staff => "//login",
+            _ => "//dashboard"
         };
-    }
-
-    #endregion
 }

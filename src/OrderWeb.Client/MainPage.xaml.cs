@@ -7,6 +7,7 @@ using OrderWeb.Client.Views.Printing;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Layouts;
 using OrderWeb.SharedUI.Controls;
+using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.Client;
 
@@ -43,6 +44,8 @@ public partial class MainPage : ContentPage
     private readonly ClientCacheService _cache = new();
     private readonly MotherBootstrapClient _bootstrapClient;
     private readonly MotherAuthClient _authClient = new();
+    private readonly ClientAuthenticationService _clientAuth = new();
+    private AuthenticationLoginView? _loginView;
     private readonly MotherOrderClient _orderClient = new();
     private readonly MotherCustomerClient _customerClient;
     private readonly MotherPrintClient _printClient = new();
@@ -204,35 +207,24 @@ public partial class MainPage : ContentPage
         _currentSession = null;
         _pin = string.Empty;
         _posSidebarOpen = false;
+        _useLoginClockFormat = false;
 
-        Root.Children.Add(new Border
+        var view = new RepairRequiredView
         {
-            Stroke = Color.FromArgb("#FECACA"),
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            BackgroundColor = Color.FromArgb("#FEF2F2"),
-            Padding = 32,
-            WidthRequest = 620,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            Content = new VerticalStackLayout
-            {
-                Spacing = 18,
-                Children =
-                {
-                    new Label { Text = "Client POS Disabled", FontSize = 36, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(Danger), HorizontalTextAlignment = TextAlignment.Center },
-                    new Label { Text = string.IsNullOrWhiteSpace(_terminalDisabledReason) ? "This terminal has been disabled by the Mother POS." : _terminalDisabledReason, FontSize = 17, TextColor = Color.FromArgb("#7F1D1D"), HorizontalTextAlignment = TextAlignment.Center },
-                    new Label { Text = "Ask the Mother POS operator to create a new pairing code before this terminal can be used again.", FontSize = 14, TextColor = Color.FromArgb(MutedText), HorizontalTextAlignment = TextAlignment.Center },
-                    PrimaryButton("Enter New Pairing Code", PrimaryAction, async (_, _) =>
-                    {
-                        await _cache.ClearTerminalDisabledAsync();
-                        _terminalDisabled = false;
-                        _terminalDisabledReason = string.Empty;
-                        ShowConnect();
-                    })
-                }
-            }
-        });
+            Title = "Client POS Disabled",
+            Message = string.IsNullOrWhiteSpace(_terminalDisabledReason)
+                ? "This terminal has been disabled by the Mother POS."
+                : _terminalDisabledReason,
+            ActionText = "Enter New Pairing Code"
+        };
+        view.ActionRequested += async (_, _) =>
+        {
+            await _cache.ClearTerminalDisabledAsync();
+            _terminalDisabled = false;
+            _terminalDisabledReason = string.Empty;
+            ShowConnect();
+        };
+        Root.Children.Add(view);
     }
 
     private async void OnMotherTerminalControlReceived(object? sender, MotherTerminalControlEventArgs e)
@@ -612,136 +604,34 @@ public partial class MainPage : ContentPage
         {
             _pin = string.Empty;
         }
+
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
+        _useLoginClockFormat = true;
 
-        var layout = new Grid
+        _loginView = new AuthenticationLoginView
         {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star)
-            }
+            BrandTitle = "POS",
+            WelcomeTitle = "Welcome Back!",
+            RestaurantName = CurrentRestaurantName(),
+            Prompt = "Enter your PIN or swipe employee card",
+            ClockActionText = "Clock In/Out"
         };
-
-        var left = new Grid
+        _loginView.UpdateClock();
+        if (!string.IsNullOrEmpty(_pin))
         {
-            BackgroundColor = Color.FromArgb("#F8F9FA"),
-            Padding = new Thickness(48, 40),
-            Children =
-            {
-                new VerticalStackLayout
-                {
-                    Spacing = 58,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center,
-                    Children =
-                    {
-                        new Label { Text = "POS", FontSize = 58, FontFamily = "OpenSansRegular", TextColor = Color.FromArgb(PrimaryAction), HorizontalTextAlignment = TextAlignment.Center },
-                        new VerticalStackLayout
-                        {
-                            Spacing = 10,
-                            Margin = new Thickness(0, 20, 0, 0),
-                            HorizontalOptions = LayoutOptions.Center,
-                            Children =
-                            {
-                                new Label { Text = "Welcome Back!", FontSize = 32, FontFamily = "OpenSansBold", TextColor = Color.FromArgb(MainText), HorizontalTextAlignment = TextAlignment.Center },
-                                new Label { Text = CurrentRestaurantName(), FontSize = 24, FontFamily = "OpenSansBold", TextColor = Color.FromArgb(MainText), Opacity = 0.72, HorizontalTextAlignment = TextAlignment.Center, MaximumWidthRequest = 300 }
-                            }
-                        }
-                    }
-                }
-            }
+            _loginView.SetPin(_pin);
+        }
+
+        _loginView.PinCompleted += async (_, pin) =>
+        {
+            _pin = pin;
+            await LoginAsync(new LoginRequest("PIN", pin));
         };
-
-        var rightStack = new VerticalStackLayout
-        {
-            Spacing = 46,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            MaximumWidthRequest = 430
-        };
-
-        var pinHeader = new VerticalStackLayout
-        {
-            Spacing = 28,
-            HorizontalOptions = LayoutOptions.Center
-        };
-        pinHeader.Children.Add(new Label
-        {
-            Text = "Enter your PIN or swipe employee card",
-            FontSize = 18,
-            FontFamily = "OpenSansRegular",
-            TextColor = Color.FromArgb(SecondaryText),
-            HorizontalTextAlignment = TextAlignment.Center
-        });
-        _statusLabel = new Label
-        {
-            IsVisible = false,
-            FontSize = 16,
-            FontFamily = "OpenSansSemibold",
-            TextColor = Color.FromArgb(Danger),
-            HorizontalTextAlignment = TextAlignment.Center
-        };
-        pinHeader.Children.Add(_statusLabel);
-        pinHeader.Children.Add(BuildPinDots());
-        rightStack.Children.Add(pinHeader);
-        rightStack.Children.Add(new VerticalStackLayout
-        {
-            Spacing = 36,
-            HorizontalOptions = LayoutOptions.Center,
-            Children =
-            {
-                BuildKeypad(),
-                LoginClockButton()
-            }
-        });
-
-        var loginScroll = new ScrollView
-        {
-            Content = rightStack,
-            VerticalOptions = LayoutOptions.Center,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Never
-        };
-
-        var right = new Grid
-        {
-            BackgroundColor = Color.FromArgb(PageBackground),
-            Padding = new Thickness(44, 34),
-            Children =
-            {
-                loginScroll,
-                LoginClock()
-            }
-        };
-
-        layout.Children.Add(left);
-        layout.Children.Add(right);
-        SetColumn(layout.Children[1], 1);
-
-        var minimizeButton = new Button
-        {
-            Text = "-",
-            WidthRequest = 44,
-            HeightRequest = 44,
-            Padding = 0,
-            CornerRadius = 0,
-            BackgroundColor = Colors.Transparent,
-            BorderColor = Colors.Transparent,
-            BorderWidth = 0,
-            TextColor = Color.FromArgb("#111827"),
-            FontSize = 24,
-            FontFamily = "OpenSansBold",
-            HorizontalOptions = LayoutOptions.End,
-            VerticalOptions = LayoutOptions.Start,
-            Margin = new Thickness(0, 14, 18, 0),
-            ZIndex = 10
-        };
-        minimizeButton.Clicked += (_, _) => ClientWindowService.MinimizeMainWindow();
-        layout.Children.Add(minimizeButton);
-        Grid.SetColumnSpan(minimizeButton, 2);
-
-        Root.Children.Add(layout);
+        _loginView.ClockActionRequested += (_, _) => ShowClockTimeModal();
+        _loginView.MinimizeRequested += (_, _) => ClientWindowService.MinimizeMainWindow();
+        _statusLabel = null;
+        Root.Children.Add(_loginView);
     }
 
     private View BuildPinDots()
@@ -849,22 +739,41 @@ public partial class MainPage : ContentPage
     {
         try
         {
-            if (_statusLabel != null)
+            if (_loginView != null)
+            {
+                _loginView.ClearMessages();
+                _loginView.BusyMessage = "Checking PIN...";
+                _loginView.IsBusy = true;
+            }
+            else if (_statusLabel != null)
             {
                 _statusLabel.Text = "Checking PIN...";
                 _statusLabel.TextColor = Color.FromArgb(SecondaryText);
                 _statusLabel.IsVisible = true;
             }
 
-            var session = await _authClient.LoginAsync(request);
+            var session = await _clientAuth.LoginAsync(request);
             if (session.Role == "Staff")
             {
                 _pin = string.Empty;
                 ShowLogin(false);
-                _statusLabel!.Text = "Staff PIN is for Clock In/Out only.";
-                _statusLabel.TextColor = Color.FromArgb(Danger);
-                _statusLabel.IsVisible = true;
+                if (_loginView != null)
+                {
+                    _loginView.IsBusy = false;
+                    _loginView.ErrorMessage = "Staff PIN is for Clock In/Out only.";
+                }
+                else if (_statusLabel != null)
+                {
+                    _statusLabel.Text = "Staff PIN is for Clock In/Out only.";
+                    _statusLabel.TextColor = Color.FromArgb(Danger);
+                    _statusLabel.IsVisible = true;
+                }
                 return;
+            }
+
+            if (_loginView != null)
+            {
+                _loginView.IsBusy = false;
             }
 
             await _cache.SaveLoginSessionAsync(session);
@@ -876,17 +785,33 @@ public partial class MainPage : ContentPage
         {
             _pin = string.Empty;
             ShowLogin(false);
-            _statusLabel!.Text = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
-            _statusLabel.TextColor = Color.FromArgb(Danger);
-            _statusLabel.IsVisible = true;
+            if (_loginView != null)
+            {
+                _loginView.IsBusy = false;
+                _loginView.ErrorMessage = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
+            }
+            else if (_statusLabel != null)
+            {
+                _statusLabel.Text = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
+                _statusLabel.TextColor = Color.FromArgb(Danger);
+                _statusLabel.IsVisible = true;
+            }
         }
         catch (Exception ex)
         {
             _pin = string.Empty;
             ShowLogin(false);
-            _statusLabel!.Text = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
-            _statusLabel.TextColor = Color.FromArgb(Danger);
-            _statusLabel.IsVisible = true;
+            if (_loginView != null)
+            {
+                _loginView.IsBusy = false;
+                _loginView.ErrorMessage = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
+            }
+            else if (_statusLabel != null)
+            {
+                _statusLabel.Text = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
+                _statusLabel.TextColor = Color.FromArgb(Danger);
+                _statusLabel.IsVisible = true;
+            }
         }
     }
 
@@ -4045,6 +3970,12 @@ public partial class MainPage : ContentPage
     }
 
     private void UpdateClock()
+    {
+        _loginView?.UpdateClock();
+        UpdateClockCore();
+    }
+
+    private void UpdateClockCore()
     {
         if (_timeLabel == null || _dateLabel == null)
         {

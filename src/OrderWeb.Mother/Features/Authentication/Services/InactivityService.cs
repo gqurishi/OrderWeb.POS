@@ -408,6 +408,23 @@ public sealed class InactivityService
             SuppressAutomaticNavigationActivity();
             await _authService.LogoutAsync();
 
+            try
+            {
+                if (Application.Current?.Windows.FirstOrDefault()?.Page is ContentPage contentPage &&
+                    contentPage.Content is not null)
+                {
+                    var dialog = new OrderWeb.SharedUI.Controls.SessionExpiredDialog();
+                    var original = contentPage.Content;
+                    contentPage.Content = new Grid { Children = { original, dialog } };
+                    await dialog.ShowAsync();
+                    contentPage.Content = original;
+                }
+            }
+            catch (Exception dialogEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Session expired dialog failed: {dialogEx.Message}");
+            }
+
             if (Shell.Current != null)
             {
                 await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);

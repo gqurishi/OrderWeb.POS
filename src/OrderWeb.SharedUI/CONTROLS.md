@@ -40,3 +40,24 @@ Compatibility wrappers may retain an application-facing type name, but their vis
 Menu ownership remains with each host. Mother supplies operational and administration routes after applying its service and role policy. Client supplies only Client-supported routes. `ApplicationNavigationItem.AllowedRoles` provides the final basic-user/manager/admin filter inside the shared sidebar.
 
 `ApplicationSidebar` is also exposed separately so Mother can use the same navigation surface inside its native MAUI `Shell` flyout while retaining its established route engine. `ApplicationHeader` is used by Mother page top bars and Client page compatibility wrappers, keeping the frame visually identical during page-by-page migration.
+
+## Shared authentication presentation
+
+`AuthenticationLoginView` (in `OrderWeb.SharedUI.Views`) is the shared Mother-style login surface: brand panel, PIN dots, number keypad, clock action, loading overlay, and error/status banners.
+
+Supporting controls:
+
+| Requirement | Shared control |
+| --- | --- |
+| PIN dots | `PinDotsView` |
+| Number keypad | `NumberKeypad` |
+| Role selection | `RoleSelectionView` |
+| Auth loading | `AuthenticationBusyOverlay` |
+| Session expired | `SessionExpiredDialog` |
+| Re-pairing required | `RepairRequiredView` |
+
+Hosts keep authentication services separate:
+- Mother: `MotherAuthenticationService` → local auth/DB
+- Client: `ClientAuthenticationService` → Mother API
+
+Terminal pairing remains Client-owned; only the disabled/re-pair presentation is shared.
