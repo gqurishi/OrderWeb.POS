@@ -27,7 +27,7 @@ public class QuantitySelector : ContentView
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
         };
-        _value.Use(Label.TextColorProperty, "OwTextPrimary");
+        _value.Use(Label.TextColorProperty, "PosTextPrimary");
         minus.Clicked += (_, _) =>
         {
             if (Quantity > Minimum)
@@ -96,7 +96,7 @@ public class BasketSummaryView : ContentView
             IsVisible = false,
             Margin = new Thickness(0, 6, 0, 0)
         };
-        _estimate.Use(Label.TextColorProperty, "OwWarningText");
+        _estimate.Use(Label.TextColorProperty, "PosWarningText");
 
         Content = new VerticalStackLayout
         {
@@ -127,14 +127,14 @@ public class BasketSummaryView : ContentView
             FontAttributes = strong ? FontAttributes.Bold : FontAttributes.None,
             HorizontalTextAlignment = TextAlignment.End
         };
-        label.Use(Label.TextColorProperty, strong ? "OwTextPrimary" : "OwTextSecondary");
+        label.Use(Label.TextColorProperty, strong ? "PosTextPrimary" : "PosTextSecondary");
         return label;
     }
 
     private static View Row(string title, View value)
     {
         var label = new Label { Text = title, FontSize = 15, VerticalTextAlignment = TextAlignment.Center };
-        label.Use(Label.TextColorProperty, "OwTextMuted");
+        label.Use(Label.TextColorProperty, "PosTextMuted");
         var grid = new Grid
         {
             ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }

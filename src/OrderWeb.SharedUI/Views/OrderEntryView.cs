@@ -29,8 +29,8 @@ public sealed class OrderEntryView : ContentView
 
     public OrderEntryView()
     {
-        _status.Use(Label.TextColorProperty, "OwTextMuted");
-        _title.Use(Label.TextColorProperty, "OwTextPrimary");
+        _status.Use(Label.TextColorProperty, "PosTextMuted");
+        _title.Use(Label.TextColorProperty, "PosTextPrimary");
 
         var send = new SharedButton { Text = "Send Order" };
         send.Clicked += async (_, _) =>
@@ -249,7 +249,7 @@ public sealed class OrderEntryView : ContentView
         {
             var row = new HorizontalStackLayout { Spacing = 8 };
             var label = new Label { Text = group.Name, VerticalTextAlignment = TextAlignment.Center, FontAttributes = FontAttributes.Bold };
-            label.Use(Label.TextColorProperty, "OwTextPrimary");
+            label.Use(Label.TextColorProperty, "PosTextPrimary");
             row.Children.Add(label);
             foreach (var option in group.Options)
             {

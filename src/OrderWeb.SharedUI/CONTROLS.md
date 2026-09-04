@@ -1,6 +1,10 @@
 # Shared basic controls
 
-`OrderWeb.SharedUI.Controls` is the canonical control library for Mother POS and Client POS. Its controls use the `Ow*` Mother POS design tokens from `OrderWebTheme`; host applications provide data, commands, and navigation only.
+`OrderWeb.SharedUI.Controls` is the canonical control library for Mother POS and Client POS.
+
+**Design tokens:** authoritative keys are `Pos*` from `OrderWebTheme` (palette, typography, dimensions, component styles). Legacy `Ow*` and Mother/Client semantic keys are temporary aliases onto `Pos*`. New screens must use `Pos*` (or shared controls) — do not hardcode colours, font sizes, radii, or spacing.
+
+Host applications provide data, commands, and navigation only.
 
 | Requirement | Shared control |
 | --- | --- |
@@ -19,7 +23,9 @@
 | Status badge | `StatusBadge` (`StatusKind`) |
 | Confirmation and error dialogs | `ConfirmationDialog`, `ErrorDialog` |
 
-Both application projects reference this project and merge `OrderWebTheme` in `App.xaml`. New screens consume these types with:
+Both application projects reference this project and merge `OrderWebTheme` in `App.xaml`, then call `DesignSystemBootstrap.LockHostResources` so `Pos*` wins over local dictionaries. Syncfusion theme remains Mother-only.
+
+New screens consume these types with:
 
 ```xml
 xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"

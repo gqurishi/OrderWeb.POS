@@ -26,9 +26,9 @@ public class ApplicationSidebar : ContentView
         var brand = new Label { Text = "Order Web", FontSize = 23, FontAttributes = FontAttributes.Bold, CharacterSpacing = .4, HorizontalTextAlignment = TextAlignment.Center };
         brand.TextColor = Color.FromArgb("#0F2F5F");
         var subtitle = new Label { Text = "Restaurant Management", FontSize = 13, FontAttributes = FontAttributes.Bold, CharacterSpacing = .7, HorizontalTextAlignment = TextAlignment.Center };
-        subtitle.Use(Label.TextColorProperty, "OwTextMuted");
+        subtitle.Use(Label.TextColorProperty, "PosTextMuted");
         _role = new Label { FontSize = 12, HorizontalTextAlignment = TextAlignment.Center };
-        _role.Use(Label.TextColorProperty, "OwTextMuted");
+        _role.Use(Label.TextColorProperty, "PosTextMuted");
         var heading = new VerticalStackLayout { Padding = new Thickness(20, 22), Spacing = 5, Children = { logo, brand, subtitle, _role } };
 
         _items = new VerticalStackLayout { Padding = new Thickness(16, 10), Spacing = 5 };
@@ -41,7 +41,7 @@ public class ApplicationSidebar : ContentView
         logout.Clicked += (_, _) => LogoutRequested?.Invoke(this, EventArgs.Empty);
         var footer = new VerticalStackLayout { Padding = new Thickness(14), Spacing = 10, Children = { _identity, _connection, _update, logout } };
         var grid = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) } };
-        grid.Use(Grid.BackgroundColorProperty, "OwSurface");
+        grid.Use(Grid.BackgroundColorProperty, "PosSurface");
         grid.Add(heading); grid.Add(scroll, 0, 1); grid.Add(footer, 0, 2); Content = grid;
     }
 
