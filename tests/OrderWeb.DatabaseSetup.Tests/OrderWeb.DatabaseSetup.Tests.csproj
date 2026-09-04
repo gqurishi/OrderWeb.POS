@@ -35,4 +35,8 @@
     <Compile Include="..\..\src\OrderWeb.Mother\Features\OnlineOrders\Services\OnlineOrderPaymentHelper.cs" Link="ContractV2\OnlineOrderPaymentHelper.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OrderWeb.Contracts\OrderWeb.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
