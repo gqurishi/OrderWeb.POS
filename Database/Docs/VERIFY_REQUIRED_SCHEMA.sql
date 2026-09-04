@@ -64,6 +64,8 @@ FROM (
     SELECT 'heartbeat_log' UNION ALL
     SELECT 'order_received_log' UNION ALL
     SELECT 'orderweb_order_settlements' UNION ALL
+    SELECT 'rider_dispatch_jobs' UNION ALL
+    SELECT 'rider_dispatch_events' UNION ALL
     SELECT 'print_queue_cancellation_audit' UNION ALL
     SELECT 'order_kitchen_item_state' UNION ALL
     SELECT 'order_kitchen_revisions' UNION ALL

@@ -9,9 +9,11 @@ OrderWeb POS is a .NET MAUI point-of-sale application with a separate database s
 - Display version: `1.0.0`
 - Build version: `1`
 - Solution projects:
-  - `POS-in-NET`
-  - `OrderWeb.DatabaseSetup`
-  - `OrderWeb.DatabaseSetup.Tests`
+  - `src/OrderWeb.Mother/OrderWeb.Mother.csproj`
+  - `src/OrderWeb.Client/OrderWeb.Client.csproj`
+  - `src/OrderWeb.SharedUI/OrderWeb.SharedUI.csproj`
+  - `tools/OrderWeb.DatabaseSetup/OrderWeb.DatabaseSetup.csproj`
+  - `tests/OrderWeb.DatabaseSetup.Tests/OrderWeb.DatabaseSetup.Tests.csproj`
 
 ## Platform And Framework Versions
 
@@ -193,12 +195,13 @@ Security level: **moderate business-app security**.
 
 ## Repository Layout
 
-- `Features/` contains the main app features such as Authentication, Menu, Orders, Payments, Printing, Reports, Restaurant, Settings, Terminal, and TimeClock.
-- `Client POS/` is the authoritative, independently buildable .NET 9 MAUI Client POS application. It uses Mother POS APIs and WebSockets and never connects directly to MariaDB.
-- `OrderWeb.DatabaseSetup/` contains the standalone database administration tool.
-- `OrderWeb.DatabaseSetup.Tests/` contains tests for the database setup tool.
+- `src/OrderWeb.Mother/` contains the Windows Mother POS application and its features.
+- `src/OrderWeb.Client/` is the authoritative .NET 10 MAUI Client POS application. It uses Mother POS APIs and WebSockets and never connects directly to MariaDB.
+- `src/OrderWeb.SharedUI/` contains reusable visual controls, themes, and fixed assets.
+- `tools/OrderWeb.DatabaseSetup/` contains the standalone database administration tool.
+- `tests/OrderWeb.DatabaseSetup.Tests/` contains tests for the database setup tool.
 - `Installer/` contains the installer scripts and packaging assets.
-- `Database/` contains SQL migrations, seeds, and schema documentation.
+- `database/` contains SQL migrations, seeds, and schema documentation.
 - `docs/MOTHER_CLIENT_POS_INTEGRATION.md` defines the ownership and compatibility rules between Mother POS and Client POS.
 
 ## Notes

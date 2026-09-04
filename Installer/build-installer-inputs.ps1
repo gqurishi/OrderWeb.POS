@@ -23,8 +23,8 @@ function Assert-NativeCommandSucceeded {
 
 Write-Host "Building OrderWeb POS installer inputs ($Configuration / $Runtime)..."
 
-$appProject = Join-Path $repoRoot "POS-in-NET.csproj"
-$setupProject = Join-Path $repoRoot "OrderWeb.DatabaseSetup\OrderWeb.DatabaseSetup.csproj"
+$appProject = Join-Path $repoRoot "src\OrderWeb.Mother\OrderWeb.Mother.csproj"
+$setupProject = Join-Path $repoRoot "tools\OrderWeb.DatabaseSetup\OrderWeb.DatabaseSetup.csproj"
 $publishDir = Join-Path $repoRoot $OutputRoot
 
 if (Test-Path $publishDir) {

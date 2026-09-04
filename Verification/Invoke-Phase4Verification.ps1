@@ -15,7 +15,7 @@ $manifestPath = Join-Path $PSScriptRoot "phase4-workflows.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
 if (-not $SkipAutomatedTests) {
-    dotnet test (Join-Path $repoRoot "OrderWeb.DatabaseSetup.Tests\OrderWeb.DatabaseSetup.Tests.csproj") --no-restore
+    dotnet test (Join-Path $repoRoot "tests\OrderWeb.DatabaseSetup.Tests\OrderWeb.DatabaseSetup.Tests.csproj") --no-restore
     if ($LASTEXITCODE -ne 0) {
         throw "Automated regression tests failed. Phase 4 cannot be signed off."
     }

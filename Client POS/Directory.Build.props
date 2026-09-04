@@ -1,8 +1,0 @@
-<Project>
-  <!-- Keep Client POS standalone when this folder is copied away from the Mother POS repo. -->
-  <!-- These values avoid strict Xcode version blocking on MacCatalyst development machines. -->
-  <PropertyGroup>
-    <_XcodeVersion>26.0.0</_XcodeVersion>
-    <_IsMatchingXcode>true</_IsMatchingXcode>
-  </PropertyGroup>
-</Project>

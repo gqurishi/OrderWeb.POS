@@ -1,7 +1,12 @@
 <Project>
-  <!-- Override Xcode version detection to bypass strict version checking -->
-  <!-- Set matching version to prevent Xcode version mismatch error -->
   <PropertyGroup>
+    <MauiVersion>10.0.80</MauiVersion>
+    <MicrosoftExtensionsVersion>10.0.9</MicrosoftExtensionsVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
+
+    <!-- Override Xcode version detection to bypass strict version checking. -->
     <_XcodeVersion>26.0.0</_XcodeVersion>
     <_IsMatchingXcode>true</_IsMatchingXcode>
   </PropertyGroup>

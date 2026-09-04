@@ -16,9 +16,9 @@ Run migrations in filename order only:
 8. `008_reports.sql`
 9. `009_delivery_zones.sql`
 10. `010_postcode_orderweb_api.sql`
-11. Continue in filename order through `033_phase2_query_indexes.sql`.
+11. Continue in filename order through `036_rider_operations.sql`.
 
-Future migrations must continue with `034_...` and so on. Never insert a new migration between existing numbers after release.
+Future migrations must continue with `037_...` and so on. Never insert a new migration between existing numbers after release.
 
 ## Mother And Child Rules
 

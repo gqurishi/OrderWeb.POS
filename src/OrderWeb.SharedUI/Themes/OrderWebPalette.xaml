@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    x:Class="OrderWeb.SharedUI.Themes.OrderWebPalette">
+    <!-- Canonical palette taken from the current Mother POS blue/slate design. -->
+    <Color x:Key="OwPrimary">#2563EB</Color>
+    <Color x:Key="OwPrimaryPressed">#1D4ED8</Color>
+    <Color x:Key="OwPrimarySoft">#EFF6FF</Color>
+    <Color x:Key="OwPrimarySoftBorder">#BFDBFE</Color>
+
+    <Color x:Key="OwBackground">#F8FAFC</Color>
+    <Color x:Key="OwSurface">#FFFFFF</Color>
+    <Color x:Key="OwSurfaceMuted">#F1F5F9</Color>
+    <Color x:Key="OwSurfaceStrong">#E2E8F0</Color>
+
+    <Color x:Key="OwTextPrimary">#0F172A</Color>
+    <Color x:Key="OwTextStrong">#1E293B</Color>
+    <Color x:Key="OwTextSecondary">#475569</Color>
+    <Color x:Key="OwTextMuted">#64748B</Color>
+    <Color x:Key="OwTextPlaceholder">#94A3B8</Color>
+    <Color x:Key="OwTextOnPrimary">#FFFFFF</Color>
+
+    <Color x:Key="OwBorder">#E2E8F0</Color>
+    <Color x:Key="OwBorderStrong">#CBD5E1</Color>
+    <Color x:Key="OwInputBorder">#D8E1ED</Color>
+    <Color x:Key="OwFocus">#3B82F6</Color>
+    <Color x:Key="OwShadow">#0F172A</Color>
+    <Color x:Key="OwOverlay">#80000000</Color>
+
+    <Color x:Key="OwSuccess">#10B981</Color>
+    <Color x:Key="OwSuccessStrong">#059669</Color>
+    <Color x:Key="OwSuccessSoft">#ECFDF5</Color>
+    <Color x:Key="OwSuccessText">#065F46</Color>
+
+    <Color x:Key="OwWarning">#F59E0B</Color>
+    <Color x:Key="OwWarningStrong">#D97706</Color>
+    <Color x:Key="OwWarningSoft">#FFFBEB</Color>
+    <Color x:Key="OwWarningBorder">#FDE68A</Color>
+    <Color x:Key="OwWarningText">#92400E</Color>
+
+    <Color x:Key="OwError">#EF4444</Color>
+    <Color x:Key="OwErrorStrong">#DC2626</Color>
+    <Color x:Key="OwErrorSoft">#FEF2F2</Color>
+    <Color x:Key="OwErrorBorder">#FECACA</Color>
+    <Color x:Key="OwErrorText">#991B1B</Color>
+
+    <Color x:Key="OwInfo">#3B82F6</Color>
+    <Color x:Key="OwInfoSoft">#EFF6FF</Color>
+    <Color x:Key="OwInfoText">#1E40AF</Color>
+
+    <Color x:Key="OwOnline">#10B981</Color>
+    <Color x:Key="OwOffline">#EF4444</Color>
+    <Color x:Key="OwConnecting">#F59E0B</Color>
+
+    <SolidColorBrush x:Key="OwPrimaryBrush" Color="{StaticResource OwPrimary}" />
+    <SolidColorBrush x:Key="OwBackgroundBrush" Color="{StaticResource OwBackground}" />
+    <SolidColorBrush x:Key="OwSurfaceBrush" Color="{StaticResource OwSurface}" />
+    <SolidColorBrush x:Key="OwBorderBrush" Color="{StaticResource OwBorder}" />
+</ResourceDictionary>

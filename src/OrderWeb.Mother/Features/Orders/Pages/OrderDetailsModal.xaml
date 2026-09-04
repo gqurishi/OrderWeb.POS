@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.OrderDetailsModal"
+             BackgroundColor="{StaticResource DialogOverlayColor}">
+
+    <Frame BackgroundColor="White"
+           Margin="40"
+           Padding="0"
+           CornerRadius="16"
+           HasShadow="True"
+           VerticalOptions="Center"
+           HorizontalOptions="Center"
+           WidthRequest="600"
+           MaximumHeightRequest="700">
+
+        <Grid RowDefinitions="Auto,*,Auto">
+            
+            <!-- Header -->
+            <Grid BackgroundColor="#10B981" 
+                  Padding="20"
+                  Grid.Row="0"
+                  ColumnDefinitions="*,Auto">
+                <Label Text="Order Details"
+                       FontSize="20"
+                       FontAttributes="Bold"
+                       TextColor="White"
+                       VerticalOptions="Center"
+                       Grid.Column="0"/>
+                
+                <Border BackgroundColor="Transparent"
+                        StrokeThickness="0"
+                        Padding="8"
+                        Grid.Column="1">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCloseClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text=""
+                           FontSize="24"
+                           TextColor="White"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"/>
+                </Border>
+            </Grid>
+
+            <!-- Content -->
+            <ScrollView Grid.Row="1" Padding="20">
+                <VerticalStackLayout Spacing="16">
+                    
+                    <!-- Order Info -->
+                    <VerticalStackLayout Spacing="8">
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                            <Label Text="Order Number:" FontSize="14" FontAttributes="Bold" TextColor="#6B7280" Grid.Row="0" Grid.Column="0"/>
+                            <Label x:Name="OrderNumberLabel" Text="-" FontSize="14" TextColor="#1F2937" Grid.Row="0" Grid.Column="1" Margin="10,0,0,0"/>
+                            
+                            <Label Text="Date &amp; Time:" FontSize="14" FontAttributes="Bold" TextColor="#6B7280" Grid.Row="1" Grid.Column="0"/>
+                            <Label x:Name="OrderDateLabel" Text="-" FontSize="14" TextColor="#1F2937" Grid.Row="1" Grid.Column="1" Margin="10,0,0,0"/>
+                            
+                            <Label Text="Type:" FontSize="14" FontAttributes="Bold" TextColor="#6B7280" Grid.Row="2" Grid.Column="0"/>
+                            <Label x:Name="OrderTypeLabel" Text="-" FontSize="14" TextColor="#1F2937" Grid.Row="2" Grid.Column="1" Margin="10,0,0,0"/>
+                            
+                            <Label Text="Status:" FontSize="14" FontAttributes="Bold" TextColor="#6B7280" Grid.Row="3" Grid.Column="0"/>
+                            <Label x:Name="OrderStatusLabel" Text="-" FontSize="14" TextColor="#1F2937" Grid.Row="3" Grid.Column="1" Margin="10,0,0,0"/>
+                        </Grid>
+                    </VerticalStackLayout>
+
+                    <!-- Customer Info (if available) -->
+                    <Frame BackgroundColor="#F9FAFB" Padding="12" CornerRadius="8" HasShadow="False" BorderColor="#E5E7EB" x:Name="CustomerInfoFrame" IsVisible="False">
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Customer Information" FontSize="15" FontAttributes="Bold" TextColor="#1F2937"/>
+                            <Label x:Name="CustomerNameLabel" Text="" FontSize="13" TextColor="#6B7280"/>
+                            <Label x:Name="CustomerPhoneLabel" Text="" FontSize="13" TextColor="#6B7280"/>
+                            <Label x:Name="CustomerAddressLabel" Text="" FontSize="13" TextColor="#6B7280"/>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Divider -->
+                    <BoxView BackgroundColor="#E5E7EB" HeightRequest="1"/>
+
+                    <!-- Order Items -->
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Items:" FontSize="16" FontAttributes="Bold" TextColor="#1F2937"/>
+                        <CollectionView x:Name="OrderItemsCollection" SelectionMode="None">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Padding="8,6">
+                                        <Label Text="{Binding QuantityDisplay}" 
+                                               FontSize="14" 
+                                               TextColor="#6B7280"
+                                               VerticalOptions="Start"
+                                               Grid.Column="0"/>
+                                        <VerticalStackLayout Grid.Column="1" Margin="8,0,0,0" Spacing="2">
+                                            <Label Text="{Binding ItemName}" FontSize="14" TextColor="#1F2937"/>
+                                            <Label Text="{Binding Details}" IsVisible="{Binding HasDetails}"
+                                                   FontSize="11" TextColor="#64748B" LineBreakMode="WordWrap"/>
+                                        </VerticalStackLayout>
+                                        <Label Text="{Binding TotalPrice, StringFormat='£{0:F2}'}" 
+                                               FontSize="14" 
+                                               FontAttributes="Bold"
+                                               TextColor="#1F2937"
+                                               VerticalOptions="Start"
+                                               Grid.Column="2"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </VerticalStackLayout>
+
+                    <!-- Divider -->
+                    <BoxView BackgroundColor="#E5E7EB" HeightRequest="1"/>
+
+                    <Frame BackgroundColor="#EFF6FF" Padding="12" CornerRadius="8" HasShadow="False" BorderColor="#BFDBFE">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Payment Information" FontSize="15" FontAttributes="Bold" TextColor="#1E3A8A"/>
+                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="16">
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="1">
+                                    <Label Text="Method" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="PaymentMethodLabel" Text="-" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="1">
+                                    <Label Text="Payment status" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="PaymentStatusLabel" Text="-" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="1">
+                                    <Label Text="Amount paid" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="AmountPaidLabel" Text="-" FontSize="13" TextColor="#0F172A"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="1">
+                                    <Label Text="Provider" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="PaymentProviderLabel" Text="-" FontSize="13" TextColor="#0F172A"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="2" Grid.ColumnSpan="2" Spacing="1">
+                                    <Label Text="Payment reference" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="PaymentReferenceLabel" Text="-" FontSize="13" TextColor="#0F172A" LineBreakMode="TailTruncation"/>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Divider -->
+                    <BoxView BackgroundColor="#E5E7EB" HeightRequest="1"/>
+
+                    <Frame BackgroundColor="#F9FAFB" Padding="12" CornerRadius="8" HasShadow="False" BorderColor="#E5E7EB">
+                        <VerticalStackLayout Spacing="7">
+                            <Label Text="Order Information" FontSize="15" FontAttributes="Bold" TextColor="#1F2937"/>
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="10">
+                                <Label Text="Scheduled:" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                <Label x:Name="ScheduledLabel" Grid.Column="1" Text="-" FontSize="12" TextColor="#1F2937"/>
+                                <Label Grid.Row="1" Text="Instructions:" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                <Label x:Name="InstructionsLabel" Grid.Row="1" Grid.Column="1" Text="-" FontSize="12" TextColor="#1F2937" LineBreakMode="WordWrap"/>
+                                <Label Grid.Row="2" Text="Promo code:" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                <Label x:Name="PromoLabel" Grid.Row="2" Grid.Column="1" Text="-" FontSize="12" TextColor="#1F2937"/>
+                                <Label Grid.Row="3" Text="Gift card:" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                <Label x:Name="GiftCardLabel" Grid.Row="3" Grid.Column="1" Text="-" FontSize="12" TextColor="#1F2937"/>
+                                <Label Grid.Row="4" Text="Loyalty:" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                <Label x:Name="LoyaltyLabel" Grid.Row="4" Grid.Column="1" Text="-" FontSize="12" TextColor="#1F2937"/>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <BoxView BackgroundColor="#E5E7EB" HeightRequest="1"/>
+
+                    <!-- Totals -->
+                    <VerticalStackLayout Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Subtotal:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="SubtotalLabel" Text="£0.00" FontSize="14" TextColor="#1F2937" Grid.Column="1"/>
+                        </Grid>
+                        
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="VAT:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="VatLabel" Text="£0.00" FontSize="14" TextColor="#1F2937" Grid.Column="1"/>
+                        </Grid>
+                        
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Discount:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="DiscountLabel" Text="£0.00" FontSize="14" TextColor="#DC2626" Grid.Column="1"/>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Delivery fee:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="DeliveryFeeLabel" Text="£0.00" FontSize="14" TextColor="#1F2937" Grid.Column="1"/>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Service charge:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="ServiceChargeLabel" Text="£0.00" FontSize="14" TextColor="#1F2937" Grid.Column="1"/>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Tips:" FontSize="14" TextColor="#6B7280" Grid.Column="0"/>
+                            <Label x:Name="TipsLabel" Text="£0.00" FontSize="14" TextColor="#1F2937" Grid.Column="1"/>
+                        </Grid>
+                        
+                        <BoxView BackgroundColor="#E5E7EB" HeightRequest="1" Margin="0,8"/>
+                        
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Total:" FontSize="18" FontAttributes="Bold" TextColor="#1F2937" Grid.Column="0"/>
+                            <Label x:Name="TotalLabel" Text="£0.00" FontSize="20" FontAttributes="Bold" TextColor="#10B981" Grid.Column="1"/>
+                        </Grid>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- Action Buttons -->
+            <Grid Grid.Row="2" 
+                  Padding="20"
+                  ColumnDefinitions="*,*"
+                  ColumnSpacing="12"
+                  BackgroundColor="#F9FAFB">
+                
+                <Border BackgroundColor="#8B5CF6"
+                        StrokeThickness="0"
+                        Padding="16,12"
+                        Grid.Column="0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnPrintClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text="Print" 
+                           TextColor="White"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"/>
+                </Border>
+
+                <Border BackgroundColor="#6B7280"
+                        StrokeThickness="0"
+                        Padding="16,12"
+                        Grid.Column="1">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCloseClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text="Close" 
+                           TextColor="White"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"/>
+                </Border>
+
+            </Grid>
+
+        </Grid>
+    </Frame>
+</ContentPage>

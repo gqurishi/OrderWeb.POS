@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    x:Class="OrderWeb.SharedUI.Themes.OrderWebComponentStyles">
+    <Shadow x:Key="OwCardShadow"
+            Brush="{DynamicResource OwShadow}"
+            Offset="0,2"
+            Radius="8"
+            Opacity="0.10" />
+    <Shadow x:Key="OwDialogShadow"
+            Brush="{DynamicResource OwShadow}"
+            Offset="0,8"
+            Radius="20"
+            Opacity="0.16" />
+
+    <Style x:Key="OwCardStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurface}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwBorder}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource OwBorderThickness}" />
+        <Setter Property="Padding" Value="{StaticResource OwCardPadding}" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="{StaticResource OwCornerRadiusLarge}" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="OwPrimaryButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwPrimary}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeButton}" />
+        <Setter Property="HeightRequest" Value="{StaticResource OwButtonHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
+        <Setter Property="CornerRadius" Value="{StaticResource OwCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource OwButtonPadding}" />
+    </Style>
+
+    <Style x:Key="OwSecondaryButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurfaceStrong}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextStrong}" />
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeButton}" />
+        <Setter Property="HeightRequest" Value="{StaticResource OwButtonHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
+        <Setter Property="CornerRadius" Value="{StaticResource OwCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource OwButtonPadding}" />
+    </Style>
+
+    <Style x:Key="OwSuccessButtonStyle" TargetType="Button" BasedOn="{StaticResource OwPrimaryButtonStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccessStrong}" />
+    </Style>
+    <Style x:Key="OwDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource OwPrimaryButtonStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwErrorStrong}" />
+    </Style>
+
+    <Style x:Key="OwEntryStyle" TargetType="Entry">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwBackground}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextPrimary}" />
+        <Setter Property="PlaceholderColor" Value="{DynamicResource OwTextPlaceholder}" />
+        <Setter Property="FontFamily" Value="{StaticResource OwFontRegular}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeInput}" />
+        <Setter Property="HeightRequest" Value="{StaticResource OwInputHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
+    </Style>
+
+    <Style x:Key="OwDialogShellStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurface}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwBorder}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource OwBorderThickness}" />
+        <Setter Property="Padding" Value="{StaticResource OwDialogPadding}" />
+        <Setter Property="Shadow" Value="{StaticResource OwDialogShadow}" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="{StaticResource OwDialogCornerRadius}" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="OwStatusSuccessPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccessSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwSuccess}" />
+    </Style>
+    <Style x:Key="OwStatusWarningPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwWarningSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwWarningBorder}" />
+    </Style>
+    <Style x:Key="OwStatusErrorPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwErrorSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwErrorBorder}" />
+    </Style>
+    <Style x:Key="OwStatusInfoPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource OwInfoSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource OwPrimarySoftBorder}" />
+    </Style>
+
+    <Style x:Key="OwStatusSuccessTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwSuccessText}" />
+    </Style>
+    <Style x:Key="OwStatusWarningTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwWarningText}" />
+    </Style>
+    <Style x:Key="OwStatusErrorTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwErrorText}" />
+    </Style>
+</ResourceDictionary>

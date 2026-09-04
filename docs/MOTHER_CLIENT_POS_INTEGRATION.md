@@ -65,5 +65,5 @@ Before releasing either application:
 ## Build boundaries
 
 - Mother POS uses the root solution and its root SDK/build configuration.
-- Client POS uses `Client POS/OrderWeb.Client.sln` and `Client POS/global.json`.
+- Client POS uses `OrderWeb.POS.sln` and the repository-root `global.json`.
 - Do not add Client build outputs to the Mother solution or commit generated artifacts.

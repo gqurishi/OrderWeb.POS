@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    x:Class="OrderWeb.SharedUI.Themes.OrderWebTypography">
+    <!-- Both host applications register these same aliases in MauiProgram. -->
+    <x:String x:Key="OwFontRegular">OpenSansRegular</x:String>
+    <x:String x:Key="OwFontSemibold">OpenSansSemibold</x:String>
+    <x:String x:Key="OwFontBold">OpenSansBold</x:String>
+
+    <x:Double x:Key="OwFontSizeCaption">12</x:Double>
+    <x:Double x:Key="OwFontSizeSmall">13</x:Double>
+    <x:Double x:Key="OwFontSizeBody">15</x:Double>
+    <x:Double x:Key="OwFontSizeInput">16</x:Double>
+    <x:Double x:Key="OwFontSizeButton">16</x:Double>
+    <x:Double x:Key="OwFontSizeCardTitle">18</x:Double>
+    <x:Double x:Key="OwFontSizeSectionTitle">22</x:Double>
+    <x:Double x:Key="OwFontSizePageTitle">32</x:Double>
+    <x:Double x:Key="OwFontSizeDisplayTitle">38</x:Double>
+
+    <Style x:Key="OwBodyTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontRegular}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeBody}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextSecondary}" />
+    </Style>
+    <Style x:Key="OwCaptionTextStyle" TargetType="Label" BasedOn="{StaticResource OwBodyTextStyle}">
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeCaption}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextMuted}" />
+    </Style>
+    <Style x:Key="OwCardTitleStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeCardTitle}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextPrimary}" />
+    </Style>
+    <Style x:Key="OwSectionTitleStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizeSectionTitle}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextPrimary}" />
+    </Style>
+    <Style x:Key="OwPageTitleStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource OwFontSizePageTitle}" />
+        <Setter Property="TextColor" Value="{DynamicResource OwTextPrimary}" />
+    </Style>
+</ResourceDictionary>

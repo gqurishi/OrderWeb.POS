@@ -1,0 +1,58 @@
+-- Rider operations board. Delivery orders remain the source of truth; this
+-- table stores only dispatch workflow, quotations and the audit trail.
+
+CREATE TABLE IF NOT EXISTS rider_dispatch_jobs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_db_id INT NOT NULL,
+    operation_status VARCHAR(40) NOT NULL DEFAULT 'awaiting_kitchen',
+    quote_id VARCHAR(120) NULL,
+    quote_amount DECIMAL(10,2) NULL,
+    quote_currency CHAR(3) NOT NULL DEFAULT 'GBP',
+    quote_expires_at DATETIME NULL,
+    estimated_pickup_at DATETIME NULL,
+    estimated_delivery_at DATETIME NULL,
+    provider_name VARCHAR(100) NULL,
+    dispatch_id VARCHAR(120) NULL,
+    rider_name VARCHAR(150) NULL,
+    rider_phone VARCHAR(50) NULL,
+    rider_tracking_url VARCHAR(500) NULL,
+    cash_collection_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    quote_idempotency_key VARCHAR(100) NOT NULL,
+    dispatch_idempotency_key VARCHAR(100) NULL,
+    requested_by_user_id INT NULL,
+    requested_by_name VARCHAR(150) NULL,
+    confirmed_by_user_id INT NULL,
+    confirmed_by_name VARCHAR(150) NULL,
+    requested_at DATETIME NULL,
+    confirmed_at DATETIME NULL,
+    collected_at DATETIME NULL,
+    delivered_at DATETIME NULL,
+    cancelled_at DATETIME NULL,
+    last_error VARCHAR(500) NULL,
+    provider_payload JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_rider_dispatch_order (order_db_id),
+    UNIQUE KEY uq_rider_dispatch_external (dispatch_id),
+    UNIQUE KEY uq_rider_quote_idempotency (quote_idempotency_key),
+    INDEX idx_rider_status_updated (operation_status, updated_at),
+    INDEX idx_rider_dispatch_idempotency (dispatch_idempotency_key),
+    CONSTRAINT fk_rider_dispatch_order FOREIGN KEY (order_db_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rider_dispatch_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    rider_job_id BIGINT NOT NULL,
+    order_db_id INT NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    previous_status VARCHAR(40) NULL,
+    new_status VARCHAR(40) NULL,
+    actor_user_id INT NULL,
+    actor_name VARCHAR(150) NULL,
+    details_json JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_rider_events_job_time (rider_job_id, created_at),
+    INDEX idx_rider_events_order_time (order_db_id, created_at),
+    CONSTRAINT fk_rider_event_job FOREIGN KEY (rider_job_id) REFERENCES rider_dispatch_jobs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rider_event_order FOREIGN KEY (order_db_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

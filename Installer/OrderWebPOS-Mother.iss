@@ -36,7 +36,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#PublishRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PublishRoot}\{#DatabaseSetupExe}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\Database\Migrations\*.sql"; DestDir: "{app}\Migrations"; Flags: ignoreversion
+Source: "..\database\migrations\*.sql"; DestDir: "{app}\Migrations"; Flags: ignoreversion
 Source: "Prerequisites\MariaDB\*"; DestDir: "{tmp}\MariaDB"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

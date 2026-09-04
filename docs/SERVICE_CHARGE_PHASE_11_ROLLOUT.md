@@ -10,8 +10,8 @@
 ## Automated acceptance
 
 - Calculator tests cover 0%, 10%, 12.5%, decimal percentages, discount-before-charge, penny rounding, removed status, collection/delivery isolation, setting snapshot isolation, partial-payment modification protection, tip gating, and split-tip reconciliation.
-- Run: `dotnet test OrderWeb.DatabaseSetup.Tests/OrderWeb.DatabaseSetup.Tests.csproj`.
-- Run: `dotnet build POS-in-NET.csproj -f net10.0-windows10.0.19041.0`.
+- Run: `dotnet test tests/OrderWeb.DatabaseSetup.Tests/OrderWeb.DatabaseSetup.Tests.csproj`.
+- Run: `dotnet build src/OrderWeb.Mother/OrderWeb.Mother.csproj -f net10.0-windows10.0.19041.0`.
 
 ## Manual acceptance matrix
 

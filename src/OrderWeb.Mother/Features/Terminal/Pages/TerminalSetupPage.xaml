@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="POS_in_NET.Pages.TerminalSetupPage"
+             BackgroundColor="#F8FAFC"
+             Shell.NavBarIsVisible="False">
+
+    <Grid Padding="24" RowDefinitions="Auto,*">
+        <Button
+                Text="-"
+                WidthRequest="44"
+                HeightRequest="44"
+                Padding="0"
+                CornerRadius="0"
+                BackgroundColor="Transparent"
+                BorderColor="Transparent"
+                BorderWidth="0"
+                TextColor="#111827"
+                FontSize="24"
+                FontAttributes="Bold"
+                HorizontalOptions="End"
+                VerticalOptions="Start"
+                Margin="0,0,0,0"
+                ZIndex="10"
+                Grid.Row="0"
+                Clicked="OnMinimizeClicked"
+                ToolTipProperties.Text="Minimize POS" />
+
+        <ScrollView x:Name="SetupScrollView"
+                    Grid.Row="1"
+                    Margin="0,0,0,12"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
+                    VerticalScrollBarVisibility="Always">
+            <!-- Keep the form as a direct child of the content grid so its full
+                 desired height determines the Windows ScrollViewer extent. -->
+            <Grid Padding="0,0,0,24"
+                  HorizontalOptions="Fill"
+                  VerticalOptions="Start">
+                <Grid WidthRequest="820"
+                        MaximumWidthRequest="820"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Start">
+                    <!-- This border is visual only; it cannot clip or shorten the form. -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 18"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="Fill"
+                            InputTransparent="True" />
+                    <VerticalStackLayout Padding="40"
+                                         Spacing="24"
+                                         VerticalOptions="Start">
+                            <VerticalStackLayout Spacing="6">
+                    <Label Text="Terminal Setup"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="38"
+                           TextColor="#0F172A" />
+                    <Label Text="Configure this computer as the Mother POS. It uses the local restaurant database and hosts the Mother API."
+                           FontFamily="OpenSansRegular"
+                           FontSize="18"
+                           TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                            <Grid ColumnDefinitions="*">
+                    <Border x:Name="MotherCard"
+                            Stroke="#10B981"
+                            StrokeThickness="3"
+                            StrokeShape="RoundRectangle 20"
+                            BackgroundColor="#ECFDF5"
+                            Padding="22">
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Mother Terminal"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="24"
+                                   TextColor="#065F46" />
+                            <Label Text="Main POS. Runs database, online orders, reports, and cloud sync."
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="15"
+                                   TextColor="#475569" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                </Grid>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Terminal Name"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="16"
+                           TextColor="#334155" />
+                    <Entry x:Name="TerminalNameEntry"
+                           Placeholder="Main, Floor 1, Bar, Counter 2"
+                           Text="Main"
+                           FontSize="18"
+                           HeightRequest="58"
+                           BackgroundColor="#F8FAFC" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout x:Name="MotherDatabaseSection" Spacing="12" IsVisible="True">
+                    <Label Text="Database Connection"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="18"
+                           TextColor="#0F172A" />
+                    <Label x:Name="InstallerConfigLabel"
+                           Text=""
+                           FontFamily="OpenSansRegular"
+                           FontSize="14"
+                           TextColor="#059669"
+                           IsVisible="False" />
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Name"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabaseNameEntry"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Port"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabasePortEntry"
+                               Text="3306"
+                               Keyboard="Numeric"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database User"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Entry x:Name="DatabaseUserEntry"
+                               FontSize="18"
+                               HeightRequest="58"
+                               BackgroundColor="#F8FAFC" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Database Password"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="16"
+                               TextColor="#334155" />
+                        <Border Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 6"
+                                BackgroundColor="#F8FAFC"
+                                HeightRequest="58"
+                                Padding="10,0">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <Entry x:Name="DatabasePasswordEntry"
+                                       IsPassword="True"
+                                       Placeholder="Enter database password"
+                                       FontSize="18"
+                                       BackgroundColor="Transparent"
+                                       VerticalOptions="Center" />
+                                <Button x:Name="ToggleDatabasePasswordButton"
+                                        Grid.Column="1"
+                                        Text="⌾ Show"
+                                        FontFamily="OpenSansSemibold"
+                                        FontSize="13"
+                                        HeightRequest="38"
+                                        MinimumWidthRequest="88"
+                                        Padding="10,0"
+                                        CornerRadius="8"
+                                        BackgroundColor="#E2E8F0"
+                                        TextColor="#334155"
+                                        VerticalOptions="Center"
+                                        Clicked="OnToggleDatabasePasswordClicked" />
+                            </Grid>
+                        </Border>
+                        <Label Text="Use at least 8 characters, or generate a secure password automatically."
+                               FontFamily="OpenSansRegular"
+                               FontSize="13"
+                               TextColor="#64748B" />
+                        <Button x:Name="GenerateDatabaseCredentialsButton"
+                                Text="Generate Credentials"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                HeightRequest="48"
+                                CornerRadius="12"
+                                BackgroundColor="#0F766E"
+                                TextColor="White"
+                                Clicked="OnGenerateDatabaseCredentialsClicked" />
+                        <Label Text="Inno Setup writes orderweb-database.json with these credentials before first launch."
+                               FontFamily="OpenSansRegular"
+                               FontSize="14"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <Label x:Name="StatusLabel"
+                           Text=""
+                           FontFamily="OpenSansRegular"
+                           FontSize="15"
+                           TextColor="#64748B"
+                           VerticalOptions="Center" />
+                    <Button x:Name="ContinueButton"
+                            Grid.Column="1"
+                            Text="Save &amp; Continue"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="18"
+                            HeightRequest="58"
+                            Padding="28,0"
+                            CornerRadius="16"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            Clicked="OnContinueClicked" />
+                </Grid>
+                    </VerticalStackLayout>
+                </Grid>
+            </Grid>
+        </ScrollView>
+    </Grid>
+</ContentPage>

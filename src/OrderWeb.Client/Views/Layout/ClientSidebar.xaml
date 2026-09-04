@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+             x:Class="OrderWeb.Client.Views.Layout.ClientSidebar"
+             WidthRequest="280">
+    <shared:ApplicationSidebar x:Name="SharedSidebar"
+                               NavigationRequested="OnSharedNavigationRequested"
+                               UpdateRequested="OnUpdateAllClicked" />
+</ContentView>

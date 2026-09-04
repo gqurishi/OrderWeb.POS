@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="POS_in_NET.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:POS_in_NET"
+    xmlns:pages="clr-namespace:POS_in_NET.Pages"
+    xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+    Title="Restaurant POS"
+    FlyoutBehavior="Flyout"
+    FlyoutWidth="280"
+    Shell.NavBarIsVisible="False"
+    Shell.FlyoutBackdrop="Transparent">
+
+    <!-- CUSTOM FLYOUT - Complete Control, No Default Spacing -->
+    <Shell.FlyoutContent>
+        <shared:ApplicationSidebar x:Name="SharedSidebar"
+                                   NavigationRequested="OnSharedNavigationRequested"
+                                   UpdateRequested="OnSyncDatabaseClicked"
+                                   LogoutRequested="OnLogoutClicked"
+                                   ShowUpdateButton="True" />
+    </Shell.FlyoutContent>
+
+    <!-- Login Page (Flyout Disabled) -->
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:LoginPage}"
+        Route="login"
+        Shell.FlyoutBehavior="Disabled"
+        Shell.TitleView="{x:Null}" />
+
+    <!-- Main App with Flyout Menu -->
+    <FlyoutItem Title="Dashboard">
+        <ShellContent
+            Title="Dashboard" 
+            ContentTemplate="{DataTemplate pages:DashboardPage}"
+            Route="dashboard"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <!-- User Dashboard (Simplified) -->
+    <FlyoutItem Title="User Dashboard">
+        <ShellContent
+            Title="User Dashboard" 
+            ContentTemplate="{DataTemplate pages:UserDashboardPage}"
+            Route="userdashboard"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <!-- Manager Dashboard -->
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ManagerDashboardPage}"
+        Route="managerdashboard"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <FlyoutItem Title="Restaurant">
+        <ShellContent
+            Title="Restaurant Overview"
+            ContentTemplate="{DataTemplate pages:RestaurantPage}"
+            Route="restaurant"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+    
+    <!-- Hidden Restaurant Sub-Pages (not in flyout menu) -->
+    <ShellContent
+        Title="Visual Table Layout"
+        ContentTemplate="{DataTemplate pages:VisualTablePage}"
+        Route="visuallayout"
+        Shell.NavBarIsVisible="False"
+        FlyoutItemIsVisible="False" />
+    
+    <ShellContent
+        Title="Floor Management"
+        ContentTemplate="{DataTemplate pages:FloorPage}"
+        Route="floor"
+        Shell.NavBarIsVisible="False"
+        FlyoutItemIsVisible="False" />
+    
+    <ShellContent
+        Title="Table Management"
+        ContentTemplate="{DataTemplate pages:TablePage}"
+        Route="table"
+        Shell.NavBarIsVisible="False"
+        FlyoutItemIsVisible="False" />
+
+    <FlyoutItem Title="Food Menu">
+        <ShellContent
+            Title="Food Menu Management"
+            ContentTemplate="{DataTemplate pages:FoodMenuManagement}"
+            Route="foodmenu"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <FlyoutItem Title="Rider">
+        <ShellContent
+            Title="Rider Operations"
+            ContentTemplate="{DataTemplate pages:RiderPage}"
+            Route="weborders"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <FlyoutItem Title="Settings">
+        <ShellContent
+            Title="Settings"
+            ContentTemplate="{DataTemplate pages:UnifiedSettingsPage}"
+            Route="settings"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <!-- Hidden routes for tab navigation -->
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:LiveOrderPage}"
+        Route="liveorder"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:OrderHistoryPage}"
+        Route="orderhistory"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ReservationPage}"
+        Route="reservation"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:ReportPage}"
+        Route="report"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Staff Clock"
+        ContentTemplate="{DataTemplate pages:StaffAttendancePage}"
+        Route="staffclock"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:InventoryPage}"
+        Route="inventory"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <FlyoutItem Title="Gift Cards">
+        <ShellContent
+            Title="Gift Card Management"
+            ContentTemplate="{DataTemplate pages:GiftCardPage}"
+            Route="giftcards"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <FlyoutItem Title="Loyalty Points">
+        <ShellContent
+            Title="Customer Loyalty &amp; Gift Cards"
+            ContentTemplate="{DataTemplate pages:LoyaltyPointsPage}"
+            Route="loyalty"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <FlyoutItem Title="Printer Setup">
+        <ShellContent
+            Title="Printer Setup"
+            ContentTemplate="{DataTemplate pages:PrinterSetupPage}"
+            Route="printersetup"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <ShellContent
+        Title="Terminal Health"
+        ContentTemplate="{DataTemplate pages:TerminalHealthPage}"
+        Route="terminalhealth"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Recent Customers"
+        ContentTemplate="{DataTemplate pages:CustomerDataPage}"
+        Route="customerdata"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Terminal Setup"
+        ContentTemplate="{DataTemplate pages:TerminalSetupPage}"
+        Route="terminalsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Initial Admin Setup"
+        ContentTemplate="{DataTemplate pages:InitialAdminSetupPage}"
+        Route="initialadminsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:PostcodeLookupPage}"
+        Route="postcodelookup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+</Shell>

@@ -54,6 +54,6 @@ Web Orders pull has a separate server-side API issue:
 
 Current repo automated tests are limited to database setup/migration policy:
 
-- `OrderWeb.DatabaseSetup.Tests`
+- `tests/OrderWeb.DatabaseSetup.Tests`
 
 These do not replace the real till workflow tests above.
