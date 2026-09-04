@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using MySqlConnector;
 using POS_in_NET.Models;
+using OrderWeb.Contracts.Config;
+using System.Text.Json.Serialization;
 
 namespace POS_in_NET.Services;
 
@@ -24,6 +26,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
     private readonly DatabaseService _databaseService;
     private readonly AuthenticationService _authenticationService;
     private readonly PermissionService _permissionService;
+    private readonly MotherConfigCatalogService _configCatalog;
     private readonly ConcurrentDictionary<string, ClientWebSocketConnection> _clients = new();
     private readonly SemaphoreSlim _lifetimeLock = new(1, 1);
     private WebApplication? _app;
@@ -31,11 +34,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
     public ClientWebSocketBroadcastService(
         DatabaseService databaseService,
         AuthenticationService authenticationService,
-        PermissionService permissionService)
+        PermissionService permissionService,
+        MotherConfigCatalogService? configCatalog = null)
     {
         _databaseService = databaseService;
         _authenticationService = authenticationService;
         _permissionService = permissionService;
+        _configCatalog = configCatalog ?? new MotherConfigCatalogService();
     }
 
     public bool IsRunning { get; private set; }
@@ -71,6 +76,15 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/bootstrap", HandleBootstrapAsync);
             app.MapPost("/api/client/login", HandleLoginAsync);
             app.MapPost("/terminals/heartbeat", HandleHeartbeatAsync);
+            // Phase 15 — separate config group endpoints (never one mega payload)
+            app.MapGet("/api/client/config/manifest", HandleConfigManifestAsync);
+            app.MapGet("/api/client/config/branding", HandleConfigBrandingAsync);
+            app.MapGet("/api/client/config/menu", HandleConfigMenuAsync);
+            app.MapGet("/api/client/config/floors", HandleConfigFloorsAsync);
+            app.MapGet("/api/client/config/permissions", HandleConfigPermissionsAsync);
+            app.MapGet("/api/client/config/features", HandleConfigFeaturesAsync);
+            app.MapGet("/api/client/config/settings", HandleConfigSettingsAsync);
+            app.MapPost("/api/client/config/pull", HandleConfigPullAsync);
             app.Map("/ws", HandleWebSocketAsync);
 
             await app.StartAsync();
@@ -936,6 +950,106 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
     private static string GetRestaurantSlug() =>
         TerminalConfigurationService.GetConfiguration().DatabaseName.Trim();
+
+
+    // --- Phase 15 Mother-controlled configuration ---
+
+    private async Task HandleConfigManifestAsync(HttpContext context)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { success = false, message = auth.Message }, JsonOptions);
+            return;
+        }
+
+        long.TryParse(context.Request.Query["branding"], out var branding);
+        long.TryParse(context.Request.Query["menu"], out var menu);
+        long.TryParse(context.Request.Query["floors"], out var floors);
+        long.TryParse(context.Request.Query["permissions"], out var permissions);
+        long.TryParse(context.Request.Query["features"], out var features);
+        long.TryParse(context.Request.Query["settings"], out var settings);
+        var applied = new ConfigVersionsDto(branding, menu, floors, permissions, features, settings);
+        if (applied.Equals(ConfigVersionsDto.None))
+            applied = null;
+
+        var result = await _configCatalog.GetManifestAsync(applied);
+        await WriteConfigResultAsync(context, result);
+    }
+
+    private async Task HandleConfigBrandingAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetBrandingAsync()));
+
+    private async Task HandleConfigMenuAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetMenuAsync()));
+
+    private async Task HandleConfigFloorsAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetFloorsAsync()));
+
+    private async Task HandleConfigPermissionsAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetPermissionsAsync()));
+
+    private async Task HandleConfigFeaturesAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetFeaturesAsync()));
+
+    private async Task HandleConfigSettingsAsync(HttpContext context)
+        => await WriteConfigResultAsync(context, await AuthorizeAndGetAsync(context, () => _configCatalog.GetSettingsAsync()));
+
+    private async Task HandleConfigPullAsync(HttpContext context)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { success = false, message = auth.Message }, JsonOptions);
+            return;
+        }
+
+        var applied = await context.Request.ReadFromJsonAsync<ConfigVersionsDto>(JsonOptions)
+                      ?? ConfigVersionsDto.None;
+        var result = await _configCatalog.PullChangedAsync(applied);
+        await WriteConfigResultAsync(context, result);
+    }
+
+    private async Task<OrderWeb.Contracts.Results.OperationResult<T>?> AuthorizeAndGetAsync<T>(
+        HttpContext context,
+        Func<Task<OrderWeb.Contracts.Results.OperationResult<T>>> getter)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { success = false, message = auth.Message }, JsonOptions);
+            return null;
+        }
+
+        return await getter();
+    }
+
+    private static async Task WriteConfigResultAsync<T>(HttpContext context, OrderWeb.Contracts.Results.OperationResult<T>? result)
+    {
+        if (result is null)
+            return;
+
+        if (!result.IsSuccess || result.Value is null)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                success = false,
+                message = result.Error?.Message ?? "Config request failed."
+            }, JsonOptions);
+            return;
+        }
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            success = true,
+            data = result.Value
+        }, JsonOptions);
+    }
+
 
     public void Dispose()
     {
