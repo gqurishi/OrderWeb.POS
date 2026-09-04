@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using OrderWeb.Contracts.Orders;
+using OrderWeb.Contracts.Services;
 using POS_in_NET.Services;
 using POS_in_NET.Pages;
 using MyFirstMauiApp.Services;
@@ -149,6 +151,10 @@ public static class MauiProgram
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
+		// Phase 12 — shared authoritative order contracts (idempotency + revalidation)
+		builder.Services.AddSingleton<AuthoritativeOrderService>();
+		builder.Services.AddSingleton<IOrderService>(sp => sp.GetRequiredService<AuthoritativeOrderService>());
+		builder.Services.AddSingleton<IMenuCatalogService>(sp => sp.GetRequiredService<AuthoritativeOrderService>());
 		
 		// Register OrderWeb UK address lookup service
 		builder.Services.AddSingleton<PostcodeLookupService>();

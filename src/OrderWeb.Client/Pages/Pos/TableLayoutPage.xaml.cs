@@ -328,7 +328,7 @@ public partial class TableLayoutPage : ContentPage
 
         if (!string.IsNullOrWhiteSpace(table.CurrentOrderId))
         {
-            await Navigation.PushAsync(new OrderPage(table, Math.Max(table.Covers, 1)), false);
+            await Navigation.PushAsync(new SharedOrderEntryPage(table, Math.Max(table.Covers, 1)), false);
             return;
         }
 
@@ -504,7 +504,7 @@ public partial class TableLayoutPage : ContentPage
             return;
         }
 
-        await Navigation.PushAsync(new OrderPage(_selectedTable, covers), false);
+        await Navigation.PushAsync(new SharedOrderEntryPage(_selectedTable, covers), false);
     }
 
     private static (Color Bg, Color Border, Color Text) TableColors(CachedTable table)
