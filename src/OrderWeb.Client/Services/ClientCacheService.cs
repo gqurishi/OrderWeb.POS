@@ -917,6 +917,95 @@ public sealed class ClientCacheService
         await _database.ExecuteAsync("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES (?, ?, ?)", key, value, now);
     }
 
+
+    /// <summary>Phase 15 — last successfully applied Mother config versions.</summary>
+    public async Task<OrderWeb.Contracts.Config.ConfigVersionsDto> GetAppliedConfigVersionsAsync()
+    {
+        static long Parse(string? value) => long.TryParse(value, out var n) ? n : 0L;
+        return new OrderWeb.Contracts.Config.ConfigVersionsDto(
+            Parse(await GetSyncValueAsync("branding_version")),
+            Parse(await GetSyncValueAsync("menu_version")),
+            Parse(await GetSyncValueAsync("floor_version")),
+            Parse(await GetSyncValueAsync("permissions_version")),
+            Parse(await GetSyncValueAsync("feature_version")),
+            Parse(await GetSyncValueAsync("settings_version")));
+    }
+
+    public async Task SaveAppliedConfigVersionsAsync(OrderWeb.Contracts.Config.ConfigVersionsDto versions)
+    {
+        await UpsertSyncStateAsync("branding_version", versions.BrandingVersion.ToString());
+        await UpsertSyncStateAsync("menu_version", versions.MenuVersion.ToString());
+        await UpsertSyncStateAsync("floor_version", versions.FloorVersion.ToString());
+        await UpsertSyncStateAsync("permissions_version", versions.PermissionsVersion.ToString());
+        await UpsertSyncStateAsync("feature_version", versions.FeatureVersion.ToString());
+        await UpsertSyncStateAsync("settings_version", versions.SettingsVersion.ToString());
+        await UpsertSyncStateAsync("config_last_applied_utc", DateTimeOffset.UtcNow.ToString("O"));
+    }
+
+    public async Task SaveAppliedConfigGroupVersionAsync(OrderWeb.Contracts.Config.ConfigGroupKind group, long version)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "branding_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "menu_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "floor_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "permissions_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "feature_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "settings_version",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        await UpsertSyncStateAsync(key, version.ToString());
+    }
+
+
+    public async Task SaveConfigGroupSnapshotAsync(OrderWeb.Contracts.Config.ConfigGroupKind group, string json)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "config_snapshot_branding",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "config_snapshot_menu",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "config_snapshot_floors",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "config_snapshot_permissions",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "config_snapshot_features",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "config_snapshot_settings",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        await UpsertDeviceConfigAsync(key, json);
+        await SaveAppliedConfigGroupVersionAsync(group, ExtractVersion(json));
+    }
+
+    public async Task<string?> GetConfigGroupSnapshotAsync(OrderWeb.Contracts.Config.ConfigGroupKind group)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "config_snapshot_branding",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "config_snapshot_menu",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "config_snapshot_floors",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "config_snapshot_permissions",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "config_snapshot_features",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "config_snapshot_settings",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        return await GetDeviceConfigValueAsync(key);
+    }
+
+    private static long ExtractVersion(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("version", out var v) && v.TryGetInt64(out var n))
+                return n;
+            if (doc.RootElement.TryGetProperty("Version", out var v2) && v2.TryGetInt64(out var n2))
+                return n2;
+        }
+        catch
+        {
+        }
+
+        return 0;
+    }
+
     private async Task UpsertSyncStateAsync(string key, string value)
     {
         var now = DateTimeOffset.UtcNow.ToString("O");

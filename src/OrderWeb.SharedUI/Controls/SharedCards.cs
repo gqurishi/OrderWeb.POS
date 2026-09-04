@@ -18,11 +18,11 @@ public class DashboardTile : ContentView
     {
         _icon = new Image { WidthRequest = 112, HeightRequest = 112, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
         _title = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center };
-        _title.Use(Label.TextColorProperty, "OwTextPrimary");
+        _title.Use(Label.TextColorProperty, "PosTextPrimary");
         _subtitle = new Label { FontSize = 13, IsVisible = false, HorizontalTextAlignment = TextAlignment.Center };
-        _subtitle.Use(Label.TextColorProperty, "OwTextMuted");
+        _subtitle.Use(Label.TextColorProperty, "PosTextMuted");
         var card = new Border { Padding = 18, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 20 }, Content = new VerticalStackLayout { Spacing = 10, Children = { _icon, _title, _subtitle } } };
-        card.Use(Border.BackgroundColorProperty, "OwSurface"); card.Use(Border.StrokeProperty, "OwBorder");
+        card.Use(Border.BackgroundColorProperty, "PosSurface"); card.Use(Border.StrokeProperty, "PosBorder");
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => { Tapped?.Invoke(this, EventArgs.Empty); if (Command?.CanExecute(CommandParameter) == true) Command.Execute(CommandParameter); };
         card.GestureRecognizers.Add(tap);
@@ -50,7 +50,7 @@ public class SidebarItemView : ContentView
     {
         _icon = new Image { WidthRequest = 30, HeightRequest = 30, Aspect = Aspect.AspectFit };
         _label = new Label { FontSize = 16, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center };
-        _label.Use(Label.TextColorProperty, "OwTextStrong");
+        _label.Use(Label.TextColorProperty, "PosTextStrong");
         _row = new Grid { Padding = new Thickness(16, 13), ColumnDefinitions = { new ColumnDefinition(32), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 18 };
         _row.Add(_icon); _row.Add(_label, 1);
         var tap = new TapGestureRecognizer(); tap.Tapped += (_, _) => { Tapped?.Invoke(this, EventArgs.Empty); if (Command?.CanExecute(CommandParameter) == true) Command.Execute(CommandParameter); };
@@ -62,7 +62,7 @@ public class SidebarItemView : ContentView
     public bool IsSelected { get => (bool)GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
     public ICommand? Command { get => (ICommand?)GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
     public object? CommandParameter { get => GetValue(CommandParameterProperty); set => SetValue(CommandParameterProperty, value); }
-    private void ApplySelection() { if (IsSelected) _row.Use(Grid.BackgroundColorProperty, "OwPrimarySoft"); else _row.BackgroundColor = Colors.Transparent; }
+    private void ApplySelection() { if (IsSelected) _row.Use(Grid.BackgroundColorProperty, "PosPrimarySoft"); else _row.BackgroundColor = Colors.Transparent; }
 }
 
 public class TableCard : Border
@@ -77,9 +77,9 @@ public class TableCard : Border
     public TableCard()
     {
         Padding = 16; StrokeThickness = 1; StrokeShape = new RoundRectangle { CornerRadius = 16 };
-        this.Use(BackgroundColorProperty, "OwSurface"); this.Use(StrokeProperty, "OwBorder");
-        _title = new Label { Text = "Table", FontSize = 20, FontAttributes = FontAttributes.Bold }; _title.Use(Label.TextColorProperty, "OwTextPrimary");
-        _details = new Label { FontSize = 13 }; _details.Use(Label.TextColorProperty, "OwTextMuted");
+        this.Use(BackgroundColorProperty, "PosSurface"); this.Use(StrokeProperty, "PosBorder");
+        _title = new Label { Text = "Table", FontSize = 20, FontAttributes = FontAttributes.Bold }; _title.Use(Label.TextColorProperty, "PosTextPrimary");
+        _details = new Label { FontSize = 13 }; _details.Use(Label.TextColorProperty, "PosTextMuted");
         _status = new StatusBadge { Text = "Available", Kind = StatusKind.Success, HorizontalOptions = LayoutOptions.Start };
         Content = new VerticalStackLayout { Spacing = 8, Children = { _title, _details, _status } };
     }
@@ -119,7 +119,7 @@ public class OrderLineView : ContentView
         var grid = new Grid { Padding = new Thickness(12, 10), ColumnDefinitions = { new ColumnDefinition(42), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
         grid.Add(_quantity); grid.Add(text, 1); grid.Add(_total, 2); Content = grid;
     }
-    private static Label Label(double size, bool strong) { var l = new Label { FontSize = size, FontAttributes = strong ? FontAttributes.Bold : FontAttributes.None, VerticalTextAlignment = TextAlignment.Center }; l.Use(Microsoft.Maui.Controls.Label.TextColorProperty, strong ? "OwTextPrimary" : "OwTextMuted"); return l; }
+    private static Label Label(double size, bool strong) { var l = new Label { FontSize = size, FontAttributes = strong ? FontAttributes.Bold : FontAttributes.None, VerticalTextAlignment = TextAlignment.Center }; l.Use(Microsoft.Maui.Controls.Label.TextColorProperty, strong ? "PosTextPrimary" : "PosTextMuted"); return l; }
     public int Quantity { get => (int)GetValue(QuantityProperty); set => SetValue(QuantityProperty, value); }
     public string ProductName { get => (string)GetValue(ProductNameProperty); set => SetValue(ProductNameProperty, value); }
     public string Notes { get => (string)GetValue(NotesProperty); set => SetValue(NotesProperty, value); }

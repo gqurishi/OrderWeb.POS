@@ -10,10 +10,10 @@ public class SharedButton : Button
 
     public SharedButton()
     {
-        HeightRequest = 48;
-        MinimumHeightRequest = 44;
-        CornerRadius = 12;
-        Padding = new Thickness(20, 0);
+        HeightRequest = ControlResources.Value("PosButtonHeight", 48d);
+        MinimumHeightRequest = ControlResources.Value("PosTouchTargetMinimum", 44d);
+        CornerRadius = (int)ControlResources.Value("PosCornerRadius", 12d);
+        Padding = ControlResources.Value("PosButtonPadding", new Thickness(20, 0));
         FontAttributes = FontAttributes.Bold;
         ApplyVariant();
     }
@@ -28,10 +28,10 @@ public class SharedButton : Button
     {
         var (background, foreground) = Variant switch
         {
-            ButtonVariant.Secondary => ("OwSurfaceStrong", "OwTextStrong"),
-            ButtonVariant.Success => ("OwSuccessStrong", "OwTextOnPrimary"),
-            ButtonVariant.Danger => ("OwErrorStrong", "OwTextOnPrimary"),
-            _ => ("OwPrimary", "OwTextOnPrimary")
+            ButtonVariant.Secondary => ("PosSurfaceStrong", "PosTextStrong"),
+            ButtonVariant.Success => ("PosSuccessStrong", "PosTextOnPrimary"),
+            ButtonVariant.Danger => ("PosErrorStrong", "PosTextOnPrimary"),
+            _ => ("PosPrimary", "PosTextOnPrimary")
         };
         this.Use(BackgroundColorProperty, background);
         this.Use(TextColorProperty, foreground);

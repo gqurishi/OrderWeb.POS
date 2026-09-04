@@ -1,138 +1,20 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
-             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+             xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Auth.LoginPage"
              Shell.NavBarIsVisible="False"
-             BackgroundColor="#FFFFFF"
+             BackgroundColor="White"
              Title="Login">
-    <Grid ColumnDefinitions="*,*"
-          BackgroundColor="#FFFFFF">
-        <Button Grid.ColumnSpan="2"
-                Text="-"
-                WidthRequest="44"
-                HeightRequest="44"
-                Padding="0"
-                CornerRadius="0"
-                BackgroundColor="Transparent"
-                BorderColor="Transparent"
-                BorderWidth="0"
-                TextColor="#111827"
-                FontSize="24"
-                FontAttributes="Bold"
-                HorizontalOptions="End"
-                VerticalOptions="Start"
-                Margin="0,14,18,0"
-                ZIndex="10"
-                Clicked="OnMinimizeClicked"
-                ToolTipProperties.Text="Minimize POS" />
 
-        <Grid Grid.Column="0"
-              BackgroundColor="#F8F9FA"
-              Padding="48,40">
-            <VerticalStackLayout Spacing="58"
-                                 HorizontalOptions="Center"
-                                 VerticalOptions="Center">
-                <Label Text="POS"
-                       FontSize="58"
-                       FontAttributes="Bold"
-                       TextColor="#6366F1"
-                       HorizontalTextAlignment="Center" />
+    <sharedViews:AuthenticationLoginView x:Name="LoginView"
+                                         BrandTitle="POS"
+                                         WelcomeTitle="Welcome Back!"
+                                         RestaurantName="Restaurant POS"
+                                         Prompt="Enter your PIN or swipe employee card"
+                                         ClockActionText="Clock In/Out"
+                                         PinCompleted="OnPinCompleted"
+                                         ClockActionRequested="OnClockActionRequested"
+                                         MinimizeRequested="OnMinimizeRequested" />
 
-                <VerticalStackLayout Spacing="10"
-                                     HorizontalOptions="Center"
-                                     Margin="0,20,0,0">
-                    <Label Text="Welcome Back!"
-                           FontFamily="InterBold"
-                           FontSize="32"
-                           TextColor="#1F2937"
-                           HorizontalTextAlignment="Center" />
-                    <Label x:Name="RestaurantNameLabel"
-                           Text="Restaurant POS"
-                           FontFamily="InterBold"
-                           FontSize="24"
-                           TextColor="#1F2937"
-                           Opacity="0.72"
-                           HorizontalTextAlignment="Center"
-                           MaximumWidthRequest="300" />
-                </VerticalStackLayout>
-
-                <layout:ConnectionStatusView x:Name="ConnectionStatus"
-                                             Status="Connected"
-                                             IsVisible="False"
-                                             HorizontalOptions="Center" />
-            </VerticalStackLayout>
-        </Grid>
-
-        <Grid Grid.Column="1"
-              BackgroundColor="#FFFFFF"
-              Padding="44,34">
-            <ScrollView VerticalOptions="Center"
-                        VerticalScrollBarVisibility="Never">
-                <VerticalStackLayout Spacing="46"
-                                     HorizontalOptions="Center"
-                                     MaximumWidthRequest="430">
-                    <VerticalStackLayout Spacing="28"
-                                         HorizontalOptions="Center">
-                        <Label Text="Enter your PIN or swipe employee card"
-                               FontFamily="OpenSansRegular"
-                               FontSize="18"
-                               TextColor="#374151"
-                               HorizontalTextAlignment="Center" />
-
-                        <Label x:Name="StatusLabel"
-                               IsVisible="False"
-                               FontFamily="OpenSansSemibold"
-                               FontSize="16"
-                               TextColor="#DC2626"
-                               HorizontalTextAlignment="Center" />
-
-                        <HorizontalStackLayout x:Name="PinDots"
-                                               Spacing="22"
-                                               Margin="0"
-                                               HorizontalOptions="Center" />
-                    </VerticalStackLayout>
-
-                    <VerticalStackLayout Spacing="36"
-                                         HorizontalOptions="Center">
-                        <shared:NumberKeypad KeySize="100"
-                                             KeyPressed="OnSharedKeyPressed"
-                                             ClearPressed="OnSharedClearPressed"
-                                             BackspacePressed="OnSharedBackspacePressed" />
-
-                        <Button x:Name="ClockInOutButton"
-                                Text="Clock In/Out"
-                                BackgroundColor="#6366F1"
-                                TextColor="#FFFFFF"
-                                FontFamily="OpenSansSemibold"
-                                FontSize="22"
-                                CornerRadius="32"
-                                HeightRequest="64"
-                                WidthRequest="334"
-                                HorizontalOptions="Center"
-                                Clicked="OnClockInOutClicked" />
-                    </VerticalStackLayout>
-                </VerticalStackLayout>
-            </ScrollView>
-
-            <VerticalStackLayout HorizontalOptions="End"
-                                 VerticalOptions="Start"
-                                 Spacing="4"
-                                 Margin="0,20,0,0">
-                <Label x:Name="LoginDateLabel"
-                       Text="Tuesday, August 18, 2026"
-                       FontFamily="InterMedium"
-                       FontSize="13"
-                       TextColor="#374151"
-                       HorizontalTextAlignment="End" />
-                <Label x:Name="LoginTimeLabel"
-                       Text="10:43:04"
-                       FontFamily="InterBold"
-                       FontSize="18"
-                       TextColor="#3B82F6"
-                       HorizontalTextAlignment="End" />
-            </VerticalStackLayout>
-        </Grid>
-    </Grid>
 </ContentPage>
