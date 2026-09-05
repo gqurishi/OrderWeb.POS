@@ -22,8 +22,15 @@ Host applications provide data, commands, and navigation only.
 | Order line | `OrderLineView` |
 | Status badge | `StatusBadge` (`StatusKind`) |
 | Confirmation and error dialogs | `ConfirmationDialog`, `ErrorDialog` |
+| Loading overlay | `LoadingOverlayView` |
+| Empty state | `EmptyStateView` |
+| Error state | `ErrorStateView` |
+| Offline / sync banner | `OfflineStatusBannerView` |
+| Responsive breakpoints | `ResponsiveLayout` |
 
 Both application projects reference this project and merge `OrderWebTheme` in `App.xaml`, then call `DesignSystemBootstrap.LockHostResources` so `Pos*` wins over local dictionaries. Syncfusion theme remains Mother-only.
+
+**Client foundation rule:** new Client operational screens must use SharedUI controls / `Pos*` tokens. Do not add new Client-only colours, fonts, margins, or button styles. See `src/OrderWeb.Client/CLIENT_UI.md`.
 
 New screens consume these types with:
 

@@ -4,8 +4,10 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <!-- Legacy Client keys. Authoritative POS tokens are SharedUI Pos*.
-         App startup reasserts Client* / Primary onto Pos* via DesignSystemBootstrap. -->
+    <!-- LEGACY ONLY — do not add new Client* keys.
+         Authoritative POS tokens are SharedUI Pos* (OrderWebTheme).
+         DesignSystemBootstrap aliases these Client* keys onto Pos* at startup.
+         Remove each key when its consuming screen migrates to SharedUI. -->
 
     <Color x:Key="Primary">#2563EB</Color>
     <Color x:Key="PrimaryDark">#1D4ED8</Color>

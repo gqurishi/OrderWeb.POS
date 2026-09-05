@@ -146,7 +146,7 @@ public sealed class OrderWebLegacyAliases
         Alias(target, "DialogShellStrokeColor", "PosBorder");
         Alias(target, "DialogFieldLabelColor", "PosTextMuted");
 
-        // Client colour keys
+        // Client colour keys (legacy screens keep Client* names; values lock to Pos*)
         Alias(target, "ClientBackground", "PosBackground");
         Alias(target, "ClientTopBarBackground", "PosSurface");
         Alias(target, "ClientSurface", "PosSurfaceMuted");
@@ -157,6 +157,11 @@ public sealed class OrderWebLegacyAliases
         Alias(target, "ClientAccent", "PosAccent");
         Alias(target, "ClientDashboardLabel", "PosPrimaryPressed");
         Alias(target, "ClientSelected", "PosSurfaceSelected");
+        Alias(target, "ClientPrimaryButton", "PosPrimary");
+        Alias(target, "ClientSuccess", "PosSuccess");
+        Alias(target, "ClientWarning", "PosWarning");
+        Alias(target, "ClientDanger", "PosError");
+        Alias(target, "ClientBorderLight", "PosBorder");
     }
 
     /// <summary>
