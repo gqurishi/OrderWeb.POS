@@ -1,5 +1,6 @@
 using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
+using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Dialogs;
 using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Views.Layout;
@@ -45,7 +46,7 @@ public partial class MainPage : ContentPage
     private readonly MotherAuthClient _authClient = new();
     private readonly MotherOrderClient _orderClient = new();
     private readonly MotherCustomerClient _customerClient;
-    private readonly MotherPrintClient _printClient = new();
+    private readonly MotherPrintClient _printClient;
     private readonly MotherOnlineOrderClient _onlineOrderClient = new();
     private readonly MotherEventClient _motherEvents;
     private readonly MotherHeartbeatClient _motherHeartbeat;
@@ -85,6 +86,7 @@ public partial class MainPage : ContentPage
         InitializeComponent();
         _bootstrapClient = new MotherBootstrapClient();
         _customerClient = new MotherCustomerClient();
+        _printClient = new MotherPrintClient(_cache);
         _motherEvents = new MotherEventClient(_cache);
         _motherHeartbeat = new MotherHeartbeatClient(_cache, () => _currentSession);
         _motherEvents.TerminalControlReceived += OnMotherTerminalControlReceived;
@@ -1333,6 +1335,8 @@ public partial class MainPage : ContentPage
                 Role = _currentSession?.Role ?? "User",
                 SelectedMenu = _posSelectedMenu,
                 ShowFooter = _currentSession?.Role == "Manager",
+                ConnectionStatus = _connectionStatus,
+                MenuItems = ClientNavigationItems(),
                 HorizontalOptions = LayoutOptions.Start,
             };
         sidebar.MenuItemSelected += OnClientSidebarMenuSelected;
@@ -1340,40 +1344,60 @@ public partial class MainPage : ContentPage
         return sidebar;
     }
 
-    private void OnClientSidebarMenuSelected(object? sender, string selectedMenu)
+    private void OnClientSidebarMenuSelected(object? sender, string selectedMenu) =>
+        NavigateClientMenu(RouteForTitle(selectedMenu), selectedMenu);
+
+    private void OnClientNavigationRequested(string route, string title) =>
+        NavigateClientMenu(route, title);
+
+    private void NavigateClientMenu(string route, string title)
     {
-        switch (selectedMenu)
+        switch (route)
         {
-            case "Dashboard":
-                RunFromPosSidebar(selectedMenu, ShowDashboard);
+            case "dashboard":
+                RunFromPosSidebar(title, ShowDashboard);
                 break;
-            case "Cash Drawer":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new CashDrawerPage()));
+            case "cashdrawer":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new CashDrawerPage()));
                 break;
-            case "Live Order":
-            case "Web Orders":
-                RunFromPosSidebar(selectedMenu, ShowLiveOrders);
+            case "liveorder":
+            case "weborders":
+                RunFromPosSidebar(title, ShowLiveOrders);
                 break;
-            case "Restaurant":
-                RunFromPosSidebar(selectedMenu, ShowRestaurantLayout);
+            case "restaurant":
+                RunFromPosSidebar(title, ShowRestaurantLayout);
                 break;
-            case "Collection":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()));
+            case "collection":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()));
                 break;
-            case "Delivery":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage()));
+            case "delivery":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage()));
                 break;
-            case "Gift Cards":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new GiftCardPage()));
+            case "giftcards":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new GiftCardPage()));
                 break;
-            case "Loyalty Points":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new LoyaltyPage()));
+            case "loyalty":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new LoyaltyPage()));
                 break;
-            case "Reservation":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new ReservationPage()));
+            case "reservation":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new ReservationPage()));
                 break;
-            case "Order History":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new OrderHistoryPage()));
+            case "orderhistory":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new OrderHistoryPage()));
+                break;
+            case "payment":
+                RunFromPosSidebar(title, ShowPayment);
+                break;
+            case "orderentry":
+                RunFromPosSidebar(title, ShowRestaurantLayout);
+                break;
+            case "customers":
+            case "report":
+            case "settings":
+                RunFromPosSidebar(title, () => ShowToast($"{title} is controlled by Mother permissions and is not available on this terminal yet."));
+                break;
+            default:
+                RunFromPosSidebar(title, ShowDashboard);
                 break;
         }
     }
@@ -2270,12 +2294,20 @@ public partial class MainPage : ContentPage
     {
         _selectedCachedTable = table;
         _guests = Math.Max(covers, 1);
-        _connectionStatus = "Syncing";
-        var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
-        await ApplyMotherOrderResultAsync(result);
-        await LoadOrderMenuAsync();
-        _connectionStatus = "Connected";
-        ShowOrder();
+
+        if (LegacyOrderEntryAccess.PreferLegacyRollback)
+        {
+            _connectionStatus = "Syncing";
+            var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
+            await ApplyMotherOrderResultAsync(result);
+            await LoadOrderMenuAsync();
+            _connectionStatus = "Connected";
+            ShowOrder();
+            return;
+        }
+
+        // Step 7: SharedUI order-entry via ClientOrderService → Mother authority.
+        await Navigation.PushAsync(SharedOrderEntryPage.ForTableOrLegacy(table, _guests), false);
     }
 
     private async Task ApplyMotherOrderResultAsync(MotherCommandResult result)
@@ -3085,23 +3117,9 @@ public partial class MainPage : ContentPage
         }
 
         _connectionStatus = "Syncing";
+        // Mother is authoritative — display only the status Mother returns.
         var request = await _printClient.RequestPrintAsync(printType, orderId, _currentSession);
         await _cache.SavePrintRequestAsync(request);
-
-        if (request.Status is "queued")
-        {
-            var printing = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(printing);
-            var printed = await _printClient.AdvanceStatusAsync(printing);
-            await _cache.SavePrintRequestAsync(printed);
-            request = printed;
-        }
-        else if (request.Status is "printer offline")
-        {
-            var failed = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(failed);
-            request = failed;
-        }
 
         _recentPrintRequests = await _cache.GetRecentPrintRequestsAsync();
         _connectionStatus = "Connected";
@@ -3119,25 +3137,33 @@ public partial class MainPage : ContentPage
         var stack = new VerticalStackLayout { Spacing = 8 };
         stack.Children.Add(new Label { Text = "Print Requests", FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText) });
 
-        var requests = _recentPrintRequests.Take(3).ToList();
-        if (requests.Count == 0)
+        var latest = _recentPrintRequests.FirstOrDefault();
+        if (latest is null)
         {
-            stack.Children.Add(new Label { Text = "Mother print status will appear here.", FontSize = 12, TextColor = Color.FromArgb("#94A3B8") });
+            var idle = new OrderWeb.SharedUI.Views.PrintResultView();
+            idle.ShowIdle("Mother print status will appear here.");
+            stack.Children.Add(idle);
         }
-
-        foreach (var request in requests)
+        else
         {
-            var row = new Grid
+            var resultView = new OrderWeb.SharedUI.Views.PrintResultView();
+            resultView.Bind(MotherPrintClient.ToResultDto(latest));
+            stack.Children.Add(resultView);
+
+            foreach (var request in _recentPrintRequests.Skip(1).Take(2))
             {
-                ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(110) },
-                Children =
+                var row = new Grid
                 {
-                    new Label { Text = request.PrintType, FontSize = 13, TextColor = Color.FromArgb(SecondaryText), VerticalTextAlignment = TextAlignment.Center },
-                    StatusPill(request.Status, PrintStatusColor(request.Status))
-                }
-            };
-            SetColumn(row.Children[1], 1);
-            stack.Children.Add(row);
+                    ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(140) },
+                    Children =
+                    {
+                        new Label { Text = request.PrintType, FontSize = 13, TextColor = Color.FromArgb(SecondaryText), VerticalTextAlignment = TextAlignment.Center },
+                        StatusPill(request.Status, PrintStatusColor(request.Status))
+                    }
+                };
+                SetColumn(row.Children[1], 1);
+                stack.Children.Add(row);
+            }
         }
 
         return new Border
@@ -3155,9 +3181,9 @@ public partial class MainPage : ContentPage
         return status switch
         {
             "printed" => "#10B981",
-            "printing" => "#3B82F6",
-            "queued" => "#F59E0B",
-            "printer offline" or "failed" => "#EF4444",
+            "printing" or "queued" => "#3B82F6",
+            "partial failure" => "#F59E0B",
+            "printer unavailable" or "printer offline" or "failed" => "#EF4444",
             _ => "#64748B"
         };
     }
@@ -3345,7 +3371,18 @@ public partial class MainPage : ContentPage
                     },
                     PrimaryButton("Confirm Payment", PrimaryAction, async (_, _) =>
                     {
-                        printStatus.SetStatus(receiptCheck.IsChecked ? "queued" : "sent", receiptCheck.IsChecked ? "Queued by Mother" : "Sent to kitchen");
+                        if (receiptCheck.IsChecked)
+                        {
+                            var print = await RequestPrintAsync("bill", _currentOrder?.OrderId, redraw: false);
+                            if (print is not null)
+                                printStatus.Bind(MotherPrintClient.ToResultDto(print));
+                            else
+                                printStatus.ShowIdle("Print skipped or not permitted.");
+                        }
+                        else
+                        {
+                            printStatus.ShowIdle("Payment confirmed without receipt print.");
+                        }
                         await CompletePaymentAsync(selectedMethod.ToLowerInvariant());
                     }),
                     OutlineButton("Back to Order", (_, _) => ShowOrder())
@@ -3805,7 +3842,7 @@ public partial class MainPage : ContentPage
             MenuItems = ClientNavigationItems(),
             ShowUpdateButton = string.Equals(_currentSession?.Role, "Manager", StringComparison.OrdinalIgnoreCase)
         };
-        frame.NavigationRequested += (_, e) => OnClientSidebarMenuSelected(frame, e.Item.Title);
+        frame.NavigationRequested += (_, e) => OnClientNavigationRequested(e.Route, e.Item.Title);
         frame.LogoutRequested += (_, _) => Logout();
         frame.UpdateRequested += OnClientSidebarUpdateAllClicked;
         frame.RetryRequested += (_, _) => RefreshCurrentPosPage();
@@ -3814,19 +3851,9 @@ public partial class MainPage : ContentPage
     }
 
     private IReadOnlyList<ApplicationNavigationItem> ClientNavigationItems() =>
-    [
-        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager", "Admin"),
-        new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager", "Admin"),
-        new("liveorder", "Live Order", "liveorder.png", "User", "Manager", "Admin"),
-        new("restaurant", "Restaurant", "restaurant.png", "User", "Manager", "Admin"),
-        new("collection", "Collection", "collection.png", "User", "Manager", "Admin"),
-        new("delivery", "Delivery", "delivery.png", "User", "Manager", "Admin"),
-        new("weborders", "Web Orders", "weborders.png", "Manager", "Admin"),
-        new("giftcards", "Gift Cards", "giftcards.png", "Manager", "Admin"),
-        new("loyalty", "Loyalty Points", "loyalty.png", "Manager", "Admin"),
-        new("reservation", "Reservation", "reservation.png", "User", "Manager", "Admin"),
-        new("orderhistory", "Order History", "orderhistory.png", "Manager", "Admin")
-    ];
+        ClientNavigationService.BuildMenuItems(
+            _currentSession,
+            ClientNavigationService.IsMotherConnected(_connectionStatus));
 
     private static string RouteForTitle(string title) => title.Trim().ToLowerInvariant() switch
     {
@@ -3841,6 +3868,10 @@ public partial class MainPage : ContentPage
         "reservation" => "reservation",
         "order history" => "orderhistory",
         "payment" => "payment",
+        "new order" => "orderentry",
+        "customers" => "customers",
+        "report" => "report",
+        "settings" => "settings",
         _ => "dashboard"
     };
 

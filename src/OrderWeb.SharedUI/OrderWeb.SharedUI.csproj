@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\OrderWeb.Contracts\OrderWeb.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <MauiXaml Update="Controls\SharedUiStatusBadge.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>

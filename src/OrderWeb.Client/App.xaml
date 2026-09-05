@@ -7,9 +7,14 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Legacy Client dictionaries kept only for unmigrated screens.
+                     Do not add new Client-only colours or styles here. -->
                 <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
                 <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
-                <!-- Shared resources are additive until each Client screen migrates. -->
+
+                <!-- Authoritative SharedUI Pos* design system. App.xaml.cs calls
+                     DesignSystemBootstrap.LockHostResources so Pos* wins and
+                     Client* keys alias onto Pos* for leftover screens. -->
                 <sharedThemes:OrderWebTheme />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

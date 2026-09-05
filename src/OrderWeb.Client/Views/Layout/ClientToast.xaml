@@ -2,12 +2,17 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="OrderWeb.Client.Views.Layout.ClientToast">
-    <Border BackgroundColor="#111827"
+    <!-- Thin host toast. Visual tokens come from SharedUI Pos* design system. -->
+    <Border BackgroundColor="{DynamicResource PosTextStrong}"
             StrokeThickness="0"
             Padding="16,12">
-        <Label Text="Client message"
-               FontFamily="OpenSansSemibold"
+        <Border.StrokeShape>
+            <RoundRectangle CornerRadius="12" />
+        </Border.StrokeShape>
+        <Label x:Name="MessageLabel"
+               Text="Client message"
                FontSize="14"
-               TextColor="#FFFFFF" />
+               FontAttributes="Bold"
+               TextColor="{DynamicResource PosTextOnPrimary}" />
     </Border>
 </ContentView>

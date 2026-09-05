@@ -5,5 +5,6 @@ public partial class OrderWebTheme : ResourceDictionary
     public OrderWebTheme()
     {
         InitializeComponent();
+        new OrderWebLegacyAliases().RegisterAliases(this);
     }
 }
