@@ -1,5 +1,8 @@
 namespace OrderWeb.Client.Models;
 
+/// <summary>
+/// Local cache of a Mother-authoritative print result. Status/message come only from Mother.
+/// </summary>
 public sealed record PrintRequestState(
     string Id,
     string PrintType,
@@ -7,7 +10,10 @@ public sealed record PrintRequestState(
     string Status,
     string Message,
     string CreatedUtc,
-    string UpdatedUtc);
+    string UpdatedUtc,
+    string? AuditId = null,
+    string? JobIds = null,
+    string? FailedRoutesJson = null);
 
 public sealed record CachedOnlineOrder(
     string Id,

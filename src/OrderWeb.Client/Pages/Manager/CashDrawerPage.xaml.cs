@@ -8,12 +8,13 @@ using OrderWeb.Client.Services;
 public partial class CashDrawerPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
-    private readonly MotherPrintClient _printClient = new();
+    private readonly MotherPrintClient _printClient;
     private LoginSession? _session;
 
     public CashDrawerPage()
     {
         InitializeComponent();
+        _printClient = new MotherPrintClient(_cache);
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
@@ -42,22 +43,9 @@ public partial class CashDrawerPage : ContentPage
 
         try
         {
+            // Mother is authoritative — display only Mother's print/cash-drawer response.
             var request = await _printClient.RequestPrintAsync("cash drawer open", null, _session);
             await _cache.SavePrintRequestAsync(request);
-
-            if (request.Status is "queued")
-            {
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
-            }
-            else if (request.Status is "printer offline")
-            {
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
-            }
-
             SetStatus(request.Status, BadgeBackground(request.Status), BadgeText(request.Status));
         }
         catch (Exception ex)
@@ -114,7 +102,9 @@ public partial class CashDrawerPage : ContentPage
         StatusLabel.Text = status;
         StatusLabel.TextColor = Color.FromArgb(textColor);
         StatusPill.BackgroundColor = Color.FromArgb(backgroundColor);
-        ConnectionLabel.Text = status is "Ready" or "printed" ? "Connected" : "Mother POS request status";
+        ConnectionLabel.Text = status is "Ready" or "printed" or "queued"
+            ? "Connected"
+            : "Mother POS request status";
     }
 
     private async Task OpenSidebarAsync()
@@ -167,9 +157,9 @@ public partial class CashDrawerPage : ContentPage
         return status switch
         {
             "printed" => "#ECFDF5",
-            "printing" => "#EFF6FF",
-            "queued" => "#FEF3C7",
-            "printer offline" or "failed" => "#FEE2E2",
+            "printing" or "queued" => "#EFF6FF",
+            "partial failure" => "#FEF3C7",
+            "printer unavailable" or "printer offline" or "failed" => "#FEE2E2",
             _ => "#F1F5F9"
         };
     }
@@ -179,9 +169,9 @@ public partial class CashDrawerPage : ContentPage
         return status switch
         {
             "printed" => "#059669",
-            "printing" => "#2563EB",
-            "queued" => "#B45309",
-            "printer offline" or "failed" => "#DC2626",
+            "printing" or "queued" => "#2563EB",
+            "partial failure" => "#B45309",
+            "printer unavailable" or "printer offline" or "failed" => "#DC2626",
             _ => "#64748B"
         };
     }

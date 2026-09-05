@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using MySqlConnector;
 using POS_in_NET.Models;
 using OrderWeb.Contracts.Config;
+using OrderWeb.Contracts.Printing;
 using System.Text.Json.Serialization;
 
 namespace POS_in_NET.Services;
@@ -27,6 +28,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
     private readonly AuthenticationService _authenticationService;
     private readonly PermissionService _permissionService;
     private readonly MotherConfigCatalogService _configCatalog;
+    private readonly AuthoritativePrintService _printService;
     private readonly ConcurrentDictionary<string, ClientWebSocketConnection> _clients = new();
     private readonly SemaphoreSlim _lifetimeLock = new(1, 1);
     private WebApplication? _app;
@@ -35,12 +37,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         DatabaseService databaseService,
         AuthenticationService authenticationService,
         PermissionService permissionService,
-        MotherConfigCatalogService? configCatalog = null)
+        MotherConfigCatalogService? configCatalog = null,
+        AuthoritativePrintService? printService = null)
     {
         _databaseService = databaseService;
         _authenticationService = authenticationService;
         _permissionService = permissionService;
         _configCatalog = configCatalog ?? new MotherConfigCatalogService();
+        _printService = printService ?? new AuthoritativePrintService();
     }
 
     public bool IsRunning { get; private set; }
@@ -85,6 +89,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/config/features", HandleConfigFeaturesAsync);
             app.MapGet("/api/client/config/settings", HandleConfigSettingsAsync);
             app.MapPost("/api/client/config/pull", HandleConfigPullAsync);
+            app.MapPost("/api/client/print", HandlePrintSubmitAsync);
+            app.MapGet("/api/client/print/{requestId}", HandlePrintStatusAsync);
+            app.MapGet("/api/client/print/audit", HandlePrintAuditAsync);
             app.Map("/ws", HandleWebSocketAsync);
 
             await app.StartAsync();
@@ -1028,6 +1035,187 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
 
         return await getter();
+    }
+
+
+    private async Task HandlePrintSubmitAsync(HttpContext context)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            await WriteJsonAsync(context, auth.StatusCode, new { success = false, message = auth.Message });
+            return;
+        }
+
+        using var document = await JsonDocument.ParseAsync(context.Request.Body);
+        var root = document.RootElement;
+        var requestId = ReadString(root, "requestId", "request_id") ?? Guid.NewGuid().ToString("N");
+        var kindRaw = ReadString(root, "kind", "printType", "print_type");
+        var orderId = ReadString(root, "orderId", "order_id");
+        var sessionId = ReadString(root, "sessionToken", "session_token", "sessionId") ?? "client-session";
+        var reason = ReadString(root, "reason");
+        var isReprint = ReadBool(root, "isReprint", "is_reprint")
+                        || string.Equals(kindRaw, "reprint", StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(kindRaw) || !TryParsePrintKind(kindRaw, out var kind))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "kind/printType is required (kitchen ticket, customer receipt, reprint, cash drawer)."
+            });
+            return;
+        }
+
+        if (isReprint)
+            kind = PrintKind.Reprint;
+
+        var submit = new PrintRequestDto(
+            requestId,
+            auth.TerminalId,
+            sessionId,
+            kind,
+            orderId,
+            reason,
+            isReprint,
+            DateTimeOffset.UtcNow);
+
+        var result = await _printService.SubmitAsync(submit);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = result.Error?.Message ?? "Print request rejected by Mother."
+            });
+            return;
+        }
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, ToPrintPayload(result.Value));
+    }
+
+    private async Task HandlePrintStatusAsync(HttpContext context)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            await WriteJsonAsync(context, auth.StatusCode, new { success = false, message = auth.Message });
+            return;
+        }
+
+        var requestId = context.Request.RouteValues.TryGetValue("requestId", out var value)
+            ? value?.ToString()
+            : null;
+        var result = await _printService.GetAsync(requestId ?? string.Empty);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.NotFound, new
+            {
+                success = false,
+                message = result.Error?.Message ?? "Print request not found."
+            });
+            return;
+        }
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, ToPrintPayload(result.Value));
+    }
+
+    private async Task HandlePrintAuditAsync(HttpContext context)
+    {
+        var auth = await ValidateTerminalTokenAsync(context);
+        if (!auth.Success)
+        {
+            await WriteJsonAsync(context, auth.StatusCode, new { success = false, message = auth.Message });
+            return;
+        }
+
+        _ = int.TryParse(context.Request.Query["take"], out var take);
+        var result = await _printService.GetRecentAuditAsync(take <= 0 ? 20 : take);
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            items = (result.Value ?? Array.Empty<PrintAuditDto>()).Select(ToAuditPayload)
+        });
+    }
+
+    private static object ToPrintPayload(PrintResultDto value) => new
+    {
+        success = true,
+        requestId = value.RequestId,
+        auditId = value.AuditId,
+        kind = value.Kind.ToString(),
+        status = value.Status.ToString(),
+        statusLabel = value.StatusLabel,
+        message = value.Message,
+        orderId = value.OrderId,
+        updatedAtUtc = value.UpdatedAtUtc,
+        isTerminal = value.IsTerminal,
+        jobIds = value.JobIds,
+        failedRoutes = value.FailedRoutes?.Select(f => new { route = f.Route, reason = f.Reason }),
+        audit = value.Audit is null ? null : ToAuditPayload(value.Audit)
+    };
+
+    private static object ToAuditPayload(PrintAuditDto audit) => new
+    {
+        auditId = audit.AuditId,
+        requestId = audit.RequestId,
+        kind = audit.Kind.ToString(),
+        status = audit.Status.ToString(),
+        orderId = audit.OrderId,
+        terminalId = audit.TerminalId,
+        message = audit.Message,
+        createdAtUtc = audit.CreatedAtUtc,
+        updatedAtUtc = audit.UpdatedAtUtc,
+        jobIds = audit.JobIds,
+        failedRoutes = audit.FailedRoutes?.Select(f => new { route = f.Route, reason = f.Reason })
+    };
+
+    private static bool TryParsePrintKind(string value, out PrintKind kind)
+    {
+        var normalized = value.Trim().ToLowerInvariant()
+            .Replace('_', ' ')
+            .Replace('-', ' ');
+        kind = normalized switch
+        {
+            "kitchen" or "kitchen ticket" or "kitchenticket" => PrintKind.KitchenTicket,
+            "bill" or "receipt" or "customer receipt" or "customerreceipt" => PrintKind.CustomerReceipt,
+            "reprint" or "customer receipt reprint" => PrintKind.Reprint,
+            "cash drawer" or "cash drawer open" or "cashdrawer" => PrintKind.CashDrawer,
+            _ => default
+        };
+        if (kind != default)
+            return true;
+        return Enum.TryParse(value, ignoreCase: true, out kind);
+    }
+
+    private static string? ReadString(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+            {
+                var text = value.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                    return text.Trim();
+            }
+        }
+        return null;
+    }
+
+    private static bool ReadBool(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!root.TryGetProperty(name, out var value))
+                continue;
+            if (value.ValueKind is JsonValueKind.True)
+                return true;
+            if (value.ValueKind is JsonValueKind.False)
+                return false;
+            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+                return parsed;
+        }
+        return false;
     }
 
     private static async Task WriteConfigResultAsync<T>(HttpContext context, OrderWeb.Contracts.Results.OperationResult<T>? result)

@@ -63,6 +63,22 @@ Normal Client order-entry uses SharedUI `OrderEntryView` + `OrderEntryViewModel`
 
 **Rollback:** `OrderPage` is obsolete and reachable only when `LegacyOrderEntryAccess` preference is enabled (`client.order_entry.use_legacy_rollback`).
 
+
+
+## Shared printing (Step 11)
+
+Client print UX uses SharedUI `PrintResultView` (via thin `PrintStatusView` host). Print authority stays on Mother.
+
+| Concern | Source |
+| --- | --- |
+| Kitchen ticket / customer receipt / reprint / cash drawer | Client → Mother `/api/client/print` → `AuthoritativePrintService` |
+| Status labels (`queued`, `printing`, `printed`, `partial failure`, `failed`, `printer unavailable`) | Mother `PrintResultDto.StatusLabel` only |
+| Duplicate protection | Same `RequestId` returns Mother's cached audit result |
+| Print audit | Mother `/api/client/print/audit` + `PrintResultDto.AuditId` |
+| Presentation | SharedUI `PrintResultView` / `StatusBadge` |
+
+**Rule:** Client UI → Mother print API → Mother print service → physical printer path. Client may show `queued` / `failed` / `printed` (and related Mother statuses) **only** from Mother's response. It must never invent print success locally (`AdvanceStatusAsync` is a no-op identity).
+
 ## Completion gate
 
-New Client work does not create new Client-only visual styles. SharedUI is the visual foundation. Client navigation uses the same shared visual nav as Mother, with Mother-provided permissions controlling visibility. Normal order-entry uses SharedUI; the legacy Client `OrderPage` is rollback-only.
+New Client work does not create new Client-only visual styles. SharedUI is the visual foundation. Client navigation uses the same shared visual nav as Mother, with Mother-provided permissions controlling visibility. Normal order-entry and print status use SharedUI; print results remain Mother-authoritative; the legacy Client `OrderPage` is rollback-only.

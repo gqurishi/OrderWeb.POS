@@ -14,6 +14,7 @@ public static class PosCapabilityKeys
     public const string Delivery = "client.delivery";
     public const string Payment = "client.payment";
     public const string CashDrawer = "client.cash_drawer.open";
+    public const string OrderPrint = "client.order.print";
     public const string WebOrders = "client.online_orders.manage";
     public const string GiftCards = "client.gift_cards";
     public const string Loyalty = "client.loyalty";
@@ -239,6 +240,7 @@ public static class PosNavigationCatalog
                 PosCapabilityKeys.Delivery,
                 PosCapabilityKeys.Payment,
                 PosCapabilityKeys.CashDrawer,
+                PosCapabilityKeys.OrderPrint,
                 PosCapabilityKeys.WebOrders,
                 PosCapabilityKeys.GiftCards,
                 PosCapabilityKeys.Loyalty,
@@ -260,6 +262,7 @@ public static class PosNavigationCatalog
             PosCapabilityKeys.Delivery,
             PosCapabilityKeys.Payment,
             PosCapabilityKeys.CashDrawer,
+            PosCapabilityKeys.OrderPrint,
             PosCapabilityKeys.Reservations,
             PosCapabilityKeys.Customers
         ];

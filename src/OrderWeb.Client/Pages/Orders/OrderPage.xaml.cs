@@ -12,7 +12,7 @@ public partial class OrderPage : ContentPage
     {
         private readonly ClientCacheService _cache = new();
         private readonly MotherOrderClient _orderClient = new();
-        private readonly MotherPrintClient _printClient = new();
+        private readonly MotherPrintClient _printClient;
         private readonly List<CachedMenuCategory> _categories = new();
         private readonly List<CachedProduct> _products = new();
         private readonly List<OrderSummaryLine> _basket = new();
@@ -27,6 +27,7 @@ public partial class OrderPage : ContentPage
         public OrderPage()
         {
             InitializeComponent();
+            _printClient = new MotherPrintClient(_cache);
 
         _clockTimer = Dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(1);
@@ -424,19 +425,18 @@ public partial class OrderPage : ContentPage
     private async Task RequestPrintAsync(string printType)
     {
         var session = await _cache.GetCurrentLoginSessionAsync();
-        var request = await _printClient.RequestPrintAsync(printType, null, session);
-        await _cache.SavePrintRequestAsync(request);
-
-        if (request.Status == "queued")
+        var orderId = _currentOrder?.OrderId;
+        if (string.IsNullOrWhiteSpace(orderId) &&
+            printType is "kitchen ticket" or "bill" or "reprint")
         {
-            var printing = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(printing);
-            var printed = await _printClient.AdvanceStatusAsync(printing);
-            await _cache.SavePrintRequestAsync(printed);
-            request = printed;
+            await DisplayAlert("Print", "Open or save an order before printing. Mother requires an order id.", "OK");
+            return;
         }
 
-        await DisplayAlert("Print", request.Message, "OK");
+        // Mother is authoritative — show only the status Mother returns.
+        var request = await _printClient.RequestPrintAsync(printType, orderId, session);
+        await _cache.SavePrintRequestAsync(request);
+        await DisplayAlert("Print", $"{request.Status}: {request.Message}", "OK");
     }
 
         private decimal CurrentTotal()

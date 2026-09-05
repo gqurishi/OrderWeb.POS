@@ -7,9 +7,13 @@ using Microsoft.Maui.Controls.Shapes;
 
 public partial class OrderHistoryPage : ContentPage
 {
+    private readonly ClientCacheService _cache = new();
+    private readonly MotherPrintClient _printClient;
+
     public OrderHistoryPage()
     {
         InitializeComponent();
+        _printClient = new MotherPrintClient(_cache);
         LoadEmptyState();
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
@@ -19,8 +23,26 @@ public partial class OrderHistoryPage : ContentPage
     private async void OnFilterClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Today filter applied.", "OK");
     private async void OnSearchClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Order search complete.", "OK");
     private async void OnViewClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Order details opened.", "OK");
-    private async void OnReprintClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Reprint request queued.", "OK");
+    private async void OnReprintClicked(object sender, EventArgs e) => await ReprintAsync();
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
+
+    private async Task ReprintAsync()
+    {
+        var orderId = await DisplayPromptAsync(
+            "Reprint",
+            "Enter the Mother order id to reprint.",
+            "Send to Mother",
+            "Cancel",
+            "order-id");
+        if (string.IsNullOrWhiteSpace(orderId))
+            return;
+
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        // Mother is authoritative — display only Mother's reprint response.
+        var request = await _printClient.RequestPrintAsync("reprint", orderId.Trim(), session, isReprint: true);
+        await _cache.SavePrintRequestAsync(request);
+        await DisplayAlert("Reprint", $"{request.Status}: {request.Message}", "OK");
+    }
 
     private async Task OpenSidebarAsync()
     {
