@@ -4,13 +4,16 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <!-- Note: For Android please see also Platforms\Android\Resources\values\colors.xml -->
+    <!-- LEGACY ONLY — do not add new Client* keys.
+         Authoritative POS tokens are SharedUI Pos* (OrderWebTheme).
+         DesignSystemBootstrap aliases these Client* keys onto Pos* at startup.
+         Remove each key when its consuming screen migrates to SharedUI. -->
 
-    <Color x:Key="Primary">#6366F1</Color>
-    <Color x:Key="PrimaryDark">#6366F1</Color>
-    <Color x:Key="PrimaryDarkText">#1F2937</Color>
-    <Color x:Key="Secondary">#F6F9FC</Color>
-    <Color x:Key="SecondaryDarkText">#374151</Color>
+    <Color x:Key="Primary">#2563EB</Color>
+    <Color x:Key="PrimaryDark">#1D4ED8</Color>
+    <Color x:Key="PrimaryDarkText">#1A202C</Color>
+    <Color x:Key="Secondary">#F7FAFC</Color>
+    <Color x:Key="SecondaryDarkText">#475569</Color>
     <Color x:Key="Tertiary">#3B82F6</Color>
 
     <Color x:Key="White">White</Color>
@@ -28,21 +31,21 @@
     <Color x:Key="Gray900">#212121</Color>
     <Color x:Key="Gray950">#141414</Color>
 
-    <Color x:Key="ClientBackground">#FFFFFF</Color>
+    <Color x:Key="ClientBackground">#F7FAFC</Color>
     <Color x:Key="ClientTopBarBackground">#FFFFFF</Color>
-    <Color x:Key="ClientSurface">#F6F9FC</Color>
-    <Color x:Key="ClientText">#1F2937</Color>
-    <Color x:Key="ClientSecondaryText">#374151</Color>
-    <Color x:Key="ClientMutedText">#6B7280</Color>
-    <Color x:Key="ClientSidebarText">#1E293B</Color>
-    <Color x:Key="ClientAccent">#3B82F6</Color>
+    <Color x:Key="ClientSurface">#F1F5F9</Color>
+    <Color x:Key="ClientText">#1A202C</Color>
+    <Color x:Key="ClientSecondaryText">#475569</Color>
+    <Color x:Key="ClientMutedText">#718096</Color>
+    <Color x:Key="ClientSidebarText">#0F172A</Color>
+    <Color x:Key="ClientAccent">#2563EB</Color>
     <Color x:Key="ClientDashboardLabel">#1D4ED8</Color>
-    <Color x:Key="ClientSelected">#E3F2FD</Color>
-    <Color x:Key="ClientPrimaryButton">#6366F1</Color>
+    <Color x:Key="ClientSelected">#DBEAFE</Color>
+    <Color x:Key="ClientPrimaryButton">#2563EB</Color>
     <Color x:Key="ClientSuccess">#059669</Color>
     <Color x:Key="ClientWarning">#F59E0B</Color>
     <Color x:Key="ClientDanger">#DC2626</Color>
-    <Color x:Key="ClientBorderLight">#E5E7EB</Color>
+    <Color x:Key="ClientBorderLight">#E2E8F0</Color>
 
     <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}"/>
     <SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource Secondary}"/>

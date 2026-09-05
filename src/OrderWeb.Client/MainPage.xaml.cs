@@ -1333,6 +1333,8 @@ public partial class MainPage : ContentPage
                 Role = _currentSession?.Role ?? "User",
                 SelectedMenu = _posSelectedMenu,
                 ShowFooter = _currentSession?.Role == "Manager",
+                ConnectionStatus = _connectionStatus,
+                MenuItems = ClientNavigationItems(),
                 HorizontalOptions = LayoutOptions.Start,
             };
         sidebar.MenuItemSelected += OnClientSidebarMenuSelected;
@@ -1340,40 +1342,60 @@ public partial class MainPage : ContentPage
         return sidebar;
     }
 
-    private void OnClientSidebarMenuSelected(object? sender, string selectedMenu)
+    private void OnClientSidebarMenuSelected(object? sender, string selectedMenu) =>
+        NavigateClientMenu(RouteForTitle(selectedMenu), selectedMenu);
+
+    private void OnClientNavigationRequested(string route, string title) =>
+        NavigateClientMenu(route, title);
+
+    private void NavigateClientMenu(string route, string title)
     {
-        switch (selectedMenu)
+        switch (route)
         {
-            case "Dashboard":
-                RunFromPosSidebar(selectedMenu, ShowDashboard);
+            case "dashboard":
+                RunFromPosSidebar(title, ShowDashboard);
                 break;
-            case "Cash Drawer":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new CashDrawerPage()));
+            case "cashdrawer":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new CashDrawerPage()));
                 break;
-            case "Live Order":
-            case "Web Orders":
-                RunFromPosSidebar(selectedMenu, ShowLiveOrders);
+            case "liveorder":
+            case "weborders":
+                RunFromPosSidebar(title, ShowLiveOrders);
                 break;
-            case "Restaurant":
-                RunFromPosSidebar(selectedMenu, ShowRestaurantLayout);
+            case "restaurant":
+                RunFromPosSidebar(title, ShowRestaurantLayout);
                 break;
-            case "Collection":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()));
+            case "collection":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()));
                 break;
-            case "Delivery":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage()));
+            case "delivery":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage()));
                 break;
-            case "Gift Cards":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new GiftCardPage()));
+            case "giftcards":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new GiftCardPage()));
                 break;
-            case "Loyalty Points":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new LoyaltyPage()));
+            case "loyalty":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new LoyaltyPage()));
                 break;
-            case "Reservation":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new ReservationPage()));
+            case "reservation":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new ReservationPage()));
                 break;
-            case "Order History":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new OrderHistoryPage()));
+            case "orderhistory":
+                RunFromPosSidebar(title, () => OpenManagerToolPage(new OrderHistoryPage()));
+                break;
+            case "payment":
+                RunFromPosSidebar(title, ShowPayment);
+                break;
+            case "orderentry":
+                RunFromPosSidebar(title, ShowRestaurantLayout);
+                break;
+            case "customers":
+            case "report":
+            case "settings":
+                RunFromPosSidebar(title, () => ShowToast($"{title} is controlled by Mother permissions and is not available on this terminal yet."));
+                break;
+            default:
+                RunFromPosSidebar(title, ShowDashboard);
                 break;
         }
     }
@@ -3805,7 +3827,7 @@ public partial class MainPage : ContentPage
             MenuItems = ClientNavigationItems(),
             ShowUpdateButton = string.Equals(_currentSession?.Role, "Manager", StringComparison.OrdinalIgnoreCase)
         };
-        frame.NavigationRequested += (_, e) => OnClientSidebarMenuSelected(frame, e.Item.Title);
+        frame.NavigationRequested += (_, e) => OnClientNavigationRequested(e.Route, e.Item.Title);
         frame.LogoutRequested += (_, _) => Logout();
         frame.UpdateRequested += OnClientSidebarUpdateAllClicked;
         frame.RetryRequested += (_, _) => RefreshCurrentPosPage();
@@ -3814,19 +3836,9 @@ public partial class MainPage : ContentPage
     }
 
     private IReadOnlyList<ApplicationNavigationItem> ClientNavigationItems() =>
-    [
-        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager", "Admin"),
-        new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager", "Admin"),
-        new("liveorder", "Live Order", "liveorder.png", "User", "Manager", "Admin"),
-        new("restaurant", "Restaurant", "restaurant.png", "User", "Manager", "Admin"),
-        new("collection", "Collection", "collection.png", "User", "Manager", "Admin"),
-        new("delivery", "Delivery", "delivery.png", "User", "Manager", "Admin"),
-        new("weborders", "Web Orders", "weborders.png", "Manager", "Admin"),
-        new("giftcards", "Gift Cards", "giftcards.png", "Manager", "Admin"),
-        new("loyalty", "Loyalty Points", "loyalty.png", "Manager", "Admin"),
-        new("reservation", "Reservation", "reservation.png", "User", "Manager", "Admin"),
-        new("orderhistory", "Order History", "orderhistory.png", "Manager", "Admin")
-    ];
+        ClientNavigationService.BuildMenuItems(
+            _currentSession,
+            ClientNavigationService.IsMotherConnected(_connectionStatus));
 
     private static string RouteForTitle(string title) => title.Trim().ToLowerInvariant() switch
     {
@@ -3841,6 +3853,10 @@ public partial class MainPage : ContentPage
         "reservation" => "reservation",
         "order history" => "orderhistory",
         "payment" => "payment",
+        "new order" => "orderentry",
+        "customers" => "customers",
+        "report" => "report",
+        "settings" => "settings",
         _ => "dashboard"
     };
 

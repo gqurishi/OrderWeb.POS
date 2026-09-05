@@ -25,11 +25,11 @@ public class StatusBadge : Border
     {
         var (bg, stroke, text) = Kind switch
         {
-            StatusKind.Success => ("OwSuccessSoft", "OwSuccess", "OwSuccessText"),
-            StatusKind.Warning => ("OwWarningSoft", "OwWarningBorder", "OwWarningText"),
-            StatusKind.Error => ("OwErrorSoft", "OwErrorBorder", "OwErrorText"),
-            StatusKind.Info => ("OwInfoSoft", "OwPrimarySoftBorder", "OwInfoText"),
-            _ => ("OwSurfaceMuted", "OwBorder", "OwTextSecondary")
+            StatusKind.Success => ("PosSuccessSoft", "PosSuccess", "PosSuccessText"),
+            StatusKind.Warning => ("PosWarningSoft", "PosWarningBorder", "PosWarningText"),
+            StatusKind.Error => ("PosErrorSoft", "PosErrorBorder", "PosErrorText"),
+            StatusKind.Info => ("PosInfoSoft", "PosPrimarySoftBorder", "PosInfoText"),
+            _ => ("PosSurfaceMuted", "PosBorder", "PosTextSecondary")
         };
         this.Use(BackgroundColorProperty, bg); this.Use(StrokeProperty, stroke);
         _label.Use(Label.TextColorProperty, text); _dot.Use(BoxView.ColorProperty, stroke);

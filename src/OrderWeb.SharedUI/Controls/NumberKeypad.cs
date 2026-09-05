@@ -39,9 +39,9 @@ public class NumberKeypad : ContentView
     private Button NewButton(string text)
     {
         var button = new Button { Text = text, WidthRequest = KeySize, HeightRequest = KeySize, CornerRadius = (int)(KeySize / 2), Padding = 0, FontSize = KeySize >= 90 ? 34 : 24, FontAttributes = FontAttributes.Bold };
-        button.Use(Button.BackgroundColorProperty, "OwSurface");
-        button.Use(Button.TextColorProperty, "OwTextPrimary");
-        button.Use(Button.BorderColorProperty, "OwBorderStrong");
+        button.Use(Button.BackgroundColorProperty, "PosSurface");
+        button.Use(Button.TextColorProperty, "PosTextPrimary");
+        button.Use(Button.BorderColorProperty, "PosBorderStrong");
         button.BorderWidth = 2;
         return button;
     }
@@ -57,7 +57,7 @@ public class NumberKeypad : ContentView
     {
         var button = NewButton(text);
         button.FontSize = KeySize >= 90 ? 18 : 14;
-        if (backspace) button.Use(Button.TextColorProperty, "OwError");
+        if (backspace) button.Use(Button.TextColorProperty, "PosError");
         button.Clicked += (_, _) =>
         {
             if (backspace) { BackspacePressed?.Invoke(this, EventArgs.Empty); if (BackspaceCommand?.CanExecute(null) == true) BackspaceCommand.Execute(null); }
