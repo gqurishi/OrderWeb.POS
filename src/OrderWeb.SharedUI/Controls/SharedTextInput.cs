@@ -23,12 +23,12 @@ public class SharedTextInput : Border
         StrokeThickness = 1;
         StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 12 };
         Padding = new Thickness(14, 0);
-        this.Use(BackgroundColorProperty, "OwBackground");
-        this.Use(StrokeProperty, "OwInputBorder");
+        this.Use(BackgroundColorProperty, "PosBackground");
+        this.Use(StrokeProperty, "PosInputBorder");
 
         _entry = new Entry { BackgroundColor = Colors.Transparent, VerticalOptions = LayoutOptions.Center };
-        _entry.Use(Entry.TextColorProperty, "OwTextPrimary");
-        _entry.Use(Entry.PlaceholderColorProperty, "OwTextPlaceholder");
+        _entry.Use(Entry.TextColorProperty, "PosTextPrimary");
+        _entry.Use(Entry.PlaceholderColorProperty, "PosTextPlaceholder");
         _entry.TextChanged += (_, e) => SetValue(TextProperty, e.NewTextValue ?? string.Empty);
         _entry.Completed += (_, _) => Completed?.Invoke(this, EventArgs.Empty);
         Content = _entry;

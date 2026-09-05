@@ -9,19 +9,20 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Platform / MAUI defaults -->
                 <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
                 <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
-                
-                <!-- OrderWeb.net Design System -->
+
+                <!-- Temporary Mother dictionaries (legacy keys kept until screens migrate) -->
                 <ResourceDictionary Source="Resources/Styles/OrderWebColors.xaml" />
                 <ResourceDictionary Source="Resources/Styles/OrderWebStyles.xaml" />
-                
-                <!-- Syncfusion Modern Theme (NEW!) -->
+
+                <!-- Mother-only Syncfusion theme (not part of SharedUI) -->
                 <ResourceDictionary Source="Resources/Styles/SyncfusionTheme.xaml" />
                 <ResourceDictionary Source="Resources/Styles/DialogStyles.xaml" />
 
-                <!-- Canonical cross-platform theme. Ow-prefixed keys keep the
-                     working Mother resources unchanged during migration. -->
+                <!-- Authoritative SharedUI Pos* design system (locked). App.xaml.cs
+                     reasserts Mother semantic keys onto Pos* after this merge. -->
                 <sharedThemes:OrderWebTheme />
             </ResourceDictionary.MergedDictionaries>
 

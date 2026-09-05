@@ -333,7 +333,10 @@ public partial class DeliveryOrderPage : ContentPage
             var orderResult = await _orderClient.CreateCustomerOrderAsync(draft with { Customer = savedCustomer }, session);
             await _cache.SaveOrderStateAsync(orderResult.State);
 
-            await Navigation.PushAsync(new OrderPage(), false);
+            if (LegacyOrderEntryAccess.PreferLegacyRollback)
+                await Navigation.PushAsync(SharedOrderEntryPage.CreateLegacyRollback(), false);
+            else
+                await Navigation.PushAsync(SharedOrderEntryPage.ForServiceType("Delivery"), false);
         }
         catch (Exception ex)
         {

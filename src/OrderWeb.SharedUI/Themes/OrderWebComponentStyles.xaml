@@ -2,108 +2,110 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
                     x:Class="OrderWeb.SharedUI.Themes.OrderWebComponentStyles">
-    <Shadow x:Key="OwCardShadow"
-            Brush="{DynamicResource OwShadow}"
+    <!-- Authoritative control styles. Prefer Pos* style keys in new screens. -->
+
+    <Shadow x:Key="PosCardShadow"
+            Brush="{StaticResource PosShadowBrush}"
             Offset="0,2"
             Radius="8"
-            Opacity="0.10" />
-    <Shadow x:Key="OwDialogShadow"
-            Brush="{DynamicResource OwShadow}"
+            Opacity="{StaticResource PosShadowOpacity}" />
+    <Shadow x:Key="PosDialogShadow"
+            Brush="{StaticResource PosShadowBrush}"
             Offset="0,8"
             Radius="20"
-            Opacity="0.16" />
+            Opacity="{StaticResource PosDialogShadowOpacity}" />
 
-    <Style x:Key="OwCardStyle" TargetType="Border">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurface}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwBorder}" />
-        <Setter Property="StrokeThickness" Value="{StaticResource OwBorderThickness}" />
-        <Setter Property="Padding" Value="{StaticResource OwCardPadding}" />
+    <Style x:Key="PosCardStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosSurface}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosBorder}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource PosBorderThickness}" />
+        <Setter Property="Padding" Value="{StaticResource PosCardPadding}" />
         <Setter Property="StrokeShape">
             <Setter.Value>
-                <RoundRectangle CornerRadius="{StaticResource OwCornerRadiusLarge}" />
+                <RoundRectangle CornerRadius="{StaticResource PosCornerRadiusLarge}" />
             </Setter.Value>
         </Setter>
     </Style>
 
-    <Style x:Key="OwPrimaryButtonStyle" TargetType="Button">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwPrimary}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
-        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
-        <Setter Property="FontSize" Value="{StaticResource OwFontSizeButton}" />
-        <Setter Property="HeightRequest" Value="{StaticResource OwButtonHeight}" />
-        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
-        <Setter Property="CornerRadius" Value="{StaticResource OwCornerRadius}" />
-        <Setter Property="Padding" Value="{StaticResource OwButtonPadding}" />
+    <Style x:Key="PosPrimaryButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosPrimary}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosTextOnPrimary}" />
+        <Setter Property="FontFamily" Value="{StaticResource PosFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource PosFontSizeButton}" />
+        <Setter Property="HeightRequest" Value="{StaticResource PosButtonHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource PosTouchTargetMinimum}" />
+        <Setter Property="CornerRadius" Value="{StaticResource PosCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource PosButtonPadding}" />
     </Style>
 
-    <Style x:Key="OwSecondaryButtonStyle" TargetType="Button">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurfaceStrong}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwTextStrong}" />
-        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
-        <Setter Property="FontSize" Value="{StaticResource OwFontSizeButton}" />
-        <Setter Property="HeightRequest" Value="{StaticResource OwButtonHeight}" />
-        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
-        <Setter Property="CornerRadius" Value="{StaticResource OwCornerRadius}" />
-        <Setter Property="Padding" Value="{StaticResource OwButtonPadding}" />
+    <Style x:Key="PosSecondaryButtonStyle" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosSurfaceStrong}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosTextStrong}" />
+        <Setter Property="FontFamily" Value="{StaticResource PosFontSemibold}" />
+        <Setter Property="FontSize" Value="{StaticResource PosFontSizeButton}" />
+        <Setter Property="HeightRequest" Value="{StaticResource PosButtonHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource PosTouchTargetMinimum}" />
+        <Setter Property="CornerRadius" Value="{StaticResource PosCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource PosButtonPadding}" />
     </Style>
 
-    <Style x:Key="OwSuccessButtonStyle" TargetType="Button" BasedOn="{StaticResource OwPrimaryButtonStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccessStrong}" />
+    <Style x:Key="PosSuccessButtonStyle" TargetType="Button" BasedOn="{StaticResource PosPrimaryButtonStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosSuccessStrong}" />
     </Style>
-    <Style x:Key="OwDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource OwPrimaryButtonStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwErrorStrong}" />
-    </Style>
-
-    <Style x:Key="OwEntryStyle" TargetType="Entry">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwBackground}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwTextPrimary}" />
-        <Setter Property="PlaceholderColor" Value="{DynamicResource OwTextPlaceholder}" />
-        <Setter Property="FontFamily" Value="{StaticResource OwFontRegular}" />
-        <Setter Property="FontSize" Value="{StaticResource OwFontSizeInput}" />
-        <Setter Property="HeightRequest" Value="{StaticResource OwInputHeight}" />
-        <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
+    <Style x:Key="PosDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource PosPrimaryButtonStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosErrorStrong}" />
     </Style>
 
-    <Style x:Key="OwDialogShellStyle" TargetType="Border">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwSurface}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwBorder}" />
-        <Setter Property="StrokeThickness" Value="{StaticResource OwBorderThickness}" />
-        <Setter Property="Padding" Value="{StaticResource OwDialogPadding}" />
-        <Setter Property="Shadow" Value="{StaticResource OwDialogShadow}" />
+    <Style x:Key="PosEntryStyle" TargetType="Entry">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosBackground}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosTextPrimary}" />
+        <Setter Property="PlaceholderColor" Value="{DynamicResource PosTextPlaceholder}" />
+        <Setter Property="FontFamily" Value="{StaticResource PosFontRegular}" />
+        <Setter Property="FontSize" Value="{StaticResource PosFontSizeInput}" />
+        <Setter Property="HeightRequest" Value="{StaticResource PosInputHeight}" />
+        <Setter Property="MinimumHeightRequest" Value="{StaticResource PosTouchTargetMinimum}" />
+    </Style>
+
+    <Style x:Key="PosDialogShellStyle" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosSurface}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosBorder}" />
+        <Setter Property="StrokeThickness" Value="{StaticResource PosBorderThickness}" />
+        <Setter Property="Padding" Value="{StaticResource PosDialogPadding}" />
+        <Setter Property="Shadow" Value="{StaticResource PosDialogShadow}" />
         <Setter Property="StrokeShape">
             <Setter.Value>
-                <RoundRectangle CornerRadius="{StaticResource OwDialogCornerRadius}" />
+                <RoundRectangle CornerRadius="{StaticResource PosDialogCornerRadius}" />
             </Setter.Value>
         </Setter>
     </Style>
 
-    <Style x:Key="OwStatusSuccessPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccessSoft}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwSuccess}" />
+    <Style x:Key="PosStatusSuccessPanelStyle" TargetType="Border" BasedOn="{StaticResource PosCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosSuccessSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosSuccess}" />
     </Style>
-    <Style x:Key="OwStatusWarningPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwWarningSoft}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwWarningBorder}" />
+    <Style x:Key="PosStatusWarningPanelStyle" TargetType="Border" BasedOn="{StaticResource PosCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosWarningSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosWarningBorder}" />
     </Style>
-    <Style x:Key="OwStatusErrorPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwErrorSoft}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwErrorBorder}" />
+    <Style x:Key="PosStatusErrorPanelStyle" TargetType="Border" BasedOn="{StaticResource PosCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosErrorSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosErrorBorder}" />
     </Style>
-    <Style x:Key="OwStatusInfoPanelStyle" TargetType="Border" BasedOn="{StaticResource OwCardStyle}">
-        <Setter Property="BackgroundColor" Value="{DynamicResource OwInfoSoft}" />
-        <Setter Property="Stroke" Value="{DynamicResource OwPrimarySoftBorder}" />
+    <Style x:Key="PosStatusInfoPanelStyle" TargetType="Border" BasedOn="{StaticResource PosCardStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosInfoSoft}" />
+        <Setter Property="Stroke" Value="{DynamicResource PosPrimarySoftBorder}" />
     </Style>
 
-    <Style x:Key="OwStatusSuccessTextStyle" TargetType="Label">
-        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwSuccessText}" />
+    <Style x:Key="PosStatusSuccessTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource PosFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosSuccessText}" />
     </Style>
-    <Style x:Key="OwStatusWarningTextStyle" TargetType="Label">
-        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwWarningText}" />
+    <Style x:Key="PosStatusWarningTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource PosFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosWarningText}" />
     </Style>
-    <Style x:Key="OwStatusErrorTextStyle" TargetType="Label">
-        <Setter Property="FontFamily" Value="{StaticResource OwFontSemibold}" />
-        <Setter Property="TextColor" Value="{DynamicResource OwErrorText}" />
+    <Style x:Key="PosStatusErrorTextStyle" TargetType="Label">
+        <Setter Property="FontFamily" Value="{StaticResource PosFontSemibold}" />
+        <Setter Property="TextColor" Value="{DynamicResource PosErrorText}" />
     </Style>
 </ResourceDictionary>

@@ -46,22 +46,22 @@ public class ApplicationShellFrame : ContentView
         _navigationLayer = new Grid { IsVisible = false, ZIndex = 20, Children = { dismiss, _sidebar } };
 
         _loadingMessage = new Label { Text = "Loading…", FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center };
-        _loadingMessage.Use(Label.TextColorProperty, "OwTextStrong");
+        _loadingMessage.Use(Label.TextColorProperty, "PosTextStrong");
         var loadingCard = new Border { Padding = 24, StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = new VerticalStackLayout { Spacing = 14, Children = { new ActivityIndicator { IsRunning = true, WidthRequest = 42, HeightRequest = 42, Color = Color.FromArgb("#2563EB") }, _loadingMessage } } };
-        loadingCard.Use(Border.BackgroundColorProperty, "OwSurface"); loadingCard.Use(Border.StrokeProperty, "OwBorder");
+        loadingCard.Use(Border.BackgroundColorProperty, "PosSurface"); loadingCard.Use(Border.StrokeProperty, "PosBorder");
         _loadingLayer = new Grid { IsVisible = false, ZIndex = 30, BackgroundColor = Color.FromArgb("#66F8FAFC"), Children = { loadingCard } };
 
-        _errorTitle = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _errorTitle.Use(Label.TextColorProperty, "OwTextStrong");
-        _errorMessage = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center }; _errorMessage.Use(Label.TextColorProperty, "OwTextMuted");
+        _errorTitle = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _errorTitle.Use(Label.TextColorProperty, "PosTextStrong");
+        _errorMessage = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center }; _errorMessage.Use(Label.TextColorProperty, "PosTextMuted");
         var retry = new SharedButton { Text = "Try Again" }; retry.Clicked += (_, _) => RetryRequested?.Invoke(this, EventArgs.Empty);
         var close = new SharedButton { Text = "Close", Variant = ButtonVariant.Secondary }; close.Clicked += (_, _) => ErrorMessage = string.Empty;
         var errorButtons = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 10 }; errorButtons.Add(close); errorButtons.Add(retry, 1);
         var errorCard = new Border { WidthRequest = 460, MaximumWidthRequest = 460, Padding = 24, StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 20 }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = new VerticalStackLayout { Spacing = 18, Children = { _errorTitle, _errorMessage, errorButtons } } };
-        errorCard.Use(Border.BackgroundColorProperty, "OwSurface"); errorCard.Use(Border.StrokeProperty, "OwErrorBorder");
+        errorCard.Use(Border.BackgroundColorProperty, "PosSurface"); errorCard.Use(Border.StrokeProperty, "PosErrorBorder");
         _errorLayer = new Grid { IsVisible = false, ZIndex = 40, BackgroundColor = Color.FromArgb("#80000000"), Padding = 20, Children = { errorCard } };
 
         var app = new Grid { RowDefinitions = { new RowDefinition(88), new RowDefinition(GridLength.Star) } };
-        app.Use(Grid.BackgroundColorProperty, "OwBackground"); app.Add(_header); app.Add(_contentHost, 0, 1);
+        app.Use(Grid.BackgroundColorProperty, "PosBackground"); app.Add(_header); app.Add(_contentHost, 0, 1);
         _root = new Grid { Children = { app, _navigationLayer, _loadingLayer, _errorLayer } };
         Content = _root;
         ApplyIdentity();

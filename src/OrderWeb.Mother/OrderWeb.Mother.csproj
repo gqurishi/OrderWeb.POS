@@ -99,6 +99,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\OrderWeb.SharedUI\OrderWeb.SharedUI.csproj" />
+		<ProjectReference Include="..\OrderWeb.Contracts\OrderWeb.Contracts.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
