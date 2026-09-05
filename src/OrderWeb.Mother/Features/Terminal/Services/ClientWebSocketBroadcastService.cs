@@ -221,7 +221,10 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         await StoreClientSessionAsync(terminal.TerminalId, login.User, HashToken(sessionToken), expiresAt);
         await UpdateCurrentUserAsync(terminal.TerminalId, login.User.Id);
 
-        var permissions = await _permissionService.GetRolePermissionsAsync(login.User.Role);
+        var rolePermissions = await _permissionService.GetRolePermissionsAsync(login.User.Role);
+        // Always include explicit client.* capabilities so Client navigation is
+        // catalog + Mother-permission driven (not a Client-local role menu).
+        var permissions = ClientCapabilityGrants.Build(login.User.Role, rolePermissions);
         await WriteJsonAsync(context, HttpStatusCode.OK, new
         {
             success = true,

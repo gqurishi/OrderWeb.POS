@@ -44,6 +44,6 @@ Compatibility wrappers may retain an application-facing type name, but their vis
 
 `ApplicationShellFrame` owns the full authenticated application frame: Mother-style header, role-filtered navigation, current user and terminal identity, Mother connection status, the main content host, logout, loading overlay, and recoverable error overlay.
 
-Menu ownership remains with each host. Mother supplies operational and administration routes after applying its service and role policy. Client supplies only Client-supported routes. `ApplicationNavigationItem.AllowedRoles` provides the final basic-user/manager/admin filter inside the shared sidebar.
+Menu ownership remains with each host, but route visibility should come from `OrderWeb.Contracts.Navigation.PosNavigationCatalog` (capability, Mother connection, cached/offline, and feature flags). Hosts map resolved catalog items into `ApplicationNavigationItem` for `ApplicationSidebar` / `ApplicationShellFrame`. `AllowedRoles` remains a last-resort filter for hosts that have not yet migrated to explicit capabilities.
 
 `ApplicationSidebar` is also exposed separately so Mother can use the same navigation surface inside its native MAUI `Shell` flyout while retaining its established route engine. `ApplicationHeader` is used by Mother page top bars and Client page compatibility wrappers, keeping the frame visually identical during page-by-page migration.
