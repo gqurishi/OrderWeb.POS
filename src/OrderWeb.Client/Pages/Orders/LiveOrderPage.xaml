@@ -6,7 +6,7 @@
              Shell.NavBarIsVisible="False"
              BackgroundColor="#F6F8FB"
              Title="Live Order">
-    <Grid RowDefinitions="150,98,*"
+    <Grid RowDefinitions="150,*"
           BackgroundColor="#F6F8FB">
         <Border Grid.Row="0" BackgroundColor="#F6F9FC" StrokeThickness="0">
             <Grid Padding="20,0" ColumnDefinitions="120,*,270">
@@ -58,61 +58,12 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1"
-                BackgroundColor="White"
-                Stroke="#E5E7EB"
-                StrokeThickness="1">
-            <HorizontalStackLayout Spacing="12"
-                                   HorizontalOptions="Center"
-                                   VerticalOptions="Center">
-                <Button x:Name="AllFilterButton"
-                        Text="All"
-                        Clicked="OnFilterClicked" />
-                <Button x:Name="CollectionFilterButton"
-                        Text="Collection"
-                        Clicked="OnFilterClicked" />
-                <Button x:Name="DeliveryFilterButton"
-                        Text="Delivery"
-                        Clicked="OnFilterClicked" />
-                <Button x:Name="TableFilterButton"
-                        Text="Table"
-                        Clicked="OnFilterClicked" />
-                <Button Text="Refresh"
-                        BackgroundColor="#6366F1"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        FontSize="16"
-                        CornerRadius="8"
-                        HeightRequest="54"
-                        WidthRequest="150"
-                        Padding="0"
-                        BorderWidth="0"
-                        Clicked="OnRefreshClicked" />
-            </HorizontalStackLayout>
-        </Border>
-
-        <Grid Grid.Row="2" BackgroundColor="#F6F8FB">
-            <ScrollView>
-                <FlexLayout x:Name="OrderCards"
-                            Direction="Row"
-                            Wrap="Wrap"
-                            AlignItems="Start"
-                            JustifyContent="Start"
-                            Padding="24,36,24,24" />
-            </ScrollView>
-
-            <Label x:Name="EmptyStateLabel"
-                   Text="No open local orders"
-                   FontSize="16"
-                   TextColor="#9CA3AF"
-                   HorizontalOptions="Center"
-                   VerticalOptions="Start"
-                   Margin="0,220,0,0"
-                   IsVisible="False" />
+        <Grid Grid.Row="1" BackgroundColor="#F6F8FB">
+            <ContentView x:Name="ContentHost" />
         </Grid>
 
         <Grid x:Name="SidebarLayer"
-              Grid.RowSpan="3"
+              Grid.RowSpan="2"
               IsVisible="False"
               BackgroundColor="Transparent">
             <BoxView BackgroundColor="Transparent">

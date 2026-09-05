@@ -3,23 +3,91 @@ namespace OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
-using Microsoft.Maui.Controls.Shapes;
+using OrderWeb.Contracts.Orders;
+using OrderWeb.Contracts.Services;
+using OrderWeb.SharedUI.Views;
 
 public partial class OrderHistoryPage : ContentPage
 {
+    private readonly IOrderHistoryService _history = ClientServiceProvider.OrderHistory;
+    private readonly IOrderSearchService _orderSearch = ClientServiceProvider.OrderSearch;
+    private readonly OrderHistoryView _historyView = new();
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private OpenOrderChannelKind _selectedChannel = OpenOrderChannelKind.All;
+
     public OrderHistoryPage()
     {
         InitializeComponent();
-        LoadEmptyState();
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
+
+        _historyView.DateFilterRequested += async (_, date) => await PickDateAsync(date);
+        _historyView.ChannelChanged += async (_, channel) =>
+        {
+            _selectedChannel = channel;
+            await LoadHistoryAsync();
+        };
+        _historyView.SearchRequested += async (_, query) => await SearchOrdersAsync(query);
+        _historyView.SearchOverlayOpened += async (_, _) => await PrimeSearchOverlayAsync();
+        _historyView.HistoryItemSelected += async (_, item) =>
+            await DisplayAlert(item.OrderNumber ?? item.OrderId, BuildDetails(item), "OK");
+
+        ContentHost.Content = _historyView;
+        _ = LoadHistoryAsync();
     }
 
-    private async void OnFilterClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Today filter applied.", "OK");
-    private async void OnSearchClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Order search complete.", "OK");
-    private async void OnViewClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Order details opened.", "OK");
-    private async void OnReprintClicked(object sender, EventArgs e) => await DisplayAlert("Order History", "Reprint request queued.", "OK");
+    private async Task LoadHistoryAsync()
+    {
+        var result = await _history.GetHistoryAsync(_selectedDate, _selectedChannel);
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _historyView.Apply(result.Value);
+        }
+    }
+
+    private async Task PickDateAsync(DateOnly current)
+    {
+        var picked = await DisplayPromptAsync(
+            "Filter by Date",
+            "Enter date (yyyy-MM-dd)",
+            initialValue: current.ToString("yyyy-MM-dd"),
+            keyboard: Keyboard.Text);
+
+        if (string.IsNullOrWhiteSpace(picked) || !DateOnly.TryParse(picked, out var date))
+        {
+            return;
+        }
+
+        _selectedDate = date;
+        await LoadHistoryAsync();
+    }
+
+    private async Task PrimeSearchOverlayAsync()
+    {
+        var sync = await ClientServiceProvider.SyncStatus.GetSyncStatusAsync();
+        _historyView.ApplySearch(new OrderSearchResultDto(null, Array.Empty<OrderSearchHitDto>(), sync));
+    }
+
+    private async Task SearchOrdersAsync(string query)
+    {
+        var result = await _orderSearch.SearchOrdersAsync(new OrderSearchRequestDto(query, _selectedDate));
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _historyView.ApplySearch(result.Value);
+        }
+    }
+
+    private static string BuildDetails(OrderHistoryItemDto item) =>
+        string.Join('\n', new[]
+        {
+            item.ChannelLabel,
+            item.CustomerDisplay,
+            $"Total: £{item.TotalAmount:F2}",
+            item.StatusDisplay,
+            item.PaymentDisplay
+        }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()
@@ -51,42 +119,5 @@ public partial class OrderHistoryPage : ContentPage
             "Reservation" => new ReservationPage(),
             _ => new OrderHistoryPage()
         }, false);
-    }
-
-    private void LoadEmptyState()
-    {
-        OrderHistoryStack.Children.Clear();
-        OrderHistoryStack.Children.Add(new Border
-        {
-            BackgroundColor = Colors.White,
-            Stroke = Color.FromArgb("#E5E7EB"),
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            Padding = 16,
-            Content = new Label
-            {
-                Text = "No order history loaded. Connect to Mother POS.",
-                FontFamily = "OpenSansRegular",
-                FontSize = 14,
-                TextColor = Color.FromArgb("#64748B")
-            }
-        });
-    }
-
-    private static Button HistoryButton(string text, string color, Func<Task> action)
-    {
-        var button = new Button
-        {
-            Text = text,
-            BackgroundColor = Color.FromArgb(color),
-            TextColor = Colors.White,
-            FontFamily = "OpenSansSemibold",
-            FontSize = 12,
-            CornerRadius = 8,
-            WidthRequest = text == "Reprint" ? 82 : 74,
-            HeightRequest = 40
-        };
-        button.Clicked += async (_, _) => await action();
-        return button;
     }
 }

@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OrderWeb.Client.Models;
+using OrderWeb.Client.Services.Customer;
+using OrderWeb.Contracts.Customers;
 
 namespace OrderWeb.Client.Services;
 
@@ -21,12 +23,15 @@ public sealed class MotherCustomerClient
         _cache = cache;
     }
 
-    public async Task<IReadOnlyList<CachedCustomer>> SearchCustomersAsync(CustomerSearchRequest request)
+    public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(
+        CustomerSearchRequest request,
+        CustomerFieldAccessPolicy policy,
+        CancellationToken cancellationToken = default)
     {
         var auth = await GetAuthAsync();
         if (auth is null)
         {
-            return Array.Empty<CachedCustomer>();
+            return Array.Empty<CustomerSummaryDto>();
         }
 
         var query = new Dictionary<string, string?>
@@ -41,25 +46,57 @@ public sealed class MotherCustomerClient
         try
         {
             using var client = CreateClient(auth);
-            using var response = await client.GetAsync(endpoint);
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await client.GetAsync(endpoint, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return Array.Empty<CachedCustomer>();
+                return Array.Empty<CustomerSummaryDto>();
             }
 
             var envelope = JsonSerializer.Deserialize<CustomerApiEnvelope>(json, JsonOptions);
             return (envelope?.Customers ?? envelope?.Payload?.Customers ?? Array.Empty<CustomerState>())
-                .Select(ToCachedCustomer)
+                .Select(customer => ProjectSummary(ToCachedCustomer(customer), policy))
                 .ToList();
         }
         catch
         {
-            return Array.Empty<CachedCustomer>();
+            return Array.Empty<CustomerSummaryDto>();
         }
     }
 
-    public async Task<IReadOnlyList<AddressSuggestion>> LookupAddressesAsync(string addressOrPostcode)
+    public async Task<CustomerFieldAccessPolicy?> FetchFieldAccessPolicyAsync(CancellationToken cancellationToken = default)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            return null;
+        }
+
+        var endpoint = $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/customers/field-access-policy";
+
+        try
+        {
+            using var client = CreateClient(auth);
+            using var response = await client.GetAsync(endpoint, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var dto = JsonSerializer.Deserialize<FieldPolicyEnvelope>(json, JsonOptions);
+            var payload = dto?.Policy ?? dto?.Payload?.Policy;
+            return payload?.ToPolicy();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<AddressSuggestion>> LookupAddressesAsync(
+        string addressOrPostcode,
+        CancellationToken cancellationToken = default)
     {
         var auth = await GetAuthAsync();
         if (auth is null || string.IsNullOrWhiteSpace(addressOrPostcode))
@@ -75,8 +112,8 @@ public sealed class MotherCustomerClient
         try
         {
             using var client = CreateClient(auth);
-            using var response = await client.GetAsync(endpoint);
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await client.GetAsync(endpoint, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return Array.Empty<AddressSuggestion>();
@@ -93,12 +130,15 @@ public sealed class MotherCustomerClient
         }
     }
 
-    public async Task<CachedCustomer> SaveCustomerAsync(CustomerOrderDraft draft)
+    public async Task<CachedCustomer> SaveCustomerAsync(
+        CustomerOrderDraft draft,
+        CustomerFieldAccessPolicy policy,
+        CancellationToken cancellationToken = default)
     {
         var auth = await GetAuthAsync();
         if (auth is null)
         {
-            return LocalCustomer(draft);
+            return ProjectCached(LocalCustomer(draft), policy);
         }
 
         var endpoint = $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/customers/upsert";
@@ -116,37 +156,40 @@ public sealed class MotherCustomerClient
         try
         {
             using var client = CreateClient(auth);
-            using var response = await client.PostAsJsonAsync(endpoint, body, JsonOptions);
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await client.PostAsJsonAsync(endpoint, body, JsonOptions, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
             var envelope = JsonSerializer.Deserialize<CustomerApiEnvelope>(json, JsonOptions);
             if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success)
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    return LocalCustomer(draft);
+                    return ProjectCached(LocalCustomer(draft), policy);
                 }
 
                 throw new InvalidOperationException(envelope?.Message ?? $"Mother customer save failed with status {(int)response.StatusCode}.");
             }
 
             var customer = envelope.Customer ?? envelope.Payload?.Customer;
-            return customer is null ? LocalCustomer(draft) : ToCachedCustomer(customer);
+            var cached = customer is null ? LocalCustomer(draft) : ToCachedCustomer(customer);
+            return ProjectCached(cached, policy);
         }
         catch (HttpRequestException)
         {
-            return LocalCustomer(draft);
+            return ProjectCached(LocalCustomer(draft), policy);
         }
         catch (TaskCanceledException)
         {
-            return LocalCustomer(draft);
+            return ProjectCached(LocalCustomer(draft), policy);
         }
         catch (JsonException)
         {
-            return LocalCustomer(draft);
+            return ProjectCached(LocalCustomer(draft), policy);
         }
     }
 
-    public async Task<DeliveryZoneQuote> QuoteDeliveryZoneAsync(string postcode)
+    public async Task<DeliveryZoneQuote> QuoteDeliveryZoneAsync(
+        string postcode,
+        CancellationToken cancellationToken = default)
     {
         var normalized = NormalizePostcode(postcode);
         var auth = await GetAuthAsync();
@@ -163,8 +206,8 @@ public sealed class MotherCustomerClient
         try
         {
             using var client = CreateClient(auth);
-            using var response = await client.GetAsync(endpoint);
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await client.GetAsync(endpoint, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return new DeliveryZoneQuote(null, normalized, 0m, false);
@@ -297,6 +340,71 @@ public sealed class MotherCustomerClient
         [property: JsonPropertyName("county")] string? County,
         [property: JsonPropertyName("postcode")] string? Postcode,
         [property: JsonPropertyName("email")] string? Email);
+
+    private static CustomerSummaryDto ProjectSummary(CachedCustomer customer, CustomerFieldAccessPolicy policy) =>
+        CustomerFieldProjector.Project(
+            ClientCustomerMapping.ToSummary(customer, ClientCustomerMapping.ParseOrderKind(null)),
+            policy,
+            CustomerFieldAccessScope.Search);
+
+    private static CachedCustomer ProjectCached(CachedCustomer customer, CustomerFieldAccessPolicy policy)
+    {
+        var summary = CustomerFieldProjector.Project(
+            ClientCustomerMapping.ToSummary(customer),
+            policy,
+            CustomerFieldAccessScope.Cache);
+
+        return customer with
+        {
+            Name = summary.Name ?? string.Empty,
+            Phone = summary.Phone ?? string.Empty,
+            Email = summary.Email,
+            Address = summary.Address ?? string.Empty,
+            Postcode = summary.Postcode,
+            LoyaltyPoints = summary.LoyaltyPoints ?? 0
+        };
+    }
+
+    private sealed record FieldPolicyEnvelope(FieldPolicyState? Policy, FieldPolicyPayload? Payload);
+
+    private sealed record FieldPolicyPayload(FieldPolicyState? Policy);
+
+    private sealed record FieldPolicyState(
+        IReadOnlyList<string>? SearchFields,
+        IReadOnlyList<string>? CacheFields,
+        IReadOnlyList<string>? DetailFields,
+        bool AllowOrderHistory,
+        bool AllowCustomerDirectory,
+        bool AllowAssignCustomer)
+    {
+        public CustomerFieldAccessPolicy ToPolicy() =>
+            new(
+                ParseFields(SearchFields),
+                ParseFields(CacheFields),
+                ParseFields(DetailFields),
+                AllowOrderHistory,
+                AllowCustomerDirectory,
+                AllowAssignCustomer);
+
+        private static IReadOnlyList<CustomerFieldKind> ParseFields(IReadOnlyList<string>? values)
+        {
+            if (values is null || values.Count == 0)
+            {
+                return Array.Empty<CustomerFieldKind>();
+            }
+
+            var fields = new List<CustomerFieldKind>();
+            foreach (var value in values)
+            {
+                if (Enum.TryParse<CustomerFieldKind>(value, true, out var field))
+                {
+                    fields.Add(field);
+                }
+            }
+
+            return fields;
+        }
+    }
 
     private sealed record CustomerApiEnvelope(
         bool Success,

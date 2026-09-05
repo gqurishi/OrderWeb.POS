@@ -1,27 +1,33 @@
-using POS_in_NET.Models;
+using OrderWeb.Contracts.Customers;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Services;
-using POS_in_NET.Views;
 
 namespace POS_in_NET.Pages;
 
 public partial class CollectionCustomerModal : ContentPage
 {
     private readonly CollectionCustomerService _customerService;
-    private readonly CustomerDataService _customerDataService;
+    private readonly ICollectionDetailsService _collectionDetails;
     private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
     private readonly NavigationCoordinator _navigationCoordinator;
-    private CollectionCustomer? _selectedCustomer;
-    private bool _isOpeningKeyboard;
+    private readonly CollectionDetailsView _detailsView = new();
     private bool _isContinuing;
 
     public CollectionCustomerModal()
     {
         InitializeComponent();
         _customerService = new CollectionCustomerService();
-        _customerDataService = ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService();
+        _collectionDetails = ServiceHelper.GetService<ICollectionDetailsService>()
+            ?? new MotherCollectionDetailsService(
+                ServiceHelper.GetService<ICustomerDirectoryService>()
+                ?? new MotherCustomerDirectoryService(ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService()));
         _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
         _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
             ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), AuthenticationService.Instance);
+
+        DetailsHost.Content = _detailsView;
+        _detailsView.SearchRequested += OnSearchRequested;
+        _detailsView.ContinueRequested += OnContinueRequested;
     }
 
     protected override async void OnAppearing()
@@ -32,167 +38,73 @@ public partial class CollectionCustomerModal : ContentPage
         {
             await AppAlertService.ShowAlertAsync("Collection Unavailable", "Collection orders are disabled by the Administrator.");
             await _navigationCoordinator.GoBackAsync(animated: false);
-        }
-    }
-
-    private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
-    {
-        await OpenKeyboardForEntryAsync(CustomerNameEntry);
-    }
-
-    private async void OnPhoneNumberFieldTapped(object sender, TappedEventArgs e)
-    {
-        await OpenKeyboardForEntryAsync(PhoneNumberEntry);
-    }
-
-    private async Task OpenKeyboardForEntryAsync(Entry entry)
-    {
-        if (_isOpeningKeyboard)
-        {
             return;
         }
 
-        _isOpeningKeyboard = true;
-        try
+        var state = await _collectionDetails.GetAsync();
+        if (state.IsSuccess && state.Value != null)
         {
-            entry.Unfocus();
-
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetPrompt(GetKeyboardTitle(entry), "DONE");
-            keyboard.SetInitialText(entry.Text ?? string.Empty);
-
-            var result = await keyboard.ShowAsync(this);
-            if (result != null)
-            {
-                entry.Text = result.Trim();
-            }
-        }
-        finally
-        {
-            _isOpeningKeyboard = false;
+            _detailsView.Apply(state.Value);
         }
     }
 
-    private string GetKeyboardTitle(Entry entry)
+    private async void OnSearchRequested(object? sender, CustomerSearchRequestDto request)
     {
-        if (entry == CustomerNameEntry)
-        {
-            return "Customer name";
-        }
-
-        if (entry == PhoneNumberEntry)
-        {
-            return "Phone number";
-        }
-
-        return "Keyboard";
-    }
-
-    private async void OnSearchClicked(object sender, EventArgs e)
-    {
-        var searchName = CustomerNameEntry.Text?.Trim();
-        var searchPhone = PhoneNumberEntry.Text?.Trim();
-
-        if (string.IsNullOrWhiteSpace(searchName) && string.IsNullOrWhiteSpace(searchPhone))
+        if (string.IsNullOrWhiteSpace(request.Name) && string.IsNullOrWhiteSpace(request.Phone))
         {
             await ToastNotification.ShowAsync("Required", "Please enter customer name or phone number to search.", NotificationType.Warning, 3000);
             return;
         }
 
-        // Show loading
-        var button = (Button)sender;
-        var originalText = button.Text;
-        button.Text = "Searching...";
-        button.IsEnabled = false;
+        _detailsView.Apply(new CollectionDetailsDto(
+            CustomerId: null,
+            Name: request.Name,
+            Phone: request.Phone,
+            PickupTime: null,
+            Notes: null,
+            SearchResults: null,
+            SyncStatus: new CustomerSyncStatusDto(true, false, DateTimeOffset.UtcNow, "Live"),
+            IsLoading: true,
+            LoadingMessage: "Searching customers…"));
 
-        try
+        var result = await _collectionDetails.SearchAsync(request);
+        if (result.IsSuccess && result.Value != null)
         {
-            var results = await _customerDataService.SearchForCollectionAsync(searchName, searchPhone);
+            _detailsView.Apply(result.Value);
+            return;
+        }
 
-            if (results.Count > 0)
-            {
-                SearchResultsCollection.ItemsSource = results.Select(ToCollectionCustomer).ToList();
-                SearchResultsBorder.IsVisible = true;
-                NoResultsLabel.IsVisible = false;
-            }
-            else
-            {
-                SearchResultsBorder.IsVisible = false;
-                NoResultsLabel.IsVisible = true;
-            }
-        }
-        catch (Exception ex)
-        {
-            await ToastNotification.ShowAsync("Error", $"Failed to search customers: {ex.Message}", NotificationType.Error, 4000);
-        }
-        finally
-        {
-            button.Text = originalText;
-            button.IsEnabled = true;
-        }
+        await ToastNotification.ShowAsync("Error", result.Error?.Message ?? "Customer search failed.", NotificationType.Error, 4000);
     }
 
-    private void OnCustomerSelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.CurrentSelection.FirstOrDefault() is CollectionCustomer customer)
-        {
-            _selectedCustomer = customer;
-            CustomerNameEntry.Text = customer.Name;
-            PhoneNumberEntry.Text = customer.PhoneNumber;
-            SearchResultsBorder.IsVisible = false;
-        }
-    }
-
-    private void OnCustomerTapped(object sender, EventArgs e)
-    {
-        if (sender is VisualElement element && element.BindingContext is CollectionCustomer customer)
-        {
-            _selectedCustomer = customer;
-            CustomerNameEntry.Text = customer.Name;
-            PhoneNumberEntry.Text = customer.PhoneNumber;
-            SearchResultsBorder.IsVisible = false;
-        }
-    }
-
-    private async void OnContinueClicked(object sender, EventArgs e)
+    private async void OnContinueRequested(object? sender, CollectionDetailsDto draft)
     {
         if (_isContinuing)
         {
             return;
         }
 
-        var name = CustomerNameEntry.Text?.Trim();
-        var phone = PhoneNumberEntry.Text?.Trim();
+        var name = draft.Name?.Trim();
+        var phone = draft.Phone?.Trim();
 
-        // Both fields are mandatory before continuing to order
         if (string.IsNullOrWhiteSpace(name))
         {
             await ToastNotification.ShowAsync("Required", "Customer Name is required to continue.", NotificationType.Warning, 3000);
-            CustomerNameEntry.Focus();
             return;
         }
 
         if (string.IsNullOrWhiteSpace(phone))
         {
             await ToastNotification.ShowAsync("Required", "Phone Number is required to continue.", NotificationType.Warning, 3000);
-            PhoneNumberEntry.Focus();
             return;
         }
 
-        var button = sender as Button;
-        var originalText = button?.Text;
         _isContinuing = true;
-        if (button != null)
-        {
-            button.IsEnabled = false;
-            button.Text = "Opening order...";
-        }
+        _detailsView.Apply(draft with { IsLoading = true, LoadingMessage = "Opening order…" });
 
         try
         {
-            // Save or get existing customer
             var customer = await _customerService.SaveCustomerAsync(name, phone);
-
             if (customer == null)
             {
                 await ToastNotification.ShowAsync("Error", "Failed to save customer information.", NotificationType.Error, 4000);
@@ -201,20 +113,30 @@ public partial class CollectionCustomerModal : ContentPage
 
             try
             {
-                await _customerDataService.UpsertCollectionCustomerAsync(name, phone);
+                var directory = ServiceHelper.GetService<ICustomerDirectoryService>()
+                    ?? new MotherCustomerDirectoryService(ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService());
+                await directory.UpsertCustomerAsync(new CustomerSummaryDto(
+                    customer.Id.ToString(),
+                    customer.Id.ToString(),
+                    customer.Name,
+                    customer.PhoneNumber,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    CustomerOrderKind.Collection,
+                    customer.Name));
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CollectionCustomerModal] Customer Data save: {ex.Message}");
             }
 
-            // Navigate to order placement page with customer info
             var orderPlacementPage = new OrderPlacementPageSimple("COL", 1, "Staff", 1);
-            
-            // Pass customer info to order placement page
             orderPlacementPage.SetCollectionOrderInfo(customer.Id, customer.Name, customer.PhoneNumber);
-
-            await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage, source: button);
+            await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage);
         }
         catch (Exception ex)
         {
@@ -223,11 +145,7 @@ public partial class CollectionCustomerModal : ContentPage
         finally
         {
             _isContinuing = false;
-            if (button != null)
-            {
-                button.Text = originalText ?? "Continue";
-                button.IsEnabled = true;
-            }
+            _detailsView.Apply(draft with { IsLoading = false });
         }
     }
 
@@ -237,17 +155,5 @@ public partial class CollectionCustomerModal : ContentPage
         var roleAccessService = ServiceHelper.GetService<RoleAccessService>() ?? new RoleAccessService();
         var dashboardRoute = roleAccessService.ResolveDashboardRoute(authService.CurrentUser?.Role);
         await _navigationCoordinator.NavigateShellAsync(dashboardRoute, source: sender as VisualElement);
-    }
-
-    private static CollectionCustomer ToCollectionCustomer(CustomerDataRecord record)
-    {
-        return new CollectionCustomer
-        {
-            Id = record.Id,
-            Name = record.Name,
-            PhoneNumber = record.PhoneNumber,
-            CreatedAt = record.CreatedAt,
-            LastOrderDate = record.LastOrderDate
-        };
     }
 }

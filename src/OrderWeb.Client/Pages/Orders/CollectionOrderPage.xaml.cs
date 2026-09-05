@@ -2,15 +2,19 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Customers;
+using OrderWeb.Contracts.Services;
+using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.Client.Pages.Orders;
 
 public partial class CollectionOrderPage : ContentPage
 {
-    private readonly ClientCacheService _cache = new();
-    private readonly MotherCustomerClient _customerClient = new();
+    private readonly ICollectionDetailsService _details = ClientServiceProvider.CollectionDetails;
+    private readonly ClientCacheService _cache = ClientServiceProvider.Cache;
     private readonly MotherOrderClient _orderClient = new();
-    private CachedCustomer? _selectedCustomer;
+    private readonly CollectionDetailsView _detailsView = new();
+    private CustomerSummaryDto? _selectedCustomer;
     private bool _isContinuing;
 
     public CollectionOrderPage()
@@ -20,6 +24,119 @@ public partial class CollectionOrderPage : ContentPage
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
         Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllAsync();
+
+        _detailsView.SearchRequested += async (_, request) => await SearchAsync(request);
+        _detailsView.CustomerSelected += (_, customer) => _selectedCustomer = customer;
+        _detailsView.ContinueRequested += async (_, draft) => await ContinueAsync(draft);
+
+        ContentHost.Content = _detailsView;
+        _ = LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await _details.GetAsync();
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _detailsView.Apply(result.Value);
+        }
+    }
+
+    private async Task SearchAsync(CustomerSearchRequestDto request)
+    {
+        var result = await _details.SearchAsync(request);
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _detailsView.Apply(result.Value);
+        }
+    }
+
+    private async Task ContinueAsync(CollectionDetailsDto draft)
+    {
+        if (_isContinuing)
+        {
+            return;
+        }
+
+        var name = draft.Name?.Trim();
+        var phone = draft.Phone?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            await DisplayAlert("Collection Order", "Customer Name is required to continue.", "OK");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            await DisplayAlert("Collection Order", "Phone Number is required to continue.", "OK");
+            return;
+        }
+
+        var customer = _selectedCustomer ?? new CustomerSummaryDto(
+            "0",
+            null,
+            name,
+            phone,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            CustomerOrderKind.Collection,
+            null);
+        customer = customer with { Name = name, Phone = phone };
+
+        var cached = new CachedCustomer(
+            int.TryParse(customer.Id, out var id) ? id : 0,
+            customer.MotherId ?? string.Empty,
+            name,
+            phone,
+            customer.Email,
+            customer.Address ?? string.Empty,
+            customer.Postcode,
+            customer.LoyaltyPoints ?? 0);
+
+        var orderDraft = new CustomerOrderDraft(
+            "Collection",
+            cached,
+            draft.PickupTime ?? "ASAP",
+            null,
+            draft.Notes,
+            string.Empty,
+            null,
+            null,
+            0m);
+
+        _isContinuing = true;
+        try
+        {
+            var upsert = await ClientServiceProvider.CustomerDirectory.UpsertCustomerAsync(customer);
+            if (upsert.IsSuccess && upsert.Value is not null)
+            {
+                customer = upsert.Value;
+                cached = cached with
+                {
+                    Id = int.TryParse(customer.Id, out var savedId) ? savedId : cached.Id,
+                    MotherId = customer.MotherId ?? cached.MotherId,
+                    Name = customer.Name ?? cached.Name,
+                    Phone = customer.Phone ?? cached.Phone
+                };
+            }
+
+            var session = await _cache.GetCurrentLoginSessionAsync();
+            var orderResult = await _orderClient.CreateCustomerOrderAsync(orderDraft with { Customer = cached }, session);
+            await _cache.SaveOrderStateAsync(orderResult.State);
+            await Navigation.PushAsync(new OrderPage(), false);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("Collection Order", $"Failed to continue: {ex.Message}", "OK");
+        }
+        finally
+        {
+            _isContinuing = false;
+        }
     }
 
     private async Task OpenSidebarAsync()
@@ -62,174 +179,8 @@ public partial class CollectionOrderPage : ContentPage
     private async Task UpdateAllAsync()
     {
         await CloseSidebarAsync();
-        ShowStatus("Connect to Mother POS to refresh all client cache data.", "#64748B");
+        await DisplayAlert("Collection Order", "Connect to Mother POS to refresh all client cache data.", "OK");
     }
 
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
-
-    private async void OnSearchClicked(object sender, EventArgs e)
-    {
-        var searchName = CustomerNameEntry.Text?.Trim();
-        var searchPhone = PhoneNumberEntry.Text?.Trim();
-
-        if (string.IsNullOrWhiteSpace(searchName) && string.IsNullOrWhiteSpace(searchPhone))
-        {
-            ShowStatus("Please enter customer name or phone number to search.", "#DC2626");
-            return;
-        }
-
-        var originalText = SearchButton.Text;
-        SearchButton.Text = "Searching...";
-        SearchButton.IsEnabled = false;
-        SearchResultsBorder.IsVisible = false;
-        NoResultsLabel.IsVisible = false;
-
-        try
-        {
-            var request = new CustomerSearchRequest("Collection", searchName, searchPhone, null);
-            var cached = await _cache.SearchCachedCustomersAsync(request);
-            var mother = await _customerClient.SearchCustomersAsync(request);
-            var results = mother
-                .Concat(cached)
-                .GroupBy(customer => string.IsNullOrWhiteSpace(customer.MotherId) ? customer.Id.ToString() : customer.MotherId)
-                .Select(group => group.First())
-                .Take(10)
-                .ToList();
-
-            await _cache.CacheCustomersAsync(results);
-            SearchResultsCollection.ItemsSource = results;
-            SearchResultsBorder.IsVisible = results.Count > 0;
-            NoResultsLabel.IsVisible = results.Count == 0;
-            ShowStatus(results.Count == 0 ? "No existing customer found." : $"Found {results.Count} customer(s).", results.Count == 0 ? "#64748B" : "#10B981");
-        }
-        catch (Exception ex)
-        {
-            ShowStatus($"Failed to search customers: {ex.Message}", "#DC2626");
-        }
-        finally
-        {
-            SearchButton.Text = originalText;
-            SearchButton.IsEnabled = true;
-        }
-    }
-
-    private void OnCustomerSelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.CurrentSelection.FirstOrDefault() is not CachedCustomer customer)
-        {
-            return;
-        }
-
-        ApplyCustomer(customer);
-        ((CollectionView)sender).SelectedItem = null;
-    }
-
-    private void OnCustomerTapped(object sender, EventArgs e)
-    {
-        if (sender is VisualElement element && element.BindingContext is CachedCustomer customer)
-        {
-            ApplyCustomer(customer);
-        }
-    }
-
-    private void ApplyCustomer(CachedCustomer customer)
-    {
-        _selectedCustomer = customer;
-        CustomerNameEntry.Text = customer.Name;
-        PhoneNumberEntry.Text = customer.Phone;
-        SearchResultsBorder.IsVisible = false;
-        NoResultsLabel.IsVisible = false;
-        ShowStatus("Existing customer selected.", "#10B981");
-    }
-
-    private async void OnContinueClicked(object sender, EventArgs e)
-    {
-        if (_isContinuing)
-        {
-            return;
-        }
-
-        var name = CustomerNameEntry.Text?.Trim();
-        var phone = PhoneNumberEntry.Text?.Trim();
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            ShowStatus("Customer Name is required to continue.", "#DC2626");
-            CustomerNameEntry.Focus();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(phone))
-        {
-            ShowStatus("Phone Number is required to continue.", "#DC2626");
-            PhoneNumberEntry.Focus();
-            return;
-        }
-
-        var customer = _selectedCustomer ?? new CachedCustomer(0, string.Empty, name, phone, null, string.Empty, null, 0);
-        customer = customer with
-        {
-            Name = name,
-            Phone = phone
-        };
-
-        var draft = new CustomerOrderDraft(
-            "Collection",
-            customer,
-            "ASAP",
-            null,
-            string.Empty,
-            null,
-            null,
-            null,
-            0m);
-
-        var button = sender as Button;
-        var originalText = button?.Text;
-        _isContinuing = true;
-        if (button != null)
-        {
-            button.IsEnabled = false;
-            button.Text = "Opening order...";
-        }
-
-        try
-        {
-            ShowStatus("Saving customer with Mother POS...", "#64748B");
-            var savedCustomer = await _customerClient.SaveCustomerAsync(draft);
-            await _cache.CacheCustomersAsync(new[] { savedCustomer });
-
-            ShowStatus("Opening collection order...", "#64748B");
-            var session = await _cache.GetCurrentLoginSessionAsync();
-            var orderResult = await _orderClient.CreateCustomerOrderAsync(draft with { Customer = savedCustomer }, session);
-            await _cache.SaveOrderStateAsync(orderResult.State);
-
-            await Navigation.PushAsync(new OrderPage(), false);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus($"Failed to continue: {ex.Message}", "#DC2626");
-        }
-        finally
-        {
-            _isContinuing = false;
-            if (button != null)
-            {
-                button.Text = originalText ?? "Continue to Order";
-                button.IsEnabled = true;
-            }
-        }
-    }
-
-    private async void OnCancelClicked(object sender, EventArgs e)
-    {
-        await Navigation.PopAsync(false);
-    }
-
-    private void ShowStatus(string message, string color)
-    {
-        StatusLabel.Text = message;
-        StatusLabel.TextColor = Color.FromArgb(color);
-        StatusLabel.IsVisible = true;
-    }
 }

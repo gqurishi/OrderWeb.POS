@@ -147,6 +147,15 @@ public class CustomerDataService
         return records;
     }
 
+    public async Task<CustomerDataRecord?> GetByIdAsync(int id)
+    {
+        await EnsureTableAsync();
+
+        using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+        await connection.OpenAsync();
+        return await GetByIdAsync(connection, id);
+    }
+
     public async Task<CustomerSyncSummary> GetSyncSummaryAsync()
     {
         await EnsureTableAsync();
