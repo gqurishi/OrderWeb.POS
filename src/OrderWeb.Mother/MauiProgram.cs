@@ -80,6 +80,8 @@ public static class MauiProgram
 		
 		// Register Restaurant Management Services
 		builder.Services.AddSingleton<FloorService>();
+		builder.Services.AddSingleton<MotherFloorService>();
+		builder.Services.AddSingleton<MotherTableService>();
 		builder.Services.AddSingleton<RestaurantTableService>();
 		builder.Services.AddSingleton<TableSessionService>();
 		builder.Services.AddSingleton<ReservationSyncService>();

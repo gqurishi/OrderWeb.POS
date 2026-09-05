@@ -1,10 +1,53 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Pos.TableLayoutPage"
              Shell.NavBarIsVisible="False"
              BackgroundColor="#FFFFFF"
              Title="Table Layout">
-    <Grid x:Name="Root"
-          BackgroundColor="#FFFFFF" />
+
+    <Grid RowDefinitions="Auto,*">
+        <Grid x:Name="HeaderBar"
+              HeightRequest="88"
+              Padding="20,0"
+              BackgroundColor="#F6F9FC"
+              ColumnDefinitions="120,*,220">
+            <ImageButton x:Name="BackButton"
+                         Source="menu.png"
+                         WidthRequest="35"
+                         HeightRequest="35"
+                         BackgroundColor="Transparent"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Start"
+                         Clicked="OnBackClicked" />
+            <Label Grid.Column="1"
+                   Text="Restaurant Layout"
+                   FontSize="28"
+                   FontAttributes="Bold"
+                   TextColor="#1F2937"
+                   HorizontalTextAlignment="Center"
+                   VerticalTextAlignment="Center" />
+            <VerticalStackLayout Grid.Column="2"
+                                 Spacing="2"
+                                 VerticalOptions="Center"
+                                 HorizontalOptions="End">
+                <Label x:Name="DateLabel"
+                       FontSize="14"
+                       FontAttributes="Bold"
+                       TextColor="#1F2937"
+                       HorizontalTextAlignment="End" />
+                <Label x:Name="TimeLabel"
+                       FontSize="22"
+                       FontAttributes="Bold"
+                       TextColor="#0369A1"
+                       HorizontalTextAlignment="End" />
+            </VerticalStackLayout>
+        </Grid>
+
+        <sharedViews:FloorPlanView x:Name="FloorPlan"
+                                   Grid.Row="1"
+                                   FloorSelected="OnFloorSelected"
+                                   TableActionRequested="OnTableActionRequested" />
+    </Grid>
 </ContentPage>

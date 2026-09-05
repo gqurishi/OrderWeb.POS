@@ -61,3 +61,30 @@ Hosts keep authentication services separate:
 - Client: `ClientAuthenticationService` → Mother API
 
 Terminal pairing remains Client-owned; only the disabled/re-pair presentation is shared.
+
+## Shared floor / table plan
+
+`FloorPlanView` (in `OrderWeb.SharedUI.Views`) is the shared Mother-style restaurant layout surface used by both hosts.
+
+It covers:
+
+| Requirement | Shared behaviour |
+| --- | --- |
+| Floor selector tabs | Host supplies `FloorTabDto` list; view raises `FloorSelected` |
+| Floor background | Optional image path from host DTO |
+| Table positioning | Absolute canvas with 20px snap grid while layout edit is allowed |
+| Table shapes / sizes | Square 120×120 and wider rectangle tiles via `FloorTableVisualStyles` |
+| Status colours | Free green, occupied amber, reserved/problem red (Mother palette) |
+| Occupied / free / reserved | Mapped by host into `FloorTableVisualState` |
+| Current order + guest count | Shown on occupied tiles from DTO fields |
+| Table action sheet | Open / Move / Merge when capabilities allow |
+| Cover picker | Shown for free tables before open |
+| Responsive tablet layout | Compact overlays under ~900px width |
+| Stale / offline chip | Sync chip + optional status banner when `ShowStaleWarning` |
+
+Hosts map services into `FloorPlanDto` and handle action events only:
+
+- Mother: `MotherFloorService` / `MotherTableService` → MariaDB (`FloorService`, `RestaurantTableService`, `TableSessionService`)
+- Client: `ClientFloorService` / `ClientTableService` → SQLite cache + Mother API
+
+SharedUI never branches on host type. Client sets `ShowStaleWarning` / offline capabilities so cached floor data is clearly marked stale while Mother is unreachable.

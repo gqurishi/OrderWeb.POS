@@ -42,6 +42,8 @@ public static class MauiProgram
 
 		// Phase 12 — Child order-entry against Mother authoritative processor
 		builder.Services.AddSingleton<ClientCacheService>();
+		builder.Services.AddSingleton<ClientFloorService>();
+		builder.Services.AddSingleton<ClientTableService>();
 		builder.Services.AddSingleton<ClientOrderSession>();
 		builder.Services.AddSingleton<AuthoritativeOrderService>();
 		builder.Services.AddSingleton<ClientOrderService>();

@@ -345,7 +345,10 @@ public static class ClientCacheSchema
         "ALTER TABLE open_orders ADD COLUMN subtotal NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE open_orders ADD COLUMN tax NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE open_orders ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
-        "ALTER TABLE order_items ADD COLUMN modifier_json TEXT"
+        "ALTER TABLE order_items ADD COLUMN modifier_json TEXT",
+        "ALTER TABLE floors ADD COLUMN background_image TEXT",
+        "ALTER TABLE tables ADD COLUMN shape TEXT",
+        "ALTER TABLE tables ADD COLUMN design_icon TEXT"
     };
 
     public static readonly string[] ResetTables =
