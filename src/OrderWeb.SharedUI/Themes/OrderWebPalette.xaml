@@ -2,58 +2,94 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
                     x:Class="OrderWeb.SharedUI.Themes.OrderWebPalette">
-    <!-- Canonical palette taken from the current Mother POS blue/slate design. -->
-    <Color x:Key="OwPrimary">#2563EB</Color>
-    <Color x:Key="OwPrimaryPressed">#1D4ED8</Color>
-    <Color x:Key="OwPrimarySoft">#EFF6FF</Color>
-    <Color x:Key="OwPrimarySoftBorder">#BFDBFE</Color>
+    <!--
+      Authoritative POS colour tokens (Mother visual reference).
+      Source values: Mother ButtonPrimary / Header / status colours and the
+      current SharedUI blue/slate POS chrome. Prefer Pos* in new screens.
+    -->
 
-    <Color x:Key="OwBackground">#F8FAFC</Color>
-    <Color x:Key="OwSurface">#FFFFFF</Color>
-    <Color x:Key="OwSurfaceMuted">#F1F5F9</Color>
-    <Color x:Key="OwSurfaceStrong">#E2E8F0</Color>
+    <!-- Brand / primary -->
+    <Color x:Key="PosPrimary">#2563EB</Color>
+    <Color x:Key="PosPrimaryPressed">#1D4ED8</Color>
+    <Color x:Key="PosPrimaryHover">#1D4ED8</Color>
+    <Color x:Key="PosPrimarySoft">#EFF6FF</Color>
+    <Color x:Key="PosPrimarySoftBorder">#BFDBFE</Color>
+    <Color x:Key="PosSecondary">#E5E7EB</Color>
+    <Color x:Key="PosSecondaryPressed">#D1D5DB</Color>
+    <Color x:Key="PosAccent">#3B82F6</Color>
 
-    <Color x:Key="OwTextPrimary">#0F172A</Color>
-    <Color x:Key="OwTextStrong">#1E293B</Color>
-    <Color x:Key="OwTextSecondary">#475569</Color>
-    <Color x:Key="OwTextMuted">#64748B</Color>
-    <Color x:Key="OwTextPlaceholder">#94A3B8</Color>
-    <Color x:Key="OwTextOnPrimary">#FFFFFF</Color>
+    <!-- Surfaces -->
+    <Color x:Key="PosBackground">#F7FAFC</Color>
+    <Color x:Key="PosSurface">#FFFFFF</Color>
+    <Color x:Key="PosSurfaceMuted">#F1F5F9</Color>
+    <Color x:Key="PosSurfaceStrong">#E2E8F0</Color>
+    <Color x:Key="PosSurfaceSelected">#DBEAFE</Color>
+    <Color x:Key="PosHeaderBackground">#2C3E50</Color>
+    <Color x:Key="PosHeaderForeground">#FFFFFF</Color>
+    <Color x:Key="PosHeaderSubtext">#BDC3C7</Color>
+    <Color x:Key="PosSidebarBackground">#FFFFFF</Color>
+    <Color x:Key="PosSidebarForeground">#1A202C</Color>
+    <Color x:Key="PosSidebarPrimary">#3B82F6</Color>
+    <Color x:Key="PosSidebarBorder">#E2E8F0</Color>
 
-    <Color x:Key="OwBorder">#E2E8F0</Color>
-    <Color x:Key="OwBorderStrong">#CBD5E1</Color>
-    <Color x:Key="OwInputBorder">#D8E1ED</Color>
-    <Color x:Key="OwFocus">#3B82F6</Color>
-    <Color x:Key="OwShadow">#0F172A</Color>
-    <Color x:Key="OwOverlay">#80000000</Color>
+    <!-- Text -->
+    <Color x:Key="PosTextPrimary">#1A202C</Color>
+    <Color x:Key="PosTextStrong">#0F172A</Color>
+    <Color x:Key="PosTextSecondary">#475569</Color>
+    <Color x:Key="PosTextMuted">#718096</Color>
+    <Color x:Key="PosTextPlaceholder">#94A3B8</Color>
+    <Color x:Key="PosTextOnPrimary">#FFFFFF</Color>
+    <Color x:Key="PosTextOnHeader">#FFFFFF</Color>
+    <Color x:Key="PosTextDisabled">#94A3B8</Color>
 
-    <Color x:Key="OwSuccess">#10B981</Color>
-    <Color x:Key="OwSuccessStrong">#059669</Color>
-    <Color x:Key="OwSuccessSoft">#ECFDF5</Color>
-    <Color x:Key="OwSuccessText">#065F46</Color>
+    <!-- Borders / focus / overlay -->
+    <Color x:Key="PosBorder">#E2E8F0</Color>
+    <Color x:Key="PosBorderStrong">#CBD5E1</Color>
+    <Color x:Key="PosInputBorder">#D8E1ED</Color>
+    <Color x:Key="PosFocus">#3B82F6</Color>
+    <Color x:Key="PosRing">#3B82F6</Color>
+    <Color x:Key="PosShadow">#0F172A</Color>
+    <Color x:Key="PosOverlay">#80000000</Color>
+    <Color x:Key="PosInputBackground">#E2E8F0</Color>
 
-    <Color x:Key="OwWarning">#F59E0B</Color>
-    <Color x:Key="OwWarningStrong">#D97706</Color>
-    <Color x:Key="OwWarningSoft">#FFFBEB</Color>
-    <Color x:Key="OwWarningBorder">#FDE68A</Color>
-    <Color x:Key="OwWarningText">#92400E</Color>
+    <!-- Status -->
+    <Color x:Key="PosSuccess">#10B981</Color>
+    <Color x:Key="PosSuccessStrong">#059669</Color>
+    <Color x:Key="PosSuccessSoft">#ECFDF5</Color>
+    <Color x:Key="PosSuccessText">#065F46</Color>
+    <Color x:Key="PosSuccessForeground">#1B5E20</Color>
 
-    <Color x:Key="OwError">#EF4444</Color>
-    <Color x:Key="OwErrorStrong">#DC2626</Color>
-    <Color x:Key="OwErrorSoft">#FEF2F2</Color>
-    <Color x:Key="OwErrorBorder">#FECACA</Color>
-    <Color x:Key="OwErrorText">#991B1B</Color>
+    <Color x:Key="PosWarning">#F59E0B</Color>
+    <Color x:Key="PosWarningStrong">#D97706</Color>
+    <Color x:Key="PosWarningSoft">#FFFBEB</Color>
+    <Color x:Key="PosWarningBorder">#FDE68A</Color>
+    <Color x:Key="PosWarningText">#92400E</Color>
 
-    <Color x:Key="OwInfo">#3B82F6</Color>
-    <Color x:Key="OwInfoSoft">#EFF6FF</Color>
-    <Color x:Key="OwInfoText">#1E40AF</Color>
+    <Color x:Key="PosError">#EF4444</Color>
+    <Color x:Key="PosErrorStrong">#DC2626</Color>
+    <Color x:Key="PosErrorSoft">#FEF2F2</Color>
+    <Color x:Key="PosErrorBorder">#FECACA</Color>
+    <Color x:Key="PosErrorText">#991B1B</Color>
+    <Color x:Key="PosDestructive">#DC2626</Color>
+    <Color x:Key="PosDestructiveSoft">#FFEBEE</Color>
+    <Color x:Key="PosDestructiveForeground">#C62828</Color>
 
-    <Color x:Key="OwOnline">#10B981</Color>
-    <Color x:Key="OwOffline">#EF4444</Color>
-    <Color x:Key="OwConnecting">#F59E0B</Color>
+    <Color x:Key="PosInfo">#3B82F6</Color>
+    <Color x:Key="PosInfoSoft">#EFF6FF</Color>
+    <Color x:Key="PosInfoText">#1E40AF</Color>
 
-    <SolidColorBrush x:Key="OwPrimaryBrush" Color="{StaticResource OwPrimary}" />
-    <SolidColorBrush x:Key="OwBackgroundBrush" Color="{StaticResource OwBackground}" />
-    <SolidColorBrush x:Key="OwSurfaceBrush" Color="{StaticResource OwSurface}" />
-    <SolidColorBrush x:Key="OwBorderBrush" Color="{StaticResource OwBorder}" />
+    <!-- Connectivity -->
+    <Color x:Key="PosOnline">#10B981</Color>
+    <Color x:Key="PosOffline">#EF4444</Color>
+    <Color x:Key="PosConnecting">#F59E0B</Color>
+
+    <!-- Loading / disabled helpers (colour tints; opacity tokens live in dimensions) -->
+    <Color x:Key="PosDisabledSurface">#F1F5F9</Color>
+    <Color x:Key="PosLoadingScrim">#66F8FAFC</Color>
+
+    <SolidColorBrush x:Key="PosPrimaryBrush" Color="{StaticResource PosPrimary}" />
+    <SolidColorBrush x:Key="PosBackgroundBrush" Color="{StaticResource PosBackground}" />
+    <SolidColorBrush x:Key="PosSurfaceBrush" Color="{StaticResource PosSurface}" />
+    <SolidColorBrush x:Key="PosBorderBrush" Color="{StaticResource PosBorder}" />
+    <SolidColorBrush x:Key="PosShadowBrush" Color="{StaticResource PosShadow}" />
 </ResourceDictionary>

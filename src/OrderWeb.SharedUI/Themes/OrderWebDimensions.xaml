@@ -2,33 +2,73 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
                     x:Class="OrderWeb.SharedUI.Themes.OrderWebDimensions">
-    <Thickness x:Key="OwPagePadding">24</Thickness>
-    <Thickness x:Key="OwPagePaddingCompact">16</Thickness>
-    <Thickness x:Key="OwCardPadding">20</Thickness>
-    <Thickness x:Key="OwDialogPadding">24</Thickness>
-    <Thickness x:Key="OwButtonPadding">20,0</Thickness>
+    <!--
+      Authoritative POS spacing, sizing, radii, opacity, and motion tokens.
+      Mother appearance is the visual reference.
+    -->
 
-    <x:Double x:Key="OwSpacingXs">4</x:Double>
-    <x:Double x:Key="OwSpacingSm">8</x:Double>
-    <x:Double x:Key="OwSpacingMd">12</x:Double>
-    <x:Double x:Key="OwSpacingLg">16</x:Double>
-    <x:Double x:Key="OwSpacingXl">24</x:Double>
-    <x:Double x:Key="OwSpacing2Xl">32</x:Double>
+    <!-- Page / card / dialog padding -->
+    <Thickness x:Key="PosPagePadding">24</Thickness>
+    <Thickness x:Key="PosPagePaddingCompact">16</Thickness>
+    <Thickness x:Key="PosCardPadding">20</Thickness>
+    <Thickness x:Key="PosDialogPadding">24</Thickness>
+    <Thickness x:Key="PosButtonPadding">20,0</Thickness>
+    <Thickness x:Key="PosButtonPaddingLarge">24,16</Thickness>
+    <Thickness x:Key="PosInputPadding">14,10</Thickness>
+    <Thickness x:Key="PosHeaderPadding">20,12</Thickness>
+    <Thickness x:Key="PosSidebarItemPadding">14,12</Thickness>
 
-    <x:Double x:Key="OwButtonHeight">48</x:Double>
-    <x:Double x:Key="OwButtonHeightLarge">58</x:Double>
-    <x:Double x:Key="OwInputHeight">48</x:Double>
-    <x:Double x:Key="OwInputHeightLarge">58</x:Double>
-    <x:Double x:Key="OwTouchTargetMinimum">44</x:Double>
+    <!-- Spacing scale -->
+    <x:Double x:Key="PosSpacingXs">4</x:Double>
+    <x:Double x:Key="PosSpacingSm">8</x:Double>
+    <x:Double x:Key="PosSpacingMd">12</x:Double>
+    <x:Double x:Key="PosSpacingLg">16</x:Double>
+    <x:Double x:Key="PosSpacingXl">24</x:Double>
+    <x:Double x:Key="PosSpacing2Xl">32</x:Double>
+    <x:Double x:Key="PosSpacing3Xl">40</x:Double>
 
-    <x:Double x:Key="OwCornerRadiusSmall">8</x:Double>
-    <x:Double x:Key="OwCornerRadius">12</x:Double>
-    <x:Double x:Key="OwCornerRadiusLarge">16</x:Double>
-    <x:Double x:Key="OwDialogCornerRadius">22</x:Double>
-    <x:Double x:Key="OwBorderThickness">1</x:Double>
+    <!-- Header / sidebar -->
+    <x:Double x:Key="PosHeaderHeight">72</x:Double>
+    <x:Double x:Key="PosHeaderHeightCompact">64</x:Double>
+    <x:Double x:Key="PosSidebarWidth">280</x:Double>
+    <x:Double x:Key="PosSidebarWidthCompact">240</x:Double>
 
-    <x:Double x:Key="OwIconSizeSmall">18</x:Double>
-    <x:Double x:Key="OwIconSize">24</x:Double>
-    <x:Double x:Key="OwIconSizeLarge">32</x:Double>
-    <x:Double x:Key="OwDialogIconSize">74</x:Double>
+    <!-- Buttons / inputs / touch -->
+    <x:Double x:Key="PosButtonHeight">48</x:Double>
+    <x:Double x:Key="PosButtonHeightLarge">58</x:Double>
+    <x:Double x:Key="PosButtonHeightSmall">40</x:Double>
+    <x:Double x:Key="PosInputHeight">48</x:Double>
+    <x:Double x:Key="PosInputHeightLarge">58</x:Double>
+    <x:Double x:Key="PosTouchTargetMinimum">44</x:Double>
+
+    <!-- Corner radii -->
+    <x:Double x:Key="PosCornerRadiusSmall">8</x:Double>
+    <x:Double x:Key="PosCornerRadius">12</x:Double>
+    <x:Double x:Key="PosCornerRadiusLarge">16</x:Double>
+    <x:Double x:Key="PosCornerRadiusPill">999</x:Double>
+    <x:Double x:Key="PosDialogCornerRadius">22</x:Double>
+    <x:Double x:Key="PosBorderThickness">1</x:Double>
+    <x:Double x:Key="PosBorderThicknessStrong">2</x:Double>
+
+    <!-- Icons -->
+    <x:Double x:Key="PosIconSizeSmall">18</x:Double>
+    <x:Double x:Key="PosIconSize">24</x:Double>
+    <x:Double x:Key="PosIconSizeLarge">32</x:Double>
+    <x:Double x:Key="PosDialogIconSize">74</x:Double>
+    <x:Double x:Key="PosDashboardIconSize">40</x:Double>
+
+    <!-- Opacity / interaction states -->
+    <x:Double x:Key="PosDisabledOpacity">0.45</x:Double>
+    <x:Double x:Key="PosPressedOpacity">0.85</x:Double>
+    <x:Double x:Key="PosHoverOpacity">0.92</x:Double>
+    <x:Double x:Key="PosSelectedOpacity">1.0</x:Double>
+    <x:Double x:Key="PosOverlayOpacity">0.50</x:Double>
+    <x:Double x:Key="PosShadowOpacity">0.10</x:Double>
+    <x:Double x:Key="PosDialogShadowOpacity">0.16</x:Double>
+
+    <!-- Animation durations (milliseconds) -->
+    <x:Double x:Key="PosAnimationFast">120</x:Double>
+    <x:Double x:Key="PosAnimationNormal">200</x:Double>
+    <x:Double x:Key="PosAnimationSlow">320</x:Double>
+    <x:Double x:Key="PosAnimationSidebar">220</x:Double>
 </ResourceDictionary>

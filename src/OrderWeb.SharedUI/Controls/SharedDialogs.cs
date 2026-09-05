@@ -20,15 +20,15 @@ public class ConfirmationDialog : ContentView
     {
         BackgroundColor = Color.FromArgb("#80000000"); HorizontalOptions = LayoutOptions.Fill; VerticalOptions = LayoutOptions.Fill;
         _icon = new Label { Text = "?", TextColor = Colors.White, FontSize = 30, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center };
-        var iconShell = new Border { WidthRequest = 74, HeightRequest = 74, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 37 }, Content = _icon, HorizontalOptions = LayoutOptions.Center }; iconShell.Use(Border.BackgroundColorProperty, "OwPrimary");
-        _title = new Label { Text = "Confirm", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _title.Use(Label.TextColorProperty, "OwTextStrong");
-        _message = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _message.Use(Label.TextColorProperty, "OwTextMuted");
+        var iconShell = new Border { WidthRequest = 74, HeightRequest = 74, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 37 }, Content = _icon, HorizontalOptions = LayoutOptions.Center }; iconShell.Use(Border.BackgroundColorProperty, "PosPrimary");
+        _title = new Label { Text = "Confirm", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _title.Use(Label.TextColorProperty, "PosTextStrong");
+        _message = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _message.Use(Label.TextColorProperty, "PosTextMuted");
         _cancel = new SharedButton { Text = "No", Variant = ButtonVariant.Secondary };
         _confirm = new SharedButton { Text = "Yes", Variant = ButtonVariant.Primary };
         _cancel.Clicked += (_, _) => Complete(false); _confirm.Clicked += (_, _) => Complete(true);
         var buttons = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 12 }; buttons.Add(_cancel); buttons.Add(_confirm, 1);
         var panel = new Border { WidthRequest = 450, MaximumWidthRequest = 450, Padding = 24, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 22 }, Content = new VerticalStackLayout { Spacing = 20, Children = { iconShell, _title, _message, buttons } }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-        panel.Use(Border.BackgroundColorProperty, "OwSurface"); panel.Use(Border.StrokeProperty, "OwBorder");
+        panel.Use(Border.BackgroundColorProperty, "PosSurface"); panel.Use(Border.StrokeProperty, "PosBorder");
         Content = new Grid { Padding = 24, Children = { panel } };
     }
     public string Title { get => (string)GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
@@ -53,11 +53,11 @@ public class ErrorDialog : ContentView
     public ErrorDialog()
     {
         BackgroundColor = Color.FromArgb("#80000000"); HorizontalOptions = LayoutOptions.Fill; VerticalOptions = LayoutOptions.Fill;
-        var icon = new Border { WidthRequest = 74, HeightRequest = 74, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 37 }, HorizontalOptions = LayoutOptions.Center, Content = new Label { Text = "!", TextColor = Colors.White, FontSize = 30, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center } }; icon.Use(Border.BackgroundColorProperty, "OwError");
-        _title = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _title.Use(Label.TextColorProperty, "OwTextStrong");
-        _message = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _message.Use(Label.TextColorProperty, "OwTextMuted");
+        var icon = new Border { WidthRequest = 74, HeightRequest = 74, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 37 }, HorizontalOptions = LayoutOptions.Center, Content = new Label { Text = "!", TextColor = Colors.White, FontSize = 30, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center } }; icon.Use(Border.BackgroundColorProperty, "PosError");
+        _title = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _title.Use(Label.TextColorProperty, "PosTextStrong");
+        _message = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _message.Use(Label.TextColorProperty, "PosTextMuted");
         _close = new SharedButton { Text = "Close", Variant = ButtonVariant.Danger }; _close.Clicked += (_, _) => { Closed?.Invoke(this, EventArgs.Empty); _completion?.TrySetResult(true); };
-        var panel = new Border { WidthRequest = 450, MaximumWidthRequest = 450, Padding = 24, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 22 }, Content = new VerticalStackLayout { Spacing = 20, Children = { icon, _title, _message, _close } }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }; panel.Use(Border.BackgroundColorProperty, "OwSurface"); panel.Use(Border.StrokeProperty, "OwErrorBorder");
+        var panel = new Border { WidthRequest = 450, MaximumWidthRequest = 450, Padding = 24, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 22 }, Content = new VerticalStackLayout { Spacing = 20, Children = { icon, _title, _message, _close } }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }; panel.Use(Border.BackgroundColorProperty, "PosSurface"); panel.Use(Border.StrokeProperty, "PosErrorBorder");
         Content = new Grid { Padding = 24, Children = { panel } };
     }
     public string Title { get => (string)GetValue(TitleProperty); set => SetValue(TitleProperty, value); }

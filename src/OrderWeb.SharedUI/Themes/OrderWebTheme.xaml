@@ -3,6 +3,12 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
                     xmlns:themes="clr-namespace:OrderWeb.SharedUI.Themes"
                     x:Class="OrderWeb.SharedUI.Themes.OrderWebTheme">
+    <!--
+      Locked shared design system.
+      1) Pos* tokens are authoritative (Mother appearance reference).
+      2) Ow* + Mother/Client legacy keys are aliased onto Pos*.
+      3) Host App.xaml must merge this dictionary; Syncfusion stays Mother-only.
+    -->
     <ResourceDictionary.MergedDictionaries>
         <themes:OrderWebPalette />
         <themes:OrderWebTypography />
