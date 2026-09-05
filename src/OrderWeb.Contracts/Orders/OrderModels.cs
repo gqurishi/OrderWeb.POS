@@ -44,6 +44,7 @@ public sealed record OrderTotalsDto(
     decimal Subtotal,
     decimal DiscountTotal,
     decimal TaxTotal,
+    decimal ServiceChargeTotal,
     decimal GrandTotal,
     bool IsDisplayEstimate = false);
 

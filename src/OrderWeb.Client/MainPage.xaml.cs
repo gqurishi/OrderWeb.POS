@@ -1,5 +1,6 @@
 using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
+using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Dialogs;
 using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Views.Layout;
@@ -2292,12 +2293,20 @@ public partial class MainPage : ContentPage
     {
         _selectedCachedTable = table;
         _guests = Math.Max(covers, 1);
-        _connectionStatus = "Syncing";
-        var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
-        await ApplyMotherOrderResultAsync(result);
-        await LoadOrderMenuAsync();
-        _connectionStatus = "Connected";
-        ShowOrder();
+
+        if (LegacyOrderEntryAccess.PreferLegacyRollback)
+        {
+            _connectionStatus = "Syncing";
+            var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
+            await ApplyMotherOrderResultAsync(result);
+            await LoadOrderMenuAsync();
+            _connectionStatus = "Connected";
+            ShowOrder();
+            return;
+        }
+
+        // Step 7: SharedUI order-entry via ClientOrderService → Mother authority.
+        await Navigation.PushAsync(SharedOrderEntryPage.ForTableOrLegacy(table, _guests), false);
     }
 
     private async Task ApplyMotherOrderResultAsync(MotherCommandResult result)

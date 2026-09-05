@@ -41,6 +41,9 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
     private decimal _authoritativeDiscount;
     private decimal _authoritativeTotal;
     private int _guestCount = 1;
+    private string _orderType = "Table";
+    private decimal _displayServiceCharge;
+    private decimal _authoritativeServiceCharge;
 
     public OrderEntryViewModel(
         IOrderService orders,
@@ -116,6 +119,7 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
     public string? TableId { get => _tableId; private set => SetField(ref _tableId, value); }
     public string? TableName { get => _tableName; private set => SetField(ref _tableName, value); }
     public int GuestCount { get => _guestCount; private set => SetField(ref _guestCount, value); }
+    public string OrderType { get => _orderType; private set => SetField(ref _orderType, value); }
     public string? SelectedCategoryId { get => _selectedCategoryId; private set => SetField(ref _selectedCategoryId, value); }
     public string? SelectedLineId { get => _selectedLineId; set => SetField(ref _selectedLineId, value); }
     public string? StatusMessage { get => _statusMessage; private set => SetField(ref _statusMessage, value); }
@@ -128,6 +132,8 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
     public decimal DisplayTax { get => _displayTax; private set { if (SetField(ref _displayTax, value)) NotifyMoney(); } }
     public decimal DisplayDiscount { get => _displayDiscount; private set { if (SetField(ref _displayDiscount, value)) NotifyMoney(); } }
     public decimal DisplayTotal { get => _displayTotal; private set { if (SetField(ref _displayTotal, value)) NotifyMoney(); } }
+    public decimal DisplayServiceCharge { get => _displayServiceCharge; private set { if (SetField(ref _displayServiceCharge, value)) NotifyMoney(); } }
+    public decimal AuthoritativeServiceCharge { get => _authoritativeServiceCharge; private set => SetField(ref _authoritativeServiceCharge, value); }
     public decimal AuthoritativeSubtotal { get => _authoritativeSubtotal; private set => SetField(ref _authoritativeSubtotal, value); }
     public decimal AuthoritativeTax { get => _authoritativeTax; private set => SetField(ref _authoritativeTax, value); }
     public decimal AuthoritativeDiscount { get => _authoritativeDiscount; private set => SetField(ref _authoritativeDiscount, value); }
@@ -137,14 +143,21 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
     public string DisplayTaxText => FormatMoney(DisplayTax);
     public string DisplayDiscountText => FormatMoney(DisplayDiscount);
     public string DisplayTotalText => FormatMoney(DisplayTotal);
+    public string DisplayServiceChargeText => FormatMoney(DisplayServiceCharge);
 
     public decimal DiscountDraftAmount { get; set; }
     public bool DiscountDraftIsPercent { get; set; }
 
-    public async Task InitializeAsync(string? tableId = null, int guestCount = 1, string? existingOrderId = null, CancellationToken cancellationToken = default)
+    public async Task InitializeAsync(
+        string? tableId = null,
+        int guestCount = 1,
+        string? existingOrderId = null,
+        string orderType = "Table",
+        CancellationToken cancellationToken = default)
     {
         TableId = tableId;
         GuestCount = Math.Max(1, guestCount);
+        OrderType = string.IsNullOrWhiteSpace(orderType) ? "Table" : orderType.Trim();
         await LoadMenuAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(existingOrderId))
@@ -153,52 +166,13 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(tableId))
-            await OpenOrCreateAsync(tableId!, GuestCount, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task LoadMenuAsync(CancellationToken cancellationToken = default)
-    {
-        var result = await _menu.GetCategoriesAsync(cancellationToken).ConfigureAwait(false);
-        if (!result.IsSuccess || result.Value is null)
-        {
-            RaiseError(result.Error ?? OperationError.Failure("Failed to load categories."));
-            return;
-        }
-
-        Categories.Clear();
-        foreach (var category in result.Value.OrderBy(c => c.SortOrder).ThenBy(c => c.Name))
-            Categories.Add(category);
-
-        if (Categories.Count > 0)
-            await SelectCategoryAsync(Categories[0].Id, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task SelectCategoryAsync(string categoryId, CancellationToken cancellationToken = default)
-    {
-        SelectedCategoryId = categoryId;
-        var result = await _menu.GetProductsAsync(categoryId, cancellationToken).ConfigureAwait(false);
-        if (!result.IsSuccess || result.Value is null)
-        {
-            RaiseError(result.Error ?? OperationError.Failure("Failed to load products."));
-            return;
-        }
-
-        Products.Clear();
-        foreach (var product in result.Value.Where(p => p.IsAvailable).OrderBy(p => p.SortOrder).ThenBy(p => p.Name))
-            Products.Add(product);
-    }
-
-    public async Task LoadModifiersAsync(string productId, CancellationToken cancellationToken = default)
-    {
-        var result = await _menu.GetModifierGroupsAsync(productId, cancellationToken).ConfigureAwait(false);
-        ModifierGroups.Clear();
-        SelectedModifierIds.Clear();
-        if (!result.IsSuccess || result.Value is null)
-            return;
-
-        foreach (var group in result.Value)
-            ModifierGroups.Add(group);
+        // ClientOrderService → Mother authority. Estimates may show locally,
+        // but send waits for Mother's authoritative response.
+        await OpenOrCreateAsync(
+            string.IsNullOrWhiteSpace(tableId) ? null : tableId,
+            GuestCount,
+            OrderType,
+            cancellationToken).ConfigureAwait(false);
     }
 
     public void ToggleModifier(string modifierId)
@@ -209,12 +183,17 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
             SelectedModifierIds.Add(modifierId);
     }
 
-    public async Task OpenOrCreateAsync(string tableId, int guestCount = 1, CancellationToken cancellationToken = default)
+    public async Task OpenOrCreateAsync(
+        string? tableId,
+        int guestCount = 1,
+        string orderType = "Table",
+        CancellationToken cancellationToken = default)
     {
+        OrderType = string.IsNullOrWhiteSpace(orderType) ? "Table" : orderType.Trim();
         await RunMutationAsync(() =>
         {
             var context = CreateContext(orderId: null, revision: 0);
-            var request = new OpenOrderRequest(context, tableId, Math.Max(1, guestCount), "Table");
+            var request = new OpenOrderRequest(context, tableId, Math.Max(1, guestCount), OrderType);
             return _orders.OpenOrCreateAsync(request, cancellationToken);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -319,11 +298,16 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(OrderId))
             return;
 
+        StatusMessage = "Submitting to Mother — waiting for authoritative confirmation…";
+        IsDisplayEstimate = true;
         await RunMutationAsync(() =>
         {
             var context = CreateContext(OrderId, Revision);
             return _orders.SendAsync(new SendOrderRequest(context), cancellationToken);
         }, cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(OrderId) && !IsDisplayEstimate)
+            StatusMessage = "Order submitted — Mother confirmation received.";
     }
 
     public async Task RefreshOrderAsync(string orderId, CancellationToken cancellationToken = default)
@@ -400,6 +384,8 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
 
         DisplaySubtotal = order.Totals.Subtotal;
         DisplayTax = order.Totals.TaxTotal;
+        DisplayServiceCharge = order.Totals.ServiceChargeTotal;
+        AuthoritativeServiceCharge = order.Totals.ServiceChargeTotal;
         DisplayDiscount = order.Totals.DiscountTotal;
         DisplayTotal = order.Totals.GrandTotal;
         IsDisplayEstimate = false;
@@ -463,6 +449,7 @@ public sealed class OrderEntryViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayTaxText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayDiscountText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayTotalText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayServiceChargeText)));
     }
 
     private static string FormatMoney(decimal value) => value.ToString("C", CultureInfo.GetCultureInfo("en-GB"));

@@ -29,6 +29,25 @@ public sealed class Phase12AuthoritativeOrderTests
     }
 
     [Fact]
+    public async Task Collection_order_opens_without_table_and_send_returns_authoritative_totals()
+    {
+        var sut = new AuthoritativeOrderService();
+        var open = await sut.OpenOrCreateAsync(
+            new OpenOrderRequest(Ctx(null, 0, "open-col-1"), TableId: null, GuestCount: 1, OrderType: "Collection"));
+        Assert.True(open.IsSuccess);
+        Assert.Equal(0m, open.Value!.Totals.ServiceChargeTotal);
+
+        var withLine = await sut.AddLineAsync(
+            new AddOrderLineRequest(Ctx(open.Value.Id, open.Value.Revision, "add-col-1"), "prod-burger", 1, null, Array.Empty<string>()));
+        Assert.True(withLine.IsSuccess);
+
+        var sent = await sut.SendAsync(new SendOrderRequest(Ctx(withLine.Value!.Id, withLine.Value.Revision, "send-col-1")));
+        Assert.True(sent.IsSuccess);
+        Assert.False(sent.Value!.Totals.IsDisplayEstimate);
+        Assert.True(sent.Value.Totals.GrandTotal > 0);
+    }
+
+    [Fact]
     public async Task Stale_revision_conflicts_so_terminals_cannot_overwrite_each_other()
     {
         var sut = new AuthoritativeOrderService();

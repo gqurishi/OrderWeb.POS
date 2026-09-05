@@ -26,6 +26,13 @@ public sealed class OrderEntryView : ContentView
     private readonly SharedTextInput _notes = new() { Placeholder = "Item notes" };
     private readonly SharedTextInput _discount = new() { Placeholder = "Discount amount" };
     private readonly Label _title = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
+    private readonly HorizontalStackLayout _quickNotes = new() { Spacing = 8 };
+    private readonly LoadingOverlayView _loading = new() { IsVisible = false, Message = "Waiting for Mother…" };
+    private readonly OfflineStatusBannerView _conflictBanner = new()
+    {
+        IsVisible = false,
+        Message = "Order conflict — refreshed from Mother."
+    };
 
     public OrderEntryView()
     {
@@ -51,7 +58,60 @@ public sealed class OrderEntryView : ContentView
             }
         };
 
-        Content = BuildLayout(send, discountBtn);
+        BuildQuickNotes();
+        var more = new SharedButton { Text = "More options", Variant = ButtonVariant.Secondary };
+        more.Clicked += async (_, _) => await ShowMoreOptionsAsync();
+        Content = BuildLayout(send, discountBtn, more);
+    }
+
+    private void BuildQuickNotes()
+    {
+        _quickNotes.Children.Clear();
+        foreach (var note in new[] { "No ice", "Extra spicy", "Allergy", "No onion", "Well done" })
+        {
+            var chip = new SharedButton { Text = note, Variant = ButtonVariant.Secondary, HeightRequest = 36 };
+            var value = note;
+            chip.Clicked += (_, _) =>
+            {
+                if (_viewModel is null)
+                    return;
+                _viewModel.PendingNotes = string.IsNullOrWhiteSpace(_viewModel.PendingNotes)
+                    ? value
+                    : $"{_viewModel.PendingNotes}; {value}";
+                _notes.Text = _viewModel.PendingNotes ?? string.Empty;
+            };
+            _quickNotes.Children.Add(chip);
+        }
+    }
+
+    private async Task ShowMoreOptionsAsync()
+    {
+        if (_viewModel is null)
+            return;
+
+        var page = Application.Current?.Windows.FirstOrDefault()?.Page
+                   ?? Application.Current?.MainPage;
+        if (page is null)
+            return;
+
+        var choice = await page.DisplayActionSheet(
+            "Order options",
+            "Cancel",
+            null,
+            "Refresh from Mother",
+            "Clear item notes",
+            "Apply 10% discount");
+
+        if (choice == "Refresh from Mother" && !string.IsNullOrWhiteSpace(_viewModel.OrderId))
+            await _viewModel.RefreshOrderAsync(_viewModel.OrderId!);
+        else if (choice == "Clear item notes")
+        {
+            _viewModel.PendingNotes = null;
+            _notes.Text = string.Empty;
+        }
+        else if (choice == "Apply 10% discount")
+            await _viewModel.ApplyDiscountAsync(10m, isPercent: true, reason: "Quick 10% discount");
+
     }
 
     public void Bind(OrderEntryViewModel viewModel)
@@ -69,7 +129,7 @@ public sealed class OrderEntryView : ContentView
         RefreshAll();
     }
 
-    private View BuildLayout(SharedButton send, SharedButton discountBtn)
+    private View BuildLayout(SharedButton send, SharedButton discountBtn, SharedButton more)
     {
         var menu = new Grid
         {
@@ -90,7 +150,20 @@ public sealed class OrderEntryView : ContentView
         }, 0, 0);
         menu.Add(_modifierGroups, 0, 1);
         menu.Add(new ScrollView { Content = _products }, 0, 2);
-        menu.Add(_notes, 0, 3);
+        menu.Add(new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                _notes,
+                new ScrollView
+                {
+                    Orientation = ScrollOrientation.Horizontal,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
+                    Content = _quickNotes
+                }
+            }
+        }, 0, 3);
 
         var basketPanel = new VerticalStackLayout
         {
@@ -103,6 +176,7 @@ public sealed class OrderEntryView : ContentView
                 _discount,
                 discountBtn,
                 send,
+                more,
                 _status
             }
         };
@@ -119,7 +193,15 @@ public sealed class OrderEntryView : ContentView
         };
         root.Add(menu, 0);
         root.Add(basketPanel, 1);
-        return root;
+
+        var shell = new Grid();
+        shell.Add(new VerticalStackLayout
+        {
+            Spacing = 0,
+            Children = { _conflictBanner, root }
+        });
+        shell.Add(_loading);
+        return shell;
     }
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -146,6 +228,34 @@ public sealed class OrderEntryView : ContentView
             RefreshHeader();
         if (e.PropertyName is nameof(OrderEntryViewModel.PendingNotes))
             _notes.Text = _viewModel.PendingNotes ?? string.Empty;
+        if (e.PropertyName is nameof(OrderEntryViewModel.IsBusy)
+            or nameof(OrderEntryViewModel.IsDisplayEstimate)
+            or nameof(OrderEntryViewModel.StatusMessage)
+            or nameof(OrderEntryViewModel.DisplayServiceChargeText)
+            or null)
+        {
+            RefreshStateChrome();
+            if (e.PropertyName is nameof(OrderEntryViewModel.DisplayServiceChargeText) or null)
+                RefreshBasket();
+        }
+    }
+
+    private void RefreshStateChrome()
+    {
+        if (_viewModel is null)
+            return;
+
+        _loading.IsVisible = _viewModel.IsBusy;
+        _loading.Message = string.IsNullOrWhiteSpace(_viewModel.StatusMessage)
+            ? "Waiting for Mother…"
+            : _viewModel.StatusMessage!;
+
+        var status = _viewModel.StatusMessage ?? string.Empty;
+        var conflict = status.Contains("another terminal", StringComparison.OrdinalIgnoreCase)
+                       || status.Contains("conflict", StringComparison.OrdinalIgnoreCase);
+        _conflictBanner.IsVisible = conflict;
+        if (conflict)
+            _conflictBanner.Message = status;
     }
 
     private void OnOrderUpdated(object? sender, OrderDto e) => RefreshAll();
@@ -177,6 +287,7 @@ public sealed class OrderEntryView : ContentView
             return;
         _basket.SubtotalText = _viewModel.DisplaySubtotalText;
         _basket.TaxText = _viewModel.DisplayTaxText;
+        _basket.ServiceChargeText = _viewModel.DisplayServiceChargeText;
         _basket.DiscountText = _viewModel.DisplayDiscountText;
         _basket.TotalText = _viewModel.DisplayTotalText;
         _basket.IsEstimate = _viewModel.IsDisplayEstimate;
@@ -219,8 +330,14 @@ public sealed class OrderEntryView : ContentView
             {
                 Text = $"{product.Name}\n{product.Price.ToString("C", CultureInfo.GetCultureInfo("en-GB"))}",
                 WidthRequest = 150,
+                HeightRequest = 96,
                 Margin = new Thickness(0, 0, 10, 10)
             };
+            if (!string.IsNullOrWhiteSpace(product.Colour)
+                && Color.TryParse(product.Colour, out var tint))
+            {
+                button.BackgroundColor = tint;
+            }
             var id = product.Id;
             button.Clicked += async (_, _) =>
             {

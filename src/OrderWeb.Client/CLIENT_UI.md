@@ -46,6 +46,23 @@ Settings and reports stay hidden unless Mother grants those capabilities (Admin/
 - Required Client update screen
 - Offline status presentation (still uses SharedUI tokens / `OfflineStatusBannerView`)
 
+## Shared order-entry (Step 7)
+
+Normal Client order-entry uses SharedUI `OrderEntryView` + `OrderEntryViewModel` hosted by `SharedOrderEntryPage`.
+
+| Concern | Source |
+| --- | --- |
+| Categories / products / modifiers | SharedUI order-entry + `IMenuCatalogService` |
+| Basket, qty, notes, quick notes, discount, tax/service/total | `OrderEntryView` / `BasketSummaryView` |
+| Mutations | `ClientOrderService` (`IOrderService`) → Mother authority |
+| Display totals while waiting | Local estimate (`IsDisplayEstimate`) |
+| Submitted order | Waits for Mother authoritative response before success status |
+| Conflict / loading / pending | SharedUI loading overlay + conflict banner |
+
+**Rule:** Client UI → `ClientOrderService` → Mother API/authority → Mother domain → MariaDB. Client may show estimates; it must not treat an order as submitted until Mother confirms.
+
+**Rollback:** `OrderPage` is obsolete and reachable only when `LegacyOrderEntryAccess` preference is enabled (`client.order_entry.use_legacy_rollback`).
+
 ## Completion gate
 
-New Client work does not create new Client-only visual styles. SharedUI is the visual foundation. Client navigation uses the same shared visual nav as Mother, with Mother-provided permissions controlling visibility.
+New Client work does not create new Client-only visual styles. SharedUI is the visual foundation. Client navigation uses the same shared visual nav as Mother, with Mother-provided permissions controlling visibility. Normal order-entry uses SharedUI; the legacy Client `OrderPage` is rollback-only.

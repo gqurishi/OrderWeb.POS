@@ -74,12 +74,14 @@ public class BasketSummaryView : ContentView
     private readonly Label _subtotal;
     private readonly Label _discount;
     private readonly Label _tax;
+    private readonly Label _service;
     private readonly Label _total;
     private readonly Label _estimate;
 
     public static readonly BindableProperty SubtotalTextProperty = BindableProperty.Create(nameof(SubtotalText), typeof(string), typeof(BasketSummaryView), "£0.00", propertyChanged: (b, _, v) => ((BasketSummaryView)b)._subtotal.Text = v?.ToString());
     public static readonly BindableProperty DiscountTextProperty = BindableProperty.Create(nameof(DiscountText), typeof(string), typeof(BasketSummaryView), "£0.00", propertyChanged: (b, _, v) => ((BasketSummaryView)b)._discount.Text = v?.ToString());
     public static readonly BindableProperty TaxTextProperty = BindableProperty.Create(nameof(TaxText), typeof(string), typeof(BasketSummaryView), "£0.00", propertyChanged: (b, _, v) => ((BasketSummaryView)b)._tax.Text = v?.ToString());
+    public static readonly BindableProperty ServiceChargeTextProperty = BindableProperty.Create(nameof(ServiceChargeText), typeof(string), typeof(BasketSummaryView), "£0.00", propertyChanged: (b, _, v) => ((BasketSummaryView)b)._service.Text = v?.ToString());
     public static readonly BindableProperty TotalTextProperty = BindableProperty.Create(nameof(TotalText), typeof(string), typeof(BasketSummaryView), "£0.00", propertyChanged: (b, _, v) => ((BasketSummaryView)b)._total.Text = v?.ToString());
     public static readonly BindableProperty IsEstimateProperty = BindableProperty.Create(nameof(IsEstimate), typeof(bool), typeof(BasketSummaryView), false, propertyChanged: (b, _, v) => ((BasketSummaryView)b)._estimate.IsVisible = (bool)v);
 
@@ -88,6 +90,7 @@ public class BasketSummaryView : ContentView
         _subtotal = RowValue();
         _discount = RowValue();
         _tax = RowValue();
+        _service = RowValue();
         _total = RowValue(true);
         _estimate = new Label
         {
@@ -106,6 +109,7 @@ public class BasketSummaryView : ContentView
                 Row("Subtotal", _subtotal),
                 Row("Discount", _discount),
                 Row("Tax", _tax),
+                Row("Service", _service),
                 Row("Total", _total),
                 _estimate
             }
@@ -115,6 +119,7 @@ public class BasketSummaryView : ContentView
     public string SubtotalText { get => (string)GetValue(SubtotalTextProperty); set => SetValue(SubtotalTextProperty, value); }
     public string DiscountText { get => (string)GetValue(DiscountTextProperty); set => SetValue(DiscountTextProperty, value); }
     public string TaxText { get => (string)GetValue(TaxTextProperty); set => SetValue(TaxTextProperty, value); }
+    public string ServiceChargeText { get => (string)GetValue(ServiceChargeTextProperty); set => SetValue(ServiceChargeTextProperty, value); }
     public string TotalText { get => (string)GetValue(TotalTextProperty); set => SetValue(TotalTextProperty, value); }
     public bool IsEstimate { get => (bool)GetValue(IsEstimateProperty); set => SetValue(IsEstimateProperty, value); }
 

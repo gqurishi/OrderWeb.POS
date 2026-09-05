@@ -103,7 +103,9 @@ public sealed class AuthoritativeOrderService : IOrderService, IMenuCatalogServi
             {
                 Id = Guid.NewGuid().ToString("N"),
                 TableId = tableId,
-                TableName = string.IsNullOrWhiteSpace(tableId) ? null : $"Table {tableId}",
+                TableName = string.IsNullOrWhiteSpace(tableId)
+                    ? request.OrderType
+                    : $"Table {tableId}",
                 GuestCount = Math.Max(1, request.GuestCount),
                 Status = "Open",
                 OrderType = string.IsNullOrWhiteSpace(request.OrderType) ? "Table" : request.OrderType,
@@ -448,7 +450,7 @@ public sealed class AuthoritativeOrderService : IOrderService, IMenuCatalogServi
                 Status,
                 Revision,
                 lineDtos,
-                new OrderTotalsDto(subtotal, discount, tax, grand, IsDisplayEstimate: false),
+                new OrderTotalsDto(subtotal, discount, tax, 0m, grand, IsDisplayEstimate: false),
                 UpdatedAtUtc,
                 ServerName);
         }

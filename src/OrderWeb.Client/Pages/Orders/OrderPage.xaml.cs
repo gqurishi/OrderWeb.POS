@@ -7,6 +7,7 @@ using OrderWeb.Client.Views.Orders;
 
 namespace OrderWeb.Client.Pages.Orders;
 
+[Obsolete("Step 7: use SharedOrderEntryPage / OrderEntryView. OrderPage remains only as LegacyOrderEntryAccess rollback.")]
 public partial class OrderPage : ContentPage
     {
         private readonly ClientCacheService _cache = new();
