@@ -34,3 +34,21 @@ Compatibility wrappers may retain an application-facing type name, but their vis
 Menu ownership remains with each host. Mother supplies operational and administration routes after applying its service and role policy. Client supplies only Client-supported routes. `ApplicationNavigationItem.AllowedRoles` provides the final basic-user/manager/admin filter inside the shared sidebar.
 
 `ApplicationSidebar` is also exposed separately so Mother can use the same navigation surface inside its native MAUI `Shell` flyout while retaining its established route engine. `ApplicationHeader` is used by Mother page top bars and Client page compatibility wrappers, keeping the frame visually identical during page-by-page migration.
+
+## Customer and open-order screens
+
+`OrderWeb.SharedUI.Views` owns the shared Mother-style presentation for customer and open-order flows. Hosts map MariaDB (Mother) or SQLite + Mother API (Client) into contract DTOs and handle actions; SharedUI does not branch on Mother vs Client.
+
+| Screen | Shared view |
+| --- | --- |
+| Open-order list | `OpenOrderListView` |
+| Order search | `OrderSearchView` |
+| Customer search | `CustomerSearchView` |
+| Customer details | `CustomerDetailView` |
+| Assign customer | `AssignCustomerView` |
+| Collection details | `CollectionDetailsView` |
+| Delivery details | `DeliveryDetailsView` |
+| Order history | `OrderHistoryView` |
+| Stale / offline indicator | `StaleDataBannerView` |
+
+Customer field visibility is driven by `CustomerFieldAccessPolicy` from `OrderWeb.Contracts`. Mother uses `MotherFull`. Client search/detail/cache responses must be projected with `CustomerFieldProjector` so SQLite only retains Mother-approved fields. Client order-history access follows `AllowOrderHistory`.

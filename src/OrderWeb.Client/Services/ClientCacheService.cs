@@ -1,5 +1,8 @@
 using System.Text.Json;
 using OrderWeb.Client.Models;
+using OrderWeb.Client.Services.Orders;
+using OrderWeb.Contracts.Customers;
+using OrderWeb.Contracts.Orders;
 using SQLite;
 
 namespace OrderWeb.Client.Services;
@@ -253,18 +256,31 @@ public sealed class ClientCacheService
                     now);
             }
 
+            var bootstrapPolicy = CustomerFieldAccessPolicy.ClientDefault;
             foreach (var customer in payload.Customers)
             {
+                var projected = ProjectCustomerForCache(
+                    new CachedCustomer(
+                        customer.Id,
+                        customer.MotherId,
+                        customer.Name,
+                        customer.Phone,
+                        customer.Email,
+                        customer.Address,
+                        customer.Postcode,
+                        customer.LoyaltyPoints),
+                    bootstrapPolicy);
+
                 connection.Execute(
                     "INSERT OR REPLACE INTO customers_cache (id, mother_id, name, phone, email, address, postcode, loyalty_points, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    customer.Id,
-                    customer.MotherId,
-                    customer.Name,
-                    customer.Phone,
-                    customer.Email,
-                    customer.Address,
-                    customer.Postcode,
-                    customer.LoyaltyPoints,
+                    projected.Id,
+                    projected.MotherId,
+                    projected.Name,
+                    projected.Phone,
+                    projected.Email,
+                    projected.Address,
+                    projected.Postcode,
+                    projected.LoyaltyPoints,
                     now);
             }
 
@@ -615,37 +631,342 @@ public sealed class ClientCacheService
         }
     }
 
-    public async Task<IReadOnlyList<CachedCustomer>> SearchCachedCustomersAsync(CustomerSearchRequest request)
+    public async Task<IReadOnlyList<CachedCustomer>> SearchCachedCustomersAsync(
+        CustomerSearchRequest request,
+        CustomerFieldAccessPolicy? policy = null,
+        CancellationToken cancellationToken = default)
     {
         await InitializeAsync();
+        policy ??= await LoadStoredFieldPolicyAsync(cancellationToken);
+
         var term = $"%{request.Name ?? request.Phone ?? request.AddressOrPostcode ?? string.Empty}%";
-        var rows = await _database.QueryAsync<CachedCustomerRow>(@"
+        var filters = new List<string>();
+        if (policy.Allows(CustomerFieldKind.Name, CustomerFieldAccessScope.Search))
+        {
+            filters.Add("name LIKE ?");
+        }
+
+        if (policy.Allows(CustomerFieldKind.Phone, CustomerFieldAccessScope.Search))
+        {
+            filters.Add("phone LIKE ?");
+        }
+
+        if (policy.Allows(CustomerFieldKind.Address, CustomerFieldAccessScope.Search))
+        {
+            filters.Add("address LIKE ?");
+        }
+
+        if (policy.Allows(CustomerFieldKind.Postcode, CustomerFieldAccessScope.Search))
+        {
+            filters.Add("postcode LIKE ?");
+        }
+
+        if (filters.Count == 0)
+        {
+            return Array.Empty<CachedCustomer>();
+        }
+
+        var whereClause = string.Join(" OR ", filters);
+        var args = Enumerable.Repeat<object?>(term, filters.Count).ToArray();
+        var rows = await _database.QueryAsync<CachedCustomerRow>($@"
             SELECT id, mother_id, name, phone, email, address, postcode, loyalty_points
             FROM customers_cache
-            WHERE name LIKE ? OR phone LIKE ? OR address LIKE ? OR postcode LIKE ?
+            WHERE {whereClause}
             ORDER BY updated_utc DESC
-            LIMIT 8", term, term, term, term);
+            LIMIT 8", args);
 
-        return rows.Select(row => new CachedCustomer(row.Id, row.MotherId, row.Name, row.Phone, row.Email, row.Address, row.Postcode, row.LoyaltyPoints)).ToList();
+        return rows
+            .Select(row => ProjectCustomerForCache(
+                new CachedCustomer(row.Id, row.MotherId, row.Name, row.Phone, row.Email, row.Address, row.Postcode, row.LoyaltyPoints),
+                policy))
+            .ToList();
     }
 
-    public async Task CacheCustomersAsync(IReadOnlyList<CachedCustomer> customers)
+    public async Task CacheCustomersAsync(
+        IReadOnlyList<CachedCustomer> customers,
+        CustomerFieldAccessPolicy? policy = null,
+        CancellationToken cancellationToken = default)
     {
         await InitializeAsync();
+        policy ??= await LoadStoredFieldPolicyAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow.ToString("O");
         foreach (var customer in customers)
         {
+            var projected = ProjectCustomerForCache(customer, policy);
             await _database.ExecuteAsync(
                 "INSERT OR REPLACE INTO customers_cache (id, mother_id, name, phone, email, address, postcode, loyalty_points, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                customer.Id,
-                customer.MotherId,
-                customer.Name,
-                customer.Phone,
-                customer.Email,
-                customer.Address,
-                customer.Postcode,
-                customer.LoyaltyPoints,
+                projected.Id,
+                projected.MotherId,
+                projected.Name,
+                projected.Phone,
+                projected.Email,
+                projected.Address,
+                projected.Postcode,
+                projected.LoyaltyPoints,
                 now);
+        }
+    }
+
+    public async Task<CachedCustomer?> GetCachedCustomerAsync(string customerId, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        var policy = await LoadStoredFieldPolicyAsync(cancellationToken);
+        IReadOnlyList<CachedCustomerRow> rows;
+        if (int.TryParse(customerId, out var numericId))
+        {
+            rows = await _database.QueryAsync<CachedCustomerRow>(
+                "SELECT id, mother_id, name, phone, email, address, postcode, loyalty_points FROM customers_cache WHERE id = ? LIMIT 1",
+                numericId);
+        }
+        else
+        {
+            rows = await _database.QueryAsync<CachedCustomerRow>(
+                "SELECT id, mother_id, name, phone, email, address, postcode, loyalty_points FROM customers_cache WHERE mother_id = ? LIMIT 1",
+                customerId);
+        }
+
+        var row = rows.FirstOrDefault();
+        return row is null
+            ? null
+            : ProjectCustomerForCache(
+                new CachedCustomer(row.Id, row.MotherId, row.Name, row.Phone, row.Email, row.Address, row.Postcode, row.LoyaltyPoints),
+                policy);
+    }
+
+    public async Task<IReadOnlyList<CachedOpenOrderSummary>> GetOpenOrderSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        var rows = await _database.QueryAsync<OpenOrderSummaryRow>(@"
+            SELECT o.id, o.order_number, o.order_type, o.status, o.total, o.opened_utc,
+                   c.name AS customer_name, t.table_number
+            FROM open_orders o
+            LEFT JOIN customers_cache c ON c.id = o.customer_id
+            LEFT JOIN tables t ON t.id = o.table_id
+            ORDER BY o.updated_utc DESC");
+
+        return rows.Select(row => new CachedOpenOrderSummary(
+            row.Id,
+            row.OrderNumber,
+            row.OrderType,
+            row.Status,
+            row.Total,
+            row.OpenedUtc,
+            row.CustomerName,
+            string.IsNullOrWhiteSpace(row.TableNumber) ? null : $"Table {row.TableNumber}")).ToList();
+    }
+
+    public async Task<IReadOnlyList<OrderSearchHitDto>> SearchCachedOrdersAsync(
+        string query,
+        DateOnly? onDate,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        var term = $"%{query}%";
+        var rows = await _database.QueryAsync<CachedOrderSearchRow>(@"
+            SELECT o.id, o.order_number, o.order_type, o.status, o.total, o.opened_utc,
+                   c.name AS customer_name, c.phone AS customer_phone
+            FROM open_orders o
+            LEFT JOIN customers_cache c ON c.id = o.customer_id
+            WHERE o.order_number LIKE ? OR c.phone LIKE ? OR c.name LIKE ?
+            ORDER BY o.opened_utc DESC
+            LIMIT 20", term, term, term);
+
+        return rows
+            .Where(row => MatchesDate(row.OpenedUtc, onDate))
+            .Select(row => new OrderSearchHitDto(
+                row.Id,
+                FormatOrderNumber(row.OrderNumber, row.Id),
+                ChannelLabel(row.OrderType),
+                row.CustomerName,
+                row.CustomerPhone,
+                row.Total,
+                ParseTimestamp(row.OpenedUtc),
+                row.Status,
+                "Local cache"))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<OrderHistoryItemDto>> GetCachedHistoryOrdersAsync(
+        DateOnly date,
+        OpenOrderChannelKind channel,
+        string? searchQuery,
+        CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        var rows = await _database.QueryAsync<CachedOrderSearchRow>(@"
+            SELECT o.id, o.order_number, o.order_type, o.status, o.total, o.opened_utc,
+                   c.name AS customer_name, c.phone AS customer_phone
+            FROM open_orders o
+            LEFT JOIN customers_cache c ON c.id = o.customer_id
+            WHERE o.status IN ('Closed', 'Paid', 'Voided')
+            ORDER BY o.opened_utc DESC
+            LIMIT 100");
+
+        var query = searchQuery?.Trim();
+        return rows
+            .Where(row => MatchesDate(row.OpenedUtc, date))
+            .Where(row => channel == OpenOrderChannelKind.All || MapChannel(row.OrderType) == channel)
+            .Where(row => string.IsNullOrWhiteSpace(query) ||
+                          row.OrderNumber.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                          (row.CustomerName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                          (row.CustomerPhone?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Select(row => new OrderHistoryItemDto(
+                row.Id,
+                FormatOrderNumber(row.OrderNumber, row.Id),
+                ChannelLabel(row.OrderType),
+                row.CustomerName,
+                row.Total,
+                ParseTimestamp(row.OpenedUtc),
+                row.Status,
+                "Local cache",
+                string.Equals(row.Status, "Voided", StringComparison.OrdinalIgnoreCase),
+                false))
+            .ToList();
+    }
+
+    public async Task<string?> GetDeviceConfigAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        return await GetDeviceConfigValueAsync(key);
+    }
+
+    public async Task UpsertDeviceConfigAsync(string key, string value, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        await UpsertDeviceConfigAsync(key, value);
+    }
+
+    public async Task<string?> GetSyncValueAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync();
+        var rows = await _database.QueryAsync<SyncStateRow>("SELECT value FROM sync_state WHERE key = ? LIMIT 1", key);
+        return rows.FirstOrDefault()?.Value;
+    }
+
+    private static CachedCustomer ProjectCustomerForCache(CachedCustomer source, CustomerFieldAccessPolicy policy)
+    {
+        var summary = CustomerFieldProjector.Project(
+            new CustomerSummaryDto(
+                source.Id.ToString(),
+                source.MotherId,
+                source.Name,
+                source.Phone,
+                source.Email,
+                source.Address,
+                null,
+                null,
+                source.Postcode,
+                source.LoyaltyPoints,
+                CustomerOrderKind.Both,
+                null),
+            policy,
+            CustomerFieldAccessScope.Cache);
+
+        return source with
+        {
+            Name = summary.Name ?? string.Empty,
+            Phone = summary.Phone ?? string.Empty,
+            Email = summary.Email,
+            Address = summary.Address ?? string.Empty,
+            Postcode = summary.Postcode,
+            LoyaltyPoints = summary.LoyaltyPoints ?? 0
+        };
+    }
+
+    private async Task<CustomerFieldAccessPolicy> LoadStoredFieldPolicyAsync(CancellationToken cancellationToken)
+    {
+        var stored = await GetDeviceConfigValueAsync("customer_field_policy_json");
+        if (string.IsNullOrWhiteSpace(stored))
+        {
+            return CustomerFieldAccessPolicy.ClientDefault;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<CustomerFieldPolicyCacheDto>(stored)?.ToPolicy()
+                   ?? CustomerFieldAccessPolicy.ClientDefault;
+        }
+        catch
+        {
+            return CustomerFieldAccessPolicy.ClientDefault;
+        }
+    }
+
+    private static bool MatchesDate(string? openedUtc, DateOnly? onDate)
+    {
+        if (onDate is null)
+        {
+            return true;
+        }
+
+        return DateTimeOffset.TryParse(openedUtc, out var parsed) &&
+               DateOnly.FromDateTime(parsed.LocalDateTime) == onDate.Value;
+    }
+
+    private static OpenOrderChannelKind MapChannel(string? orderType) =>
+        (orderType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "delivery" or "del" => OpenOrderChannelKind.Delivery,
+            "table" or "tbl" or "dine_in" or "dine-in" => OpenOrderChannelKind.Table,
+            _ => OpenOrderChannelKind.Collection
+        };
+
+    private static string ChannelLabel(string? orderType) =>
+        MapChannel(orderType) switch
+        {
+            OpenOrderChannelKind.Delivery => "Delivery",
+            OpenOrderChannelKind.Table => "Table",
+            _ => "Collection"
+        };
+
+    private static string FormatOrderNumber(string? orderNumber, string? fallbackId)
+    {
+        var value = !string.IsNullOrWhiteSpace(orderNumber) ? orderNumber.Trim() : fallbackId?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Order";
+        }
+
+        return value.StartsWith('#') ? value : $"#{value}";
+    }
+
+    private static DateTimeOffset ParseTimestamp(string? value) =>
+        DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.UtcNow;
+
+    private sealed record CustomerFieldPolicyCacheDto(
+        IReadOnlyList<string>? SearchFields,
+        IReadOnlyList<string>? CacheFields,
+        IReadOnlyList<string>? DetailFields,
+        bool AllowOrderHistory,
+        bool AllowCustomerDirectory,
+        bool AllowAssignCustomer)
+    {
+        public CustomerFieldAccessPolicy ToPolicy() =>
+            new(
+                ParseFields(SearchFields),
+                ParseFields(CacheFields),
+                ParseFields(DetailFields),
+                AllowOrderHistory,
+                AllowCustomerDirectory,
+                AllowAssignCustomer);
+
+        private static IReadOnlyList<CustomerFieldKind> ParseFields(IReadOnlyList<string>? values)
+        {
+            if (values is null || values.Count == 0)
+            {
+                return Array.Empty<CustomerFieldKind>();
+            }
+
+            var fields = new List<CustomerFieldKind>();
+            foreach (var value in values)
+            {
+                if (Enum.TryParse<CustomerFieldKind>(value, true, out var field))
+                {
+                    fields.Add(field);
+                }
+            }
+
+            return fields;
         }
     }
 
@@ -923,12 +1244,6 @@ public sealed class ClientCacheService
         await _database.ExecuteAsync("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES (?, ?, ?)", key, value, now);
     }
 
-    private async Task<string?> GetSyncValueAsync(string key)
-    {
-        var rows = await _database.QueryAsync<SyncStateRow>("SELECT value FROM sync_state WHERE key = ? LIMIT 1", key);
-        return rows.FirstOrDefault()?.Value;
-    }
-
     private async Task<string?> GetDeviceConfigValueAsync(string key)
     {
         var rows = await _database.QueryAsync<DeviceConfigRow>("SELECT value FROM device_config WHERE key = ? LIMIT 1", key);
@@ -1181,6 +1496,60 @@ public sealed class ClientCacheService
 
         [Column("modifier_json")]
         public string? ModifierJson { get; set; }
+    }
+
+    private sealed class OpenOrderSummaryRow
+    {
+        [Column("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [Column("order_number")]
+        public string OrderNumber { get; set; } = string.Empty;
+
+        [Column("order_type")]
+        public string OrderType { get; set; } = string.Empty;
+
+        [Column("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [Column("total")]
+        public decimal Total { get; set; }
+
+        [Column("opened_utc")]
+        public string OpenedUtc { get; set; } = string.Empty;
+
+        [Column("customer_name")]
+        public string? CustomerName { get; set; }
+
+        [Column("table_number")]
+        public string? TableNumber { get; set; }
+    }
+
+    private sealed class CachedOrderSearchRow
+    {
+        [Column("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [Column("order_number")]
+        public string OrderNumber { get; set; } = string.Empty;
+
+        [Column("order_type")]
+        public string OrderType { get; set; } = string.Empty;
+
+        [Column("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [Column("total")]
+        public decimal Total { get; set; }
+
+        [Column("opened_utc")]
+        public string OpenedUtc { get; set; } = string.Empty;
+
+        [Column("customer_name")]
+        public string? CustomerName { get; set; }
+
+        [Column("customer_phone")]
+        public string? CustomerPhone { get; set; }
     }
 
     private sealed class CachedCustomerRow

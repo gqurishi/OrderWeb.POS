@@ -1,71 +1,34 @@
-using Microsoft.Maui.Controls.Shapes;
-using OrderWeb.Client.Models;
+using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Customers;
+using SharedCustomerSearchView = OrderWeb.SharedUI.Views.CustomerSearchView;
 
 namespace OrderWeb.Client.Views.Customers;
 
+/// <summary>Thin Client host for SharedUI customer search.</summary>
 public partial class CustomerSearchView : ContentView
 {
+    private readonly SharedCustomerSearchView _sharedView = new();
+
     public CustomerSearchView()
     {
-        InitializeComponent();
-    }
-
-    public event EventHandler<string>? SearchRequested;
-    public event EventHandler<CachedCustomer>? CustomerSelected;
-
-    public string SearchText => SearchEntry.Text?.Trim() ?? string.Empty;
-
-    public void SetResults(IReadOnlyList<CachedCustomer> customers)
-    {
-        ResultsStack.Children.Clear();
-
-        if (customers.Count == 0)
+        Content = _sharedView;
+        _sharedView.SearchRequested += async (_, request) =>
         {
-            ResultsStack.Children.Add(new Label
+            var result = await ClientServiceProvider.CustomerDirectory.SearchCustomersAsync(request);
+            if (result.IsSuccess && result.Value is not null)
             {
-                Text = "No existing customer found. Continue with the form below.",
-                FontFamily = "OpenSansRegular",
-                FontSize = 14,
-                TextColor = Color.FromArgb("#64748B"),
-                Padding = new Thickness(4, 8)
-            });
-            return;
-        }
-
-        foreach (var customer in customers)
-        {
-            ResultsStack.Children.Add(BuildResultCard(customer));
-        }
-    }
-
-    private View BuildResultCard(CachedCustomer customer)
-    {
-        var card = new Border
-        {
-            BackgroundColor = Color.FromArgb("#F8FAFC"),
-            Stroke = Color.FromArgb("#E5E7EB"),
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            Padding = 14,
-            Content = new VerticalStackLayout
-            {
-                Spacing = 4,
-                Children =
-                {
-                    new Label { Text = customer.Name, FontFamily = "OpenSansSemibold", FontSize = 16, TextColor = Color.FromArgb("#1F2937") },
-                    new Label { Text = customer.Phone, FontFamily = "OpenSansRegular", FontSize = 13, TextColor = Color.FromArgb("#64748B") },
-                    new Label { Text = customer.Address, FontFamily = "OpenSansRegular", FontSize = 13, TextColor = Color.FromArgb("#64748B") }
-                }
+                _sharedView.Apply(result.Value);
             }
+
+            SearchRequested?.Invoke(this, request);
         };
-        var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => CustomerSelected?.Invoke(this, customer);
-        card.GestureRecognizers.Add(tap);
-        return card;
+        _sharedView.CustomerSelected += (_, customer) => CustomerSelected?.Invoke(this, customer);
     }
 
-    private void OnSearchClicked(object sender, EventArgs e)
-    {
-        SearchRequested?.Invoke(this, SearchText);
-    }
+    public event EventHandler<CustomerSearchRequestDto>? SearchRequested;
+    public event EventHandler<CustomerSummaryDto>? CustomerSelected;
+
+    public void SetOrderKind(CustomerOrderKind? orderKind) => _sharedView.SetOrderKind(orderKind);
+
+    public void Apply(CustomerSearchResultDto state) => _sharedView.Apply(state);
 }

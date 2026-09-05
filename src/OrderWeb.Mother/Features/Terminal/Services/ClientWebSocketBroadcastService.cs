@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using MySqlConnector;
+using OrderWeb.Contracts.Customers;
+using OrderWeb.Contracts.Services;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -70,6 +72,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/health", HandleHealthAsync);
             app.MapPost("/api/client/bootstrap", HandleBootstrapAsync);
             app.MapPost("/api/client/login", HandleLoginAsync);
+            app.MapGet("/api/client/customers/search", HandleCustomerSearchAsync);
+            app.MapGet("/api/client/customers/field-access-policy", HandleCustomerFieldPolicyAsync);
             app.MapPost("/terminals/heartbeat", HandleHeartbeatAsync);
             app.Map("/ws", HandleWebSocketAsync);
 
@@ -590,8 +594,119 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 MenuBootstrapEnabled: false,
                 OrdersBootstrapEnabled: false,
                 CustomerBootstrapEnabled: false),
+            CustomerFieldPolicy: SerializeFieldPolicy(GetClientFieldPolicy()),
             ServerTime: DateTimeOffset.Now);
     }
+
+    private async Task HandleCustomerSearchAsync(HttpContext context)
+    {
+        var terminal = await ValidateTerminalTokenAsync(context);
+        if (!terminal.Success)
+        {
+            await WriteJsonAsync(context, terminal.StatusCode, new { success = false, message = terminal.Message });
+            return;
+        }
+
+        var orderType = context.Request.Query["orderType"].ToString();
+        var name = context.Request.Query["name"].ToString();
+        var phone = context.Request.Query["phone"].ToString();
+        var addressOrPostcode = context.Request.Query["addressOrPostcode"].ToString();
+
+        var policy = GetClientFieldPolicy();
+        if (!policy.AllowCustomerDirectory)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new
+            {
+                success = false,
+                message = "Customer directory is disabled for Client terminals."
+            });
+            return;
+        }
+
+        var directory = ResolveCustomerDirectory();
+        var kind = orderType.Trim().ToLowerInvariant() switch
+        {
+            "collection" or "col" => CustomerOrderKind.Collection,
+            "delivery" or "del" => CustomerOrderKind.Delivery,
+            _ => (CustomerOrderKind?)null
+        };
+
+        var result = await directory.SearchCustomersAsync(new CustomerSearchRequestDto(
+            string.IsNullOrWhiteSpace(name) ? null : name,
+            string.IsNullOrWhiteSpace(phone) ? null : phone,
+            string.IsNullOrWhiteSpace(addressOrPostcode) ? null : addressOrPostcode,
+            kind));
+
+        if (!result.IsSuccess || result.Value == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = result.Error?.Message ?? "Customer search failed."
+            });
+            return;
+        }
+
+        var projected = result.Value.Customers
+            .Select(customer => CustomerFieldProjector.Project(customer, policy, CustomerFieldAccessScope.Search))
+            .Select(ToClientCustomerState)
+            .ToList();
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            customers = projected,
+            fieldPolicy = SerializeFieldPolicy(policy)
+        });
+    }
+
+    private async Task HandleCustomerFieldPolicyAsync(HttpContext context)
+    {
+        var terminal = await ValidateTerminalTokenAsync(context);
+        if (!terminal.Success)
+        {
+            await WriteJsonAsync(context, terminal.StatusCode, new { success = false, message = terminal.Message });
+            return;
+        }
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            policy = SerializeFieldPolicy(GetClientFieldPolicy())
+        });
+    }
+
+    private static CustomerFieldAccessPolicy GetClientFieldPolicy() =>
+        ServiceHelper.GetService<MotherClientCustomerFieldPolicyService>()?.GetClientPolicy()
+        ?? CustomerFieldAccessPolicy.ClientDefault;
+
+    private static ICustomerDirectoryService ResolveCustomerDirectory() =>
+        ServiceHelper.GetService<ICustomerDirectoryService>()
+        ?? new MotherCustomerDirectoryService(ServiceHelper.GetService<CustomerDataService>() ?? new CustomerDataService());
+
+    private static ClientCustomerFieldPolicyDto SerializeFieldPolicy(CustomerFieldAccessPolicy policy) =>
+        new(
+            SearchFields: policy.SearchFields.Select(field => field.ToString()).ToList(),
+            CacheFields: policy.CacheFields.Select(field => field.ToString()).ToList(),
+            DetailFields: policy.DetailFields.Select(field => field.ToString()).ToList(),
+            AllowOrderHistory: policy.AllowOrderHistory,
+            AllowCustomerDirectory: policy.AllowCustomerDirectory,
+            AllowAssignCustomer: policy.AllowAssignCustomer);
+
+    private static ClientCustomerState ToClientCustomerState(CustomerSummaryDto customer) =>
+        new(
+            Id: int.TryParse(customer.Id, out var parsedId) ? parsedId : 0,
+            MotherId: customer.MotherId ?? customer.Id,
+            Name: customer.Name,
+            Phone: customer.Phone,
+            PhoneNumber: customer.Phone,
+            Email: customer.Email,
+            FullAddress: customer.Address,
+            Address: customer.Address,
+            City: customer.City,
+            County: customer.County,
+            Postcode: customer.Postcode,
+            LoyaltyPoints: customer.LoyaltyPoints ?? 0);
 
     private async Task<TerminalTokenValidation> ValidateTerminalTokenAsync(HttpContext context, string? suppliedToken = null)
     {
@@ -995,6 +1110,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         BootstrapSyncInfo Sync,
         BootstrapAuthInfo Auth,
         BootstrapFeatureFlags Features,
+        ClientCustomerFieldPolicyDto CustomerFieldPolicy,
         DateTimeOffset ServerTime);
 
     private sealed record BootstrapRestaurantInfo(string Name, string Slug);
@@ -1030,6 +1146,28 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         bool MenuBootstrapEnabled,
         bool OrdersBootstrapEnabled,
         bool CustomerBootstrapEnabled);
+
+    private sealed record ClientCustomerFieldPolicyDto(
+        IReadOnlyList<string> SearchFields,
+        IReadOnlyList<string> CacheFields,
+        IReadOnlyList<string> DetailFields,
+        bool AllowOrderHistory,
+        bool AllowCustomerDirectory,
+        bool AllowAssignCustomer);
+
+    private sealed record ClientCustomerState(
+        int Id,
+        string? MotherId,
+        string? Name,
+        string? Phone,
+        string? PhoneNumber,
+        string? Email,
+        string? FullAddress,
+        string? Address,
+        string? City,
+        string? County,
+        string? Postcode,
+        int LoyaltyPoints);
 
     private sealed record ClientActivationResult(
         bool Success,

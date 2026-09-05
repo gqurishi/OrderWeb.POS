@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using OrderWeb.Contracts.Services;
 using POS_in_NET.Services;
 using POS_in_NET.Pages;
 using MyFirstMauiApp.Services;
@@ -156,6 +157,16 @@ public static class MauiProgram
 		builder.Services.AddSingleton<CustomerDataService>();
 		builder.Services.AddSingleton<DeliveryZoneService>();
 		builder.Services.AddSingleton<RiderOperationsService>();
+		builder.Services.AddSingleton<MotherClientCustomerFieldPolicyService>();
+		builder.Services.AddSingleton<ICustomerDirectoryService, MotherCustomerDirectoryService>();
+		builder.Services.AddSingleton<ICollectionDetailsService, MotherCollectionDetailsService>();
+		builder.Services.AddSingleton<IDeliveryDetailsService, MotherDeliveryDetailsService>();
+		builder.Services.AddSingleton<ICustomerPreviousOrdersService, MotherCustomerPreviousOrdersService>();
+		builder.Services.AddSingleton<MotherOpenOrderListService>();
+		builder.Services.AddSingleton<IOpenOrderListService>(sp => sp.GetRequiredService<MotherOpenOrderListService>());
+		builder.Services.AddSingleton<IOrderSearchService, MotherOrderSearchService>();
+		builder.Services.AddSingleton<MotherOrderHistoryService>();
+		builder.Services.AddSingleton<IOrderHistoryService>(sp => sp.GetRequiredService<MotherOrderHistoryService>());
 		
 		// Register Database Cleanup Services (3-month rolling data)
 		builder.Services.AddSingleton<DatabaseCleanupService>();
