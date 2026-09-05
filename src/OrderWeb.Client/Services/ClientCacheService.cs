@@ -223,12 +223,13 @@ public sealed class ClientCacheService
             foreach (var floor in payload.Floors)
             {
                 connection.Execute(
-                    "INSERT OR REPLACE INTO floors (id, mother_id, name, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO floors (id, mother_id, name, sort_order, is_active, background_image, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     floor.Id,
                     floor.MotherId,
                     floor.Name,
                     floor.SortOrder,
                     floor.IsActive ? 1 : 0,
+                    floor.BackgroundImagePath,
                     now);
             }
 
@@ -240,7 +241,7 @@ public sealed class ClientCacheService
                 }
 
                 connection.Execute(
-                    "INSERT OR REPLACE INTO tables (id, mother_id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, 0, 1, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO tables (id, mother_id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, shape, design_icon, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, 0, 1, ?, ?, ?, ?, ?)",
                     table.Id,
                     table.MotherId,
                     table.FloorId,
@@ -250,6 +251,8 @@ public sealed class ClientCacheService
                     table.CurrentTotal,
                     table.PositionX,
                     table.PositionY,
+                    table.Shape,
+                    table.DesignIcon,
                     now);
             }
 
@@ -417,8 +420,8 @@ public sealed class ClientCacheService
     {
         await InitializeAsync();
 
-        var floors = await _database.QueryAsync<CachedFloorRow>("SELECT id, name, sort_order FROM floors WHERE is_active = 1 ORDER BY sort_order, name");
-        var tables = await _database.QueryAsync<CachedTableRow>("SELECT id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y FROM tables ORDER BY table_number");
+        var floors = await _database.QueryAsync<CachedFloorRow>("SELECT id, name, sort_order, background_image FROM floors WHERE is_active = 1 ORDER BY sort_order, name");
+        var tables = await _database.QueryAsync<CachedTableRow>("SELECT id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, shape, design_icon FROM tables ORDER BY table_number");
 
         return floors
             .Select(floor => new CachedFloor(
@@ -441,8 +444,11 @@ public sealed class ClientCacheService
                         table.MinutesOccupied,
                         table.Version,
                         table.PositionX,
-                        table.PositionY))
-                    .ToList()))
+                        table.PositionY,
+                        table.Shape,
+                        table.DesignIcon))
+                    .ToList(),
+                floor.BackgroundImage))
             .ToList();
     }
 
@@ -917,6 +923,95 @@ public sealed class ClientCacheService
         await _database.ExecuteAsync("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES (?, ?, ?)", key, value, now);
     }
 
+
+    /// <summary>Phase 15 — last successfully applied Mother config versions.</summary>
+    public async Task<OrderWeb.Contracts.Config.ConfigVersionsDto> GetAppliedConfigVersionsAsync()
+    {
+        static long Parse(string? value) => long.TryParse(value, out var n) ? n : 0L;
+        return new OrderWeb.Contracts.Config.ConfigVersionsDto(
+            Parse(await GetSyncValueAsync("branding_version")),
+            Parse(await GetSyncValueAsync("menu_version")),
+            Parse(await GetSyncValueAsync("floor_version")),
+            Parse(await GetSyncValueAsync("permissions_version")),
+            Parse(await GetSyncValueAsync("feature_version")),
+            Parse(await GetSyncValueAsync("settings_version")));
+    }
+
+    public async Task SaveAppliedConfigVersionsAsync(OrderWeb.Contracts.Config.ConfigVersionsDto versions)
+    {
+        await UpsertSyncStateAsync("branding_version", versions.BrandingVersion.ToString());
+        await UpsertSyncStateAsync("menu_version", versions.MenuVersion.ToString());
+        await UpsertSyncStateAsync("floor_version", versions.FloorVersion.ToString());
+        await UpsertSyncStateAsync("permissions_version", versions.PermissionsVersion.ToString());
+        await UpsertSyncStateAsync("feature_version", versions.FeatureVersion.ToString());
+        await UpsertSyncStateAsync("settings_version", versions.SettingsVersion.ToString());
+        await UpsertSyncStateAsync("config_last_applied_utc", DateTimeOffset.UtcNow.ToString("O"));
+    }
+
+    public async Task SaveAppliedConfigGroupVersionAsync(OrderWeb.Contracts.Config.ConfigGroupKind group, long version)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "branding_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "menu_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "floor_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "permissions_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "feature_version",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "settings_version",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        await UpsertSyncStateAsync(key, version.ToString());
+    }
+
+
+    public async Task SaveConfigGroupSnapshotAsync(OrderWeb.Contracts.Config.ConfigGroupKind group, string json)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "config_snapshot_branding",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "config_snapshot_menu",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "config_snapshot_floors",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "config_snapshot_permissions",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "config_snapshot_features",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "config_snapshot_settings",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        await UpsertDeviceConfigAsync(key, json);
+        await SaveAppliedConfigGroupVersionAsync(group, ExtractVersion(json));
+    }
+
+    public async Task<string?> GetConfigGroupSnapshotAsync(OrderWeb.Contracts.Config.ConfigGroupKind group)
+    {
+        var key = group switch
+        {
+            OrderWeb.Contracts.Config.ConfigGroupKind.Branding => "config_snapshot_branding",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Menu => "config_snapshot_menu",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Floors => "config_snapshot_floors",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Permissions => "config_snapshot_permissions",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Features => "config_snapshot_features",
+            OrderWeb.Contracts.Config.ConfigGroupKind.Settings => "config_snapshot_settings",
+            _ => throw new ArgumentOutOfRangeException(nameof(group))
+        };
+        return await GetDeviceConfigValueAsync(key);
+    }
+
+    private static long ExtractVersion(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("version", out var v) && v.TryGetInt64(out var n))
+                return n;
+            if (doc.RootElement.TryGetProperty("Version", out var v2) && v2.TryGetInt64(out var n2))
+                return n2;
+        }
+        catch
+        {
+        }
+
+        return 0;
+    }
+
     private async Task UpsertSyncStateAsync(string key, string value)
     {
         var now = DateTimeOffset.UtcNow.ToString("O");
@@ -1006,6 +1101,17 @@ public sealed class ClientCacheService
         public int Id { get; set; }
     }
 
+    
+    public async Task UpdateTableCoversAsync(int tableId, int covers)
+    {
+        await InitializeAsync();
+        await _database.ExecuteAsync(
+            "UPDATE tables SET covers = ?, updated_utc = ? WHERE id = ?",
+            covers,
+            DateTimeOffset.UtcNow.ToString("O"),
+            tableId);
+    }
+
     private sealed class CachedFloorRow
     {
         [Column("id")]
@@ -1016,6 +1122,9 @@ public sealed class ClientCacheService
 
         [Column("sort_order")]
         public int SortOrder { get; set; }
+
+        [Column("background_image")]
+        public string? BackgroundImage { get; set; }
     }
 
     private sealed class CachedTableRow
@@ -1061,6 +1170,12 @@ public sealed class ClientCacheService
 
         [Column("position_y")]
         public int PositionY { get; set; }
+
+        [Column("shape")]
+        public string? Shape { get; set; }
+
+        [Column("design_icon")]
+        public string? DesignIcon { get; set; }
     }
 
     private sealed class CachedCategoryRow

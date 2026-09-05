@@ -1,4 +1,7 @@
 using Microsoft.Extensions.Logging;
+using OrderWeb.Contracts.Orders;
+using OrderWeb.Contracts.Config;
+using OrderWeb.Contracts.Services;
 using POS_in_NET.Services;
 using POS_in_NET.Pages;
 using MyFirstMauiApp.Services;
@@ -77,6 +80,8 @@ public static class MauiProgram
 		
 		// Register Restaurant Management Services
 		builder.Services.AddSingleton<FloorService>();
+		builder.Services.AddSingleton<MotherFloorService>();
+		builder.Services.AddSingleton<MotherTableService>();
 		builder.Services.AddSingleton<RestaurantTableService>();
 		builder.Services.AddSingleton<TableSessionService>();
 		builder.Services.AddSingleton<ReservationSyncService>();
@@ -149,6 +154,13 @@ public static class MauiProgram
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
+		// Phase 12 — shared authoritative order contracts (idempotency + revalidation)
+		builder.Services.AddSingleton<AuthoritativeOrderService>();
+		builder.Services.AddSingleton<IOrderService>(sp => sp.GetRequiredService<AuthoritativeOrderService>());
+		builder.Services.AddSingleton<IMenuCatalogService>(sp => sp.GetRequiredService<AuthoritativeOrderService>());
+		// Phase 15 — Mother-controlled configuration groups (versioned, not one mega payload)
+		builder.Services.AddSingleton<MotherConfigCatalogService>();
+		builder.Services.AddSingleton<IConfigSyncService>(sp => sp.GetRequiredService<MotherConfigCatalogService>());
 		
 		// Register OrderWeb UK address lookup service
 		builder.Services.AddSingleton<PostcodeLookupService>();

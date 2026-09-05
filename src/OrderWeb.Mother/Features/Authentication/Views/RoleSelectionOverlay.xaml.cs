@@ -1,71 +1,47 @@
-using Microsoft.Maui.Controls;
+using OrderWeb.SharedUI.Controls;
 using POS_in_NET.Models;
-using System;
 
-namespace POS_in_NET.Views
+namespace POS_in_NET.Views;
+
+public partial class RoleSelectionOverlay : ContentView
 {
-    public partial class RoleSelectionOverlay : ContentView
-    {
-        public event EventHandler<UserRole> RoleSelected;
-        public event EventHandler OverlayClosed;
-        
-        public RoleSelectionOverlay()
-        {
-            InitializeComponent();
-        }
-        
-        public void ShowOverlay()
-        {
-            IsVisible = true;
-            System.Diagnostics.Debug.WriteLine("Role selection overlay shown");
-        }
-        
-        public void HideOverlay()
-        {
-            IsVisible = false;
-            System.Diagnostics.Debug.WriteLine("Role selection overlay hidden");
-        }
+    public event EventHandler<UserRole>? RoleSelected;
+    public event EventHandler? OverlayClosed;
 
-        private void OnStaffSelected(object sender, EventArgs e)
+    public RoleSelectionOverlay()
+    {
+        InitializeComponent();
+        RoleView.ShowDefaultPosRoles();
+    }
+
+    public void ShowOverlay()
+    {
+        IsVisible = true;
+        RoleView.ShowDefaultPosRoles();
+    }
+
+    public void HideOverlay()
+    {
+        IsVisible = false;
+    }
+
+    private void OnSharedRoleSelected(object? sender, RoleOption option)
+    {
+        var role = option.Key switch
         {
-            System.Diagnostics.Debug.WriteLine("Staff role selected");
-            RoleSelected?.Invoke(this, UserRole.Staff);
-            HideOverlay();
-        }
-        
-        private void OnUserSelected(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("User role selected");
-            RoleSelected?.Invoke(this, UserRole.User);
-            HideOverlay();
-        }
-        
-        private void OnManagerSelected(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("Manager role selected");
-            RoleSelected?.Invoke(this, UserRole.Manager);
-            HideOverlay();
-        }
-        
-        private void OnAdminSelected(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("Admin role selected");
-            RoleSelected?.Invoke(this, UserRole.Admin);
-            HideOverlay();
-        }
-        
-        private void OnCancelClicked(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("Role selection cancelled");
-            OverlayClosed?.Invoke(this, EventArgs.Empty);
-            HideOverlay();
-        }
-        
-        private void OnOverlayTapped(object sender, EventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("Overlay background tapped - closing");
-            OverlayClosed?.Invoke(this, EventArgs.Empty);
-            HideOverlay();
-        }
+            "Staff" => UserRole.Staff,
+            "User" => UserRole.User,
+            "Manager" => UserRole.Manager,
+            "Admin" => UserRole.Admin,
+            _ => UserRole.User
+        };
+        RoleSelected?.Invoke(this, role);
+        HideOverlay();
+    }
+
+    private void OnSharedDismissed(object? sender, EventArgs e)
+    {
+        OverlayClosed?.Invoke(this, EventArgs.Empty);
+        HideOverlay();
     }
 }

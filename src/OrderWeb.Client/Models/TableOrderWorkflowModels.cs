@@ -1,6 +1,6 @@
 namespace OrderWeb.Client.Models;
 
-public sealed record CachedFloor(int Id, string Name, int SortOrder, IReadOnlyList<CachedTable> Tables);
+public sealed record CachedFloor(int Id, string Name, int SortOrder, IReadOnlyList<CachedTable> Tables, string? BackgroundImagePath = null);
 
 public sealed record CachedTable(
     int Id,
@@ -16,7 +16,9 @@ public sealed record CachedTable(
     int MinutesOccupied,
     int Version,
     int PositionX = 0,
-    int PositionY = 0);
+    int PositionY = 0,
+    string? Shape = null,
+    string? DesignIcon = null);
 
 public sealed record CachedMenuCategory(int Id, string Name, string Color, int SortOrder);
 

@@ -45,7 +45,13 @@ public sealed record BootstrapProductModifier(int ProductId, int ModifierGroupId
 
 public sealed record BootstrapTaxRate(int Id, string MotherId, string Name, decimal RatePercent, bool IsActive);
 
-public sealed record BootstrapFloor(int Id, string MotherId, string Name, int SortOrder, bool IsActive);
+public sealed record BootstrapFloor(
+    int Id,
+    string MotherId,
+    string Name,
+    int SortOrder,
+    bool IsActive,
+    string? BackgroundImagePath = null);
 
 public sealed record BootstrapTable(
     int Id,
@@ -56,7 +62,9 @@ public sealed record BootstrapTable(
     string Status,
     decimal CurrentTotal,
     int PositionX = 0,
-    int PositionY = 0);
+    int PositionY = 0,
+    string? Shape = null,
+    string? DesignIcon = null);
 
 public sealed record BootstrapOpenOrder(
     string Id,

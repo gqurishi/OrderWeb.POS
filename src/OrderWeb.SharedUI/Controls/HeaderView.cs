@@ -21,16 +21,16 @@ public class HeaderView : ContentView
         MenuButton = IconButton("mian.png"); LogoutButton = IconButton("outred.png");
         MenuButton.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
         LogoutButton.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
-        _eyebrow = new Label { Text = "Welcome to", FontSize = 14 }; _eyebrow.Use(Label.TextColorProperty, "OwTextMuted");
-        _title = new Label { Text = "Restaurant POS", FontSize = 24, FontAttributes = FontAttributes.Bold }; _title.Use(Label.TextColorProperty, "OwTextStrong");
-        _date = new Label { FontSize = 13, HorizontalTextAlignment = TextAlignment.End }; _date.Use(Label.TextColorProperty, "OwTextSecondary");
-        _time = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End }; _time.Use(Label.TextColorProperty, "OwPrimary");
+        _eyebrow = new Label { Text = "Welcome to", FontSize = 14 }; _eyebrow.Use(Label.TextColorProperty, "PosTextMuted");
+        _title = new Label { Text = "Restaurant POS", FontSize = 24, FontAttributes = FontAttributes.Bold }; _title.Use(Label.TextColorProperty, "PosTextStrong");
+        _date = new Label { FontSize = 13, HorizontalTextAlignment = TextAlignment.End }; _date.Use(Label.TextColorProperty, "PosTextSecondary");
+        _time = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End }; _time.Use(Label.TextColorProperty, "PosPrimary");
         _connection = new ConnectionIndicator { IsVisible = false, VerticalOptions = LayoutOptions.Center };
         var titleStack = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Children = { _eyebrow, _title } };
         var clockStack = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { _date, _time } };
         var grid = new Grid { HeightRequest = 88, Padding = new Thickness(18, 0), ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 16 };
         grid.Add(MenuButton); grid.Add(titleStack, 1); grid.Add(clockStack, 2); grid.Add(_connection, 3); grid.Add(LogoutButton, 4);
-        var border = new Border { StrokeThickness = 0, Content = grid }; border.Use(Border.BackgroundColorProperty, "OwSurface"); Content = border;
+        var border = new Border { StrokeThickness = 0, Content = grid }; border.Use(Border.BackgroundColorProperty, "PosSurface"); Content = border;
         _timer = Dispatcher.CreateTimer(); _timer.Interval = TimeSpan.FromSeconds(1); _timer.Tick += (_, _) => UpdateClock(); _timer.Start(); UpdateClock();
     }
 

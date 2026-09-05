@@ -6,19 +6,18 @@
 
     <!-- 
     ═══════════════════════════════════════════════════════════
-    OrderWeb.net Design System - Color Palette
+    OrderWeb.net Design System - Color Palette (LEGACY HOST COPY)
     ═══════════════════════════════════════════════════════════
-    
-    Light Theme Colors
-    Converted from HSL to HEX for MAUI compatibility
-    
-    Based on: https://orderweb.net design system
-    Last Updated: October 12, 2025
+
+    Authoritative POS tokens now live in OrderWeb.SharedUI as Pos*.
+    App startup reasserts semantic keys (Primary, ButtonPrimary, …) onto Pos*.
+    Keep this file until all Mother screens migrate off local keys, then delete.
+    Values below are aligned to the Mother POS chrome / SharedUI Pos* reference.
     ═══════════════════════════════════════════════════════════
     -->
 
-    <!-- PRIMARY COLORS -->
-    <Color x:Key="Primary">#4A90E2</Color>
+    <!-- PRIMARY COLORS (aligned to PosPrimary) -->
+    <Color x:Key="Primary">#2563EB</Color>
     <!-- HSL: 224° 82% 57% - Medium Blue - Main brand color -->
     
     <Color x:Key="PrimaryContainer">#E3F2FD</Color>

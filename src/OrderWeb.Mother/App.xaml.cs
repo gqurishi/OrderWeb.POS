@@ -1,3 +1,4 @@
+using OrderWeb.SharedUI.Themes;
 using POS_in_NET.Services;
 
 namespace POS_in_NET;
@@ -14,7 +15,8 @@ public partial class App : Application
 			AppDiagnostics.Log("=== APP CONSTRUCTOR ===");
 
 			InitializeComponent();
-			AppDiagnostics.Log("InitializeComponent() completed");
+			DesignSystemBootstrap.LockHostResources(Resources);
+			AppDiagnostics.Log("InitializeComponent() completed; SharedUI Pos* design system locked");
 
 			AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 			TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;

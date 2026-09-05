@@ -23,17 +23,17 @@ public class ApplicationHeader : ContentView
         var menu = IconButton("mian.png", 38);
         var logout = IconButton("outred.png", 38);
         _minimize = new Button { Text = "−", IsVisible = false, WidthRequest = 36, HeightRequest = 36, MinimumWidthRequest = 36, MinimumHeightRequest = 36, Padding = 0, BackgroundColor = Colors.Transparent, BorderWidth = 0, FontSize = 22, FontAttributes = FontAttributes.Bold };
-        _minimize.Use(Button.TextColorProperty, "OwTextPrimary");
+        _minimize.Use(Button.TextColorProperty, "PosTextPrimary");
         menu.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
         logout.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
         _minimize.Clicked += (_, _) => MinimizeClicked?.Invoke(this, EventArgs.Empty);
 
         _title = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
-        _title.Use(Label.TextColorProperty, "OwTextStrong");
+        _title.Use(Label.TextColorProperty, "PosTextStrong");
         _date = new Label { FontSize = 12, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
-        _date.Use(Label.TextColorProperty, "OwTextStrong");
+        _date.Use(Label.TextColorProperty, "PosTextStrong");
         _time = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
-        _time.Use(Label.TextColorProperty, "OwPrimary");
+        _time.Use(Label.TextColorProperty, "PosPrimary");
         _identity = new UserTerminalInfo { VerticalOptions = LayoutOptions.Center };
         _connection = new ConnectionIndicator { VerticalOptions = LayoutOptions.Center };
 
@@ -42,7 +42,7 @@ public class ApplicationHeader : ContentView
         var grid = new Grid { HeightRequest = 88, Padding = new Thickness(16, 0), ColumnDefinitions = { new ColumnDefinition(54), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 12 };
         grid.Add(menu); grid.Add(_title, 1); grid.Add(right, 2);
         var shell = new Border { StrokeThickness = 0, Content = grid };
-        shell.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
+        shell.Use(Border.BackgroundColorProperty, "PosSurfaceMuted");
         Content = shell;
 
         _timer = Dispatcher.CreateTimer();
