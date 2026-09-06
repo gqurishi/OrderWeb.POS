@@ -10,6 +10,7 @@ public partial class CollectionOrderPage : ContentPage
     private readonly ClientCacheService _cache = new();
     private readonly MotherCustomerClient _customerClient = new();
     private readonly MotherOrderClient _orderClient = new();
+    private readonly ClientOfflinePolicy _offlinePolicy = new();
     private CachedCustomer? _selectedCustomer;
     private bool _isContinuing;
 
@@ -87,16 +88,13 @@ public partial class CollectionOrderPage : ContentPage
         try
         {
             var request = new CustomerSearchRequest("Collection", searchName, searchPhone, null);
-            var cached = await _cache.SearchCachedCustomersAsync(request);
             var mother = await _customerClient.SearchCustomersAsync(request);
             var results = mother
-                .Concat(cached)
                 .GroupBy(customer => string.IsNullOrWhiteSpace(customer.MotherId) ? customer.Id.ToString() : customer.MotherId)
                 .Select(group => group.First())
                 .Take(10)
                 .ToList();
 
-            await _cache.CacheCustomersAsync(results);
             SearchResultsCollection.ItemsSource = results;
             SearchResultsBorder.IsVisible = results.Count > 0;
             NoResultsLabel.IsVisible = results.Count == 0;
@@ -195,9 +193,15 @@ public partial class CollectionOrderPage : ContentPage
 
         try
         {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.SubmitFinalOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                ShowStatus(decision.Message, "#DC2626");
+                return;
+            }
             ShowStatus("Saving customer with Mother POS...", "#64748B");
             var savedCustomer = await _customerClient.SaveCustomerAsync(draft);
-            await _cache.CacheCustomersAsync(new[] { savedCustomer });
+            await _cache.CacheCustomerForActiveOrderAsync(savedCustomer, isDelivery: false);
 
             ShowStatus("Opening collection order...", "#64748B");
             var session = await _cache.GetCurrentLoginSessionAsync();

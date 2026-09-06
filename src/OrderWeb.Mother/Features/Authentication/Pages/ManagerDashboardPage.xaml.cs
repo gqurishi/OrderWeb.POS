@@ -1,5 +1,6 @@
 using POS_in_NET.Services;
 using POS_in_NET.Helpers;
+using POS_in_NET.Models;
 using System.Linq;
 
 namespace POS_in_NET.Pages;
@@ -24,6 +25,81 @@ public partial class ManagerDashboardPage : ContentPage
         _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
         _orderServiceAvailabilityService = ServiceHelper.GetService<OrderServiceAvailabilityService>()
             ?? new OrderServiceAvailabilityService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService(), _authService);
+        HostSharedDashboard();
+    }
+
+    private void HostSharedDashboard()
+    {
+        var capabilities = MotherCapabilityResolver.ForRole(_authService.CurrentUser?.Role);
+        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            OrderWeb.Contracts.Features.PosFeatureKeys.DineIn,
+            OrderWeb.Contracts.Features.PosFeatureKeys.Collection,
+            OrderWeb.Contracts.Features.PosFeatureKeys.Delivery
+        };
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Table))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.DineIn);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+
+        var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
+        {
+            Title = "Manager Dashboard",
+            Subtitle = _authService.CurrentUser?.Name is { Length: > 0 } name ? $"Welcome, {name}" : "Manager"
+        };
+        vm.ApplyCapabilities(capabilities, features, new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Manager and User dashboards intentionally expose the same four
+            // operational actions. Administrative tools remain in the sidebar.
+            "restaurant", "collection", "delivery", "reservation"
+        });
+        vm.TileSelected += async (_, tile) =>
+        {
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                switch (tile.Route)
+                {
+                    case "restaurant":
+                        // Match the User dashboard: Restaurant opens the live
+                        // visual table layout, not the floor/table admin page.
+                        await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
+                        break;
+                    case "liveorder":
+                        await _navigationCoordinator.NavigateShellAsync("liveorder", animated: false);
+                        break;
+                    case "reservation":
+                        await _navigationCoordinator.NavigateShellAsync("reservation", animated: false);
+                        break;
+                    case "collection":
+                        await _navigationCoordinator.NavigateTemporaryRouteAsync("collection", source: this);
+                        break;
+                    case "delivery":
+                        await _navigationCoordinator.NavigateTemporaryRouteAsync("delivery", source: this);
+                        break;
+                    case "giftcards":
+                        await _navigationCoordinator.NavigateShellAsync("giftcards", animated: false);
+                        break;
+                    case "loyalty":
+                        await _navigationCoordinator.NavigateShellAsync("loyalty", animated: false);
+                        break;
+                    case "report":
+                        await _navigationCoordinator.NavigateShellAsync("report", animated: false);
+                        break;
+                    case "settings":
+                        await _navigationCoordinator.NavigateShellAsync("settings", animated: false);
+                        break;
+                }
+            });
+        };
+
+        var host = this.FindByName<ScrollView>("MainScrollView");
+        if (host is not null)
+        {
+            host.Content = new OrderWeb.SharedUI.Views.DashboardView { ViewModel = vm };
+        }
     }
 
     protected override async void OnAppearing()

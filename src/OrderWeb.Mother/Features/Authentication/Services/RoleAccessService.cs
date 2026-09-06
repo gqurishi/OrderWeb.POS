@@ -40,8 +40,8 @@ public class RoleAccessService
         {
             [UserRole.User] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "login", "userdashboard", "collection", "delivery", "liveorder", "visuallayout",
-                "reservation", "weborders"
+                "login", "userdashboard", "restaurant", "collection", "delivery", "visuallayout",
+                "liveorder", "reservation"
             },
             [UserRole.Staff] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -49,9 +49,8 @@ public class RoleAccessService
             },
             [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "login", "managerdashboard", "restaurant", "collection", "delivery", "liveorder",
-                "visuallayout", "floor", "table", "giftcards", "loyalty", "reservation",
-                "weborders", "orderhistory"
+                "login", "managerdashboard", "restaurant", "collection", "delivery", "visuallayout",
+                "liveorder", "reservation", "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
             },
             [UserRole.Admin] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {

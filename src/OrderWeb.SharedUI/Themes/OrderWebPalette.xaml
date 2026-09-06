@@ -52,8 +52,26 @@
     <Color x:Key="OwOffline">#EF4444</Color>
     <Color x:Key="OwConnecting">#F59E0B</Color>
 
+    <!-- Stable semantic names for new shared screens. Ow* keys remain for compatibility. -->
+    <Color x:Key="PosPrimary">#2563EB</Color>
+    <Color x:Key="PosPrimaryPressed">#1D4ED8</Color>
+    <Color x:Key="PosBackground">#F8FAFC</Color>
+    <Color x:Key="PosSurface">#FFFFFF</Color>
+    <Color x:Key="PosTextPrimary">#0F172A</Color>
+    <Color x:Key="PosTextSecondary">#475569</Color>
+    <Color x:Key="PosBorder">#E2E8F0</Color>
+    <Color x:Key="PosSuccess">#10B981</Color>
+    <Color x:Key="PosWarning">#F59E0B</Color>
+    <Color x:Key="PosError">#EF4444</Color>
+    <Color x:Key="PosOnline">#10B981</Color>
+    <Color x:Key="PosOffline">#EF4444</Color>
+
     <SolidColorBrush x:Key="OwPrimaryBrush" Color="{StaticResource OwPrimary}" />
     <SolidColorBrush x:Key="OwBackgroundBrush" Color="{StaticResource OwBackground}" />
     <SolidColorBrush x:Key="OwSurfaceBrush" Color="{StaticResource OwSurface}" />
     <SolidColorBrush x:Key="OwBorderBrush" Color="{StaticResource OwBorder}" />
+    <SolidColorBrush x:Key="PosPrimaryBrush" Color="{StaticResource PosPrimary}" />
+    <SolidColorBrush x:Key="PosBackgroundBrush" Color="{StaticResource PosBackground}" />
+    <SolidColorBrush x:Key="PosSurfaceBrush" Color="{StaticResource PosSurface}" />
+    <SolidColorBrush x:Key="PosBorderBrush" Color="{StaticResource PosBorder}" />
 </ResourceDictionary>

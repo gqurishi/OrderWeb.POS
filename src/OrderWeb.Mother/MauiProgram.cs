@@ -54,6 +54,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<DatabaseService>();
 		builder.Services.AddSingleton<OrderLifecycleRolloutService>();
 		builder.Services.AddSingleton(_ => AuthenticationService.Instance);
+		builder.Services.AddSingleton<MotherAuthenticationService>();
+		builder.Services.AddSingleton<OrderWeb.Contracts.Services.IAuthenticationService>(sp => sp.GetRequiredService<MotherAuthenticationService>());
 		builder.Services.AddSingleton<RoleAccessService>();
 		builder.Services.AddSingleton<PermissionService>();
 		builder.Services.AddSingleton<InactivityService>();

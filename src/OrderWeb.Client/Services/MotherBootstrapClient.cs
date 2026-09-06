@@ -9,10 +9,40 @@ namespace OrderWeb.Client.Services;
 public sealed class MotherBootstrapClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan[] RetryDelays =
+    {
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(3),
+        TimeSpan.FromSeconds(8)
+    };
 
     public BootstrapDiagnostics? LastDiagnostics { get; private set; }
 
     public async Task<BootstrapPayload> RequestBootstrapAsync(BootstrapRequest request, IProgress<BootstrapProgress>? progress = null)
+    {
+        BootstrapException? lastError = null;
+        for (var attempt = 0; attempt <= RetryDelays.Length; attempt++)
+        {
+            try
+            {
+                return await RequestBootstrapOnceAsync(request, progress);
+            }
+            catch (BootstrapException ex) when (attempt < RetryDelays.Length && IsRetryable(ex))
+            {
+                lastError = ex;
+                var delay = RetryDelays[attempt];
+                progress?.Report(new BootstrapProgress(BootstrapStage.Connecting, $"Mother connection failed. Retrying in {delay.TotalSeconds:0} seconds ({attempt + 1}/{RetryDelays.Length})...", 0.10));
+                await Task.Delay(delay);
+            }
+        }
+
+        throw lastError ?? new BootstrapException("Mother POS bootstrap failed.");
+    }
+
+    private static bool IsRetryable(BootstrapException exception) =>
+        exception.Diagnostics?.ErrorType is "Timeout" or "HTTP request error";
+
+    private async Task<BootstrapPayload> RequestBootstrapOnceAsync(BootstrapRequest request, IProgress<BootstrapProgress>? progress = null)
     {
         progress?.Report(new BootstrapProgress(BootstrapStage.Connecting, "Connecting to Mother POS...", 0.10));
 

@@ -12,7 +12,8 @@ public class ConnectionIndicator : StatusBadge
         {
             "connected" or "online" => StatusKind.Success,
             "offline" or "mother offline" or "mother_offline" or "disconnected" => StatusKind.Error,
-            "syncing" or "reconnecting" or "connecting" => StatusKind.Warning,
+            "syncing" or "synchronizing" or "reconnecting" or "connecting" or "reconnect required" => StatusKind.Warning,
+            "data may be outdated" or "updates available" or "pending" or "pending/unconfirmed operation" => StatusKind.Warning,
             _ => StatusKind.Info
         };
         Text = value;

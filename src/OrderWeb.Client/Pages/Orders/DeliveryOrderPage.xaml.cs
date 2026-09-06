@@ -10,6 +10,7 @@ public partial class DeliveryOrderPage : ContentPage
     private readonly ClientCacheService _cache = new();
     private readonly MotherCustomerClient _customerClient = new();
     private readonly MotherOrderClient _orderClient = new();
+    private readonly ClientOfflinePolicy _offlinePolicy = new();
     private DeliveryZoneQuote? _deliveryQuote;
     private CachedCustomer? _selectedCustomer;
 
@@ -157,16 +158,13 @@ public partial class DeliveryOrderPage : ContentPage
 
         ShowStatus("Searching customers...", "#718096");
         var request = new CustomerSearchRequest("Delivery", name, phone, addressOrPostcode);
-        var cached = await _cache.SearchCachedCustomersAsync(request);
         var mother = await _customerClient.SearchCustomersAsync(request);
         var results = mother
-            .Concat(cached)
             .GroupBy(customer => string.IsNullOrWhiteSpace(customer.MotherId) ? customer.Id.ToString() : customer.MotherId)
             .Select(group => group.First())
             .Take(10)
             .ToList();
 
-        await _cache.CacheCustomersAsync(results);
         return results;
     }
 
@@ -324,9 +322,15 @@ public partial class DeliveryOrderPage : ContentPage
 
         try
         {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.SubmitFinalOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                ShowStatus(decision.Message, "#DC2626");
+                return;
+            }
             ShowStatus("Saving customer with Mother POS...", "#718096");
             var savedCustomer = await _customerClient.SaveCustomerAsync(draft);
-            await _cache.CacheCustomersAsync(new[] { savedCustomer });
+            await _cache.CacheCustomerForActiveOrderAsync(savedCustomer, isDelivery: true);
 
             ShowStatus("Opening delivery order...", "#718096");
             var session = await _cache.GetCurrentLoginSessionAsync();

@@ -31,4 +31,43 @@
     <x:Double x:Key="OwIconSize">24</x:Double>
     <x:Double x:Key="OwIconSizeLarge">32</x:Double>
     <x:Double x:Key="OwDialogIconSize">74</x:Double>
+
+    <!-- Stable semantic tokens for new shared screens. -->
+    <x:Double x:Key="PosSpacing2Xs">2</x:Double>
+    <x:Double x:Key="PosSpacingXs">4</x:Double>
+    <x:Double x:Key="PosSpacingSm">8</x:Double>
+    <x:Double x:Key="PosSpacingMd">12</x:Double>
+    <x:Double x:Key="PosSpacingLg">16</x:Double>
+    <x:Double x:Key="PosSpacingXl">20</x:Double>
+    <x:Double x:Key="PosSpacing2Xl">24</x:Double>
+    <x:Double x:Key="PosSpacing3Xl">32</x:Double>
+    <x:Double x:Key="PosSpacing4Xl">40</x:Double>
+    <x:Double x:Key="PosSpacing5Xl">48</x:Double>
+
+    <x:Double x:Key="PosButtonHeight">48</x:Double>
+    <x:Int32 x:Key="PosButtonCornerRadius">12</x:Int32>
+    <x:Double x:Key="PosHeaderHeight">88</x:Double>
+    <x:Double x:Key="PosSidebarWidth">280</x:Double>
+    <x:Double x:Key="PosInputHeight">48</x:Double>
+    <x:Double x:Key="PosProductButtonHeight">78</x:Double>
+    <x:Double x:Key="PosCategoryButtonHeight">54</x:Double>
+    <x:Double x:Key="PosDialogWidth">450</x:Double>
+    <x:Double x:Key="PosBasketWidth">400</x:Double>
+    <Thickness x:Key="PosDashboardTilePadding">18</Thickness>
+    <x:Double x:Key="PosDashboardTileSpacing">10</x:Double>
+    <x:Double x:Key="PosDashboardTileCornerRadius">20</x:Double>
+    <x:Double x:Key="PosCornerRadiusSmall">8</x:Double>
+    <x:Double x:Key="PosCornerRadius">12</x:Double>
+    <x:Double x:Key="PosCornerRadiusLarge">16</x:Double>
+    <x:Double x:Key="PosCornerRadiusDialog">22</x:Double>
+    <x:Double x:Key="PosBorderThin">1</x:Double>
+    <x:Double x:Key="PosBorderEmphasis">2</x:Double>
+    <x:Double x:Key="PosIconSizeSmall">18</x:Double>
+    <x:Double x:Key="PosIconSize">24</x:Double>
+    <x:Double x:Key="PosIconSizeLarge">32</x:Double>
+    <x:Double x:Key="PosTouchTargetMinimum">44</x:Double>
+    <x:Double x:Key="PosAnimationFastMs">120</x:Double>
+    <x:Double x:Key="PosAnimationNormalMs">200</x:Double>
+    <x:Double x:Key="PosAnimationSlowMs">300</x:Double>
+    <x:Double x:Key="PosDisabledOpacity">0.45</x:Double>
 </ResourceDictionary>

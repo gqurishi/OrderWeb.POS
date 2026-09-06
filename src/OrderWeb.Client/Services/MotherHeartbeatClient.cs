@@ -102,6 +102,7 @@ public sealed class MotherHeartbeatClient : IAsyncDisposable
             "online");
 
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        ClientCompatibilityHeaders.Apply(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.TerminalToken);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);

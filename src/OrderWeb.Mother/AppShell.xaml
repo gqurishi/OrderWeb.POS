@@ -21,6 +21,19 @@
                                    ShowUpdateButton="True" />
     </Shell.FlyoutContent>
 
+    <!--
+        Database/terminal setup is deliberately the Shell's first page.
+        StartupNavigationService moves configured terminals to login only after
+        the saved database connection has passed its startup gate.
+    -->
+    <ShellContent
+        Title="Terminal Setup"
+        ContentTemplate="{DataTemplate pages:TerminalSetupPage}"
+        Route="terminalsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutBehavior="Disabled"
+        Shell.FlyoutItemIsVisible="False" />
+
     <!-- Login Page (Flyout Disabled) -->
     <ShellContent
         ContentTemplate="{DataTemplate pages:LoginPage}"
@@ -180,13 +193,6 @@
         Title="Recent Customers"
         ContentTemplate="{DataTemplate pages:CustomerDataPage}"
         Route="customerdata"
-        Shell.NavBarIsVisible="False"
-        Shell.FlyoutItemIsVisible="False" />
-
-    <ShellContent
-        Title="Terminal Setup"
-        ContentTemplate="{DataTemplate pages:TerminalSetupPage}"
-        Route="terminalsetup"
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 

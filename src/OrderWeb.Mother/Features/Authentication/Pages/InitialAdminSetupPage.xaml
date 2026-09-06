@@ -68,6 +68,7 @@
                            TextColor="#334155" />
                     <Entry x:Name="PinEntry"
                            Placeholder="Choose a 4-digit PIN"
+                           Text="1111"
                            Keyboard="Numeric"
                            MaxLength="4"
                            IsPassword="True"
@@ -83,6 +84,7 @@
                            TextColor="#334155" />
                     <Entry x:Name="ConfirmPinEntry"
                            Placeholder="Re-enter PIN"
+                           Text="1111"
                            Keyboard="Numeric"
                            MaxLength="4"
                            IsPassword="True"

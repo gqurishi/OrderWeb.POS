@@ -4,20 +4,23 @@
 
 | Requirement | Shared control |
 | --- | --- |
-| Primary and secondary buttons | `SharedButton` (`ButtonVariant`) |
+| Primary and secondary buttons | `PosButton` (`SharedButton` compatibility base, `ButtonVariant`) |
 | Text and PIN inputs | `SharedTextInput`, `SharedPinInput` |
 | Number keypad | `NumberKeypad` |
 | Dashboard tile | `DashboardTile` |
 | Sidebar item | `SidebarItemView` |
-| Header | `ApplicationHeader` (`HeaderView` remains available for compact cards) |
+| Header | `PosHeader` (`ApplicationHeader` compatibility base; `HeaderView` remains available for compact cards) |
 | User/terminal information | `UserTerminalInfo` |
 | Connection indicator | `ConnectionIndicator` |
+| Floor selector | `FloorSelector` |
+| Guest count | `GuestCountControl` |
 | Table card | `TableCard` |
 | Product button | `ProductButton` |
 | Category button | `CategoryButton` |
 | Order line | `OrderLineView` |
 | Status badge | `StatusBadge` (`StatusKind`) |
 | Confirmation and error dialogs | `ConfirmationDialog`, `ErrorDialog` |
+| Session expired | `SessionExpiredDialog` |
 
 Both application projects reference this project and merge `OrderWebTheme` in `App.xaml`. New screens consume these types with:
 
@@ -26,6 +29,10 @@ xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedU
 ```
 
 Compatibility wrappers may retain an application-facing type name, but their visual tree must be a shared control rather than another implementation.
+
+The Phase 4 proof controls are `PosButton`, `DashboardTile`, and `PosHeader`.
+Their shared dimensions use the `PosButton*`, `PosDashboardTile*`, and
+`PosHeader*` theme resources. Mother remains the canonical visual reference.
 
 ## Shared application shell
 

@@ -210,6 +210,7 @@ public sealed class MotherCustomerClient
     private static HttpClient CreateClient(MotherClientAuth auth)
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        ClientCompatibilityHeaders.Apply(client);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", auth.Settings.TerminalId);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", auth.Settings.TerminalToken);
         if (!string.IsNullOrWhiteSpace(auth.Session?.SessionToken))

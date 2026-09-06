@@ -13,6 +13,11 @@ filenames such as `dashboard.png` and `table_1.png`.
 - `Payments`: built-in cash, card, and gift-card icons.
 - `Status`: built-in connection and operation status icons.
 
+`SharedImageNames` is the stable code catalog for these packaged assets. Warning
+and error artwork is provided by `status_warning.svg` and `status_error.svg`;
+MAUI exposes SVG resources to application code using their generated `.png`
+resource names.
+
 ## Never place here
 
 Restaurant-controlled content must remain outside Shared UI:

@@ -38,9 +38,11 @@ public partial class ConnectionStatusView : ContentView
     {
         return status?.Trim().ToLowerInvariant() switch
         {
-            "connected" => "Connected",
+            "connected" or "mother online" => "Mother online",
             "syncing" => "Syncing",
             "reconnecting" => "Reconnecting",
+            "reconnect required" => "Reconnect required",
+            "data may be outdated" or "updates available" => "Data may be outdated",
             "mother offline" or "mother_offline" or "offline" => "Mother Offline",
             _ => "Connected"
         };

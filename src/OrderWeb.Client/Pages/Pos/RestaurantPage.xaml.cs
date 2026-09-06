@@ -1,12 +1,154 @@
+using OrderWeb.Client.Models;
+using OrderWeb.Client.Pages.Orders;
+using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Dtos;
+using OrderWeb.SharedUI.Controls;
+using OrderWeb.SharedUI.Views;
+
 namespace OrderWeb.Client.Pages.Pos;
 
 public partial class RestaurantPage : ContentPage
 {
+    private readonly ClientCacheService _cache = new();
+    private readonly RestaurantTablesView _tablesView = new();
+    private readonly GuestCountControl _guestCount = new();
+    private RestaurantTableDto? _pendingTable;
+    private Grid? _guestOverlay;
+
     public RestaurantPage()
     {
         InitializeComponent();
+        Shell.SetNavBarIsVisible(this, false);
+        _tablesView.TableSelected += OnTableSelected;
+        Root.Children.Add(_tablesView);
+        _ = LoadAsync();
+    }
 
-        var tableLayoutPage = new TableLayoutPage();
-        Root.Children.Add(tableLayoutPage.Content);
+    private async Task LoadAsync()
+    {
+        await _cache.InitializeAsync();
+        var floors = await _cache.GetFloorsWithTablesAsync();
+        if (floors.Count == 0)
+        {
+            floors =
+            [
+                new CachedFloor(1, "Main Floor", 1,
+                [
+                    new CachedTable(10, 1, "10", 4, "Available", 0m, null, 0, null, null, 0, 1, 52, 64),
+                    new CachedTable(11, 1, "11", 4, "Available", 0m, null, 0, null, null, 0, 1, 264, 64),
+                    new CachedTable(12, 1, "12", 4, "Occupied", 0m, "demo-12", 4, null, "Ordering", 0, 1, 476, 64)
+                ])
+            ];
+        }
+
+        var floorVersion = floors.SelectMany(f => f.Tables).Select(t => t.Version).DefaultIfEmpty(1).Max().ToString();
+        var floorDto = new FloorSnapshotDto(
+            floorVersion,
+            floors.Select(f => new FloorDto(f.Id.ToString(), f.Name, f.SortOrder)).ToList());
+
+        var tableDto = new TableSnapshotDto(
+            floorVersion,
+            floors.SelectMany(f => f.Tables.Select(t => new RestaurantTableDto(
+                t.Id.ToString(),
+                t.FloorId.ToString(),
+                t.TableNumber,
+                t.Seats,
+                t.Status,
+                t.PositionX,
+                t.PositionY,
+                t.CurrentOrderId,
+                t.Version))).ToList());
+
+        _tablesView.Bind(floorDto, tableDto);
+    }
+
+    private void OnTableSelected(object? sender, TableSelectedEventArgs e)
+    {
+        _pendingTable = e.Table;
+        if (!string.Equals(e.Table.Status, "Available", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(e.Table.OpenOrderId))
+        {
+            _ = OpenOrderAsync(e.Table, Math.Max(1, e.Table.Capacity));
+            return;
+        }
+
+        ShowGuestOverlay();
+    }
+
+    private void ShowGuestOverlay()
+    {
+        if (_guestOverlay is not null)
+        {
+            Root.Children.Remove(_guestOverlay);
+        }
+
+        _guestCount.Count = 2;
+        var confirm = new SharedButton { Text = "Open table" };
+        confirm.Clicked += async (_, _) =>
+        {
+            if (_pendingTable is null) return;
+            HideGuestOverlay();
+            await OpenOrderAsync(_pendingTable, _guestCount.Count);
+        };
+        var cancel = new SharedButton { Text = "Cancel", Variant = ButtonVariant.Secondary };
+        cancel.Clicked += (_, _) => HideGuestOverlay();
+
+        var buttons = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 12
+        };
+        buttons.Add(cancel);
+        buttons.Add(confirm, 1);
+
+        var panel = new Border
+        {
+            Padding = 24,
+            StrokeThickness = 1,
+            WidthRequest = 360,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            Content = new VerticalStackLayout
+            {
+                Spacing = 16,
+                Children = { _guestCount, buttons }
+            }
+        };
+        panel.SetDynamicResource(Border.BackgroundColorProperty, "OwSurface");
+        panel.SetDynamicResource(Border.StrokeProperty, "OwBorder");
+
+        _guestOverlay = new Grid
+        {
+            BackgroundColor = Color.FromArgb("#80000000"),
+            Children = { panel }
+        };
+        Root.Children.Add(_guestOverlay);
+    }
+
+    private void HideGuestOverlay()
+    {
+        if (_guestOverlay is null) return;
+        Root.Children.Remove(_guestOverlay);
+        _guestOverlay = null;
+    }
+
+    private async Task OpenOrderAsync(RestaurantTableDto table, int covers)
+    {
+        var cached = new CachedTable(
+            int.TryParse(table.Id, out var id) ? id : 0,
+            int.TryParse(table.FloorId, out var floorId) ? floorId : 0,
+            table.Name,
+            table.Capacity,
+            table.Status,
+            0m,
+            table.OpenOrderId,
+            covers,
+            null,
+            null,
+            0,
+            (int)table.Revision,
+            (int)table.X,
+            (int)table.Y);
+        await Navigation.PushAsync(new OrderPage(cached, covers), false);
     }
 }

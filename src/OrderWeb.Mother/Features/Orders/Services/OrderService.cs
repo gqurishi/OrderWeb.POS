@@ -3120,6 +3120,57 @@ public class OrderService
     }
 
     /// <summary>
+    /// Finds the final ledger row for an idempotent payment reference.  This is
+    /// deliberately read-only and is used after an interrupted client request
+    /// so the terminal can check Mother rather than submit another charge.
+    /// </summary>
+    public async Task<(string OrderId, OrderPayment Payment)?> FindPaymentByReferenceAsync(string reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference)) return null;
+
+        try
+        {
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            await EnsureLifecycleSchemaAsync(connection);
+            const string sql = @"
+                SELECT o.order_id, p.id, p.order_id, p.attempt_no, p.payment_method, p.amount,
+                       p.currency_code, p.status, p.reference, p.tip_amount, p.metadata_json,
+                       p.created_at, p.created_by
+                FROM order_payments p
+                INNER JOIN orders o ON o.id = p.order_id
+                WHERE p.reference = @reference
+                ORDER BY p.id DESC
+                LIMIT 1";
+            using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@reference", reference);
+            using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+            if (!await reader.ReadAsync()) return null;
+
+            return (reader.GetString(0), new OrderPayment
+            {
+                Id = reader.GetInt32(1),
+                OrderDbId = reader.GetInt32(2),
+                AttemptNo = reader.GetInt32(3),
+                PaymentMethod = reader.GetString(4),
+                Amount = reader.GetDecimal(5),
+                CurrencyCode = reader.GetString(6),
+                Status = reader.GetString(7),
+                Reference = reader.IsDBNull(8) ? null : reader.GetString(8),
+                TipAmount = reader.IsDBNull(9) ? 0m : reader.GetDecimal(9),
+                MetadataJson = reader.IsDBNull(10) ? null : reader.GetString(10),
+                CreatedAt = reader.GetDateTime(11),
+                CreatedBy = reader.IsDBNull(12) ? null : reader.GetString(12)
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error finding payment by reference: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Quarantines legacy empty table rows created by the old eager-draft flow.
     /// It deliberately does not touch any order with items, payments, refunds,
     /// kitchen tracking, or kitchen revisions. Rows are retained for audit but

@@ -10,11 +10,11 @@ public class SharedButton : Button
 
     public SharedButton()
     {
-        HeightRequest = 48;
         MinimumHeightRequest = 44;
-        CornerRadius = 12;
         Padding = new Thickness(20, 0);
         FontAttributes = FontAttributes.Bold;
+        this.Use(HeightRequestProperty, "PosButtonHeight");
+        this.Use(CornerRadiusProperty, "PosButtonCornerRadius");
         ApplyVariant();
     }
 
@@ -35,5 +35,14 @@ public class SharedButton : Button
         };
         this.Use(BackgroundColorProperty, background);
         this.Use(TextColorProperty, foreground);
+    }
+}
+
+/// <summary>The canonical Mother-derived button used by both POS hosts.</summary>
+public class PosButton : SharedButton
+{
+    public PosButton()
+    {
+        this.Use(StyleProperty, "PosButtonStyle");
     }
 }

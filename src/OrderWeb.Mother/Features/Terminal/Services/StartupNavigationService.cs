@@ -22,7 +22,11 @@ public static class StartupNavigationService
         if (!schemaGate.IsCompatible)
         {
             Preferences.Default.Set("child_schema_gate_message", schemaGate.Message);
-            return "//login";
+            // A configured flag is not enough to enter the POS. If the saved
+            // connection is stale, missing, or unreachable, return to the first
+            // stage so credentials can be corrected and tested.
+            TerminalConfigurationService.SetConfigured(false);
+            return "//terminalsetup";
         }
 
         Preferences.Default.Remove("child_schema_gate_message");

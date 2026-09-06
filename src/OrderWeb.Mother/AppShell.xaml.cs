@@ -456,41 +456,58 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         var role = _authService.CurrentUser?.Role;
         var roleName = role?.ToString() ?? string.Empty;
         var terminal = TerminalConfigurationService.GetConfiguration();
+        var capabilities = MotherCapabilityResolver.ForRole(role);
+        var features = MotherFeatureSet();
+        var hostRoutes = role switch
+        {
+            UserRole.User => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "restaurant", "collection", "delivery", "liveorder", "reservation"
+            },
+            UserRole.Manager => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
+                "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
+            },
+            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "collection", "delivery",
+                "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "report", "staffclock",
+                "inventory", "printersetup", "settings", "terminalhealth", "customerdata"
+            }
+        };
+
         SharedSidebar.CurrentRole = roleName;
         SharedSidebar.UserName = _authService.CurrentUser?.Name ?? "No user";
         SharedSidebar.TerminalName = terminal.TerminalName;
         SharedSidebar.ConnectionStatus = TerminalConnectionStateService.IsMotherDisconnectedBannerVisible ? "Mother Offline" : "Connected";
-        SharedSidebar.ItemsSource = MotherNavigationItems(role);
+        SharedSidebar.AvailableCapabilities = capabilities;
+        SharedSidebar.AvailableFeatures = features;
+        SharedSidebar.ItemsSource = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, hostRoutes);
         SharedSidebar.Refresh();
+    }
+
+    private IReadOnlySet<string> MotherFeatureSet()
+    {
+        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Table))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.DineIn);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.GiftCards);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.CustomerPoints);
+        return features;
     }
 
     private IReadOnlyList<ApplicationNavigationItem> MotherNavigationItems(UserRole? role)
     {
-        var items = new List<ApplicationNavigationItem>();
-        void Add(string route, string title, string icon, bool visible)
-        {
-            if (visible) items.Add(new ApplicationNavigationItem(route, title, icon));
-        }
-        Add("dashboard", "Dashboard", "dashboard.png", role != null);
-        Add("cashdrawer", "Cash Drawer", "cashdrawer.png", _roleAccessService.CanOpenCashDrawer(role));
-        Add("foodmenu", "Food Menu", "foodmenu.png", _roleAccessService.CanAccessFeature(role, "foodmenu"));
-        Add("liveorder", "Live Order", "liveorder.png", _roleAccessService.CanAccessFeature(role, "liveorder"));
-        Add("restaurant", "Restaurant", "restaurant.png", _roleAccessService.CanAccessFeature(role, "restaurant") && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Table));
-        Add("collection", "Collection", "collection.png", _roleAccessService.CanAccessFeature(role, "collection") && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection));
-        Add("delivery", "Delivery", "delivery.png", _roleAccessService.CanAccessFeature(role, "delivery") && _orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery));
-        Add("weborders", "Rider", "weborders.png", _roleAccessService.CanAccessFeature(role, "weborders"));
-        Add("giftcards", "Gift Cards", "giftcards.png", _roleAccessService.CanAccessFeature(role, "giftcards"));
-        Add("loyalty", "Loyalty Points", "loyalty.png", _roleAccessService.CanAccessFeature(role, "loyalty"));
-        Add("reservation", "Reservation", "reservation.png", _roleAccessService.CanAccessFeature(role, "reservation"));
-        Add("orderhistory", "Order History", "orderhistory.png", _roleAccessService.CanAccessFeature(role, "orderhistory"));
-        Add("report", "Report", "report.png", _roleAccessService.CanAccessFeature(role, "report"));
-        Add("staffclock", "Staff Clock", "staff.png", _roleAccessService.CanAccessFeature(role, "staffclock"));
-        Add("inventory", "Inventory", "inventory.png", _roleAccessService.CanAccessFeature(role, "inventory"));
-        Add("printersetup", "Printers", "printers.png", _roleAccessService.CanAccessFeature(role, "printersetup"));
-        Add("settings", "Settings", "settings.png", _roleAccessService.CanAccessFeature(role, "settings"));
-        Add("terminalhealth", "Terminal Health", "tarminal.png", _roleAccessService.CanAccessFeature(role, "terminalhealth"));
-        Add("customerdata", "Recent Customers", "customers.png", _roleAccessService.CanAccessFeature(role, "customerdata"));
-        return items;
+        // Legacy helper retained for compile safety; sidebar now uses PosNavigationCatalog.
+        return OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(
+            MotherCapabilityResolver.ForRole(role),
+            MotherFeatureSet());
     }
 
     private void ClearMenuSelections()

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using OrderWeb.Client.Models;
 using SQLite;
@@ -7,6 +9,8 @@ namespace OrderWeb.Client.Services;
 public sealed class ClientCacheService
 {
     public const int CurrentSchemaVersion = 1;
+    private const string SecureTerminalTokenKey = "orderweb.client.terminal-token";
+    private const string SecureSessionTokenKey = "orderweb.client.session-token";
 
     private static readonly string[] LegacyDemoProductNames =
     {
@@ -57,16 +61,37 @@ public sealed class ClientCacheService
         await UpsertSyncStateAsync("schema_version", CurrentSchemaVersion.ToString());
         await PurgeLegacyDemoAccessDataAsync();
         await PurgeLegacyDemoMenuDataAsync();
+
+        // A crash after a sync began but before its transaction committed does
+        // not corrupt the prior snapshot. Keep a recovery marker so the next
+        // connection performs a new full snapshot rather than trusting partial
+        // transport state.
+        if (string.Equals(await GetSyncValueAsync("sync_in_progress"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            await UpsertSyncStateAsync("forced_full_resync", "true");
+            await UpsertSyncStateAsync("sync_in_progress", "false");
+        }
     }
 
     public async Task SaveBootstrapAsync(BootstrapPayload payload)
     {
         await InitializeAsync();
-        await ClearCacheTablesAsync();
+        ValidateSnapshot(payload);
+        var checksum = ComputeSnapshotChecksum(payload);
+        var startedUtc = DateTimeOffset.UtcNow.ToString("O");
+        // This marker is not a data-version update. It lets startup recover
+        // safely if the app stops before the following transaction commits.
+        await UpsertSyncStateAsync("sync_in_progress", "true");
 
         await _database.RunInTransactionAsync(connection =>
         {
             var now = DateTimeOffset.UtcNow.ToString("O");
+            // Clearing and replacing a full snapshot must be one transaction.
+            // Never leave a Client with an empty cache after a failed download.
+            foreach (var table in ClientCacheSchema.ResetTables)
+            {
+                connection.Execute($"DELETE FROM {table}");
+            }
             var taxRateIds = payload.TaxRates.Select(taxRate => taxRate.Id).ToHashSet();
             var categoryIds = payload.Categories.Select(category => category.Id).ToHashSet();
             var productIds = payload.Products
@@ -79,7 +104,11 @@ public sealed class ClientCacheService
                 .Where(table => floorIds.Contains(table.FloorId))
                 .Select(table => table.Id)
                 .ToHashSet();
-            var customerIds = payload.Customers.Select(customer => customer.Id).ToHashSet();
+            // Customer search data is not part of a Child bootstrap. Mother is
+            // the source of truth and searches are performed online with an
+            // authenticated staff session. This prevents a whole customer
+            // directory being copied to a terminal.
+            var customerIds = new HashSet<int>();
             var openOrderIds = payload.OpenOrders.Select(order => order.Id).ToHashSet();
 
             connection.Execute(
@@ -105,7 +134,6 @@ public sealed class ClientCacheService
                 now);
 
             connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('terminal_id', ?, ?)", payload.Terminal.TerminalId, now);
-            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('terminal_token', ?, ?)", payload.Terminal.TerminalToken, now);
             connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('api_base_url', ?, ?)", payload.Terminal.ApiBaseUrl, now);
             connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('websocket_url', ?, ?)", payload.Terminal.WebSocketUrl, now);
             connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('terminal_name', ?, ?)", payload.Terminal.TerminalName, now);
@@ -253,21 +281,6 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var customer in payload.Customers)
-            {
-                connection.Execute(
-                    "INSERT OR REPLACE INTO customers_cache (id, mother_id, name, phone, email, address, postcode, loyalty_points, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    customer.Id,
-                    customer.MotherId,
-                    customer.Name,
-                    customer.Phone,
-                    customer.Email,
-                    customer.Address,
-                    customer.Postcode,
-                    customer.LoyaltyPoints,
-                    now);
-            }
-
             foreach (var order in payload.OpenOrders)
             {
                 var tableId = order.TableId.HasValue && tableIds.Contains(order.TableId.Value)
@@ -378,8 +391,27 @@ public sealed class ClientCacheService
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('table_version', ?, ?)", payload.Sync.TableVersion, now);
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('order_version', ?, ?)", payload.Sync.OrderVersion, now);
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('permission_version', ?, ?)", payload.Sync.PermissionVersion, now);
+            // The transaction above has now replaced the complete validated
+            // snapshot. Clear pending group flags only in this same commit.
+            foreach (var section in new[] { "menu", "categories", "products", "availability", "branding", "floors", "tables", "permissions", "features", "settings", "images" })
+            {
+                connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES (?, 'false', ?)", $"pending_{section}_sync", now);
+            }
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('payload_version', '1', ?)", now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('payload_checksum', ?, ?)", checksum, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('forced_full_resync', 'false', ?)", now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('sync_in_progress', 'false', ?)", now);
             connection.Execute("INSERT OR REPLACE INTO event_checkpoint (id, stream_name, last_event_id, last_event_utc, updated_utc) VALUES (1, 'mother', ?, ?, ?)", payload.Sync.LastEventId, payload.Sync.GeneratedUtc, now);
+            connection.Execute(
+                "INSERT INTO sync_history (sync_kind, status, bootstrap_id, payload_version, checksum, message, started_utc, completed_utc) VALUES ('full_snapshot', 'completed', ?, 1, ?, 'Snapshot validated and applied atomically.', ?, ?)",
+                payload.Sync.BootstrapId,
+                checksum,
+                startedUtc,
+                now);
         });
+
+        await SecureStorage.Default.SetAsync(SecureTerminalTokenKey, payload.Terminal.TerminalToken);
+        await _database.ExecuteAsync("DELETE FROM device_config WHERE key = 'terminal_token'");
 
         await PurgeLegacyDemoMenuDataAsync();
     }
@@ -631,22 +663,27 @@ public sealed class ClientCacheService
 
     public async Task CacheCustomersAsync(IReadOnlyList<CachedCustomer> customers)
     {
+        // Kept as a compatibility no-op while callers move to the explicit
+        // active-order method. A search result must never become a local
+        // customer directory on a Child device.
+        await Task.CompletedTask;
+    }
+
+    public async Task CacheCustomerForActiveOrderAsync(CachedCustomer customer, bool isDelivery)
+    {
         await InitializeAsync();
         var now = DateTimeOffset.UtcNow.ToString("O");
-        foreach (var customer in customers)
-        {
-            await _database.ExecuteAsync(
-                "INSERT OR REPLACE INTO customers_cache (id, mother_id, name, phone, email, address, postcode, loyalty_points, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                customer.Id,
-                customer.MotherId,
-                customer.Name,
-                customer.Phone,
-                customer.Email,
-                customer.Address,
-                customer.Postcode,
-                customer.LoyaltyPoints,
-                now);
-        }
+        await _database.ExecuteAsync(
+            "INSERT OR REPLACE INTO customers_cache (id, mother_id, name, phone, email, address, postcode, loyalty_points, updated_utc) VALUES (?, ?, ?, ?, NULL, ?, ?, 0, ?)",
+            customer.Id,
+            customer.MotherId,
+            customer.Name,
+            customer.Phone,
+            // A collection order has no need to retain an address. Email and
+            // loyalty data are never copied to the Client cache.
+            isDelivery ? customer.Address : string.Empty,
+            isDelivery ? customer.Postcode : null,
+            now);
     }
 
     public async Task SavePrintRequestAsync(PrintRequestState request)
@@ -668,6 +705,85 @@ public sealed class ClientCacheService
         await InitializeAsync();
         var rows = await _database.QueryAsync<PrintRequestRow>("SELECT id, print_type, order_id, status, message, created_utc, updated_utc FROM print_requests ORDER BY updated_utc DESC LIMIT 8");
         return rows.Select(row => new PrintRequestState(row.Id, row.PrintType, row.OrderId, row.Status, row.Message, row.CreatedUtc, row.UpdatedUtc)).ToList();
+    }
+
+    public async Task<CachedImageMetadata?> GetImageMetadataAsync(string imageId)
+    {
+        await InitializeAsync();
+        var rows = await _database.QueryAsync<ImageCacheRow>(
+            "SELECT image_id, remote_path, content_hash, local_path, mime_type, last_synchronized_utc FROM image_cache WHERE image_id = ? LIMIT 1", imageId);
+        var row = rows.FirstOrDefault();
+        return row == null ? null : new CachedImageMetadata(row.ImageId, row.RemotePath, row.ContentHash, row.LocalPath, row.MimeType, row.LastSynchronizedUtc);
+    }
+
+    public async Task SaveImageMetadataAsync(CachedImageMetadata image)
+    {
+        await InitializeAsync();
+        await _database.ExecuteAsync(
+            "INSERT OR REPLACE INTO image_cache (image_id, remote_path, content_hash, local_path, mime_type, last_synchronized_utc) VALUES (?, ?, ?, ?, ?, ?)",
+            image.ImageId, image.RemotePath, image.ContentHash, image.LocalPath, image.MimeType, image.LastSynchronizedUtc);
+    }
+
+    /// <returns>false when this is a duplicate or stale event already applied.</returns>
+    public async Task<bool> RecordAuthoritativeEventAsync(long eventId, string eventType, string version, DateTimeOffset occurredAt)
+    {
+        await InitializeAsync();
+        var previous = await GetSyncValueAsync("last_event_id");
+        if (long.TryParse(previous, out var appliedId) && eventId <= appliedId)
+        {
+            return false;
+        }
+        if (long.TryParse(previous, out var previousId) && eventId > previousId + 1)
+        {
+            await UpsertSyncStateAsync("forced_full_resync", "true");
+        }
+
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        await _database.ExecuteAsync(
+            "INSERT OR REPLACE INTO event_checkpoint (id, stream_name, last_event_id, last_event_utc, updated_utc) VALUES (1, 'mother', ?, ?, ?)",
+            eventId.ToString(), occurredAt.ToString("O"), now);
+        await UpsertSyncStateAsync("last_event_id", eventId.ToString());
+        await UpsertSyncStateAsync("last_event_type", eventType);
+        await UpsertSyncStateAsync("last_event_version", version);
+
+        var section = ResolveConfigurationSection(eventType);
+        if (section != null)
+        {
+            // This is deliberately a *server* version.  The matching local
+            // version changes only inside SaveBootstrapAsync after the entire
+            // validated snapshot transaction commits.
+            await UpsertSyncStateAsync($"server_{section}_version", version);
+            await UpsertSyncStateAsync($"pending_{section}_sync", "true");
+            await UpsertSyncStateAsync("forced_full_resync", "true");
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Records Mother versions as pending. This intentionally never updates a
+    /// local section version: only SaveBootstrapAsync can do that after its
+    /// full SQLite transaction has committed.
+    /// </summary>
+    public async Task RecordMotherConfigurationVersionsAsync(IReadOnlyDictionary<string, string> versions)
+    {
+        await InitializeAsync();
+        await _database.RunInTransactionAsync(connection =>
+        {
+            var now = DateTimeOffset.UtcNow.ToString("O");
+            foreach (var pair in versions)
+            {
+                connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES (?, ?, ?)", $"server_{pair.Key}_version", pair.Value, now);
+            }
+        });
+    }
+
+    public async Task MarkWebSocketReconnectedAsync()
+    {
+        await InitializeAsync();
+        // WebSocket is a notification transport. It cannot prove no message
+        // was missed while disconnected, so require Mother version comparison.
+        await UpsertSyncStateAsync("forced_full_resync", "true");
+        await UpsertSyncStateAsync("websocket_reconnected_utc", DateTimeOffset.UtcNow.ToString("O"));
     }
 
     public async Task<IReadOnlyList<CachedOnlineOrder>> GetOnlineOrdersAsync()
@@ -745,13 +861,13 @@ public sealed class ClientCacheService
         var now = DateTimeOffset.UtcNow.ToString("O");
 
         await _database.ExecuteAsync(
-            "INSERT OR REPLACE INTO current_session (id, user_id, user_name, role, session_token, expires_utc, updated_utc) VALUES (1, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO current_session (id, user_id, user_name, role, session_token, expires_utc, updated_utc) VALUES (1, ?, ?, ?, '', ?, ?)",
             session.UserId,
             session.UserName,
             session.Role,
-            session.SessionToken,
             session.ExpiresAtUtc.ToString("O"),
             now);
+        await SecureStorage.Default.SetAsync(SecureSessionTokenKey, session.SessionToken);
 
         await _database.ExecuteAsync("DELETE FROM permissions_cache WHERE user_id = ?", session.UserId);
 
@@ -779,10 +895,23 @@ public sealed class ClientCacheService
             return null;
         }
 
-        if (!DateTimeOffset.TryParse(row.ExpiresUtc, out var expiresAt))
+        if (!DateTimeOffset.TryParse(row.ExpiresUtc, out var expiresAt) || expiresAt <= DateTimeOffset.UtcNow)
         {
-            expiresAt = DateTimeOffset.UtcNow.AddHours(12);
+            await ClearLoginSessionAsync();
+            return null;
         }
+
+        var sessionToken = await SecureStorage.Default.GetAsync(SecureSessionTokenKey);
+        if (string.IsNullOrWhiteSpace(sessionToken))
+        {
+            sessionToken = row.SessionToken;
+            if (!string.IsNullOrWhiteSpace(sessionToken))
+            {
+                await SecureStorage.Default.SetAsync(SecureSessionTokenKey, sessionToken);
+                await _database.ExecuteAsync("UPDATE current_session SET session_token = '' WHERE id = 1");
+            }
+        }
+        if (string.IsNullOrWhiteSpace(sessionToken)) return null;
 
         var permissions = await _database.QueryAsync<PermissionRow>(
             "SELECT permission_key FROM permissions_cache WHERE user_id = ? AND is_allowed = 1",
@@ -793,7 +922,7 @@ public sealed class ClientCacheService
             row.UserName,
             row.Role,
             permissions.Select(permission => permission.PermissionKey).ToList(),
-            row.SessionToken,
+            sessionToken,
             expiresAt);
     }
 
@@ -801,6 +930,7 @@ public sealed class ClientCacheService
     {
         await InitializeAsync();
         await _database.ExecuteAsync("DELETE FROM current_session");
+        SecureStorage.Default.Remove(SecureSessionTokenKey);
     }
 
     public async Task MarkTerminalDisabledAsync(string reason)
@@ -846,7 +976,17 @@ public sealed class ClientCacheService
             return null;
         }
 
-        var terminalToken = await GetDeviceConfigValueAsync("terminal_token") ?? row.AuthTokenHint ?? string.Empty;
+        var terminalToken = await SecureStorage.Default.GetAsync(SecureTerminalTokenKey) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(terminalToken))
+        {
+            // One-time migration from older Client SQLite caches.
+            terminalToken = await GetDeviceConfigValueAsync("terminal_token") ?? row.AuthTokenHint ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(terminalToken))
+            {
+                await SecureStorage.Default.SetAsync(SecureTerminalTokenKey, terminalToken);
+                await _database.ExecuteAsync("DELETE FROM device_config WHERE key = 'terminal_token'");
+            }
+        }
         return new MotherConnectionSettings(
             row.ApiBaseUrl ?? string.Empty,
             row.WebSocketUrl ?? string.Empty,
@@ -860,6 +1000,38 @@ public sealed class ClientCacheService
         {
             await _database.ExecuteAsync($"DELETE FROM {table}");
         }
+    }
+
+    public async Task ForceFullResyncAsync(string reason = "Requested by Client")
+    {
+        await InitializeAsync();
+        await UpsertSyncStateAsync("forced_full_resync", "true");
+        await _database.ExecuteAsync(
+            "INSERT INTO sync_history (sync_kind, status, payload_version, message, started_utc, completed_utc) VALUES ('full_snapshot', 'requested', 1, ?, ?, ?)",
+            reason,
+            DateTimeOffset.UtcNow.ToString("O"),
+            DateTimeOffset.UtcNow.ToString("O"));
+    }
+
+    private static void ValidateSnapshot(BootstrapPayload payload)
+    {
+        if (payload.Sync.SchemaVersion <= 0 || string.IsNullOrWhiteSpace(payload.Sync.BootstrapId))
+        {
+            throw new InvalidOperationException("Mother POS returned a snapshot without a valid schema version and bootstrap ID.");
+        }
+
+        if (payload.Products.Any(product => product.Id <= 0 || product.CategoryId <= 0) ||
+            payload.Tables.Any(table => table.Id <= 0 || table.FloorId <= 0) ||
+            payload.OpenOrders.Any(order => string.IsNullOrWhiteSpace(order.Id)))
+        {
+            throw new InvalidOperationException("Mother POS returned an invalid snapshot identity.");
+        }
+    }
+
+    private static string ComputeSnapshotChecksum(BootstrapPayload payload)
+    {
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
     public async Task PurgeLegacyDemoMenuDataAsync()
@@ -927,6 +1099,26 @@ public sealed class ClientCacheService
     {
         var rows = await _database.QueryAsync<SyncStateRow>("SELECT value FROM sync_state WHERE key = ? LIMIT 1", key);
         return rows.FirstOrDefault()?.Value;
+    }
+
+    private static string? ResolveConfigurationSection(string eventType)
+    {
+        var normalized = eventType.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "menu.updated" => "menu",
+            "category.updated" or "categories.updated" => "categories",
+            "product.updated" or "products.updated" => "products",
+            "availability.updated" => "availability",
+            "branding.updated" => "branding",
+            "floor.updated" or "floors.updated" => "floors",
+            "table.updated" or "tables.updated" => "tables",
+            "permissions.updated" => "permissions",
+            "features.updated" => "features",
+            "settings.updated" => "settings",
+            "images.updated" => "images",
+            _ => null
+        };
     }
 
     private async Task<string?> GetDeviceConfigValueAsync(string key)
@@ -1234,6 +1426,16 @@ public sealed class ClientCacheService
         public string UpdatedUtc { get; set; } = string.Empty;
     }
 
+    private sealed class ImageCacheRow
+    {
+        [Column("image_id")] public string ImageId { get; set; } = string.Empty;
+        [Column("remote_path")] public string RemotePath { get; set; } = string.Empty;
+        [Column("content_hash")] public string ContentHash { get; set; } = string.Empty;
+        [Column("local_path")] public string LocalPath { get; set; } = string.Empty;
+        [Column("mime_type")] public string? MimeType { get; set; }
+        [Column("last_synchronized_utc")] public string LastSynchronizedUtc { get; set; } = string.Empty;
+    }
+
     private sealed class OnlineOrderRow
     {
         [Column("id")]
@@ -1326,6 +1528,7 @@ public sealed class ClientCacheService
 }
 
 public sealed record MotherConnectionSettings(string ApiBaseUrl, string WebSocketUrl, string TerminalId, string TerminalToken);
+public sealed record CachedImageMetadata(string ImageId, string RemotePath, string ContentHash, string LocalPath, string? MimeType, string LastSynchronizedUtc);
 
 public sealed record CacheStatus(
     int Categories,

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Views.Layout.ClientTopBar">
-    <shared:ApplicationHeader x:Name="SharedHeader"
+    <shared:PosHeader x:Name="SharedHeader"
                               ShowIdentity="False"
                               MenuClicked="OnMenuClicked"
                               LogoutClicked="OnLogoutClicked" />

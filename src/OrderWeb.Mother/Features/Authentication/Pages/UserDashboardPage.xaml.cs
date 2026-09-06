@@ -31,6 +31,80 @@ public partial class UserDashboardPage : ContentPage
         
         // Load current user info
         LoadCurrentUser();
+        HostSharedDashboard();
+    }
+
+    private void HostSharedDashboard()
+    {
+        var capabilities = MotherCapabilityResolver.ForRole(_currentUser?.Role ?? _authService.CurrentUser?.Role);
+        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Table))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.DineIn);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+
+        var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
+        {
+            Title = "Dashboard",
+            Subtitle = _currentUser?.Name is { Length: > 0 } name ? $"Welcome, {name}" : "Welcome"
+        };
+        vm.ApplyCapabilities(capabilities, features, new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "restaurant", "collection", "delivery", "reservation"
+        });
+        vm.TileSelected += async (_, tile) =>
+        {
+            switch (tile.Route)
+            {
+                case "restaurant":
+                    await OnRestaurantClickedAsync();
+                    break;
+                case "delivery":
+                    await OnDeliveryClickedAsync();
+                    break;
+                case "collection":
+                    await OnCollectionClickedAsync();
+                    break;
+                case "liveorder":
+                    await OnLiveOrderClickedAsync();
+                    break;
+                case "reservation":
+                    await _navigationCoordinator.NavigateShellAsync("reservation", animated: false);
+                    break;
+            }
+        };
+
+        if (MainScrollView is not null)
+        {
+            MainScrollView.Content = new OrderWeb.SharedUI.Views.DashboardView { ViewModel = vm };
+        }
+    }
+
+    private async Task OnRestaurantClickedAsync()
+    {
+        OnRestaurantClicked(this, EventArgs.Empty);
+        await Task.CompletedTask;
+    }
+
+    private async Task OnDeliveryClickedAsync()
+    {
+        OnDeliveryClicked(this, EventArgs.Empty);
+        await Task.CompletedTask;
+    }
+
+    private async Task OnCollectionClickedAsync()
+    {
+        OnCollectionClicked(this, EventArgs.Empty);
+        await Task.CompletedTask;
+    }
+
+    private async Task OnLiveOrderClickedAsync()
+    {
+        OnLiveOrderClicked(this, EventArgs.Empty);
+        await Task.CompletedTask;
     }
 
     private async Task LoadBusinessNameAsync()

@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Views.Layout.ClientToast">
-    <Border BackgroundColor="#111827"
-            StrokeThickness="0"
-            Padding="16,12">
-        <Label Text="Client message"
-               FontFamily="OpenSansSemibold"
-               FontSize="14"
-               TextColor="#FFFFFF" />
-    </Border>
+    <shared:PosToast x:Name="SharedToast"
+                     Title="Client message"
+                     Kind="Info" />
 </ContentView>

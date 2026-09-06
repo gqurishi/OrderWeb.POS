@@ -28,6 +28,20 @@ public sealed class MotherConnectionChangedEventArgs : EventArgs
     public string Status { get; }
 }
 
+public sealed class MotherDataChangedEventArgs : EventArgs
+{
+    public MotherDataChangedEventArgs(long eventId, string eventType, string restaurantId, string version, DateTimeOffset timestamp, string correlationId)
+    {
+        EventId = eventId; EventType = eventType; RestaurantId = restaurantId; Version = version; Timestamp = timestamp; CorrelationId = correlationId;
+    }
+    public long EventId { get; }
+    public string EventType { get; }
+    public string RestaurantId { get; }
+    public string Version { get; }
+    public DateTimeOffset Timestamp { get; }
+    public string CorrelationId { get; }
+}
+
 public sealed class MotherEventClient : IAsyncDisposable
 {
     private static readonly TimeSpan[] ReconnectDelays =
@@ -52,6 +66,7 @@ public sealed class MotherEventClient : IAsyncDisposable
 
     public event EventHandler<MotherTerminalControlEventArgs>? TerminalControlReceived;
     public event EventHandler<MotherConnectionChangedEventArgs>? ConnectionChanged;
+    public event EventHandler<MotherDataChangedEventArgs>? AuthoritativeDataChanged;
     public bool IsRunning => _connectionTask is { IsCompleted: false };
 
     public async Task StartAsync()
@@ -135,6 +150,7 @@ public sealed class MotherEventClient : IAsyncDisposable
             {
                 RaiseConnectionChanged(false, retryNumber == 0 ? "Connecting" : "Reconnecting");
                 await socket.ConnectAsync(BuildWebSocketUri(settings), cancellationToken);
+                await _cache.MarkWebSocketReconnectedAsync();
                 retryNumber = 0;
                 RaiseConnectionChanged(true, "Connected");
                 await ReceiveLoopAsync(socket, cancellationToken);
@@ -226,11 +242,29 @@ public sealed class MotherEventClient : IAsyncDisposable
             return;
         }
 
-        if (string.Equals(eventType, "TERMINAL_FORCE_LOGOUT", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(eventType, "TERMINAL_FORCE_LOGOUT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(eventType, "session.revoked", StringComparison.OrdinalIgnoreCase))
         {
             await _cache.ClearLoginSessionAsync();
-            TerminalControlReceived?.Invoke(this, new MotherTerminalControlEventArgs(eventType, "Mother POS forced this terminal to log out."));
+            TerminalControlReceived?.Invoke(this, new MotherTerminalControlEventArgs(eventType, "Mother POS revoked this terminal session."));
+            return;
         }
+
+        if (!document.RootElement.TryGetProperty("eventId", out var idElement) || !idElement.TryGetInt64(out var eventId))
+        {
+            return;
+        }
+
+        var restaurantId = document.RootElement.TryGetProperty("restaurantId", out var restaurant) ? restaurant.GetString() ?? string.Empty : string.Empty;
+        var version = document.RootElement.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty;
+        var correlationId = document.RootElement.TryGetProperty("correlationId", out var correlation) ? correlation.GetString() ?? string.Empty : string.Empty;
+        var timestamp = document.RootElement.TryGetProperty("timestamp", out var timestampElement) && timestampElement.TryGetDateTimeOffset(out var parsed)
+            ? parsed : DateTimeOffset.UtcNow;
+        if (!await _cache.RecordAuthoritativeEventAsync(eventId, eventType, version, timestamp))
+        {
+            return;
+        }
+        AuthoritativeDataChanged?.Invoke(this, new MotherDataChangedEventArgs(eventId, eventType, restaurantId, version, timestamp, correlationId));
     }
 
     private static Uri BuildWebSocketUri(MotherConnectionSettings settings)

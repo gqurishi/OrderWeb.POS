@@ -21,7 +21,7 @@
                    HorizontalOptions="Center"/>
         </Border>
 
-        <shared:ApplicationHeader x:Name="SharedHeader"
+        <shared:PosHeader x:Name="SharedHeader"
                                   Grid.Row="1"
                                   ShowMinimize="True"
                                   MenuClicked="OnMenuClicked"

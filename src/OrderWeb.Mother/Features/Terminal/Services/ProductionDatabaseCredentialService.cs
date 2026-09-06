@@ -75,7 +75,8 @@ public static class ProductionDatabaseCredentialService
         }
 
         var sqlPath = Path.Combine(FileSystem.AppDataDirectory, "create_orderweb_app_user.generated.sql");
-        File.WriteAllText(sqlPath, BuildCreateUserSql(config), Encoding.UTF8);
+        var sql = BuildCreateUserSql(config);
+        WriteTextAtomically(sqlPath, sql);
 
         TerminalConfigurationService.TryApplyInstallerDatabaseConfig(forceReapply: true);
 
@@ -108,6 +109,31 @@ public static class ProductionDatabaseCredentialService
         }
 
         File.WriteAllText(path, JsonSerializer.Serialize(config, JsonOptions), Encoding.UTF8);
+    }
+
+    private static void WriteTextAtomically(string path, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            throw new InvalidOperationException("Generated database setup SQL is empty.");
+        }
+
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var temporaryPath = path + ".tmp";
+        File.WriteAllText(temporaryPath, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        if (new FileInfo(temporaryPath).Length == 0)
+        {
+            File.Delete(temporaryPath);
+            throw new IOException("Generated database setup SQL could not be written.");
+        }
+
+        File.Move(temporaryPath, path, overwrite: true);
     }
 
     private static string BuildCreateUserSql(InstallerDatabaseConfig config)

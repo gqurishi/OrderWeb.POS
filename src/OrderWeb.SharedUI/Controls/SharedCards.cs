@@ -8,11 +8,18 @@ public class DashboardTile : ContentView
     private readonly Image _icon;
     private readonly Label _title;
     private readonly Label _subtitle;
+    private readonly Label _badge;
+    private readonly Border _badgeFrame;
+    private readonly ActivityIndicator _loading;
+    private readonly Border _card;
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(DashboardTile), string.Empty, propertyChanged: (b, _, v) => ((DashboardTile)b)._title.Text = v?.ToString());
     public static readonly BindableProperty SubtitleProperty = BindableProperty.Create(nameof(Subtitle), typeof(string), typeof(DashboardTile), string.Empty, propertyChanged: (b, _, v) => { var c = (DashboardTile)b; c._subtitle.Text = v?.ToString(); c._subtitle.IsVisible = !string.IsNullOrWhiteSpace(c._subtitle.Text); });
     public static readonly BindableProperty IconSourceProperty = BindableProperty.Create(nameof(IconSource), typeof(ImageSource), typeof(DashboardTile), propertyChanged: (b, _, v) => ((DashboardTile)b)._icon.Source = (ImageSource?)v);
     public static readonly BindableProperty CommandProperty = BindableProperty.Create(nameof(Command), typeof(ICommand), typeof(DashboardTile));
     public static readonly BindableProperty CommandParameterProperty = BindableProperty.Create(nameof(CommandParameter), typeof(object), typeof(DashboardTile));
+    public static readonly BindableProperty BadgeProperty = BindableProperty.Create(nameof(Badge), typeof(string), typeof(DashboardTile), string.Empty, propertyChanged: (b, _, v) => { var c = (DashboardTile)b; c._badge.Text = v?.ToString(); c._badgeFrame.IsVisible = !string.IsNullOrWhiteSpace(c._badge.Text); });
+    public static readonly BindableProperty IsTileEnabledProperty = BindableProperty.Create(nameof(IsTileEnabled), typeof(bool), typeof(DashboardTile), true, propertyChanged: (b, _, v) => ((DashboardTile)b).ApplyState());
+    public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(DashboardTile), false, propertyChanged: (b, _, v) => ((DashboardTile)b).ApplyState());
 
     public DashboardTile()
     {
@@ -21,12 +28,20 @@ public class DashboardTile : ContentView
         _title.Use(Label.TextColorProperty, "OwTextPrimary");
         _subtitle = new Label { FontSize = 13, IsVisible = false, HorizontalTextAlignment = TextAlignment.Center };
         _subtitle.Use(Label.TextColorProperty, "OwTextMuted");
-        var card = new Border { Padding = 18, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 20 }, Content = new VerticalStackLayout { Spacing = 10, Children = { _icon, _title, _subtitle } } };
-        card.Use(Border.BackgroundColorProperty, "OwSurface"); card.Use(Border.StrokeProperty, "OwBorder");
+        _badge = new Label { IsVisible = false, FontSize = 12, FontAttributes = FontAttributes.Bold, Padding = new Thickness(8, 3), HorizontalTextAlignment = TextAlignment.Center };
+        _badge.Use(Label.TextColorProperty, "OwTextOnPrimary");
+        _badgeFrame = new Border { IsVisible = false, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 10 }, Content = _badge, HorizontalOptions = LayoutOptions.End, VerticalOptions = LayoutOptions.Start };
+        _badgeFrame.Use(Border.BackgroundColorProperty, "OwPrimary");
+        _loading = new ActivityIndicator { IsVisible = false, IsRunning = false, WidthRequest = 30, HeightRequest = 30, HorizontalOptions = LayoutOptions.Center };
+        var content = new VerticalStackLayout { Children = { _icon, _loading, _title, _subtitle } };
+        content.Use(VerticalStackLayout.SpacingProperty, "PosDashboardTileSpacing");
+        _card = new Border { StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 20 }, Content = new Grid { Children = { content, _badgeFrame } } };
+        _card.Use(Border.PaddingProperty, "PosDashboardTilePadding");
+        _card.Use(Border.BackgroundColorProperty, "OwSurface"); _card.Use(Border.StrokeProperty, "OwBorder");
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => { Tapped?.Invoke(this, EventArgs.Empty); if (Command?.CanExecute(CommandParameter) == true) Command.Execute(CommandParameter); };
-        card.GestureRecognizers.Add(tap);
-        Content = card;
+        tap.Tapped += (_, _) => { if (!IsTileEnabled || IsLoading) return; Tapped?.Invoke(this, EventArgs.Empty); if (Command?.CanExecute(CommandParameter) == true) Command.Execute(CommandParameter); };
+        _card.GestureRecognizers.Add(tap);
+        Content = _card;
     }
     public event EventHandler? Tapped;
     public string Title { get => (string)GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
@@ -34,6 +49,17 @@ public class DashboardTile : ContentView
     public ImageSource? IconSource { get => (ImageSource?)GetValue(IconSourceProperty); set => SetValue(IconSourceProperty, value); }
     public ICommand? Command { get => (ICommand?)GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
     public object? CommandParameter { get => GetValue(CommandParameterProperty); set => SetValue(CommandParameterProperty, value); }
+    public string Badge { get => (string)GetValue(BadgeProperty); set => SetValue(BadgeProperty, value); }
+    public bool IsTileEnabled { get => (bool)GetValue(IsTileEnabledProperty); set => SetValue(IsTileEnabledProperty, value); }
+    public bool IsLoading { get => (bool)GetValue(IsLoadingProperty); set => SetValue(IsLoadingProperty, value); }
+    private void ApplyState()
+    {
+        if (_card is null) return;
+        _card.Opacity = IsTileEnabled ? 1 : .5;
+        _loading.IsVisible = IsLoading;
+        _loading.IsRunning = IsLoading;
+        _icon.IsVisible = !IsLoading;
+    }
 }
 
 public class SidebarItemView : ContentView

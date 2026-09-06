@@ -59,6 +59,7 @@ public sealed class MotherAuthClient
             AppInfo.VersionString);
 
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        ClientCompatibilityHeaders.Apply(client);
         using var content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
 
         var endpoints = new[]
@@ -146,6 +147,13 @@ public sealed class MotherAuthClient
                 .Where(item => !string.IsNullOrWhiteSpace(item))
                 .ToList()
             : new List<string>();
+        var capabilities = payload.TryGetProperty("capabilities", out var capabilitiesElement) && capabilitiesElement.ValueKind == JsonValueKind.Array
+            ? capabilitiesElement.EnumerateArray()
+                .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Cast<string>()
+                .ToList()
+            : new List<string>();
 
         if (!response.IsSuccessStatusCode || !success || string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(sessionToken))
         {
@@ -166,7 +174,7 @@ public sealed class MotherAuthClient
             userId,
             userName ?? userId,
             role ?? "User",
-            permissions,
+            permissions.Concat(capabilities).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             sessionToken,
             DateTimeOffset.TryParse(expiresAtUtc, out var expiresAt)
                 ? expiresAt

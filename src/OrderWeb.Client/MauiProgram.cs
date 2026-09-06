@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using Microsoft.Maui.LifecycleEvents;
 using OrderWeb.Client.Services;
@@ -35,6 +36,11 @@ public static class MauiProgram
 #if DEBUG
 		builder.Logging.AddDebug();
 #endif
+
+		builder.Services.AddSingleton<MotherAuthClient>();
+		builder.Services.AddSingleton<ClientAuthenticationService>();
+		builder.Services.AddSingleton<OrderWeb.Contracts.Services.IAuthenticationService>(sp => sp.GetRequiredService<ClientAuthenticationService>());
+		builder.Services.AddSingleton<ClientCacheService>();
 
 		return builder.Build();
 	}

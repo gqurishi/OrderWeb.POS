@@ -319,6 +319,29 @@ public static class ClientCacheSchema
             resolved_utc TEXT
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS sync_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            bootstrap_id TEXT,
+            payload_version INTEGER NOT NULL,
+            checksum TEXT,
+            message TEXT,
+            started_utc TEXT NOT NULL,
+            completed_utc TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS image_cache (
+            image_id TEXT PRIMARY KEY,
+            remote_path TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            mime_type TEXT,
+            last_synchronized_utc TEXT NOT NULL
+        )
+        """,
         "CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_prices_product_id ON prices(product_id)",
         "CREATE INDEX IF NOT EXISTS idx_modifiers_group_id ON modifiers(modifier_group_id)",
@@ -329,7 +352,9 @@ public static class ClientCacheSchema
         "CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers_cache(phone)",
         "CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status)",
         "CREATE INDEX IF NOT EXISTS idx_print_requests_status ON print_requests(status)",
-        "CREATE INDEX IF NOT EXISTS idx_sync_errors_area ON sync_errors(area)"
+        "CREATE INDEX IF NOT EXISTS idx_sync_errors_area ON sync_errors(area)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_history_started ON sync_history(started_utc)",
+        "CREATE INDEX IF NOT EXISTS idx_image_cache_hash ON image_cache(content_hash)"
     };
 
     public static readonly string[] MigrationStatements =

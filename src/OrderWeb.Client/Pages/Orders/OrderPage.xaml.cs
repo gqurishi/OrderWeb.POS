@@ -11,6 +11,7 @@ public partial class OrderPage : ContentPage
     {
         private readonly ClientCacheService _cache = new();
         private readonly MotherOrderClient _orderClient = new();
+        private readonly ClientOfflinePolicy _offlinePolicy = new();
         private readonly MotherPrintClient _printClient = new();
         private readonly List<CachedMenuCategory> _categories = new();
         private readonly List<CachedProduct> _products = new();
@@ -34,7 +35,7 @@ public partial class OrderPage : ContentPage
 
         MenuGrid.ItemTapped += async (_, item) => await AddItemAsync(item);
         Summary.SendClicked += async (_, _) => await SendToKitchenAsync();
-        Summary.PaymentClicked += async (_, _) => await Navigation.PushAsync(new PaymentPage(CurrentTotal()), false);
+        Summary.PaymentClicked += async (_, _) => await Navigation.PushAsync(new PaymentPage(CurrentTotal(), _currentOrder?.OrderId, _currentOrder?.Version), false);
         Summary.ServiceClicked += async (_, _) => await QueueOrderActionAsync("service_charge", "Service charge request queued for Mother POS.");
         Summary.NotesClicked += async (_, _) => await AddOrderNoteAsync();
         Summary.VoidClicked += async (_, _) => await VoidOrderAsync();
@@ -313,15 +314,22 @@ public partial class OrderPage : ContentPage
                 return;
             }
 
+            var decision = _offlinePolicy.Evaluate(ClientOperation.SubmitFinalOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                await DisplayAlert("Send to Kitchen blocked", decision.Message, "OK");
+                return;
+            }
+
             if (_currentOrder != null)
             {
-                var result = await _orderClient.SendToKitchenAsync(_currentOrder);
-                _currentOrder = result.State;
+                // A Client-side state change is only a pending request. Do not
+                // mark an order sent or print a kitchen ticket until Mother
+                // accepts the authoritative mutation.
                 await _cache.SaveOrderStateAsync(_currentOrder);
             }
 
-            await QueueOrderActionAsync("send_to_kitchen", "Send to kitchen request queued for Mother POS.");
-            await RequestPrintAsync("kitchen ticket");
+            await QueueOrderActionAsync("send_to_kitchen", "Pending Mother confirmation — the order has not been sent to the kitchen.");
         }
 
     private async Task PrintOrderAsync()
@@ -423,17 +431,8 @@ public partial class OrderPage : ContentPage
     private async Task RequestPrintAsync(string printType)
     {
         var session = await _cache.GetCurrentLoginSessionAsync();
-        var request = await _printClient.RequestPrintAsync(printType, null, session);
+        var request = await _printClient.RequestPrintAsync(printType, _currentOrder?.OrderId, session);
         await _cache.SavePrintRequestAsync(request);
-
-        if (request.Status == "queued")
-        {
-            var printing = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(printing);
-            var printed = await _printClient.AdvanceStatusAsync(printing);
-            await _cache.SavePrintRequestAsync(printed);
-            request = printed;
-        }
 
         await DisplayAlert("Print", request.Message, "OK");
     }

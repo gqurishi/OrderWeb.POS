@@ -1,13 +1,29 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:themes="clr-namespace:OrderWeb.SharedUI.Themes"
                     x:Class="OrderWeb.SharedUI.Themes.OrderWebComponentStyles">
+    <ResourceDictionary.MergedDictionaries>
+        <themes:OrderWebTypography />
+        <themes:OrderWebDimensions />
+    </ResourceDictionary.MergedDictionaries>
+
     <Shadow x:Key="OwCardShadow"
             Brush="{DynamicResource OwShadow}"
             Offset="0,2"
             Radius="8"
             Opacity="0.10" />
     <Shadow x:Key="OwDialogShadow"
+            Brush="{DynamicResource OwShadow}"
+            Offset="0,8"
+            Radius="20"
+            Opacity="0.16" />
+    <Shadow x:Key="PosCardShadow"
+            Brush="{DynamicResource OwShadow}"
+            Offset="0,2"
+            Radius="8"
+            Opacity="0.10" />
+    <Shadow x:Key="PosDialogShadow"
             Brush="{DynamicResource OwShadow}"
             Offset="0,8"
             Radius="20"
@@ -34,6 +50,18 @@
         <Setter Property="MinimumHeightRequest" Value="{StaticResource OwTouchTargetMinimum}" />
         <Setter Property="CornerRadius" Value="{StaticResource OwCornerRadius}" />
         <Setter Property="Padding" Value="{StaticResource OwButtonPadding}" />
+    </Style>
+
+    <Style x:Key="PosButtonStyle" TargetType="Button" BasedOn="{StaticResource OwPrimaryButtonStyle}">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PosPrimary}" />
+        <Setter Property="HeightRequest" Value="{StaticResource PosButtonHeight}" />
+        <Setter Property="CornerRadius" Value="{StaticResource PosButtonCornerRadius}" />
+        <Setter Property="Opacity" Value="1" />
+        <Style.Triggers>
+            <Trigger TargetType="Button" Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="{StaticResource PosDisabledOpacity}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="OwSecondaryButtonStyle" TargetType="Button">

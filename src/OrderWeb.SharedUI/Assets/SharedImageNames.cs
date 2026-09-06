@@ -29,4 +29,21 @@ public static class SharedImageNames
         public const string Warning = "status_warning.png";
         public const string Error = "status_error.png";
     }
+
+    public static class Dashboard
+    {
+        public const string DashboardHome = "dashboard.png";
+        public const string Restaurant = "restaurant.png";
+        public const string Collection = "collection.png";
+        public const string Delivery = "delivery.png";
+        public const string LiveOrders = "liveorder.png";
+        public const string OrderHistory = "orderhistory.png";
+        public const string Customers = "customers.png";
+        public const string Reservations = "reservation.png";
+        public const string GiftCards = "giftcards.png";
+        public const string Loyalty = "loyalty.png";
+        public const string Reports = "report.png";
+        public const string Printers = "printers.png";
+        public const string Settings = "settings.png";
+    }
 }

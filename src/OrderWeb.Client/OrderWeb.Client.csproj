@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net10.0-android;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
-		<TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+		<!-- The Client POS is currently deployed as a Windows terminal application. -->
+		<!-- Android, iOS, and Mac targets will be enabled when those deployments are prepared. -->
+		<TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 		<!-- Uncomment to also build the tizen app. You will need to install tizen by following this: https://github.com/Samsung/Tizen.NET -->
 		<!-- <TargetFrameworks>$(TargetFrameworks);net9.0-tizen</TargetFrameworks> -->
 
@@ -74,6 +75,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\OrderWeb.Contracts\OrderWeb.Contracts.csproj" />
 		<ProjectReference Include="..\OrderWeb.SharedUI\OrderWeb.SharedUI.csproj" />
 	</ItemGroup>
 

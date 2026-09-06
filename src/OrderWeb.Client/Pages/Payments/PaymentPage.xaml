@@ -122,7 +122,8 @@
                                    VerticalTextAlignment="Center" />
                         </HorizontalStackLayout>
 
-                        <Button Text="Confirm Payment"
+                        <Button x:Name="ConfirmButton"
+                                Text="Confirm Payment"
                                 BackgroundColor="#6366F1"
                                 TextColor="#FFFFFF"
                                 FontFamily="OpenSansSemibold"
