@@ -33,11 +33,13 @@ Client POS owns:
 | Stage | Mother endpoint | Client requirement |
 |---|---|---|
 | Pairing/bootstrap | `POST /api/client/bootstrap` | Send pairing code, terminal name, device identity, platform, and app version. Accept the current flat activation response and the legacy nested `payload` response. |
-| Login | `POST /api/client/login` | Send PIN, terminal token, and app version. Persist the returned user session token. |
+| Login | `POST /api/client/login` | Send PIN, terminal token, and app version. Persist the returned user session token only after a successful non-Admin login. |
 | Heartbeat | `POST /terminals/heartbeat` | Send terminal ID and terminal token with device/status details. |
 | Live events | `ws://<mother>:<port>/ws?token=<terminal-token>` | URL-encode the token and require an HTTP `101 Switching Protocols` response. |
 
 The bootstrap response must provide a non-empty terminal ID, terminal token, API base URL or sufficient host/port data to derive it, and WebSocket URL or sufficient host/port/path data to derive it.
+
+An Administrator PIN submitted through a Client POS returns `403 Forbidden` with `errorCode: "admin_mother_only"`. Mother POS must not issue a Client session token for that request; Client POS must direct the user to Mother POS.
 
 ## Compatibility rules
 
@@ -61,6 +63,8 @@ Before releasing either application:
 6. Verify heartbeat updates Mother terminal health.
 7. Disable and re-enable the terminal from Mother POS and verify Client behaviour.
 8. Restart both applications and verify reconnect without re-pairing.
+9. Submit an Admin PIN through Client POS and verify the `admin_mother_only` rejection creates no Client session or token.
+10. Verify a legacy Admin Client token is rejected by every protected Mother API endpoint.
 
 ## Build boundaries
 

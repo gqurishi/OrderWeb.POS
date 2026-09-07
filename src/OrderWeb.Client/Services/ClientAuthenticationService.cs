@@ -26,6 +26,12 @@ public sealed class ClientAuthenticationService : IAuthenticationService
             }
 
             var session = await _authClient.LoginAsync(new LoginRequest("PIN", request.Pin));
+            if (IsMotherOnlyRole(session.Role))
+            {
+                return OperationResult<UserSession>.Failure(new OperationError(
+                    OperationErrorCode.Forbidden,
+                    "Administrator access is available on the Mother POS only. Please use the Mother POS terminal."));
+            }
             if (string.Equals(session.Role, "Staff", StringComparison.OrdinalIgnoreCase))
             {
                 return OperationResult<UserSession>.Failure(new OperationError(OperationErrorCode.Forbidden, "Staff PIN is for Clock In/Out only."));
@@ -61,12 +67,24 @@ public sealed class ClientAuthenticationService : IAuthenticationService
 
     public Task<OperationResult> LogoutAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(OperationResult.Success());
+
+    private static bool IsMotherOnlyRole(string? role) =>
+        string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase);
 }
 
 public static class ClientCapabilityResolver
 {
     public static IReadOnlySet<string> ForRole(string? role, IEnumerable<string>? permissions = null)
     {
+        // Administrators never have a Client POS surface. Keep this guard even
+        // when talking to an older Mother version that might send capabilities.
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
         // Mother sends explicit pos.* capabilities after Client authentication.
         // When they are present, they are authoritative for Client presentation;
         // the role mapping below is only a compatibility fallback for old sessions.
@@ -89,9 +107,7 @@ public static class ClientCapabilityResolver
             PosCapabilityKeys.ManageCustomers
         };
 
-        if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
             set.Add(PosCapabilityKeys.TakePayments);
             set.Add(PosCapabilityKeys.ApplyDiscount);
@@ -99,32 +115,10 @@ public static class ClientCapabilityResolver
             set.Add(PosCapabilityKeys.VoidOrders);
             set.Add(PosCapabilityKeys.Refund);
             set.Add(PosCapabilityKeys.TransferTables);
-            set.Add(PosCapabilityKeys.ViewReports);
             set.Add(PosCapabilityKeys.PrintReceipts);
             set.Add(PosCapabilityKeys.ReprintReceipts);
             set.Add(PosCapabilityKeys.OpenCashDrawer);
             set.Add(PosCapabilityKeys.ApproveManagerAction);
-        }
-
-        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase))
-        {
-            set.Add(PosCapabilityKeys.AccessAdmin);
-            set.Add(PosCapabilityKeys.EditTables);
-            set.Add(PosCapabilityKeys.AccessSettings);
-        }
-
-        if (permissions is not null)
-        {
-            foreach (var permission in permissions)
-            {
-                if (permission.Contains("print", StringComparison.OrdinalIgnoreCase))
-                    set.Add(PosCapabilityKeys.ConfigurePrinters);
-                if (permission.Contains("menu", StringComparison.OrdinalIgnoreCase))
-                    set.Add(PosCapabilityKeys.EditMenu);
-                if (permission.Contains("report", StringComparison.OrdinalIgnoreCase))
-                    set.Add(PosCapabilityKeys.ViewReports);
-            }
         }
 
         return set;

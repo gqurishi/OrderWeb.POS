@@ -402,6 +402,19 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             });
             return;
         }
+        if (login.User.Role == UserRole.Admin)
+        {
+            // A Client terminal is for daily operations only. Do this check before
+            // issuing a session so an Administrator can never receive a Client token.
+            await AuditSensitiveOperationAsync(terminal.TerminalId, login.User.Id, "client_admin_login_rejected", "denied");
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new
+            {
+                success = false,
+                errorCode = "admin_mother_only",
+                message = "Administrator access is available on the Mother POS only. Please use the Mother POS terminal."
+            });
+            return;
+        }
 
         var sessionToken = CreateToken();
         var expiresAt = DateTime.UtcNow.AddHours(12);
@@ -1388,26 +1401,36 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         await EnsureClientConnectionTablesAsync(connection);
 
         await using var command = new MySqlCommand(@"
-            SELECT s.user_id
+            SELECT s.user_id, u.role
             FROM client_user_sessions s
             INNER JOIN users u ON u.id = s.user_id
             WHERE s.terminal_id = @terminalId
               AND s.session_token_hash = @sessionHash
               AND s.expires_at > UTC_TIMESTAMP()
-              AND s.revoked_at IS NULL
-              AND u.is_active = TRUE
-              AND COALESCE(u.is_archived, FALSE) = FALSE
+               AND s.revoked_at IS NULL
+               AND u.is_active = TRUE
+               AND COALESCE(u.is_archived, FALSE) = FALSE
             LIMIT 1", connection);
         command.Parameters.AddWithValue("@terminalId", terminal.TerminalId);
         command.Parameters.AddWithValue("@sessionHash", HashToken(sessionToken));
 
-        var userId = await command.ExecuteScalarAsync();
-        if (userId == null || userId == DBNull.Value)
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
         {
             return ClientSessionValidation.Fail("Your staff session has expired or is no longer allowed.", HttpStatusCode.Unauthorized);
         }
 
-        return ClientSessionValidation.Ok(terminal.TerminalId, Convert.ToInt32(userId));
+        var userId = reader.GetInt32(0);
+        var roleValue = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+        if (Enum.TryParse<UserRole>(roleValue, true, out var role) && role == UserRole.Admin)
+        {
+            await AuditSensitiveOperationAsync(terminal.TerminalId, userId, "client_admin_session_rejected", "denied");
+            return ClientSessionValidation.Fail(
+                "Administrator access is available on the Mother POS only. Please use the Mother POS terminal.",
+                HttpStatusCode.Forbidden);
+        }
+
+        return ClientSessionValidation.Ok(terminal.TerminalId, userId);
     }
 
     private async Task<bool> EnsureCapabilityAsync(HttpContext context, ClientSessionValidation session, string capability)
@@ -1418,6 +1441,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         command.Parameters.AddWithValue("@userId", session.UserId);
         var roleValue = await command.ExecuteScalarAsync(context.RequestAborted);
         if (!Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) ||
+            role == UserRole.Admin ||
             !MotherCapabilityResolver.ForRole(role).Contains(capability))
         {
             await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"capability_denied:{capability}", "denied");

@@ -132,6 +132,7 @@ public sealed class MotherAuthClient
         var hasSuccess = root.TryGetProperty("success", out _);
         var success = !hasSuccess || TryReadBool(root, "success");
         var message = TryReadString(root, "message");
+        var errorCode = TryReadString(root, "errorCode", "error_code", "reason");
         var payload = GetLoginPayload(root);
 
         var userId = TryReadString(payload, "userId", "user_id");
@@ -167,7 +168,7 @@ public sealed class MotherAuthClient
                     : $"Mother POS login failed with status {(int)response.StatusCode}.";
             }
 
-            throw new LoginException(finalMessage);
+            throw new LoginException(finalMessage, errorCode);
         }
 
         return new LoginSession(
@@ -247,9 +248,17 @@ public sealed class MotherAuthClient
 
 public sealed class LoginException : Exception
 {
+    public string? ErrorCode { get; }
+
     public LoginException(string message)
         : base(message)
     {
+    }
+
+    public LoginException(string message, string? errorCode)
+        : base(message)
+    {
+        ErrorCode = errorCode;
     }
 
     public LoginException(string message, Exception innerException)

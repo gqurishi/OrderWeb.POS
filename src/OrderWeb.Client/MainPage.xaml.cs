@@ -899,7 +899,7 @@ public partial class MainPage : ContentPage
             }
 
             var session = await _authClient.LoginAsync(request);
-            if (string.Equals(session.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+            if (IsMotherOnlyRole(session.Role))
             {
                 _pin = string.Empty;
                 ShowLogin(false);
@@ -929,6 +929,14 @@ public partial class MainPage : ContentPage
         {
             _pin = string.Empty;
             ShowLogin(false);
+            if (string.Equals(ex.ErrorCode, "admin_mother_only", StringComparison.OrdinalIgnoreCase))
+            {
+                await _cache.ClearLoginSessionAsync();
+                await DisplayAlertAsync(
+                    "Mother POS only",
+                    "Administrator access is available on the Mother POS only. Please use the Mother POS terminal.",
+                    "OK");
+            }
             _statusLabel!.Text = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
             _statusLabel.TextColor = Color.FromArgb(Danger);
             _statusLabel.IsVisible = true;
@@ -959,9 +967,10 @@ public partial class MainPage : ContentPage
         _posSelectedMenu = "Dashboard";
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
-        if (string.Equals(_currentSession?.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+        if (IsMotherOnlyRole(_currentSession?.Role))
         {
             _currentSession = null;
+            _ = _cache.ClearLoginSessionAsync();
             ShowLogin();
             _statusLabel!.Text = "Admin access is available on the Mother POS only. Please use the Mother POS terminal.";
             _statusLabel.TextColor = Color.FromArgb(Danger);
@@ -1748,26 +1757,7 @@ public partial class MainPage : ContentPage
             return staffTiles.Concat(managerTiles);
         }
 
-        var adminTiles = new[]
-        {
-            new DashboardTile("Menu Updates", "foodmenu.png", "client.menu.update", () => ShowToast("Client can request/menu-review updates. Master menu setup remains Mother-only.")),
-            new DashboardTile("Users/Staff", "customers.png", "client.users_staff", () => ShowToast("Users and staff summary is available from Mother POS.")),
-            new DashboardTile("Customers", "customers.png", "client.customers", () => ShowToast("Customer lookup is available.")),
-            new DashboardTile("Business Controls", "settings.png", "client.business_controls", () => ShowToast("Business controls are available.")),
-            new DashboardTile("Logout", "outred.png", "client.dashboard", Logout)
-        };
-
-        if (role == "Admin")
-        {
-            return adminTiles;
-        }
-
-        var superAdminTiles = adminTiles
-            .Take(5)
-            .Append(new DashboardTile("Business Admin", "settings.png", "client.business_admin", ShowSuperAdminClientPanel))
-            .Append(new DashboardTile("Logout", "outred.png", "client.dashboard", Logout));
-
-        return superAdminTiles;
+        return staffTiles;
     }
 
     private View RoleBanner()
@@ -1825,14 +1815,14 @@ public partial class MainPage : ContentPage
         };
     }
 
-    private void ShowSuperAdminClientPanel()
-    {
-        ShowToast("Super Admin controls stay in Mother POS.");
-    }
+    private static bool IsMotherOnlyRole(string? role) =>
+        string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase);
 
     private void Logout()
     {
         _currentSession = null;
+        _ = _cache.ClearLoginSessionAsync();
         _pin = string.Empty;
         _posSidebarOpen = false;
         ShowLogin();
@@ -4355,17 +4345,17 @@ public partial class MainPage : ContentPage
 
     private IReadOnlyList<ApplicationNavigationItem> ClientNavigationItems() =>
     [
-        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager", "Admin"),
-        new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager", "Admin"),
-        new("liveorder", "Live Order", "liveorder.png", "User", "Manager", "Admin"),
-        new("restaurant", "Restaurant", "restaurant.png", "User", "Manager", "Admin"),
-        new("collection", "Collection", "collection.png", "User", "Manager", "Admin"),
-        new("delivery", "Delivery", "delivery.png", "User", "Manager", "Admin"),
-        new("weborders", "Web Orders", "weborders.png", "Manager", "Admin"),
-        new("giftcards", "Gift Cards", "giftcards.png", "Manager", "Admin"),
-        new("loyalty", "Loyalty Points", "loyalty.png", "Manager", "Admin"),
-        new("reservation", "Reservation", "reservation.png", "User", "Manager", "Admin"),
-        new("orderhistory", "Order History", "orderhistory.png", "Manager", "Admin")
+        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager"),
+        new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager"),
+        new("liveorder", "Live Order", "liveorder.png", "User", "Manager"),
+        new("restaurant", "Restaurant", "restaurant.png", "User", "Manager"),
+        new("collection", "Collection", "collection.png", "User", "Manager"),
+        new("delivery", "Delivery", "delivery.png", "User", "Manager"),
+        new("weborders", "Web Orders", "weborders.png", "Manager"),
+        new("giftcards", "Gift Cards", "giftcards.png", "Manager"),
+        new("loyalty", "Loyalty Points", "loyalty.png", "Manager"),
+        new("reservation", "Reservation", "reservation.png", "User", "Manager"),
+        new("orderhistory", "Order History", "orderhistory.png", "Manager")
     ];
 
     private static string RouteForTitle(string title) => title.Trim().ToLowerInvariant() switch
