@@ -94,6 +94,32 @@
                             </StackLayout>
                         </Grid>
                     </Border>
+
+                    <!-- Cashier Role -->
+                    <Border Padding="20">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="16"/>
+                        </Border.StrokeShape>
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#ECFEFF" Offset="0.0"/>
+                                <GradientStop Color="#CFFAFE" Offset="1.0"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnRoleSelected"/>
+                        </Border.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#0891B2" WidthRequest="48" HeightRequest="48" Grid.Column="0" VerticalOptions="Center">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="12"/></Border.StrokeShape>
+                                <Label Text="C" FontFamily="InterBold" FontSize="18" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center"/>
+                            </Border>
+                            <StackLayout Grid.Column="1" Margin="16,0,0,0" VerticalOptions="Center" Spacing="4">
+                                <Button Text="Cashier" FontFamily="InterBold" FontSize="18" TextColor="#0F172A" BackgroundColor="Transparent" HorizontalOptions="Start" Clicked="OnRoleSelected"/>
+                                <Label Text="Reports, Z reports, and cash drawer access" FontFamily="InterRegular" FontSize="14" TextColor="#64748B"/>
+                            </StackLayout>
+                        </Grid>
+                    </Border>
                     
                     <!-- Manager Role -->
                     <Border Padding="20">

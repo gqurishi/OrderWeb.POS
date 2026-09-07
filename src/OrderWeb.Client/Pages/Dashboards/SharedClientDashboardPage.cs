@@ -3,8 +3,8 @@ using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Dtos;
-using OrderWeb.Contracts.Features;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Navigation;
 using OrderWeb.SharedUI.ViewModels;
@@ -23,21 +23,8 @@ public class SharedClientDashboardPage : ContentPage
         BackgroundColor = Colors.White;
 
         var capabilities = ClientCapabilityResolver.ForRole(session.Role, session.Permissions);
-        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            PosFeatureKeys.DineIn,
-            PosFeatureKeys.Collection,
-            PosFeatureKeys.Delivery,
-            PosFeatureKeys.Reservations,
-            PosFeatureKeys.GiftCards,
-            PosFeatureKeys.CustomerPoints
-        };
-
-        var hostRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "dashboard", "cashdrawer", "liveorder", "restaurant", "collection", "delivery",
-            "weborders", "giftcards", "loyalty", "reservation", "orderhistory"
-        };
+        var features = ClientHostAccess.Features;
+        var hostRoutes = ClientHostAccess.Routes;
 
         var dashboardVm = new DashboardViewModel
         {
@@ -72,6 +59,14 @@ public class SharedClientDashboardPage : ContentPage
 
     private async Task NavigateRouteAsync(string route)
     {
+        if (string.Equals(route, "weborders", StringComparison.OrdinalIgnoreCase) ||
+            !ClientAccessPolicy.IsRouteAllowed(route) ||
+            !ClientHostAccess.Routes.Contains(route))
+        {
+            _shell.SelectedRoute = "dashboard";
+            return;
+        }
+
         Page? page = route.ToLowerInvariant() switch
         {
             "restaurant" => new RestaurantPage(),
@@ -83,7 +78,6 @@ public class SharedClientDashboardPage : ContentPage
             "loyalty" => new LoyaltyPage(),
             "cashdrawer" => new CashDrawerPage(),
             "orderhistory" => new OrderHistoryPage(),
-            "weborders" => new OnlineOrdersPage(),
             _ => null
         };
 

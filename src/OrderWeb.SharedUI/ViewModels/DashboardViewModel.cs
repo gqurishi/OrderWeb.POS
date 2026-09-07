@@ -62,12 +62,11 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         IReadOnlySet<string>? features = null,
         IReadOnlySet<string>? allowedRoutes = null)
     {
-        features ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Tiles.Clear();
         foreach (var tile in Catalog.Where(t =>
                      capabilities.Contains(t.RequiredCapability) &&
                      (allowedRoutes is null || allowedRoutes.Contains(t.Route)) &&
-                     (t.RequiredFeature is null || features.Count == 0 || features.Contains(t.RequiredFeature))))
+                     (t.RequiredFeature is null || features is null || features.Contains(t.RequiredFeature))))
         {
             Tiles.Add(tile);
         }
@@ -94,8 +93,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         new("Restaurant", "restaurant.png", "restaurant", PosCapabilityKeys.OpenTables, PosFeatureKeys.DineIn),
         new("Collection", "collection.png", "collection", PosCapabilityKeys.CreateOrders, PosFeatureKeys.Collection),
         new("Delivery", "delivery.png", "delivery", PosCapabilityKeys.CreateOrders, PosFeatureKeys.Delivery),
-        new("Live Order", "liveorder.png", "liveorder", PosCapabilityKeys.ViewDashboard),
-        new("Customers", "customers.png", "customers", PosCapabilityKeys.ViewCustomers),
+        new("Live Order", "liveorder.png", "liveorder", PosCapabilityKeys.ViewDashboard, PosFeatureKeys.LiveOrders),
+        new("Customers", "customers.png", "customers", PosCapabilityKeys.ViewCustomers, PosFeatureKeys.Customers),
         new("Reservations", "reservation.png", "reservation", PosCapabilityKeys.OpenTables, PosFeatureKeys.Reservations),
         new("Gift Cards", "giftcards.png", "giftcards", PosCapabilityKeys.TakePayments, PosFeatureKeys.GiftCards),
         new("Loyalty", "loyalty.png", "loyalty", PosCapabilityKeys.ViewCustomers, PosFeatureKeys.CustomerPoints),

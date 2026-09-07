@@ -27,10 +27,6 @@ public partial class LoginPage : ContentPage
         if (string.Equals(session.User.Role, "Admin", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(session.User.Role, "SuperAdmin", StringComparison.OrdinalIgnoreCase))
         {
-            await DisplayAlertAsync(
-                "Mother POS only",
-                "Administrator access is available on the Mother POS only. Please use the Mother POS terminal.",
-                "OK");
             return;
         }
 

@@ -2155,23 +2155,21 @@ namespace POS_in_NET.Pages
                     // The CommandParameter is bound to the entire User object
                     if (button.CommandParameter is User userToDelete)
                     {
-                        if (!userToDelete.IsActive)
-                        {
-                            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Already Inactive", $"User '{userToDelete.Name}' is already inactive.");
-                            return;
-                        }
-
-                        bool confirm = await DisplayAlert("Confirm Deactivate",
-                            $"Deactivate '{userToDelete.Name}'?\n\nThey will no longer be able to log in or clock in, but their clock history and reports will stay saved.",
-                            "Deactivate", "Cancel");
+                        var action = userToDelete.IsActive ? "Deactivate" : "Reactivate";
+                        var message = userToDelete.IsActive
+                            ? $"Deactivate '{userToDelete.Name}'?\n\nThey will no longer be able to log in or clock in, but their clock history and reports will stay saved."
+                            : $"Reactivate '{userToDelete.Name}'? They will be able to log in again.";
+                        bool confirm = await DisplayAlert($"Confirm {action}", message, action, "Cancel");
                         
                         if (confirm)
                         {
-                            var result = await _authService.DeactivateUserAsync(userToDelete.Id);
+                            var result = userToDelete.IsActive
+                                ? await _authService.DeactivateUserAsync(userToDelete.Id)
+                                : await _authService.ReactivateUserAsync(userToDelete.Id);
                             
                             if (result.Success)
                             {
-                                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"User '{userToDelete.Name}' has been deactivated. Clock history is preserved.");
+                                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"User '{userToDelete.Name}' has been {action.ToLowerInvariant()}.");
                                 // Reload users
                                 await LoadUsersAsync();
                             }

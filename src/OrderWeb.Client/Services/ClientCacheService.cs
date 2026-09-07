@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using OrderWeb.Client.Models;
+using OrderWeb.Contracts.Dtos;
 using SQLite;
 
 namespace OrderWeb.Client.Services;
@@ -450,7 +452,7 @@ public sealed class ClientCacheService
         await InitializeAsync();
 
         var floors = await _database.QueryAsync<CachedFloorRow>("SELECT id, name, sort_order FROM floors WHERE is_active = 1 ORDER BY sort_order, name");
-        var tables = await _database.QueryAsync<CachedTableRow>("SELECT id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y FROM tables ORDER BY table_number");
+        var tables = await _database.QueryAsync<CachedTableRow>("SELECT id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, design_icon FROM tables ORDER BY table_number");
 
         return floors
             .Select(floor => new CachedFloor(
@@ -473,9 +475,245 @@ public sealed class ClientCacheService
                         table.MinutesOccupied,
                         table.Version,
                         table.PositionX,
-                        table.PositionY))
+                        table.PositionY,
+                        table.DesignIcon))
                     .ToList()))
             .ToList();
+    }
+
+    public async Task ReplaceLayoutAsync(FloorSnapshotDto floors, TableSnapshotDto tables)
+    {
+        await InitializeAsync();
+        await _database.RunInTransactionAsync(connection =>
+        {
+            var now = DateTimeOffset.UtcNow.ToString("O");
+            connection.Execute("UPDATE open_orders SET table_id = NULL");
+            connection.Execute("UPDATE reservations_cache SET table_id = NULL");
+            connection.Execute("DELETE FROM tables");
+            connection.Execute("DELETE FROM floors");
+
+            var floorIds = new HashSet<int>();
+            foreach (var floor in floors.Floors)
+            {
+                if (!int.TryParse(floor.Id, out var floorId) || floorId <= 0)
+                {
+                    continue;
+                }
+
+                floorIds.Add(floorId);
+                connection.Execute(
+                    "INSERT OR REPLACE INTO floors (id, mother_id, name, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, 1, ?)",
+                    floorId,
+                    floor.Id,
+                    floor.Name,
+                    floor.SortOrder,
+                    now);
+            }
+
+            foreach (var table in tables.Tables)
+            {
+                if (!int.TryParse(table.Id, out var tableId) ||
+                    !int.TryParse(table.FloorId, out var floorId) ||
+                    tableId <= 0 ||
+                    !floorIds.Contains(floorId))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    """
+                    INSERT OR REPLACE INTO tables
+                        (id, mother_id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, design_icon, updated_utc)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?)
+                    """,
+                    tableId,
+                    table.Id,
+                    floorId,
+                    table.Name,
+                    table.Capacity,
+                    table.Status,
+                    table.CurrentTotal,
+                    table.OpenOrderId,
+                    table.GuestCount,
+                    table.SessionStatus,
+                    Math.Max(1, (int)table.Revision),
+                    (int)Math.Round(table.X),
+                    (int)Math.Round(table.Y),
+                    string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon,
+                    now);
+            }
+
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('table_version', ?, ?)", tables.Version, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('last_sync_time', ?, ?)", now, now);
+        });
+    }
+
+    public async Task ReplaceReservationsAsync(IReadOnlyList<CachedReservation> reservations)
+    {
+        await InitializeAsync();
+        await _database.RunInTransactionAsync(connection =>
+        {
+            var now = DateTimeOffset.UtcNow.ToString("O");
+            connection.Execute("DELETE FROM reservations_cache");
+            foreach (var reservation in reservations)
+            {
+                connection.Execute(
+                    "INSERT OR REPLACE INTO reservations_cache (id, mother_id, customer_name, phone, table_id, party_size, reservation_utc, status, payload_json, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    reservation.Id,
+                    reservation.MotherId,
+                    reservation.CustomerName,
+                    reservation.Phone,
+                    reservation.TableId,
+                    reservation.PartySize,
+                    reservation.ReservationUtc,
+                    reservation.Status,
+                    reservation.PayloadJson,
+                    string.IsNullOrWhiteSpace(reservation.UpdatedUtc) ? now : reservation.UpdatedUtc);
+            }
+        });
+    }
+
+    public async Task ReplaceMenuAsync(MenuSnapshotDto snapshot)
+    {
+        await InitializeAsync();
+        await _database.RunInTransactionAsync(connection =>
+        {
+            var now = DateTimeOffset.UtcNow.ToString("O");
+            connection.Execute("DELETE FROM product_modifiers");
+            connection.Execute("DELETE FROM modifiers");
+            connection.Execute("DELETE FROM prices");
+            connection.Execute("DELETE FROM products");
+            connection.Execute("DELETE FROM modifier_groups");
+            connection.Execute("DELETE FROM categories");
+
+            var categoryIds = snapshot.Categories.Select(category => category.Id).ToHashSet();
+            var productIds = snapshot.Products
+                .Where(product => categoryIds.Contains(product.CategoryId))
+                .Select(product => product.Id)
+                .ToHashSet();
+            var modifierGroupIds = snapshot.ModifierGroups.Select(group => group.Id).ToHashSet();
+
+            foreach (var category in snapshot.Categories)
+            {
+                connection.Execute(
+                    "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    category.Id,
+                    category.MotherId,
+                    category.Name,
+                    category.Color,
+                    category.SortOrder,
+                    category.IsActive ? 1 : 0,
+                    now);
+            }
+
+            foreach (var product in snapshot.Products)
+            {
+                if (!categoryIds.Contains(product.CategoryId))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    "INSERT OR REPLACE INTO products (id, mother_id, category_id, name, description, sku, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    product.Id,
+                    product.MotherId,
+                    product.CategoryId,
+                    product.Name,
+                    product.Description,
+                    product.Sku,
+                    product.IsActive ? 1 : 0,
+                    now);
+            }
+
+            foreach (var price in snapshot.Prices)
+            {
+                if (!productIds.Contains(price.ProductId))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    "INSERT OR REPLACE INTO prices (id, product_id, price_type, amount, currency, tax_rate_id, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    price.Id,
+                    price.ProductId,
+                    price.PriceType,
+                    price.Amount,
+                    price.Currency,
+                    price.TaxRateId,
+                    now);
+            }
+
+            foreach (var group in snapshot.ModifierGroups)
+            {
+                connection.Execute(
+                    "INSERT OR REPLACE INTO modifier_groups (id, mother_id, name, min_select, max_select, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    group.Id,
+                    group.MotherId,
+                    group.Name,
+                    group.MinSelect,
+                    group.MaxSelect,
+                    group.IsActive ? 1 : 0,
+                    now);
+            }
+
+            foreach (var modifier in snapshot.Modifiers)
+            {
+                if (!modifierGroupIds.Contains(modifier.ModifierGroupId))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    "INSERT OR REPLACE INTO modifiers (id, mother_id, modifier_group_id, name, price_delta, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    modifier.Id,
+                    modifier.MotherId,
+                    modifier.ModifierGroupId,
+                    modifier.Name,
+                    modifier.PriceDelta,
+                    modifier.IsActive ? 1 : 0,
+                    now);
+            }
+
+            foreach (var productModifier in snapshot.ProductModifiers)
+            {
+                if (!productIds.Contains(productModifier.ProductId) || !modifierGroupIds.Contains(productModifier.ModifierGroupId))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    "INSERT OR REPLACE INTO product_modifiers (product_id, modifier_group_id, sort_order, updated_utc) VALUES (?, ?, ?, ?)",
+                    productModifier.ProductId,
+                    productModifier.ModifierGroupId,
+                    productModifier.SortOrder,
+                    now);
+            }
+
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('menu_version', ?, ?)", snapshot.Version, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('last_sync_time', ?, ?)", now, now);
+        });
+    }
+
+    public async Task ReplaceOperationalOrdersAsync(IReadOnlyList<MotherOrderState> orders)
+    {
+        await InitializeAsync();
+        var keepIds = orders.Select(order => order.OrderId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existing = await GetOpenOrderStatesAsync();
+        foreach (var order in existing)
+        {
+            var type = (order.OrderType ?? string.Empty).Trim().ToLowerInvariant();
+            var isCustomerOrder = type is "collection" or "pickup" or "col" or "takeaway" or "delivery" or "del";
+            if (isCustomerOrder && !keepIds.Contains(order.OrderId))
+            {
+                await _database.ExecuteAsync("DELETE FROM order_items WHERE order_id = ?", order.OrderId);
+                await _database.ExecuteAsync("DELETE FROM open_orders WHERE id = ?", order.OrderId);
+            }
+        }
+
+        foreach (var order in orders)
+        {
+            await SaveOrderStateAsync(order);
+        }
     }
 
     public async Task<IReadOnlyList<CachedMenuCategory>> GetMenuCategoriesAsync()
@@ -489,16 +727,27 @@ public sealed class ClientCacheService
     {
         await InitializeAsync();
         var rows = await _database.QueryAsync<CachedProductRow>(@"
-            SELECT p.id, p.category_id, p.name, COALESCE(pr.amount, 0) AS price, COALESCE(pr.currency, 'GBP') AS currency
+            SELECT p.id, p.category_id, p.name, p.mother_id,
+                   COALESCE((
+                       SELECT amount FROM prices WHERE product_id = p.id AND price_type = 'takeaway' LIMIT 1
+                   ), (
+                       SELECT amount FROM prices WHERE product_id = p.id AND price_type = 'dine_in' LIMIT 1
+                   ), (
+                       SELECT amount FROM prices WHERE product_id = p.id LIMIT 1
+                   ), 0) AS price,
+                   COALESCE((
+                       SELECT currency FROM prices WHERE product_id = p.id AND price_type = 'takeaway' LIMIT 1
+                   ), (
+                       SELECT currency FROM prices WHERE product_id = p.id LIMIT 1
+                   ), 'GBP') AS currency
             FROM products p
-            LEFT JOIN prices pr ON pr.product_id = p.id
             WHERE p.category_id = ? AND p.is_active = 1
             ORDER BY p.name", categoryId);
 
         var result = new List<CachedProduct>();
         foreach (var row in rows)
         {
-            result.Add(new CachedProduct(row.Id, row.CategoryId, row.Name, row.Price, row.Currency, await GetModifierGroupsForProductAsync(row.Id)));
+            result.Add(new CachedProduct(row.Id, row.CategoryId, row.Name, row.Price, row.Currency, await GetModifierGroupsForProductAsync(row.Id), row.MotherId));
         }
 
         return result;
@@ -647,7 +896,7 @@ public sealed class ClientCacheService
         }
     }
 
-    public async Task<IReadOnlyList<CachedCustomer>> SearchCachedCustomersAsync(CustomerSearchRequest request)
+    public async Task<IReadOnlyList<CachedCustomer>> SearchCachedCustomersAsync(Models.CustomerSearchRequest request)
     {
         await InitializeAsync();
         var term = $"%{request.Name ?? request.Phone ?? request.AddressOrPostcode ?? string.Empty}%";
@@ -796,14 +1045,14 @@ public sealed class ClientCacheService
     public async Task<IReadOnlyList<CachedReservation>> GetCachedReservationsAsync(DateTime startInclusive, DateTime endExclusive)
     {
         await InitializeAsync();
-        var startUtc = new DateTimeOffset(startInclusive.Date).ToUniversalTime().ToString("O");
-        var endUtc = new DateTimeOffset(endExclusive.Date).ToUniversalTime().ToString("O");
+        var startKey = startInclusive.Date.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
+        var endKey = endExclusive.Date.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
         var rows = await _database.QueryAsync<ReservationCacheRow>(@"
             SELECT r.id, r.mother_id, r.customer_name, r.phone, r.table_id, t.table_number, r.party_size, r.reservation_utc, r.status, r.payload_json, r.updated_utc
             FROM reservations_cache r
             LEFT JOIN tables t ON t.id = r.table_id
             WHERE r.reservation_utc >= ? AND r.reservation_utc < ?
-            ORDER BY r.reservation_utc", startUtc, endUtc);
+            ORDER BY r.reservation_utc", startKey, endKey);
 
         return rows.Select(row => new CachedReservation(
             row.Id,
@@ -882,6 +1131,18 @@ public sealed class ClientCacheService
                 permission,
                 now);
         }
+
+        if (session.Features is null)
+        {
+            await _database.ExecuteAsync("DELETE FROM device_config WHERE key IN ('login_features', 'login_routes')");
+        }
+        else
+        {
+            await UpsertDeviceConfigAsync("login_features", JsonSerializer.Serialize(session.Features));
+            await UpsertDeviceConfigAsync("login_routes", JsonSerializer.Serialize(session.Routes ?? Array.Empty<string>()));
+        }
+
+        ClientHostAccess.ApplyFromSession(session);
     }
 
     public async Task<LoginSession?> GetCurrentLoginSessionAsync()
@@ -917,20 +1178,28 @@ public sealed class ClientCacheService
             "SELECT permission_key FROM permissions_cache WHERE user_id = ? AND is_allowed = 1",
             row.UserId);
 
-        return new LoginSession(
+        var features = ParseStoredStringList(await GetDeviceConfigValueAsync("login_features"));
+        var routes = ParseStoredStringList(await GetDeviceConfigValueAsync("login_routes"));
+        var session = new LoginSession(
             row.UserId,
             row.UserName,
             row.Role,
             permissions.Select(permission => permission.PermissionKey).ToList(),
             sessionToken,
-            expiresAt);
+            expiresAt,
+            features,
+            routes);
+        ClientHostAccess.ApplyFromSession(session);
+        return session;
     }
 
     public async Task ClearLoginSessionAsync()
     {
         await InitializeAsync();
         await _database.ExecuteAsync("DELETE FROM current_session");
+        await _database.ExecuteAsync("DELETE FROM device_config WHERE key IN ('login_features', 'login_routes')");
         SecureStorage.Default.Remove(SecureSessionTokenKey);
+        ClientHostAccess.Clear();
     }
 
     public async Task MarkTerminalDisabledAsync(string reason)
@@ -992,6 +1261,31 @@ public sealed class ClientCacheService
             row.WebSocketUrl ?? string.Empty,
             row.TerminalId ?? string.Empty,
             terminalToken);
+    }
+
+    public async Task UpdateMotherEndpointsAsync(string apiBaseUrl, string webSocketUrl)
+    {
+        await InitializeAsync();
+        if (string.IsNullOrWhiteSpace(apiBaseUrl) || string.IsNullOrWhiteSpace(webSocketUrl))
+        {
+            throw new ArgumentException("Mother API and WebSocket URLs are required.");
+        }
+
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        await _database.ExecuteAsync(
+            "UPDATE mother_connection SET api_base_url = ?, websocket_url = ?, status = 'connected', last_seen_utc = ?, updated_utc = ? WHERE id = 1",
+            apiBaseUrl.Trim(),
+            webSocketUrl.Trim(),
+            now,
+            now);
+        await _database.ExecuteAsync(
+            "INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('api_base_url', ?, ?)",
+            apiBaseUrl.Trim(),
+            now);
+        await _database.ExecuteAsync(
+            "INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('websocket_url', ?, ?)",
+            webSocketUrl.Trim(),
+            now);
     }
 
     private async Task ClearCacheTablesAsync()
@@ -1119,6 +1413,23 @@ public sealed class ClientCacheService
             "images.updated" => "images",
             _ => null
         };
+    }
+
+    private static IReadOnlyList<string>? ParseStoredStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<string?> GetDeviceConfigValueAsync(string key)
@@ -1253,6 +1564,9 @@ public sealed class ClientCacheService
 
         [Column("position_y")]
         public int PositionY { get; set; }
+
+        [Column("design_icon")]
+        public string? DesignIcon { get; set; }
     }
 
     private sealed class CachedCategoryRow
@@ -1286,6 +1600,9 @@ public sealed class ClientCacheService
 
         [Column("currency")]
         public string Currency { get; set; } = "GBP";
+
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
     }
 
     private sealed class CachedModifierGroupRow

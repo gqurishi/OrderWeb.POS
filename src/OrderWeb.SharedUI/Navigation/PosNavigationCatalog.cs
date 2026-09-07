@@ -15,18 +15,18 @@ public static class PosNavigationCatalog
     [
         Item("dashboard", "Dashboard", "dashboard.png", [], [], 10),
         // Keep the normal order-taking flow together in every host sidebar.
-        Item("liveorder", "Live Order", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.DineIn, PosFeatureKeys.Collection, PosFeatureKeys.Delivery], 55),
+        Item("liveorder", "Live Order", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.LiveOrders], 55),
         Item("restaurant", "Restaurant", "restaurant.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.DineIn], 30),
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
-        Item("customers", "Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [], 60),
-        Item("payments", "Payments", "giftcards.png", [PosCapabilityKeys.TakePayments], [], 70),
-        Item("cashdrawer", "Cash Drawer", "cashdrawer.png", [PosCapabilityKeys.TakePayments], [], 20),
+        Item("customers", "Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 60),
+        Item("payments", "Payments", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 70),
+        Item("cashdrawer", "Cash Drawer", "cashdrawer.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 20),
         Item("giftcards", "Gift Cards", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.GiftCards], 60),
         Item("loyalty", "Loyalty Points", "loyalty.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.CustomerPoints], 70),
         Item("reservation", "Reservation", "reservation.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.Reservations], 80),
-        Item("orderhistory", "Order History", "orderhistory.png", [PosCapabilityKeys.TakeOrders], [], 90),
-        Item("weborders", "Web Orders", "weborders.png", [PosCapabilityKeys.TakeOrders], [], 100),
+        Item("orderhistory", "Order History", "orderhistory.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Payments], 90),
+        Item("weborders", "Web Orders", "weborders.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.WebOrders], 100),
         Item("report", "Reports", "report.png", [PosCapabilityKeys.ViewReports], [], 140),
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
         Item("printersetup", "Printers", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
@@ -34,7 +34,7 @@ public static class PosNavigationCatalog
         Item("staffclock", "Staff Clock", "staff.png", [PosCapabilityKeys.AccessAdmin], [], 180),
         Item("inventory", "Inventory", "inventory.png", [PosCapabilityKeys.ViewReports], [], 190),
         Item("terminalhealth", "Terminal Health", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),
-        Item("customerdata", "Recent Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [], 110)
+        Item("customerdata", "Recent Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 110)
     ];
 
     public static IReadOnlyList<ApplicationNavigationItem> Filter(
@@ -42,14 +42,13 @@ public static class PosNavigationCatalog
         IReadOnlySet<string>? features = null,
         IReadOnlySet<string>? hostRoutes = null)
     {
-        features ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return All
             .Where(item => hostRoutes is null || hostRoutes.Contains(item.Route))
             .Where(item => item.RequiredCapabilities.Count == 0 ||
                            item.RequiredCapabilities.All(capabilities.Contains))
             .Where(item => item.RequiredFeatures.Count == 0 ||
-                           item.RequiredFeatures.Any(features.Contains) ||
-                           features.Count == 0)
+                           features is null ||
+                           item.RequiredFeatures.Any(features.Contains))
             .OrderBy(item => item.SortOrder)
             .Select(item => new ApplicationNavigationItem(item.Route, item.Title, item.IconKey)
             {

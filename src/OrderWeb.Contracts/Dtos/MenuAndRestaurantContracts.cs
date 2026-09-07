@@ -32,6 +32,12 @@ public sealed record RestaurantTableDto(
     long Revision = 0,
     int GuestCount = 0,
     decimal CurrentTotal = 0m,
-    string? SessionStatus = null);
+    string? SessionStatus = null,
+    string? Icon = null);
 
 public sealed record TableSnapshotDto(string Version, IReadOnlyList<RestaurantTableDto> Tables);
+
+public sealed record RestaurantLayoutSnapshotDto(
+    string Version,
+    IReadOnlyList<FloorDto> Floors,
+    IReadOnlyList<RestaurantTableDto> Tables);

@@ -36,16 +36,16 @@ public sealed class MotherPrintClient
             var envelope = JsonSerializer.Deserialize<PrintEnvelope>(json, JsonOptions);
             var print = envelope?.Print;
             return new PrintRequestState(requestId, printType, orderId,
-                response.IsSuccessStatusCode && envelope?.Success == true ? print?.Status ?? "queued" : "failed",
+                response.IsSuccessStatusCode && envelope?.Success == true ? NormalizeStatus(print?.Status) : "failed",
                 print?.Message ?? envelope?.Message ?? "Mother could not process the print request.", now, DateTimeOffset.UtcNow.ToString("O"));
         }
         catch (HttpRequestException)
         {
-            return new PrintRequestState(requestId, printType, orderId, "unknown", "Mother POS could not be reached. Check Mother print history before retrying.", now, now);
+            return new PrintRequestState(requestId, printType, orderId, "failed", "Mother POS could not be reached. Check Mother print history before retrying.", now, now);
         }
         catch (TaskCanceledException)
         {
-            return new PrintRequestState(requestId, printType, orderId, "unknown", "Mother POS did not respond. Check Mother print history before retrying.", now, now);
+            return new PrintRequestState(requestId, printType, orderId, "failed", "Mother POS did not respond. Check Mother print history before retrying.", now, now);
         }
     }
 
@@ -54,7 +54,7 @@ public sealed class MotherPrintClient
         var now = DateTimeOffset.UtcNow.ToString("O");
         var settings = await _cache.GetMotherConnectionAsync();
         if (settings == null || session == null || string.IsNullOrWhiteSpace(requestId))
-            return new PrintRequestState(requestId, "status", orderId, "unknown", "Mother print history requires a paired terminal and active session.", now, now);
+            return new PrintRequestState(requestId, "status", orderId, "failed", "Mother print history requires a paired terminal and active session.", now, now);
 
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         ClientCompatibilityHeaders.Apply(client);
@@ -67,14 +67,22 @@ public sealed class MotherPrintClient
             var json = await response.Content.ReadAsStringAsync();
             var envelope = JsonSerializer.Deserialize<PrintEnvelope>(json, JsonOptions);
             return new PrintRequestState(requestId, envelope?.Print?.DocumentType ?? "status", orderId,
-                envelope?.Print?.Status ?? "unknown", envelope?.Print?.Message ?? envelope?.Message ?? "Mother has no final print result yet.", now, DateTimeOffset.UtcNow.ToString("O"));
+                NormalizeStatus(envelope?.Print?.Status), envelope?.Print?.Message ?? envelope?.Message ?? "Mother has no final print result yet.", now, DateTimeOffset.UtcNow.ToString("O"));
         }
-        catch (HttpRequestException) { return new PrintRequestState(requestId, "status", orderId, "unknown", "Mother could not be reached to check print history.", now, now); }
-        catch (TaskCanceledException) { return new PrintRequestState(requestId, "status", orderId, "unknown", "Mother did not respond to the print-history check.", now, now); }
+        catch (HttpRequestException) { return new PrintRequestState(requestId, "status", orderId, "failed", "Mother could not be reached to check print history.", now, now); }
+        catch (TaskCanceledException) { return new PrintRequestState(requestId, "status", orderId, "failed", "Mother did not respond to the print-history check.", now, now); }
     }
 
     // Kept for existing callers: only Mother may advance a print status.
     public Task<PrintRequestState> AdvanceStatusAsync(PrintRequestState request) => Task.FromResult(request);
+
+    private static string NormalizeStatus(string? status) => status?.Trim().ToLowerInvariant() switch
+    {
+        "printed" => "printed",
+        "partial" => "partial",
+        "failed" => "failed",
+        _ => "queued"
+    };
 
     private sealed record PrintEnvelope(bool Success, string? Message, PrintState? Print);
     private sealed record PrintState(string? PrintJobId, string? Status, string? Message, string? DocumentType = null);

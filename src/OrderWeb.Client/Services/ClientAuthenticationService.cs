@@ -1,4 +1,5 @@
 using OrderWeb.Client.Models;
+using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Capabilities;
 using OrderWeb.Contracts.Dtos;
 using OrderWeb.Contracts.Results;
@@ -30,7 +31,7 @@ public sealed class ClientAuthenticationService : IAuthenticationService
             {
                 return OperationResult<UserSession>.Failure(new OperationError(
                     OperationErrorCode.Forbidden,
-                    "Administrator access is available on the Mother POS only. Please use the Mother POS terminal."));
+                    "Admin can't sign in on Client POS. Use Mother POS. This terminal is for User, Manager, and Cashier."));
             }
             if (string.Equals(session.Role, "Staff", StringComparison.OrdinalIgnoreCase))
             {
@@ -93,7 +94,17 @@ public static class ClientCapabilityResolver
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (explicitCapabilities is { Count: > 0 })
         {
-            return explicitCapabilities;
+            return ClientAccessPolicy.FilterCapabilities(explicitCapabilities);
+        }
+
+        // Never fall through to the order-taking defaults for Cashier. A Mother
+        // upgrade that omits capabilities must fail closed on Client POS.
+        if (string.Equals(role, "Cashier", StringComparison.OrdinalIgnoreCase))
+        {
+            return ClientAccessPolicy.FilterCapabilities(
+            [
+                PosCapabilityKeys.ViewDashboard
+            ]);
         }
 
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -121,6 +132,6 @@ public static class ClientCapabilityResolver
             set.Add(PosCapabilityKeys.ApproveManagerAction);
         }
 
-        return set;
+        return ClientAccessPolicy.FilterCapabilities(set);
     }
 }

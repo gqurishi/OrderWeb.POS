@@ -278,7 +278,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                     {
                         if (!_roleAccessService.CanOpenCashDrawer(_authService.CurrentUser?.Role))
                         {
-                            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only managers and admins can open the cash drawer.");
+                            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to open the cash drawer.");
                             return;
                         }
 
@@ -348,7 +348,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             {
                 if (!_roleAccessService.CanOpenCashDrawer(_authService.CurrentUser?.Role))
                 {
-                    await AppAlertService.ShowAlertAsync("Access Denied", "Only managers and admins can open the cash drawer.");
+                    await AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to open the cash drawer.");
                     return;
                 }
                 Shell.Current.FlyoutIsPresented = false;
@@ -469,6 +469,10 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                 "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
                 "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
             },
+            UserRole.Cashier => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "dashboard", "cashdrawer", "report"
+            },
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "collection", "delivery",
@@ -499,6 +503,10 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.GiftCards);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.CustomerPoints);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.LiveOrders);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Customers);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Payments);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.WebOrders);
         return features;
     }
 

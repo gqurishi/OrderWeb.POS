@@ -310,6 +310,17 @@
                                                         Padding="10,6"
                                                         FontSize="11"
                                                         FontFamily="OpenSansSemibold" />
+                                                <Button Text="Access"
+                                                        IsVisible="{Binding CanEditClientAccess}"
+                                                        Clicked="OnClientAccessClicked"
+                                                        BackgroundColor="#F0FDF4"
+                                                        TextColor="#047857"
+                                                        BorderColor="#BBF7D0"
+                                                        BorderWidth="1"
+                                                        CornerRadius="8"
+                                                        Padding="10,6"
+                                                        FontSize="11"
+                                                        FontFamily="OpenSansSemibold" />
                                                 <Button Text="Force Logout"
                                                         IsVisible="{Binding CanForceLogout}"
                                                         Clicked="OnForceLogoutTerminalClicked"

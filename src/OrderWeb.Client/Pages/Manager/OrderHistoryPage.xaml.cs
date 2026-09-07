@@ -38,6 +38,11 @@ public partial class OrderHistoryPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
+        if (!ClientHostAccess.CanOpenMenu(menu))
+        {
+            return;
+        }
+
         await Navigation.PushAsync(menu switch
         {
             "Cash Drawer" => new CashDrawerPage(),
@@ -45,7 +50,6 @@ public partial class OrderHistoryPage : ContentPage
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
             "Live Order" => new LiveOrderPage(),
-            "Web Orders" => new OnlineOrdersPage(),
             "Gift Cards" => new GiftCardPage(),
             "Loyalty Points" => new LoyaltyPage(),
             "Reservation" => new ReservationPage(),

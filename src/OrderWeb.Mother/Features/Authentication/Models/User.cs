@@ -16,16 +16,17 @@ public class User
     public string StatusBorderColor => IsActive ? "#BBF7D0" : "#CBD5E1";
     public string StatusTextColor => IsActive ? "#15803D" : "#64748B";
     public string StatusDotColor => IsActive ? "#22C55E" : "#94A3B8";
-    public string DeactivateButtonText => IsActive ? "Deactivate" : "Inactive";
-    public string DeactivateButtonBackgroundColor => IsActive ? "#EF4444" : "#CBD5E1";
-    public string DeactivateButtonTextColor => IsActive ? "White" : "#64748B";
-    public bool CanDeactivate => IsActive;
+    public string DeactivateButtonText => IsActive ? "Deactivate" : "Reactivate";
+    public string DeactivateButtonBackgroundColor => IsActive ? "#EF4444" : "#16A34A";
+    public string DeactivateButtonTextColor => "White";
+    public bool CanDeactivate => true;
 }
 
 public enum UserRole
 {
     Staff,
     User,
+    Cashier,
     Manager,
     Admin
 }

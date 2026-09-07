@@ -93,28 +93,28 @@ public sealed class MotherAuthClient
             {
                 if (endpoint == endpoints[^1])
                 {
-                    throw new LoginException($"Mother POS login did not respond at {endpoint}.", ex);
+                    throw new LoginException($"Mother POS login did not respond at {endpoint}.", ex, "mother_unreachable");
                 }
             }
             catch (TimeoutException ex)
             {
                 if (endpoint == endpoints[^1])
                 {
-                    throw new LoginException($"Mother POS login did not respond at {endpoint}.", ex);
+                    throw new LoginException($"Mother POS login did not respond at {endpoint}.", ex, "mother_unreachable");
                 }
             }
             catch (HttpRequestException ex)
             {
                 if (endpoint == endpoints[^1])
                 {
-                    throw new LoginException($"Could not reach Mother POS login at {endpoint}. {ex.Message}", ex);
+                    throw new LoginException($"Could not reach Mother POS login at {endpoint}. {ex.Message}", ex, "mother_unreachable");
                 }
             }
         }
 
         if (response is null)
         {
-            throw new LoginException($"Mother POS login did not respond at {attemptedEndpoint ?? endpoints[0]}.");
+            throw new LoginException($"Mother POS login did not respond at {attemptedEndpoint ?? endpoints[0]}.", "mother_unreachable");
         }
 
         var json = await response.Content.ReadAsStringAsync();
@@ -155,6 +155,8 @@ public sealed class MotherAuthClient
                 .Cast<string>()
                 .ToList()
             : new List<string>();
+        var features = TryReadStringList(payload, "features") ?? TryReadStringList(root, "features");
+        var routes = TryReadStringList(payload, "routes") ?? TryReadStringList(root, "routes");
 
         if (!response.IsSuccessStatusCode || !success || string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(sessionToken))
         {
@@ -168,6 +170,11 @@ public sealed class MotherAuthClient
                     : $"Mother POS login failed with status {(int)response.StatusCode}.";
             }
 
+            if (string.IsNullOrWhiteSpace(errorCode) && ContainsPairingFailure(finalMessage))
+            {
+                errorCode = "pairing_invalid";
+            }
+
             throw new LoginException(finalMessage, errorCode);
         }
 
@@ -179,7 +186,23 @@ public sealed class MotherAuthClient
             sessionToken,
             DateTimeOffset.TryParse(expiresAtUtc, out var expiresAt)
                 ? expiresAt
-                : DateTimeOffset.UtcNow.AddHours(12));
+                : DateTimeOffset.UtcNow.AddHours(12),
+            features,
+            routes);
+    }
+
+    private static List<string>? TryReadStringList(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        return value.EnumerateArray()
+            .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToList();
     }
 
     private static bool TryReadBool(JsonElement element, string propertyName)
@@ -191,6 +214,19 @@ public sealed class MotherAuthClient
         }
 
         return false;
+    }
+
+    internal static bool ContainsPairingFailure(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        return message.Contains("terminal token", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Terminal authorization failed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("token revoked", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not paired", StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonElement GetLoginPayload(JsonElement root)
@@ -265,4 +301,17 @@ public sealed class LoginException : Exception
         : base(message, innerException)
     {
     }
+
+    public LoginException(string message, Exception innerException, string? errorCode)
+        : base(message, innerException)
+    {
+        ErrorCode = errorCode;
+    }
+
+    public bool IsMotherUnreachable =>
+        string.Equals(ErrorCode, "mother_unreachable", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsPairingInvalid =>
+        string.Equals(ErrorCode, "pairing_invalid", StringComparison.OrdinalIgnoreCase)
+        || MotherAuthClient.ContainsPairingFailure(Message);
 }

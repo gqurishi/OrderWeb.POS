@@ -37,7 +37,8 @@ public sealed class ApplicationNavigationItem
             return false;
         }
 
-        if (RequiredFeatures.Count > 0 && features is { Count: > 0 } &&
+        if (RequiredFeatures.Count > 0 &&
+            features is not null &&
             !RequiredFeatures.Any(features.Contains))
         {
             return false;

@@ -67,6 +67,7 @@ public sealed class MotherEventClient : IAsyncDisposable
     public event EventHandler<MotherTerminalControlEventArgs>? TerminalControlReceived;
     public event EventHandler<MotherConnectionChangedEventArgs>? ConnectionChanged;
     public event EventHandler<MotherDataChangedEventArgs>? AuthoritativeDataChanged;
+    public static event EventHandler<MotherDataChangedEventArgs>? SharedAuthoritativeDataChanged;
     public bool IsRunning => _connectionTask is { IsCompleted: false };
 
     public async Task StartAsync()
@@ -264,7 +265,9 @@ public sealed class MotherEventClient : IAsyncDisposable
         {
             return;
         }
-        AuthoritativeDataChanged?.Invoke(this, new MotherDataChangedEventArgs(eventId, eventType, restaurantId, version, timestamp, correlationId));
+        var args = new MotherDataChangedEventArgs(eventId, eventType, restaurantId, version, timestamp, correlationId);
+        AuthoritativeDataChanged?.Invoke(this, args);
+        SharedAuthoritativeDataChanged?.Invoke(this, args);
     }
 
     private static Uri BuildWebSocketUri(MotherConnectionSettings settings)

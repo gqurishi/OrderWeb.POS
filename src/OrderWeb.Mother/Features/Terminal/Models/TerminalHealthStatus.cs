@@ -39,6 +39,7 @@ public sealed class TerminalHealthStatus
     public bool CanDisableTerminal => CanManageClient && !IsDisabled;
     public bool CanRevokeTerminal => CanManageClient && !IsRevoked && !string.IsNullOrWhiteSpace(TerminalId);
     public bool CanForceLogout => CanManageClient && !string.IsNullOrWhiteSpace(TerminalId);
+    public bool CanEditClientAccess => CanManageClient && !string.IsNullOrWhiteSpace(TerminalId);
     public string StatusDisplay => IsDisabled
         ? "Disabled"
         : IsRevoked

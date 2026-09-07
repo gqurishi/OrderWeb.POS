@@ -39,6 +39,13 @@ namespace POS_in_NET.Views
             RoleSelected?.Invoke(this, UserRole.User);
             HideOverlay();
         }
+
+        private void OnCashierSelected(object sender, EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("Cashier role selected");
+            RoleSelected?.Invoke(this, UserRole.Cashier);
+            HideOverlay();
+        }
         
         private void OnManagerSelected(object sender, EventArgs e)
         {

@@ -74,6 +74,26 @@ public static class MotherCapabilityResolver
         set.Add(PosCapabilityKeys.OpenTables);
         set.Add(PosCapabilityKeys.ManageCustomers);
 
+        // Cashiers have a reports-and-till-only surface. Deliberately do not
+        // grant any order, customer, payment, refund, discount, or approval
+        // capability to this role.
+        if (role is UserRole.Cashier)
+        {
+            set.Clear();
+            set.Add(PosCapabilityKeys.ViewDashboard);
+            set.Add(PosCapabilityKeys.ViewReports);
+            set.Add(PosCapabilityKeys.ViewDailyReports);
+            set.Add(PosCapabilityKeys.PreviewZReports);
+            set.Add(PosCapabilityKeys.PrintZReports);
+            set.Add(PosCapabilityKeys.ReprintZReports);
+            set.Add(PosCapabilityKeys.ExportReports);
+            set.Add(PosCapabilityKeys.ViewReportPrintHistory);
+            set.Add(PosCapabilityKeys.OpenCashDrawer);
+            set.Add(PosCapabilityKeys.ReconcileCashDrawer);
+            set.Add(PosCapabilityKeys.AddReconciliationNotes);
+            return set;
+        }
+
         if (role is UserRole.Manager or UserRole.Admin)
         {
             set.Add(PosCapabilityKeys.TakePayments);

@@ -66,6 +66,13 @@
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 
+    <!-- Cashier Dashboard (reports and till operations only) -->
+    <ShellContent
+        ContentTemplate="{DataTemplate pages:CashierDashboardPage}"
+        Route="cashierdashboard"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
     <FlyoutItem Title="Restaurant">
         <ShellContent
             Title="Restaurant Overview"

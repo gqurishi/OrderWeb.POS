@@ -9,6 +9,7 @@ public partial class TerminalHealthPage : ContentPage
 {
     private readonly TerminalHealthService _terminalHealthService;
     private readonly ClientWebSocketBroadcastService _clientApiService;
+    private readonly ClientTerminalAccessService _clientAccessService;
     private readonly DatabaseBackupService _databaseBackupService;
     private bool _isLoading;
     private string _summaryText = "Loading terminal health...";
@@ -171,10 +172,18 @@ public partial class TerminalHealthPage : ContentPage
 
         _terminalHealthService = ServiceHelper.GetService<TerminalHealthService>()
             ?? new TerminalHealthService(new DatabaseService());
+        var databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
+        _clientAccessService = ServiceHelper.GetService<ClientTerminalAccessService>()
+            ?? new ClientTerminalAccessService(databaseService);
         _clientApiService = ServiceHelper.GetService<ClientWebSocketBroadcastService>()
-            ?? new ClientWebSocketBroadcastService(new DatabaseService(), AuthenticationService.Instance, new PermissionService(new DatabaseService(), AuthenticationService.Instance));
+            ?? new ClientWebSocketBroadcastService(
+                databaseService,
+                AuthenticationService.Instance,
+                new PermissionService(databaseService, AuthenticationService.Instance),
+                new ReservationSyncService(databaseService),
+                _clientAccessService);
         _databaseBackupService = ServiceHelper.GetService<DatabaseBackupService>()
-            ?? new DatabaseBackupService(new DatabaseService());
+            ?? new DatabaseBackupService(databaseService);
     }
 
     protected override async void OnAppearing()
@@ -436,6 +445,42 @@ public partial class TerminalHealthPage : ContentPage
         }
 
         await RunClientActionAsync(() => _terminalHealthService.ForceLogoutTerminalAsync(terminal.TerminalName), "Force Logout");
+    }
+
+    private async void OnClientAccessClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.BindingContext is not TerminalHealthStatus terminal)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(terminal.TerminalId))
+        {
+            await AppAlertService.ShowAlertAsync("Client Access", "This Client must finish pairing before Mother can set its access list.");
+            return;
+        }
+
+        try
+        {
+            var granted = await _clientAccessService.GetGrantedFeaturesAsync(terminal.TerminalId);
+            var dialog = new ClientTerminalAccessDialog();
+            dialog.SetGrantedFeatures(granted);
+            var selected = await dialog.ShowAsync();
+            if (selected is null)
+            {
+                return;
+            }
+
+            await _clientAccessService.SaveGrantedFeaturesAsync(terminal.TerminalId, selected);
+            await _clientApiService.PublishDataChangedAsync("features.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            await AppAlertService.ShowAlertAsync(
+                "Client Access Saved",
+                $"{terminal.TerminalName} will use this list at the next PIN login. Reservations stay off unless you turned them on.");
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Client Access", ex.Message);
+        }
     }
 
     private async void OnRenameTerminalClicked(object sender, EventArgs e)

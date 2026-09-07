@@ -39,7 +39,7 @@ public partial class CollectionOrderPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (menu == "Collection")
+        if (menu == "Collection" || !ClientHostAccess.CanOpenMenu(menu))
         {
             return;
         }
@@ -51,7 +51,6 @@ public partial class CollectionOrderPage : ContentPage
             "Restaurant" => new TableLayoutPage(),
             "Delivery" => new DeliveryOrderPage(),
             "Live Order" => new LiveOrderPage(),
-            "Web Orders" => new OnlineOrdersPage(),
             "Gift Cards" => new GiftCardPage(),
             "Loyalty Points" => new LoyaltyPage(),
             "Reservation" => new ReservationPage(),
@@ -208,7 +207,7 @@ public partial class CollectionOrderPage : ContentPage
             var orderResult = await _orderClient.CreateCustomerOrderAsync(draft with { Customer = savedCustomer }, session);
             await _cache.SaveOrderStateAsync(orderResult.State);
 
-            await Navigation.PushAsync(new OrderPage(), false);
+            await Navigation.PushAsync(new OrderPage(orderResult.State), false);
         }
         catch (Exception ex)
         {

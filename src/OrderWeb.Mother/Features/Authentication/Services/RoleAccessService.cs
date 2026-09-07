@@ -6,6 +6,9 @@ public class RoleAccessService
 {
     private static readonly string[] KnownRoutesByPriority =
     {
+        // This must be before the generic "dashboard" substring; otherwise a
+        // Cashier login is incorrectly treated as an Admin dashboard request.
+        "cashierdashboard",
         "managerdashboard",
         "userdashboard",
         "visuallayout",
@@ -52,6 +55,10 @@ public class RoleAccessService
                 "login", "managerdashboard", "restaurant", "collection", "delivery", "visuallayout",
                 "liveorder", "reservation", "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
             },
+            [UserRole.Cashier] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login", "cashierdashboard", "report", "cashdrawer", "reconciliation"
+            },
             [UserRole.Admin] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "login", "dashboard", "managerdashboard", "userdashboard", "restaurant",
@@ -68,6 +75,7 @@ public class RoleAccessService
         {
             UserRole.User => "userdashboard",
             UserRole.Manager => "managerdashboard",
+            UserRole.Cashier => "cashierdashboard",
             UserRole.Admin => "dashboard",
             UserRole.Staff => "login",
             _ => "login"
@@ -102,7 +110,7 @@ public class RoleAccessService
     }
 
     public bool CanOpenCashDrawer(UserRole? role) =>
-        role is UserRole.User or UserRole.Manager or UserRole.Admin;
+        role is UserRole.User or UserRole.Cashier or UserRole.Manager or UserRole.Admin;
 
     public bool CanAccessRoute(UserRole? role, string route)
     {
@@ -151,9 +159,9 @@ public class RoleAccessService
     public bool IsAdmin(UserRole? role) => role == UserRole.Admin;
     public bool IsManagerOrAdmin(UserRole? role) => role == UserRole.Manager || role == UserRole.Admin;
 
-    public bool CanViewZReport(UserRole? role) => role == UserRole.Admin;
+    public bool CanViewZReport(UserRole? role) => role is UserRole.Admin or UserRole.Cashier;
 
-    public bool CanPrintZReport(UserRole? role) => role == UserRole.Admin;
+    public bool CanPrintZReport(UserRole? role) => role is UserRole.Admin or UserRole.Cashier;
 
     private static string NormalizeRoute(string route)
     {

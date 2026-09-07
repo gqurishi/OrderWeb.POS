@@ -46,12 +46,17 @@ public class ApplicationShellFrame : ContentView
     public static readonly BindableProperty DialogContentProperty = BindableProperty.Create(nameof(DialogContent), typeof(View), typeof(ApplicationShellFrame), propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyDialog((View?)v));
     public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationShellFrame), "Order Web", propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyIdentity());
     public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationShellFrame), propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyIdentity());
+    public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowIdentity = (bool)v);
+    public static readonly BindableProperty ShowConnectionProperty = BindableProperty.Create(nameof(ShowConnection), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowConnection = (bool)v);
+    public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowWelcomeBrand = (bool)v);
+    public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowMinimize = (bool)v);
 
     public ApplicationShellFrame()
     {
         _header = new ApplicationHeader();
         _header.MenuClicked += (_, _) => IsNavigationOpen = !IsNavigationOpen;
         _header.LogoutClicked += (_, _) => LogoutRequested?.Invoke(this, EventArgs.Empty);
+        _header.MinimizeClicked += (_, _) => MinimizeRequested?.Invoke(this, EventArgs.Empty);
         _contentHost = new ContentView();
 
         _sidebar = new ApplicationSidebar { HorizontalOptions = LayoutOptions.Start, TranslationX = -280 };
@@ -98,6 +103,7 @@ public class ApplicationShellFrame : ContentView
 
     public event EventHandler<NavigationRequestedEventArgs>? NavigationRequested;
     public event EventHandler? LogoutRequested;
+    public event EventHandler? MinimizeRequested;
     public event EventHandler? UpdateRequested;
     public event EventHandler? RetryRequested;
     public event EventHandler? SessionExpiredLoginRequested;
@@ -127,14 +133,24 @@ public class ApplicationShellFrame : ContentView
     public View? DialogContent { get => (View?)GetValue(DialogContentProperty); set => SetValue(DialogContentProperty, value); }
     public string RestaurantName { get => (string)GetValue(RestaurantNameProperty); set => SetValue(RestaurantNameProperty, value); }
     public ImageSource? RestaurantLogo { get => (ImageSource?)GetValue(RestaurantLogoProperty); set => SetValue(RestaurantLogoProperty, value); }
+    public bool ShowIdentity { get => (bool)GetValue(ShowIdentityProperty); set => SetValue(ShowIdentityProperty, value); }
+    public bool ShowConnection { get => (bool)GetValue(ShowConnectionProperty); set => SetValue(ShowConnectionProperty, value); }
+    public bool ShowWelcomeBrand { get => (bool)GetValue(ShowWelcomeBrandProperty); set => SetValue(ShowWelcomeBrandProperty, value); }
+    public bool ShowMinimize { get => (bool)GetValue(ShowMinimizeProperty); set => SetValue(ShowMinimizeProperty, value); }
     public bool IsUpdating { get => _sidebar.IsUpdating; set => _sidebar.IsUpdating = value; }
     public void RefreshMenu() => _sidebar.Refresh();
+    public void SetSidebarVisible(bool visible)
+    {
+        _sidebar.IsVisible = visible;
+        _header.SetMenuVisible(visible);
+    }
 
     private void ApplyIdentity()
     {
         if (_header == null || _sidebar == null) return;
         _header.UserName = UserName; _header.TerminalName = TerminalName; _header.ConnectionStatus = ConnectionStatus; _header.RestaurantName = RestaurantName; _header.RestaurantLogo = RestaurantLogo;
-        _sidebar.UserName = UserName; _sidebar.TerminalName = TerminalName; _sidebar.ConnectionStatus = ConnectionStatus; _sidebar.CurrentRole = UserRole; _sidebar.RestaurantName = RestaurantName; _sidebar.RestaurantLogo = RestaurantLogo;
+        // Sidebar keeps the Order Web product brand; the header shows the restaurant name.
+        _sidebar.UserName = UserName; _sidebar.TerminalName = TerminalName; _sidebar.ConnectionStatus = ConnectionStatus; _sidebar.CurrentRole = UserRole; _sidebar.RestaurantName = "Order Web"; _sidebar.RestaurantLogo = RestaurantLogo;
     }
     private async void ApplyNavigation(bool open)
     {

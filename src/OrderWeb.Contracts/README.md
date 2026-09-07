@@ -6,6 +6,7 @@ The initial foundation contains:
 
 - standard operation result and error models;
 - permission models plus capability and feature identifiers;
+- Client access policy (what Mother may grant, what is blocked on every Client);
 - capability-driven navigation metadata;
 - synchronization version and event models;
 - Client/API compatibility models;

@@ -8,8 +8,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using MySqlConnector;
+using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Dtos;
+using OrderWeb.Contracts.Capabilities;
 using OrderWeb.Contracts.Compatibility;
+using OrderWeb.Contracts.Features;
 using OrderWeb.Contracts.Synchronization;
 using POS_in_NET.Models;
 
@@ -27,19 +30,29 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
     private readonly DatabaseService _databaseService;
     private readonly AuthenticationService _authenticationService;
     private readonly PermissionService _permissionService;
+    private readonly ReservationSyncService _reservationSync;
+    private readonly ClientTerminalAccessService _clientAccess;
+    private readonly ClientPosOperationalService _operational;
     private readonly ConcurrentDictionary<string, ClientWebSocketConnection> _clients = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTimeOffset>> _rateLimitWindows = new();
+    private readonly ConcurrentDictionary<string, object> _cashierRequestIds = new();
     private readonly SemaphoreSlim _lifetimeLock = new(1, 1);
     private WebApplication? _app;
 
     public ClientWebSocketBroadcastService(
         DatabaseService databaseService,
         AuthenticationService authenticationService,
-        PermissionService permissionService)
+        PermissionService permissionService,
+        ReservationSyncService reservationSync,
+        ClientTerminalAccessService clientAccess)
     {
         _databaseService = databaseService;
         _authenticationService = authenticationService;
         _permissionService = permissionService;
+        _reservationSync = reservationSync;
+        _clientAccess = clientAccess;
+        _operational = new ClientPosOperationalService(databaseService, reservationSync);
+        _reservationSync.SyncCompleted += OnReservationSyncCompleted;
     }
 
     public bool IsRunning { get; private set; }
@@ -75,7 +88,22 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/pos/v1/compatibility", HandleCompatibilityAsync);
             app.MapPost("/api/client/bootstrap", HandleBootstrapAsync);
             app.MapGet("/api/client/sync/versions", HandleSyncVersionsAsync);
+            app.MapGet("/api/client/layout", HandleLayoutAsync);
+            app.MapGet("/api/client/menu", HandleMenuAsync);
+            app.MapGet("/api/client/delivery-zones/lookup", HandleDeliveryZoneLookupAsync);
+            app.MapGet("/api/client/delivery-zones/quote", HandleDeliveryZoneQuoteAsync);
+            app.MapGet("/api/client/orders", HandleListOrdersAsync);
+            app.MapPost("/api/client/orders", HandleUpsertOrderAsync);
+            app.MapGet("/api/client/reservations", HandleListReservationsAsync);
+            app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
+            app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
+            app.MapPost("/api/client/reservations/sync", HandleSyncReservationsAsync);
             app.MapPost("/api/client/login", HandleLoginAsync);
+            app.MapGet("/api/client/cashier/authorization", HandleCashierAuthorizationAsync);
+            app.MapGet("/api/client/cashier/dashboard", HandleCashierDashboardAsync);
+            app.MapGet("/api/client/cashier/z-report/preview", HandleCashierZReportPreviewAsync);
+            app.MapPost("/api/client/cashier/z-report/print", HandleCashierZReportPrintAsync);
+            app.MapPost("/api/client/cashier/cash-drawer/open", HandleCashierCashDrawerOpenAsync);
             app.MapGet("/api/client/customers/search", HandleCustomerSearchAsync);
             app.MapPost("/api/client/customers/upsert", HandleCustomerUpsertAsync);
             app.MapPost("/api/client/payments", HandlePaymentAsync);
@@ -236,6 +264,603 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             versions,
             generatedUtc = DateTimeOffset.UtcNow
         });
+    }
+
+    private async Task HandleLayoutAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.OpenTables) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.DineIn))
+        {
+            return;
+        }
+
+        try
+        {
+            var floorService = new FloorService();
+            var tableSessionService = new TableSessionService();
+            var floors = await floorService.GetAllFloorsAsync();
+            var tables = await tableSessionService.GetTablesWithSessionsAsync();
+            if (tables.Count == 0)
+            {
+                tables = await new RestaurantTableService().GetAllTablesAsync();
+            }
+
+            var versions = await GetConfigurationVersionsAsync();
+            var version = versions.TryGetValue(SyncSectionKeys.Tables, out var tableVersion)
+                ? tableVersion
+                : "1";
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                version,
+                generatedUtc = DateTimeOffset.UtcNow,
+                floors = floors.Select((floor, index) => new
+                {
+                    id = floor.Id.ToString(),
+                    name = floor.Name,
+                    sortOrder = index,
+                    backgroundImageId = (string?)null
+                }),
+                tables = tables.Select(table => new
+                {
+                    id = table.Id.ToString(),
+                    floorId = table.FloorId.ToString(),
+                    name = table.TableNumber,
+                    capacity = table.Capacity,
+                    status = table.Status.ToString(),
+                    x = table.PositionX,
+                    y = table.PositionY,
+                    openOrderId = table.CurrentSession?.LinkedOrderId ?? table.CurrentSession?.CurrentOrderId,
+                    revision = 1L,
+                    guestCount = table.CurrentSession?.PartySize ?? 0,
+                    currentTotal = table.CurrentSession?.LinkedOrderTotalAmount ?? 0m,
+                    sessionStatus = table.CurrentSession?.Status.ToString(),
+                    icon = string.IsNullOrWhiteSpace(table.TableDesignIcon) ? "table_1.png" : table.TableDesignIcon
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client layout snapshot failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load the restaurant layout."
+            });
+        }
+    }
+
+    private async Task HandleMenuAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders) ||
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.DineIn, PosFeatureKeys.Collection, PosFeatureKeys.Delivery, PosFeatureKeys.LiveOrders))
+        {
+            return;
+        }
+
+        try
+        {
+            var versions = await GetConfigurationVersionsAsync();
+            var version = versions.TryGetValue(SyncSectionKeys.Menu, out var menuVersion) ? menuVersion : "1";
+            var snapshot = await _operational.BuildMenuSnapshotAsync(version);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                version = snapshot.Version,
+                generatedUtc = DateTimeOffset.UtcNow,
+                categories = snapshot.Categories,
+                products = snapshot.Products,
+                prices = snapshot.Prices,
+                modifierGroups = snapshot.ModifierGroups,
+                modifiers = snapshot.Modifiers,
+                productModifiers = snapshot.ProductModifiers
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client menu snapshot failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load the food menu."
+            });
+        }
+    }
+
+    private async Task HandleDeliveryZoneLookupAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Delivery))
+        {
+            return;
+        }
+
+        var postcode = context.Request.Query["postcode"].ToString();
+        var suggestions = await _operational.LookupAddressesAsync(postcode);
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            addressSuggestions = suggestions
+        });
+    }
+
+    private async Task HandleDeliveryZoneQuoteAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Delivery))
+        {
+            return;
+        }
+
+        var postcode = context.Request.Query["postcode"].ToString();
+        var quote = await _operational.QuoteDeliveryZoneAsync(postcode);
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            quote = new
+            {
+                postcode = quote.Postcode,
+                isDeliverable = quote.IsDeliverable,
+                deliveryZoneName = quote.DeliveryZoneName,
+                deliveryFee = quote.DeliveryFee
+            }
+        });
+    }
+
+    private async Task HandleListOrdersAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders))
+        {
+            return;
+        }
+
+        try
+        {
+            var orderType = context.Request.Query["orderType"].ToString();
+            var orderFeature = FeatureForOrderType(orderType);
+            if (orderFeature is not null)
+            {
+                if (!await EnsureFeatureAsync(context, session, orderFeature))
+                {
+                    return;
+                }
+            }
+            else if (!await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Collection, PosFeatureKeys.Delivery, PosFeatureKeys.LiveOrders, PosFeatureKeys.DineIn))
+            {
+                return;
+            }
+            var orders = await _operational.ListOpenOrdersAsync(orderType);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                orders
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client open-order list failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load open Client orders."
+            });
+        }
+    }
+
+    private async Task HandleUpsertOrderAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "client-orders", 40, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderUpsertHttpRequest>(context);
+        if (request == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "An order payload is required."
+            });
+            return;
+        }
+
+        var orderFeature = FeatureForOrderType(request.OrderType) ?? PosFeatureKeys.Collection;
+        if (!await EnsureFeatureAsync(context, session, orderFeature))
+        {
+            return;
+        }
+        if (request.PrintKitchen && !await EnsureCapabilityAsync(context, session, PosCapabilityKeys.PrintReceipts)) return;
+
+        try
+        {
+            var result = await _operational.UpsertOrderAsync(new ClientOrderUpsertRequest(
+                request.OrderId,
+                request.OrderType,
+                request.CustomerName,
+                request.CustomerPhone,
+                request.CustomerEmail,
+                request.CustomerAddress,
+                request.DeliveryFee,
+                request.Notes,
+                request.ScheduledTime,
+                request.TableId,
+                request.TableNumber,
+                request.Guests,
+                request.Lines?.Select(line => new ClientOrderLineRequest(
+                    line.Id,
+                    line.ProductId,
+                    line.Name ?? string.Empty,
+                    line.Quantity,
+                    line.UnitPrice,
+                    line.Notes,
+                    line.Modifiers)).ToList()));
+            if (!result.Success || result.Order == null)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    message = result.Message
+                });
+                return;
+            }
+
+            object? print = null;
+            if (request.PrintKitchen)
+            {
+                var printRequestId = string.IsNullOrWhiteSpace(request.PrintRequestId) ? Guid.NewGuid().ToString("N") : request.PrintRequestId.Trim();
+                var duplicate = await GetPrintAuditAsync(printRequestId, session.TerminalId);
+                if (duplicate != null)
+                {
+                    print = duplicate;
+                }
+                else if (await TryBeginPrintAuditAsync(printRequestId, session, result.Order.Id, "kitchen_ticket"))
+                {
+                    var order = await new OrderService().GetOrderByExternalIdAsync(result.Order.Id);
+                    var routing = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
+                    var routingResult = order == null ? null : await routing.PrintOrderAsync(ToKitchenPrintOrder(order));
+                    var status = routingResult == null ? "failed" : routingResult.HasFailures && routingResult.AnyPrinted ? "partial" : routingResult.AnyPrinted ? "queued" : "failed";
+                    var message = status == "failed" ? "Mother could not queue the kitchen/bar tickets." : status == "partial" ? "Mother queued part of the order and retained the route failures on Mother." : "Mother queued the kitchen/bar tickets.";
+                    await StorePrintAuditAsync(printRequestId, session, result.Order.Id, "kitchen_ticket", status, message);
+                    print = new { printJobId = printRequestId, status, message };
+                }
+            }
+
+            await PublishDataChangedAsync("order.updated", result.Order.Id);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message,
+                order = result.Order,
+                print
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order save failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not save this Client order."
+            });
+        }
+    }
+
+    private async Task HandleListReservationsAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Reservations))
+        {
+            return;
+        }
+
+        try
+        {
+            var from = ParseDateQuery(context.Request.Query["from"], DateTime.Today.AddDays(-7));
+            var to = ParseDateQuery(context.Request.Query["to"], DateTime.Today.AddMonths(1).AddDays(7));
+            var reservations = await _operational.ListReservationsAsync(from, to);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                reservations
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client reservation list failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load reservations."
+            });
+        }
+    }
+
+    private async Task HandleCreateReservationAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "client-reservations", 40, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Reservations))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientReservationCreateHttpRequest>(context);
+        if (request == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "A reservation payload is required."
+            });
+            return;
+        }
+
+        if (!TryParseReservationDate(request.ReservationDate, out var reservationDate) ||
+            !TryParseReservationTime(request.ReservationTime, out var reservationTime))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "A valid booking date and time are required."
+            });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.CreateReservationAsync(new ClientReservationCreateRequest(
+                reservationDate,
+                reservationTime,
+                request.Covers,
+                request.CustomerName,
+                request.CustomerPhone,
+                request.CustomerEmail,
+                request.PromoCode,
+                request.Notes,
+                request.Allergies,
+                request.TableNumber,
+                request.Channel));
+            if (!result.Success || result.Reservation == null)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    message = result.Message
+                });
+                return;
+            }
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message,
+                reservation = result.Reservation
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client reservation create failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not save this reservation."
+            });
+        }
+    }
+
+    private async Task HandleUpdateReservationStatusAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "client-reservations-status", 60, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Reservations))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientReservationStatusHttpRequest>(context);
+        if (request == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "A reservation status payload is required."
+            });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.UpdateReservationStatusAsync(
+                request.CloudId ?? request.Id,
+                request.LocalId,
+                request.Status);
+            if (!result.Success)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    message = result.Message
+                });
+                return;
+            }
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client reservation status failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not update this reservation."
+            });
+        }
+    }
+
+    private async Task HandleSyncReservationsAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Reservations))
+        {
+            return;
+        }
+
+        try
+        {
+            var date = ParseDateQuery(context.Request.Query["date"], DateTime.Today);
+            var result = await _operational.SyncDateAsync(date);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = result.Success,
+                message = result.Message,
+                reservations = result.Reservations
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client reservation sync failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not sync website reservations."
+            });
+        }
+    }
+
+    private void OnReservationSyncCompleted(object? sender, ReservationSyncCompletedEventArgs e)
+    {
+        if (e.Result.NewReservations == 0 && e.Result.UpdatedReservations == 0)
+        {
+            return;
+        }
+
+        _ = PublishDataChangedAsync("reservation.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+    }
+
+    private static DateTime ParseDateQuery(string? value, DateTime fallback)
+    {
+        return DateTime.TryParse(value, out var parsed) ? parsed.Date : fallback.Date;
+    }
+
+    private static bool TryParseReservationDate(string? value, out DateTime date)
+    {
+        if (DateTime.TryParse(value, out var parsed))
+        {
+            date = parsed.Date;
+            return true;
+        }
+
+        date = default;
+        return false;
+    }
+
+    private static bool TryParseReservationTime(string? value, out TimeSpan time)
+    {
+        if (TimeSpan.TryParse(value, out time))
+        {
+            return true;
+        }
+
+        if (DateTime.TryParse(value, out var parsed))
+        {
+            time = parsed.TimeOfDay;
+            return true;
+        }
+
+        time = default;
+        return false;
     }
 
     private Task HandleHealthAsync(HttpContext context)
@@ -423,7 +1048,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         await AuditSensitiveOperationAsync(terminal.TerminalId, login.User.Id, "client_session_created", "success");
 
         var permissions = await _permissionService.GetRolePermissionsAsync(login.User.Role);
-        var capabilities = MotherCapabilityResolver.ForRole(login.User.Role);
+        var capabilities = ClientAccessPolicy.FilterCapabilities(MotherCapabilityResolver.ForRole(login.User.Role));
+        var features = await _clientAccess.GetGrantedFeaturesAsync(terminal.TerminalId, context.RequestAborted);
+        var routes = ClientAccessPolicy.RoutesForFeatures(features);
         await WriteJsonAsync(context, HttpStatusCode.OK, new
         {
             success = true,
@@ -438,6 +1065,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             expiresAt,
             permissions,
             capabilities,
+            features,
+            routes,
             restaurant_name = TerminalConfigurationService.GetConfiguration().DatabaseName,
             restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName,
             // Keep the flat fields for existing till clients and also provide
@@ -449,6 +1078,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 role = login.User.Role.ToString(),
                 permissions,
                 capabilities,
+                features,
+                routes,
                 sessionToken,
                 expiresAtUtc = expiresAt,
                 restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName
@@ -500,7 +1131,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
             return;
         }
-        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.ViewCustomers)) return;
+        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.ViewCustomers) ||
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Customers, PosFeatureKeys.Collection, PosFeatureKeys.Delivery))
+        {
+            return;
+        }
 
         var orderType = context.Request.Query["orderType"].ToString();
         var name = context.Request.Query["name"].ToString();
@@ -549,7 +1184,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
             return;
         }
-        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.ManageCustomers)) return;
+        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.ManageCustomers) ||
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Customers, PosFeatureKeys.Collection, PosFeatureKeys.Delivery))
+        {
+            return;
+        }
 
         var orderTypes = string.IsNullOrWhiteSpace(request.OrderTypes)
             ? "collection"
@@ -628,7 +1267,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
             return;
         }
-        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments)) return;
+        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments) ||
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards))
+        {
+            return;
+        }
 
         var result = await new MotherPaymentService().TakePaymentAsync(new PaymentRequest(
             request.RequestId,
@@ -675,7 +1318,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
             return;
         }
-        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments)) return;
+        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments) ||
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards))
+        {
+            return;
+        }
 
         var result = await new MotherPaymentService().GetResultAsync($"client:{session.TerminalId}:{requestId}");
         if (!result.IsSuccess || result.Value == null)
@@ -736,6 +1383,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, "failed", "Mother POS could not find this order.");
             await WriteJsonAsync(context, HttpStatusCode.NotFound, new { success = false, message = "Mother POS could not find this order." });
+            return;
+        }
+
+        var printFeature = FeatureForOrderType(order.OrderType);
+        if (printFeature != null && !await EnsureFeatureAsync(context, session, printFeature))
+        {
+            await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, "failed", "This terminal is not allowed to print that order type.");
             return;
         }
 
@@ -801,6 +1455,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             Id = order.OrderId,
             OrderNumber = order.OrderNumber,
+            TableNumber = ParseTableNumber(order),
             CustomerName = order.CustomerName,
             CustomerPhone = order.CustomerPhone,
             Notes = order.SpecialInstructions,
@@ -829,6 +1484,21 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             });
         }
         return printOrder;
+    }
+
+    private static int ParseTableNumber(Order order)
+    {
+        if (!string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        var value = order.CustomerName?.Trim();
+        if (value?.StartsWith("Table ", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            value = value[6..].Trim();
+        }
+        return int.TryParse(value, out var tableNumber) ? tableNumber : 0;
     }
 
     private async Task HandleImageAsync(HttpContext context)
@@ -1442,6 +2112,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         var roleValue = await command.ExecuteScalarAsync(context.RequestAborted);
         if (!Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) ||
             role == UserRole.Admin ||
+            !ClientAccessPolicy.IsCapabilityAllowed(capability) ||
             !MotherCapabilityResolver.ForRole(role).Contains(capability))
         {
             await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"capability_denied:{capability}", "denied");
@@ -1451,6 +2122,244 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         return true;
     }
+
+    // Cashier financial operations use explicit server-side capabilities.
+    // Client UI visibility is never treated as authorization.
+    private async Task<bool> EnsureCashierCapabilityAsync(HttpContext context, ClientSessionValidation session, string capability)
+    {
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync(context.RequestAborted);
+        await using var command = new MySqlCommand("SELECT role FROM users WHERE id = @userId AND is_active = TRUE LIMIT 1", connection);
+        command.Parameters.AddWithValue("@userId", session.UserId);
+        var roleValue = await command.ExecuteScalarAsync(context.RequestAborted);
+        if (!Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) ||
+            role != UserRole.Cashier ||
+            !CashierCapabilities.IsGrantedTo(role, capability))
+        {
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"cashier_capability_denied:{capability}", "denied");
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new { success = false, errorCode = "permission_denied", message = "Your Cashier account is not allowed to perform this operation." });
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task HandleCashierAuthorizationAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message });
+            return;
+        }
+
+        var capabilities = new[]
+        {
+            CashierCapabilities.ViewDaily,
+            CashierCapabilities.PreviewZ,
+            CashierCapabilities.PrintZ,
+            CashierCapabilities.OpenDrawer
+        };
+        var granted = new List<string>();
+        foreach (var capability in capabilities)
+        {
+            if (await EnsureCashierCapabilityAsync(context, session, capability)) granted.Add(capability);
+            else return;
+        }
+
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cashier_authorization_viewed", "success");
+        await WriteJsonAsync(context, HttpStatusCode.OK, new { success = true, capabilities = granted, terminalId = session.TerminalId, generatedUtc = DateTimeOffset.UtcNow });
+    }
+
+    private async Task HandleCashierDashboardAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCashierCapabilityAsync(context, session, CashierCapabilities.ViewDaily)) return;
+
+        var zReports = ServiceHelper.GetService<ZReportService>();
+        if (zReports is null)
+        {
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cashier_dashboard_viewed", "failed");
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, errorCode = "mother_unavailable", message = "Mother report service is currently unavailable." });
+            return;
+        }
+
+        try
+        {
+            var snapshot = await zReports.GetSummaryAsync(DateTime.Today, includeTopItems: false);
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cashier_dashboard_viewed", "success");
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                businessDate = snapshot.ReportDate,
+                totalOrders = snapshot.OrderCount,
+                totalSales = snapshot.GrossSales,
+                cashTotal = snapshot.CashTotal,
+                cardTotal = snapshot.CardTotal,
+                otherPaymentTotal = snapshot.GiftCardTotal,
+                voidCount = snapshot.VoidCount,
+                voidAmount = 0m,
+                discountTotal = snapshot.DiscountTotal,
+                expectedCash = snapshot.ExpectedCashInDrawer,
+                countedCash = snapshot.LastCashCountAmount,
+                variance = snapshot.CashCountVariance,
+                terminalName = snapshot.TerminalName,
+                generatedUtc = DateTimeOffset.UtcNow,
+                version = $"cashier-dashboard-{snapshot.GeneratedAt.Ticks}"
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Cashier dashboard endpoint failed: {ex.GetType().Name}");
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cashier_dashboard_viewed", "failed");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, errorCode = "report_unavailable", message = "Mother could not prepare the daily dashboard." });
+        }
+    }
+
+    private async Task HandleCashierZReportPreviewAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message });
+            return;
+        }
+        if (!await EnsureCashierCapabilityAsync(context, session, CashierCapabilities.PreviewZ)) return;
+
+        var zReports = ServiceHelper.GetService<ZReportService>();
+        if (zReports is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, errorCode = "mother_unavailable", message = "Mother report service is currently unavailable." });
+            return;
+        }
+        try
+        {
+            var snapshot = await zReports.GetSummaryAsync(DateTime.Today, includeTopItems: false);
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_previewed", "success");
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                isPreview = true,
+                businessDate = snapshot.ReportDate,
+                terminalName = snapshot.TerminalName,
+                generatedUtc = DateTimeOffset.UtcNow,
+                totalOrders = snapshot.OrderCount,
+                grossSales = snapshot.GrossSales,
+                cashTotal = snapshot.CashTotal,
+                cardTotal = snapshot.CardTotal,
+                otherPaymentTotal = snapshot.GiftCardTotal,
+                voidCount = snapshot.VoidCount,
+                discountTotal = snapshot.DiscountTotal,
+                expectedCash = snapshot.ExpectedCashInDrawer,
+                countedCash = snapshot.LastCashCountAmount,
+                variance = snapshot.CashCountVariance,
+                reportReference = snapshot.ReportReference
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Cashier Z preview endpoint failed: {ex.GetType().Name}");
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_previewed", "failed");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, errorCode = "report_unavailable", message = "Mother could not prepare the Z Report preview." });
+        }
+    }
+
+    private async Task HandleCashierZReportPrintAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<CashierActionRequest>(context);
+        if (request is null || string.IsNullOrWhiteSpace(request.RequestId)) { await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A print request ID is required." }); return; }
+        var session = await ValidateClientSessionAsync(context, request.SessionToken);
+        if (!session.Success) { await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message }); return; }
+        if (!await EnsureCashierCapabilityAsync(context, session, CashierCapabilities.PrintZ)) return;
+        var key = $"z:{session.TerminalId}:{request.RequestId.Trim()}";
+        if (!_cashierRequestIds.TryAdd(key, new object())) { await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_print_duplicate", "blocked"); await WriteJsonAsync(context, HttpStatusCode.Conflict, new { success = false, errorCode = "duplicate_request", message = "This Z Report print request was already processed." }); return; }
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_print_requested", "success");
+        try
+        {
+            var reports = ServiceHelper.GetService<ZReportService>(); var printer = ServiceHelper.GetService<ZReportPrintService>();
+            if (reports is null || printer is null) { await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, errorCode = "printer_unavailable", message = "Mother print service is unavailable." }); return; }
+            var snapshot = await reports.GetSummaryAsync(DateTime.Today, includeTopItems: false); snapshot.IsReprint = false;
+            var result = await printer.PrintAsync(snapshot, false, session.UserId);
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_printed", result.Success ? "success" : "failed");
+            await WriteJsonAsync(context, result.Success ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new { success = result.Success, printerName = result.PrinterName, message = result.Message, reportReference = snapshot.ReportReference, printedUtc = DateTimeOffset.UtcNow });
+        }
+        catch (Exception ex) { await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_printed", "failed"); await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother could not print the Z Report." }); AppDiagnostics.Log($"Cashier Z print failed: {ex.GetType().Name}"); }
+    }
+
+    private async Task HandleCashierCashDrawerOpenAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<CashierActionRequest>(context);
+        if (request is null || string.IsNullOrWhiteSpace(request.RequestId)) { await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A drawer request ID is required." }); return; }
+        var session = await ValidateClientSessionAsync(context, request.SessionToken);
+        if (!session.Success) { await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message }); return; }
+        if (!await EnsureCashierCapabilityAsync(context, session, CashierCapabilities.OpenDrawer)) return;
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments)) return;
+        var key = $"drawer:{session.TerminalId}:{request.RequestId.Trim()}";
+        if (!_cashierRequestIds.TryAdd(key, new object())) { await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cash_drawer_duplicate", "blocked"); await WriteJsonAsync(context, HttpStatusCode.Conflict, new { success = false, errorCode = "duplicate_request", message = "This cash drawer request was already processed." }); return; }
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cash_drawer_open_requested", "success");
+        var drawer = ServiceHelper.GetService<CashDrawerService>();
+        if (drawer is null) { await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, errorCode = "drawer_unavailable", message = "Mother cash drawer service is unavailable." }); return; }
+        int? expenseId = null;
+        var till = ServiceHelper.GetService<TillExpenseService>();
+        var source = $"client_cashier:{session.TerminalId}";
+        if (till is not null && request.Amount.HasValue)
+        {
+            if (request.Reason == "Shopping") expenseId = (await till.CreateShoppingTakeAsync(new ShoppingTakeRequest { ItemName = request.Details ?? "Shopping", AmountTaken = request.Amount.Value, SourceArea = source })).Id;
+            else if (request.Reason == "Delivery") expenseId = (await till.CreateDeliveryPayoutAsync(new DeliveryPayoutRequest { Amount = request.Amount.Value, SourceArea = source })).Id;
+            else if (request.Reason == "Cash Count") expenseId = (await till.CreateCashCountAsync(new CashCountRequest { CountedCash = request.Amount.Value, SourceArea = source })).Id;
+            else if (request.Reason == "Other" && request.Amount.Value > 0) expenseId = (await till.CreateOtherExpenseAsync(new OtherTillExpenseRequest { Reason = request.Details ?? "Other", AmountOut = request.Amount.Value, SourceArea = source }))?.Id;
+        }
+        var result = await drawer.OpenAsync(new CashDrawerOpenRequest
+        {
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Client Cashier request" : request.Reason.Trim(),
+            SourceArea = source,
+            TillExpenseId = expenseId,
+            RequestedByUserId = session.UserId,
+            RequestedByName = "Client Cashier",
+            RequestedByRole = UserRole.Cashier.ToString()
+        });
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cash_drawer_opened", result.Success ? "success" : "failed");
+        await WriteJsonAsync(context, result.Success ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new { success = result.Success, printerName = result.PrinterName, message = result.Message, auditId = result.AuditId, openedUtc = DateTimeOffset.UtcNow });
+    }
+
+    private async Task<bool> EnsureFeatureAsync(HttpContext context, ClientSessionValidation session, string feature)
+    {
+        return await EnsureAnyFeatureAsync(context, session, feature);
+    }
+
+    private async Task<bool> EnsureAnyFeatureAsync(HttpContext context, ClientSessionValidation session, params string[] features)
+    {
+        var granted = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
+        if (features.Any(granted.Contains))
+        {
+            return true;
+        }
+
+        var denied = features.Length == 1 ? features[0] : string.Join(",", features);
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"feature_denied:{denied}", "denied");
+        await WriteJsonAsync(context, HttpStatusCode.Forbidden, new
+        {
+            success = false,
+            message = "This Client terminal is not allowed to use that feature."
+        });
+        return false;
+    }
+
+    private static string? FeatureForOrderType(string? orderType) =>
+        (orderType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "" or "all" => null,
+            "delivery" or "del" => PosFeatureKeys.Delivery,
+            "dinein" or "dine_in" or "dine-in" or "table" or "tbl" or "restaurant" => PosFeatureKeys.DineIn,
+            "collection" or "pickup" or "takeaway" => PosFeatureKeys.Collection,
+            _ => PosFeatureKeys.Collection
+        };
 
     private static object ToClientCustomer(CustomerDataRecord customer) => new
     {
@@ -1675,6 +2584,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         await TerminalPairingService.EnsureTableAsync(connection);
         await TerminalPairingService.EnsureAttemptsTableAsync(connection);
         await TerminalHealthService.EnsureTableAsync(connection);
+        await ClientTerminalAccessService.EnsureTableAsync(connection);
 
         var statements = new[]
         {
@@ -1860,6 +2770,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
     public void Dispose()
     {
+        _reservationSync.SyncCompleted -= OnReservationSyncCompleted;
         StopAsync().GetAwaiter().GetResult();
         _lifetimeLock.Dispose();
     }
@@ -1924,6 +2835,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string OrderId,
         string? DocumentType,
         string? SessionToken = null);
+
+    private sealed record CashierActionRequest(string? RequestId, string? SessionToken = null, string? Reason = null, string? PrinterTarget = null, decimal? Amount = null, string? Details = null);
 
     private sealed record ClientPrintAudit(string PrintJobId, string OrderId, string DocumentType, string Status, string? Message);
 
@@ -2035,4 +2948,49 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         public static ClientSessionValidation Fail(string message, HttpStatusCode statusCode = HttpStatusCode.Unauthorized) =>
             new(false, message, string.Empty, 0, statusCode);
     }
+
+    private sealed record ClientOrderUpsertHttpRequest(
+        string? OrderId,
+        string? OrderType,
+        string? CustomerName,
+        string? CustomerPhone,
+        string? CustomerEmail,
+        string? CustomerAddress,
+        decimal DeliveryFee,
+        string? Notes,
+        string? ScheduledTime,
+        int? TableId,
+        string? TableNumber,
+        int Guests,
+        IReadOnlyList<ClientOrderLineHttpRequest>? Lines,
+        bool PrintKitchen = false,
+        string? PrintRequestId = null);
+
+    private sealed record ClientOrderLineHttpRequest(
+        string? Id,
+        string? ProductId,
+        string? Name,
+        int Quantity,
+        decimal UnitPrice,
+        string? Notes,
+        IReadOnlyList<string>? Modifiers);
+
+    private sealed record ClientReservationCreateHttpRequest(
+        string? ReservationDate,
+        string? ReservationTime,
+        int Covers,
+        string? CustomerName,
+        string? CustomerPhone,
+        string? CustomerEmail,
+        string? PromoCode,
+        string? Notes,
+        string? Allergies,
+        string? TableNumber,
+        string? Channel);
+
+    private sealed record ClientReservationStatusHttpRequest(
+        string? CloudId,
+        string? Id,
+        string? LocalId,
+        string? Status);
 }

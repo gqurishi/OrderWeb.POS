@@ -372,6 +372,19 @@ public sealed class CashDrawerFlowService
     private async Task<bool> RequireManagerApprovalForBasicUserAsync()
     {
         var currentUser = _authenticationService.CurrentUser;
+        if (currentUser?.Role == UserRole.Cashier)
+        {
+            // This gate lives in the Mother-side cash-drawer workflow; hiding
+            // the button in a client cannot grant drawer access by itself.
+            if (!CashierCapabilities.IsGrantedTo(UserRole.Cashier, CashierCapabilities.OpenDrawer))
+            {
+                await ShowFailureAsync("Your Cashier account cannot open the cash drawer.");
+                return false;
+            }
+
+            return true;
+        }
+
         if (currentUser?.Role is UserRole.Manager or UserRole.Admin)
         {
             return true;

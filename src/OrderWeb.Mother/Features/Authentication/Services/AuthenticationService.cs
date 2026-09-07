@@ -646,6 +646,39 @@ public class AuthenticationService
         }
     }
 
+    public async Task<(bool Success, string Message)> ReactivateUserAsync(int userId)
+    {
+        try
+        {
+            if (_currentUser?.Role != UserRole.Admin)
+            {
+                return (false, "Access denied. Only administrators can reactivate users.");
+            }
+
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            using var command = new MySqlCommand(@"
+                UPDATE users
+                SET is_active = TRUE, updated_at = NOW()
+                WHERE id = @userId AND COALESCE(is_archived, FALSE) = FALSE", connection);
+            command.Parameters.AddWithValue("@userId", userId);
+
+            if (await command.ExecuteNonQueryAsync() == 0)
+            {
+                return (false, "User not found or archived. Archived users must be created again.");
+            }
+
+            await LogUserActivityAsync(_currentUser.Id, "user_reactivated", $"Reactivated user ID: {userId}");
+            await EnsureAuthCacheAsync(forceReload: true);
+            return (true, "User reactivated successfully.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Reactivate user error: {ex.Message}");
+            return (false, "An error occurred while reactivating the user.");
+        }
+    }
+
     public async Task<(bool Success, string Message)> UpdateUserAsync(User updatedUser, string? newPin = null)
     {
         try

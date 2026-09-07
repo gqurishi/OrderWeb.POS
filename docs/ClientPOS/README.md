@@ -9,9 +9,12 @@ The Client POS source lives at `src/OrderWeb.Client` in the repository. Do not m
 ## Architecture Rule
 
 ```text
-Mother POS + MariaDB = source of truth
+Mother POS + MariaDB + printers + cloud = source of truth
 Client POS + SQLite = local cache and device store
 Client POS talks to Mother only through API and WebSocket
+One Mother per restaurant. Client never logs into OrderWeb cloud.
+Web orders stay on Mother. Reservations may go to Client.
+Printers are Mother-only (network / IP). Client may request a print; Mother prints.
 ```
 
 ## Initial Folder Structure

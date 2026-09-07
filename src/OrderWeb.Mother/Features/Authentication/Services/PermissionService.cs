@@ -41,6 +41,21 @@ public class PermissionService
         return await HasPermissionAsync(currentUser.Id, currentUser.Role, permissionKey);
     }
 
+    /// <summary>
+    /// Server-side Cashier capability gate. The UI may hide unavailable actions,
+    /// but callers must use this method before executing a protected operation.
+    /// </summary>
+    public Task<bool> HasCashierCapabilityAsync(string capability)
+    {
+        var currentUser = _authenticationService.CurrentUser;
+        if (currentUser is not { IsActive: true })
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(CashierCapabilities.IsGrantedTo(currentUser.Role, capability));
+    }
+
     public async Task<bool> HasPermissionAsync(int userId, UserRole role, string permissionKey)
     {
         if (string.IsNullOrWhiteSpace(permissionKey))

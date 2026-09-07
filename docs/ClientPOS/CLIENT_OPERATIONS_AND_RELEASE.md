@@ -12,8 +12,8 @@ Managers use their own Manager PIN; no shared approval PIN is stored on Client P
 | --- | --- | --- |
 | Take orders and manage customers | Allowed when Mother grants the capability. | Signed-in user |
 | Payments, discounts, voids, refunds, table transfers, receipt reprints, cash drawer | Allowed only when Mother grants the Manager capability. | Signed-in Manager; Mother validates every request |
-| Order history, reservations, gift cards, loyalty, web orders | Available only to Managers when the applicable Client feature is enabled. | Signed-in Manager |
-| User/role administration, menu setup, restaurant configuration, terminal/printer/database/backup/system setup, advanced reports | Never available on Client POS. | Mother POS Administrator |
+| Order history, reservations, gift cards, loyalty | Available only when Mother grants the matching Client feature. Reservations may be granted. Web orders are never granted. | Signed-in Manager |
+| User/role administration, menu setup, restaurant configuration, terminal/printer/database/backup/cloud settings, advanced reports | Never available on Client POS. | Mother POS Administrator |
 
 ## Offline policy
 
@@ -45,6 +45,8 @@ Run Mother POS and Client POS together and verify each result:
 10. Verify two paired Clients maintain separate sessions and terminal identities.
 11. Verify expired, revoked, and legacy Admin Client tokens are rejected by Mother.
 12. Review `client_security_audit` for successful sessions and rejected/denied actions, confirming that it contains no PIN or token values.
+13. Confirm Client POS has no Web Orders, printer setup, menu admin, cloud settings, or full-report menus.
+14. Confirm Reservations remain available on Client when Mother has granted that feature.
 
 ## Release checklist
 

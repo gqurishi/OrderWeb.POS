@@ -125,6 +125,33 @@
                             </StackLayout>
                         </Grid>
                     </Border>
+
+                    <!-- Cashier -->
+                    <Border HeightRequest="60"
+                            BackgroundColor="#F8FAFC"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCashierSelected"/>
+                        </Border.GestureRecognizers>
+                        <Grid Padding="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" BackgroundColor="#0891B2">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                <Label Text="C" FontFamily="InterBold" FontSize="14" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center"/>
+                            </Border>
+                            <StackLayout Grid.Column="1" Margin="12,0,0,0" VerticalOptions="Center" Spacing="2">
+                                <Label Text="Cashier" FontFamily="InterBold" FontSize="16" TextColor="#1E293B"/>
+                                <Label Text="Reports, Z reports, and cash drawer" FontFamily="InterRegular" FontSize="13" TextColor="#64748B"/>
+                            </StackLayout>
+                        </Grid>
+                    </Border>
                     
                     <!-- Manager -->
                     <Border HeightRequest="60" 

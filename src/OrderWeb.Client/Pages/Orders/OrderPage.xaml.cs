@@ -11,6 +11,7 @@ public partial class OrderPage : ContentPage
     {
         private readonly ClientCacheService _cache = new();
         private readonly MotherOrderClient _orderClient = new();
+        private readonly MotherMenuClient _menuClient = new();
         private readonly ClientOfflinePolicy _offlinePolicy = new();
         private readonly MotherPrintClient _printClient = new();
         private readonly List<CachedMenuCategory> _categories = new();
@@ -84,6 +85,8 @@ public partial class OrderPage : ContentPage
 
     private async Task LoadMenuAsync()
     {
+        await _menuClient.RefreshCacheAsync();
+
         _categories.Clear();
         _categories.AddRange(await _cache.GetMenuCategoriesAsync());
 
@@ -189,6 +192,11 @@ public partial class OrderPage : ContentPage
                 return $"Order # Table {_table.TableNumber}";
             }
 
+            if (!string.IsNullOrWhiteSpace(_currentOrder?.OrderNumber))
+            {
+                return $"Order # {_currentOrder.OrderNumber}";
+            }
+
             return "Order # New";
         }
 
@@ -199,7 +207,12 @@ public partial class OrderPage : ContentPage
                 return $"Guests = {Math.Max(_currentOrder?.Guests ?? _covers, 1)}";
             }
 
-            return "Table order";
+            if (!string.IsNullOrWhiteSpace(_currentOrder?.ConflictMessage))
+            {
+                return _currentOrder.ConflictMessage;
+            }
+
+            return string.IsNullOrWhiteSpace(_currentOrder?.OrderType) ? "Order" : $"{_currentOrder.OrderType} order";
         }
 
         private IReadOnlyList<OrderSummaryLine> SummaryLines()
@@ -321,15 +334,25 @@ public partial class OrderPage : ContentPage
                 return;
             }
 
-            if (_currentOrder != null)
+            if (_currentOrder == null)
             {
-                // A Client-side state change is only a pending request. Do not
-                // mark an order sent or print a kitchen ticket until Mother
-                // accepts the authoritative mutation.
-                await _cache.SaveOrderStateAsync(_currentOrder);
+                await DisplayAlert("Send to Kitchen failed", "This order has not been created on Mother POS.", "OK");
+                return;
             }
 
-            await QueueOrderActionAsync("send_to_kitchen", "Pending Mother confirmation — the order has not been sent to the kitchen.");
+            try
+            {
+                var result = await _orderClient.SendToKitchenAsync(_currentOrder);
+                _currentOrder = result.State;
+                await _cache.SaveOrderStateAsync(_currentOrder);
+                _basket.Clear();
+                Refresh();
+                await DisplayAlert("Mother POS", result.Message, "OK");
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("Send to Kitchen failed", ex.Message, "OK");
+            }
         }
 
     private async Task PrintOrderAsync()

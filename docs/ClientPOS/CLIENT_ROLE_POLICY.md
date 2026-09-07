@@ -15,6 +15,10 @@ Client POS terminals are for day-to-day restaurant operations. Mother POS is the
 
 Mother POS remains the source of truth for the user role, permissions, and capabilities. Client POS may use those capabilities to present its interface, but Mother POS must enforce all authorization decisions.
 
+The frozen Client access list, blocked list, one-Mother rule, and printer-ownership rule are in `docs/MOTHER_CLIENT_POS_INTEGRATION.md` and `OrderWeb.Contracts.Access.ClientAccessPolicy`.
+
+Web orders are never permitted on Client POS. Reservations may be granted by Mother. Printer setup is never permitted on Client POS; Client may only request a print that Mother sends to its network/IP printers.
+
 ## Administrator login rule
 
 When a paired Client POS submits an active Administrator PIN, Mother POS returns HTTP `403 Forbidden` with the stable error code `admin_mother_only`. It must not issue or persist a Client session token. The Client POS shows this message:

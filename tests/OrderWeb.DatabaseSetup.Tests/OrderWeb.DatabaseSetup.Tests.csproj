@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\tools\OrderWeb.DatabaseSetup\OrderWeb.DatabaseSetup.csproj" />
+    <ProjectReference Include="..\..\src\OrderWeb.Contracts\OrderWeb.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

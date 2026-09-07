@@ -10,6 +10,7 @@ namespace OrderWeb.Client.Pages.Orders;
 public partial class LiveOrderPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
+    private readonly MotherOrderClient _orderClient = new();
     private readonly IDispatcherTimer _clockTimer;
     private string _selectedFilter = "All";
     private IReadOnlyList<LiveOrderCardModel> _allCards = Array.Empty<LiveOrderCardModel>();
@@ -42,9 +43,14 @@ public partial class LiveOrderPage : ContentPage
 
     private async Task RefreshOrdersAsync()
     {
+        var motherOrders = await _orderClient.GetOpenOrdersAsync();
+        if (motherOrders != null)
+        {
+            await _cache.ReplaceOperationalOrdersAsync(motherOrders);
+        }
+
         var openOrders = await _cache.GetOpenOrderStatesAsync();
-        var onlineOrders = await _cache.GetOnlineOrdersAsync();
-        _allCards = BuildLiveOrderCards(openOrders, onlineOrders);
+        _allCards = BuildLiveOrderCards(openOrders);
         RenderCards();
     }
 
@@ -71,8 +77,7 @@ public partial class LiveOrderPage : ContentPage
     }
 
     private IReadOnlyList<LiveOrderCardModel> BuildLiveOrderCards(
-        IReadOnlyList<MotherOrderState> openOrders,
-        IReadOnlyList<CachedOnlineOrder> onlineOrders)
+        IReadOnlyList<MotherOrderState> openOrders)
     {
         var cards = new List<LiveOrderCardModel>();
 
@@ -92,20 +97,6 @@ public partial class LiveOrderPage : ContentPage
                 TimeText: FormatLiveOrderTime(order.UpdatedUtc),
                 AccentColor: accent,
                 Details: $"{subtitle}\nStatus: {order.Status}\nGuests: {order.Guests}\nTotal: {Money(order.Total)}"));
-        }
-
-        foreach (var order in onlineOrders.Where(order => !string.Equals(order.Status, "Completed", StringComparison.OrdinalIgnoreCase)))
-        {
-            var type = NormalizeLiveOrderType(order.OrderType);
-            cards.Add(new LiveOrderCardModel(
-                Type: type,
-                Title: type,
-                OrderNumber: FormatLiveOrderNumber(order.OrderNumber, order.MotherId),
-                Subtitle: string.IsNullOrWhiteSpace(order.CustomerName) ? order.Status : order.CustomerName,
-                Total: order.Total,
-                TimeText: FormatLiveOrderTime(order.DueTime),
-                AccentColor: type == "Delivery" ? "#2563EB" : "#10B981",
-                Details: $"{order.CustomerName}\n{order.OrderType} - {order.Status}\nDue {order.DueTime}\nTotal: {Money(order.Total)}"));
         }
 
         return cards
@@ -241,7 +232,7 @@ public partial class LiveOrderPage : ContentPage
     private async Task SelectSidebarItemAsync(string label)
     {
         await CloseSidebarAsync();
-        if (label == "Live Order")
+        if (label == "Live Order" || !ClientHostAccess.CanOpenMenu(label))
         {
             return;
         }
@@ -253,7 +244,6 @@ public partial class LiveOrderPage : ContentPage
             "Restaurant" => new TableLayoutPage(),
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
-            "Web Orders" => new OnlineOrdersPage(),
             "Gift Cards" => new GiftCardPage(),
             "Loyalty Points" => new LoyaltyPage(),
             "Reservation" => new ReservationPage(),

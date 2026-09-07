@@ -38,6 +38,7 @@ public static class MauiProgram
 #endif
 
 		builder.Services.AddSingleton<MotherAuthClient>();
+		builder.Services.AddSingleton<MotherCashierClient>();
 		builder.Services.AddSingleton<ClientAuthenticationService>();
 		builder.Services.AddSingleton<OrderWeb.Contracts.Services.IAuthenticationService>(sp => sp.GetRequiredService<ClientAuthenticationService>());
 		builder.Services.AddSingleton<ClientCacheService>();

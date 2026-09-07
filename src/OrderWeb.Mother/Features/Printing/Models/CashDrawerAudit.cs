@@ -9,6 +9,9 @@ public sealed class CashDrawerOpenRequest
     public int? TableSessionId { get; set; }
     public string? TableNumber { get; set; }
     public int? TillExpenseId { get; set; }
+    public int? RequestedByUserId { get; set; }
+    public string? RequestedByName { get; set; }
+    public string? RequestedByRole { get; set; }
 }
 
 public sealed class CashDrawerOpenResult

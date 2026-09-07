@@ -208,6 +208,7 @@ public partial class LoginPage : ContentPage
     private static string GetNavigationRouteForRole(UserRole role) => role switch
     {
         UserRole.User => "//userdashboard",
+        UserRole.Cashier => "//cashierdashboard",
         UserRole.Manager => "//managerdashboard",
         UserRole.Admin => "//dashboard",
         UserRole.Staff => "//login",

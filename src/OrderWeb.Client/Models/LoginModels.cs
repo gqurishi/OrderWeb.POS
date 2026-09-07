@@ -8,7 +8,9 @@ public sealed record LoginSession(
     string Role,
     IReadOnlyList<string> Permissions,
     string SessionToken,
-    DateTimeOffset ExpiresAtUtc)
+    DateTimeOffset ExpiresAtUtc,
+    IReadOnlyList<string>? Features = null,
+    IReadOnlyList<string>? Routes = null)
 {
     public bool HasPermission(string permission) => Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
 }

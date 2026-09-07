@@ -1,4 +1,7 @@
+using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Access;
 using OrderWeb.SharedUI.Controls;
+using OrderWeb.SharedUI.Navigation;
 
 namespace OrderWeb.Client.Views.Layout;
 
@@ -27,7 +30,11 @@ public partial class ClientSidebar : ContentView
         SharedSidebar.CurrentRole = Role;
         SharedSidebar.SelectedRoute = RouteForTitle(SelectedMenu);
         SharedSidebar.ShowUpdateButton = ShowFooter;
-        SharedSidebar.ItemsSource = MenuItems;
+        var capabilities = ClientCapabilityResolver.ForRole(Role);
+        SharedSidebar.ItemsSource = PosNavigationCatalog.Filter(
+            capabilities,
+            ClientHostAccess.Features,
+            ClientHostAccess.Routes);
     }
     private void OnSharedNavigationRequested(object? sender, NavigationRequestedEventArgs e)
     {
@@ -36,20 +43,5 @@ public partial class ClientSidebar : ContentView
     }
     private void OnUpdateAllClicked(object? sender, EventArgs e) => UpdateAllClicked?.Invoke(this, EventArgs.Empty);
 
-    private static readonly IReadOnlyList<ApplicationNavigationItem> MenuItems =
-    [
-        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager", "Admin"),
-        new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager", "Admin"),
-        new("liveorder", "Live Order", "liveorder.png", "User", "Manager", "Admin"),
-        new("restaurant", "Restaurant", "restaurant.png", "User", "Manager", "Admin"),
-        new("collection", "Collection", "collection.png", "User", "Manager", "Admin"),
-        new("delivery", "Delivery", "delivery.png", "User", "Manager", "Admin"),
-        new("weborders", "Web Orders", "weborders.png", "Manager", "Admin"),
-        new("giftcards", "Gift Cards", "giftcards.png", "Manager", "Admin"),
-        new("loyalty", "Loyalty Points", "loyalty.png", "Manager", "Admin"),
-        new("reservation", "Reservation", "reservation.png", "User", "Manager", "Admin"),
-        new("orderhistory", "Order History", "orderhistory.png", "Manager", "Admin")
-    ];
-
-    private static string RouteForTitle(string value) => MenuItems.FirstOrDefault(item => string.Equals(item.Title, value, StringComparison.OrdinalIgnoreCase))?.Route ?? "dashboard";
+    private static string RouteForTitle(string value) => ClientHostAccess.RouteForTitle(value);
 }

@@ -131,6 +131,30 @@ public sealed class MotherBootstrapClient
         return payload;
     }
 
+    public static string BuildApiBaseUrl(string motherIpAddress)
+    {
+        var endpoint = BuildBootstrapEndpoint(motherIpAddress);
+        return new Uri(endpoint).GetLeftPart(UriPartial.Authority);
+    }
+
+    public static string BuildWebSocketUrl(string apiBaseUrl, string? existingWebSocketUrl = null)
+    {
+        var api = new Uri(apiBaseUrl);
+        var path = "/ws";
+        if (!string.IsNullOrWhiteSpace(existingWebSocketUrl) &&
+            Uri.TryCreate(existingWebSocketUrl, UriKind.Absolute, out var existing) &&
+            !string.IsNullOrWhiteSpace(existing.AbsolutePath) &&
+            existing.AbsolutePath != "/")
+        {
+            path = existing.AbsolutePath;
+        }
+
+        var scheme = string.Equals(api.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            ? "wss"
+            : "ws";
+        return new UriBuilder(scheme, api.Host, api.Port, path).Uri.ToString().TrimEnd('/');
+    }
+
     private static string BuildBootstrapEndpoint(string motherIpAddress)
     {
         var cleanIp = string.IsNullOrWhiteSpace(motherIpAddress)

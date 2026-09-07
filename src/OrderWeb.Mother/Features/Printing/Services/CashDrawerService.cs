@@ -294,9 +294,9 @@ public sealed class CashDrawerService
                  @tillExpenseId);
             SELECT LAST_INSERT_ID();";
 
-        command.Parameters.AddWithValue("@userId", currentUser?.Id ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("@userName", GetCurrentUserDisplayName(currentUser));
-        command.Parameters.AddWithValue("@userRole", currentUser?.Role.ToString() ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@userId", request.RequestedByUserId ?? currentUser?.Id ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@userName", string.IsNullOrWhiteSpace(request.RequestedByName) ? GetCurrentUserDisplayName(currentUser) : request.RequestedByName.Trim());
+        command.Parameters.AddWithValue("@userRole", string.IsNullOrWhiteSpace(request.RequestedByRole) ? currentUser?.Role.ToString() ?? (object)DBNull.Value : request.RequestedByRole.Trim());
         command.Parameters.AddWithValue("@reason", NormalizeText(request.Reason, "Manual open"));
         command.Parameters.AddWithValue("@sourceArea", NormalizeText(request.SourceArea, "pos"));
         command.Parameters.AddWithValue("@orderId", string.IsNullOrWhiteSpace(request.OrderId) ? DBNull.Value : request.OrderId.Trim());

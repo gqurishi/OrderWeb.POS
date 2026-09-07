@@ -133,7 +133,7 @@ public partial class CashDrawerPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (menu == "Cash Drawer")
+        if (menu == "Cash Drawer" || !ClientHostAccess.CanOpenMenu(menu))
         {
             return;
         }
@@ -145,7 +145,6 @@ public partial class CashDrawerPage : ContentPage
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
             "Live Order" => new LiveOrderPage(),
-            "Web Orders" => new OnlineOrdersPage(),
             "Gift Cards" => new GiftCardPage(),
             "Loyalty Points" => new LoyaltyPage(),
             "Reservation" => new ReservationPage(),

@@ -71,6 +71,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TastingMenuService>();
 		builder.Services.AddSingleton<OrderRoutingPrintService>();
 		builder.Services.AddSingleton<TerminalHealthService>();
+		builder.Services.AddSingleton<ClientTerminalAccessService>();
 		builder.Services.AddSingleton<ClientWebSocketBroadcastService>();
 		builder.Services.AddSingleton<MotherConnectionStartupService>();
 		builder.Services.AddSingleton<DatabaseBackupService>();
@@ -182,6 +183,7 @@ public static class MauiProgram
 		builder.Services.AddTransient<LoginPage>();
 		builder.Services.AddTransient<DashboardPage>();
 		builder.Services.AddTransient<ManagerDashboardPage>();
+		builder.Services.AddTransient<CashierDashboardPage>();
 		// OrderTakingPage removed - using FoodMenuPage instead
 		builder.Services.AddTransient<RestaurantPage>();
 		builder.Services.AddTransient<ReservationPage>();

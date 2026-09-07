@@ -16,11 +16,12 @@ public sealed record CachedTable(
     int MinutesOccupied,
     int Version,
     int PositionX = 0,
-    int PositionY = 0);
+    int PositionY = 0,
+    string? DesignIcon = null);
 
 public sealed record CachedMenuCategory(int Id, string Name, string Color, int SortOrder);
 
-public sealed record CachedProduct(int Id, int CategoryId, string Name, decimal Price, string Currency, IReadOnlyList<CachedModifierGroup> ModifierGroups);
+public sealed record CachedProduct(int Id, int CategoryId, string Name, decimal Price, string Currency, IReadOnlyList<CachedModifierGroup> ModifierGroups, string? MotherId = null);
 
 public sealed record CachedModifierGroup(int Id, string Name, int MinSelect, int MaxSelect, IReadOnlyList<CachedModifier> Modifiers);
 
@@ -50,6 +51,7 @@ public sealed record MotherOrderLine(
     int Quantity,
     decimal UnitPrice,
     string? Notes,
-    IReadOnlyList<string> Modifiers);
+    IReadOnlyList<string> Modifiers,
+    string? ProductMotherId = null);
 
 public sealed record MotherCommandResult(MotherOrderState State, bool ConflictDetected, string Message);

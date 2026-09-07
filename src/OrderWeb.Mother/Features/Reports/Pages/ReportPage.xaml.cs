@@ -1211,7 +1211,7 @@ public partial class ReportPage : ContentPage
         base.OnAppearing();
         SubscribeToRefreshEvents();
 
-        if (!await _permissionService.HasPermissionAsync(PermissionKeys.ReportView))
+        if (!await CanAccessReportsAsync())
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Reports.");
             await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
@@ -1262,7 +1262,9 @@ public partial class ReportPage : ContentPage
 
     private void UpdateZReportPrintButtonState()
     {
-        var canPrint = _roleAccessService.CanPrintZReport(_authService.CurrentUser?.Role)
+        var currentRole = _authService.CurrentUser?.Role;
+        var canPrint = _roleAccessService.CanPrintZReport(currentRole)
+            && (currentRole != UserRole.Cashier || CashierCapabilities.IsGrantedTo(UserRole.Cashier, CashierCapabilities.PrintZ))
             && TerminalRoleService.CanPrintZReport;
         ZReportPrintTodayButton.IsEnabled = canPrint;
         ZReportPrintTodayButton.Opacity = canPrint ? 1 : 0.5;
@@ -1273,6 +1275,13 @@ public partial class ReportPage : ContentPage
         if (!_roleAccessService.CanPrintZReport(_authService.CurrentUser?.Role))
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can print Z-Reports.");
+            return;
+        }
+
+        if (_authService.CurrentUser?.Role == UserRole.Cashier &&
+            !await _permissionService.HasCashierCapabilityAsync(CashierCapabilities.PrintZ))
+        {
+            await AppAlertService.ShowAlertAsync("Access Denied", "Your Cashier account cannot print Z-Reports.");
             return;
         }
 
@@ -1303,7 +1312,7 @@ public partial class ReportPage : ContentPage
             var confirmDialog = new ModernConfirmDialog();
             confirmDialog.SetConfirm(
                 "Print Z-Report",
-                $"Print Z-Report for {snapshot.DateDisplay} to the receipt printer?",
+                $"Print Z-Report for {snapshot.DateDisplay} to the receipt printer? This prints a report only; it does not close the business day.",
                 "Print",
                 "Cancel",
                 "logo",
@@ -1337,6 +1346,16 @@ public partial class ReportPage : ContentPage
 
             UpdateZReportPrintButtonState();
         }
+    }
+
+    private async Task<bool> CanAccessReportsAsync()
+    {
+        if (_authService.CurrentUser?.Role == UserRole.Cashier)
+        {
+            return await _permissionService.HasCashierCapabilityAsync(CashierCapabilities.ViewFull);
+        }
+
+        return await _permissionService.HasPermissionAsync(PermissionKeys.ReportView);
     }
 
     private async void OnAppDataChanged(object? sender, AppDataChangedEventArgs e)

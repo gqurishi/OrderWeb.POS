@@ -4,6 +4,7 @@ namespace OrderWeb.SharedUI.Controls;
 
 public class ApplicationHeader : ContentView
 {
+    private readonly Label _welcome;
     private readonly Label _title;
     private readonly Label _restaurantName;
     private readonly Image _restaurantLogo;
@@ -15,22 +16,30 @@ public class ApplicationHeader : ContentView
 
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._title.Text = v?.ToString());
     public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._restaurantName.Text = v?.ToString() ?? string.Empty);
-    public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationHeader), propertyChanged: (b, _, v) => { var header = (ApplicationHeader)b; header._restaurantLogo.Source = (ImageSource?)v; header._restaurantLogo.IsVisible = v is ImageSource; });
+    public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationHeader), propertyChanged: (b, _, v) =>
+    {
+        var header = (ApplicationHeader)b;
+        header._restaurantLogo.Source = (ImageSource?)v;
+        header._restaurantLogo.IsVisible = !header.ShowWelcomeBrand && v is ImageSource;
+    });
     public static readonly BindableProperty UserNameProperty = BindableProperty.Create(nameof(UserName), typeof(string), typeof(ApplicationHeader), "No user", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.UserName = v?.ToString() ?? "No user");
     public static readonly BindableProperty TerminalNameProperty = BindableProperty.Create(nameof(TerminalName), typeof(string), typeof(ApplicationHeader), "Terminal", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.TerminalName = v?.ToString() ?? "Terminal");
     public static readonly BindableProperty ConnectionStatusProperty = BindableProperty.Create(nameof(ConnectionStatus), typeof(string), typeof(ApplicationHeader), "Connected", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._connection.Status = v?.ToString() ?? "Connected");
     public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationHeader), true, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.IsVisible = (bool)v);
     public static readonly BindableProperty ShowConnectionProperty = BindableProperty.Create(nameof(ShowConnection), typeof(bool), typeof(ApplicationHeader), true, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._connection.IsVisible = (bool)v);
+    public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, _) => ((ApplicationHeader)b).ApplyWelcomeBrand());
     public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._minimize.IsVisible = (bool)v);
     public static readonly BindableProperty ShowBackButtonProperty = BindableProperty.Create(nameof(ShowBackButton), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._back.IsVisible = (bool)v);
     public static readonly BindableProperty ContextActionsProperty = BindableProperty.Create(nameof(ContextActions), typeof(IEnumerable<HeaderAction>), typeof(ApplicationHeader), propertyChanged: (b, _, v) => ((ApplicationHeader)b).RebuildContextActions((IEnumerable<HeaderAction>?)v));
     private readonly Button _minimize;
     private readonly Button _back;
     private readonly HorizontalStackLayout _contextActions;
+    private ImageButton? _menuButton;
 
     public ApplicationHeader()
     {
         var menu = IconButton("mian.png", 38);
+        _menuButton = menu;
         _back = new Button { Text = "‹", FontSize = 32, Padding = 0, WidthRequest = 38, HeightRequest = 38, MinimumWidthRequest = 44, MinimumHeightRequest = 44, BackgroundColor = Colors.Transparent, BorderWidth = 0 };
         _back.Use(Button.TextColorProperty, "OwTextPrimary");
         _back.IsVisible = false;
@@ -43,13 +52,15 @@ public class ApplicationHeader : ContentView
         _minimize.Clicked += (_, _) => MinimizeClicked?.Invoke(this, EventArgs.Empty);
 
         _restaurantLogo = new Image { WidthRequest = 30, HeightRequest = 30, Aspect = Aspect.AspectFit, IsVisible = false };
+        _welcome = new Label { Text = "Welcome to", FontSize = 12, IsVisible = false, HorizontalTextAlignment = TextAlignment.Start };
+        _welcome.Use(Label.TextColorProperty, "OwTextMuted");
         _restaurantName = new Label { FontSize = 12, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
         _restaurantName.Use(Label.TextColorProperty, "OwTextMuted");
         _title = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
         _title.Use(Label.TextColorProperty, "OwTextStrong");
         _date = new Label { FontSize = 12, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
         _date.Use(Label.TextColorProperty, "OwTextStrong");
-        _time = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
+        _time = new Label { FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
         _time.Use(Label.TextColorProperty, "OwPrimary");
         _identity = new UserTerminalInfo { VerticalOptions = LayoutOptions.Center };
         _connection = new ConnectionIndicator { VerticalOptions = LayoutOptions.Center };
@@ -58,8 +69,8 @@ public class ApplicationHeader : ContentView
         _contextActions = new HorizontalStackLayout { Spacing = 8, VerticalOptions = LayoutOptions.Center };
         var right = new HorizontalStackLayout { Spacing = 14, VerticalOptions = LayoutOptions.Center, Children = { _contextActions, _identity, _connection, clock, _minimize, logout } };
         var left = new HorizontalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center, Children = { menu, _back } };
-        var restaurantIdentity = new HorizontalStackLayout { Spacing = 6, HorizontalOptions = LayoutOptions.Center, Children = { _restaurantLogo, _restaurantName } };
-        var titleStack = new VerticalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, Children = { restaurantIdentity, _title } };
+        var restaurantIdentity = new HorizontalStackLayout { Spacing = 6, HorizontalOptions = LayoutOptions.Start, Children = { _restaurantLogo, _restaurantName } };
+        var titleStack = new VerticalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Fill, Children = { _welcome, restaurantIdentity, _title } };
         var grid = new Grid { Padding = new Thickness(16, 0), ColumnDefinitions = { new ColumnDefinition(98), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 12 };
         grid.Use(Grid.HeightRequestProperty, "PosHeaderHeight");
         grid.Add(left); grid.Add(titleStack, 1); grid.Add(right, 2);
@@ -72,6 +83,7 @@ public class ApplicationHeader : ContentView
         _timer.Tick += (_, _) => UpdateClock();
         _timer.Start();
         UpdateClock();
+        ApplyWelcomeBrand();
     }
 
     public event EventHandler? MenuClicked;
@@ -87,12 +99,31 @@ public class ApplicationHeader : ContentView
     public string ConnectionStatus { get => (string)GetValue(ConnectionStatusProperty); set => SetValue(ConnectionStatusProperty, value); }
     public bool ShowIdentity { get => (bool)GetValue(ShowIdentityProperty); set => SetValue(ShowIdentityProperty, value); }
     public bool ShowConnection { get => (bool)GetValue(ShowConnectionProperty); set => SetValue(ShowConnectionProperty, value); }
+    public bool ShowWelcomeBrand { get => (bool)GetValue(ShowWelcomeBrandProperty); set => SetValue(ShowWelcomeBrandProperty, value); }
     public bool ShowMinimize { get => (bool)GetValue(ShowMinimizeProperty); set => SetValue(ShowMinimizeProperty, value); }
     public bool ShowBackButton { get => (bool)GetValue(ShowBackButtonProperty); set => SetValue(ShowBackButtonProperty, value); }
     public IEnumerable<HeaderAction>? ContextActions { get => (IEnumerable<HeaderAction>?)GetValue(ContextActionsProperty); set => SetValue(ContextActionsProperty, value); }
+    public void SetMenuVisible(bool visible) { if (_menuButton != null) _menuButton.IsVisible = visible; }
 
     protected override void OnParentSet() { base.OnParentSet(); if (Parent == null) _timer.Stop(); else if (!_timer.IsRunning) _timer.Start(); }
-    private void UpdateClock() { var now = DateTime.Now; _date.Text = now.ToString("ddd, dd MMM yyyy"); _time.Text = now.ToString("HH:mm:ss"); }
+    private void UpdateClock()
+    {
+        var now = DateTime.Now;
+        _date.Text = now.ToString("dddd, MMMM d, yyyy");
+        _time.Text = now.ToString("h:mm tt");
+    }
+
+    private void ApplyWelcomeBrand()
+    {
+        var welcome = ShowWelcomeBrand;
+        _welcome.IsVisible = welcome;
+        _title.IsVisible = !welcome;
+        _restaurantLogo.IsVisible = !welcome && RestaurantLogo is ImageSource;
+        _restaurantName.FontSize = welcome ? 21 : 12;
+        _restaurantName.FontAttributes = welcome ? FontAttributes.Bold : FontAttributes.None;
+        _restaurantName.HorizontalTextAlignment = welcome ? TextAlignment.Start : TextAlignment.Center;
+        _restaurantName.TextColor = Color.FromArgb(welcome ? "#1F2937" : "#6B7280");
+    }
     private void RebuildContextActions(IEnumerable<HeaderAction>? actions)
     {
         if (_contextActions is null) return;
