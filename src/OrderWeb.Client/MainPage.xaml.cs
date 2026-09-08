@@ -1553,9 +1553,9 @@ public partial class MainPage : ContentPage
         {
             var result = await _cashierClient!.GetZReportPreviewAsync();
             if (!result.Success || result.Preview is null) { await DisplayAlertAsync("Z Report Preview", result.Message, "OK"); return; }
-            var p = result.Preview;
-            await DisplayAlertAsync("PREVIEW — NOT A FINAL PRINT", $"Business date: {p.BusinessDate:dd MMM yyyy}\nTerminal: {p.TerminalName}\nOrders: {p.TotalOrders}\nSales: £{p.GrossSales:N2}\nCash: £{p.CashTotal:N2}\nCard: £{p.CardTotal:N2}\nVoids: {p.VoidCount}\nDiscounts: £{p.DiscountTotal:N2}", "Close");
+            var printRequested = await new ZReportPreviewDialogPage(result.Preview, CanRunCashierLiveAction()).ShowAsync(Navigation);
             await RefreshCashierDashboardAsync();
+            if (printRequested) await PrintCashierZReportAsync(button);
         }
         finally { button.IsEnabled = CanRunCashierLiveAction(); }
     }
