@@ -69,7 +69,6 @@ public partial class CashierDashboardPage : ContentPage
 
         IdentityLabel.Text = $"{user.Name} · Cashier";
         BusinessDateLabel.Text = $"Business date: {DateTime.Today:dddd, dd MMMM yyyy}";
-        DataStatusLabel.Text = $"Connected — live data · Last updated {DateTime.Now:HH:mm}";
         _shellFrame.UserName = user.Name;
         _shellFrame.UserRole = "Cashier";
         _shellFrame.TerminalName = TerminalConfigurationService.GetConfiguration().TerminalName;

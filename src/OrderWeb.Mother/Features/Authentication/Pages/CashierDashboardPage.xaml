@@ -16,8 +16,6 @@
         <ScrollView Grid.Row="1">
             <VerticalStackLayout Padding="24,20" Spacing="18" WidthRequest="880" MaximumWidthRequest="880" HorizontalOptions="Center">
                 <Label x:Name="BusinessDateLabel" FontSize="15" TextColor="#475569"/>
-                <Label x:Name="DataStatusLabel" Text="Connected — live data" FontSize="15" TextColor="#334155"/>
-                <Label Text="All reports, printing, and till activity are retrieved from and recorded by Mother POS." FontSize="15" TextColor="#334155" LineBreakMode="WordWrap"/>
                 <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
                     <Border Grid.Column="0" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="TOTAL ORDERS" FontSize="12" TextColor="#475569"/><Label x:Name="TotalOrdersLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
                     <Border Grid.Column="1" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="TOTAL SALES" FontSize="12" TextColor="#475569"/><Label x:Name="TotalSalesLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
