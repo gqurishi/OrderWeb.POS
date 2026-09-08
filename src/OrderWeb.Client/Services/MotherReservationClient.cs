@@ -11,6 +11,8 @@ public sealed class MotherReservationClient
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ClientCacheService _cache;
 
+    public bool LastRequestForbidden { get; private set; }
+
     public MotherReservationClient()
         : this(new ClientCacheService())
     {
@@ -23,6 +25,7 @@ public sealed class MotherReservationClient
 
     public async Task<IReadOnlyList<MotherReservationDto>?> GetReservationsAsync(DateTime from, DateTime to, CancellationToken cancellationToken = default)
     {
+        LastRequestForbidden = false;
         var auth = await GetAuthAsync();
         if (auth is null)
         {
@@ -34,6 +37,7 @@ public sealed class MotherReservationClient
         {
             using var client = CreateClient(auth);
             using var response = await client.GetAsync($"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/reservations{query}", cancellationToken);
+            LastRequestForbidden = response.StatusCode == System.Net.HttpStatusCode.Forbidden;
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {

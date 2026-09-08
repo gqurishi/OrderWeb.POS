@@ -106,6 +106,17 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        // Mother may revoke reservations for this terminal at any time. Fail
+        // closed before subscribing, loading cache, or presenting bookings.
+        if (!ClientHostAccess.CanOpenMenu("Reservation"))
+        {
+            if (Navigation.NavigationStack.Count > 1)
+            {
+                await Navigation.PopAsync(false);
+            }
+            return;
+        }
+
         _isVisible = true;
         MotherEventClient.SharedAuthoritativeDataChanged += OnMotherDataChanged;
         if (!_clockTimer.IsRunning)
@@ -155,6 +166,17 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
             {
                 rows = live.Select(ToReservationRow);
                 _syncStatusText = "Website sync ready";
+            }
+            else if (_motherReservations.LastRequestForbidden)
+            {
+                _allReservations.Clear();
+                _syncStatusText = "Reservations disabled for this terminal by Mother POS";
+                RefreshView();
+                if (Navigation.NavigationStack.Count > 1)
+                {
+                    await Navigation.PopAsync(false);
+                }
+                return;
             }
             else
             {
@@ -397,7 +419,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (menu == "Reservation" || !ClientHostAccess.CanOpenMenu(menu))
+        if (!ClientHostAccess.CanOpenMenu(menu))
         {
             return;
         }
