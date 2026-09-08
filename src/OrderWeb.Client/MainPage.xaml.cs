@@ -1145,31 +1145,6 @@ public partial class MainPage : ContentPage
         dismissLayer.GestureRecognizers.Add(new TapGestureRecognizer { Command = new Command(Dismiss) });
         overlay.Children.Add(dismissLayer);
 
-        var allowedRoles = new HorizontalStackLayout
-        {
-            Spacing = 8,
-            HorizontalOptions = LayoutOptions.Center
-        };
-        foreach (var role in new[] { "User", "Manager", "Cashier" })
-        {
-            allowedRoles.Children.Add(new Border
-            {
-                Stroke = Color.FromArgb("#C7D2FE"),
-                StrokeThickness = 1,
-                BackgroundColor = Color.FromArgb("#EEF2FF"),
-                StrokeShape = new RoundRectangle { CornerRadius = 16 },
-                Padding = new Thickness(14, 7),
-                Margin = new Thickness(4),
-                Content = new Label
-                {
-                    Text = role,
-                    FontSize = 14,
-                    FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb("#3730A3")
-                }
-            });
-        }
-
         var okButton = new Button
         {
             Text = "Use another PIN",
@@ -1236,7 +1211,6 @@ public partial class MainPage : ContentPage
                         HorizontalTextAlignment = TextAlignment.Center,
                         LineBreakMode = LineBreakMode.WordWrap
                     },
-                    allowedRoles,
                     okButton
                 }
             }
