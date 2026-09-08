@@ -151,6 +151,12 @@ public partial class CashierDashboardPage : ContentPage
     {
         _shellFrame.SelectedRoute = e.Route;
         if (e.Route == "dashboard") return;
+        if (e.Route == "yesterdayprint")
+        {
+            await PrintYesterdayZReportAsync();
+            _shellFrame.SelectedRoute = "dashboard";
+            return;
+        }
         if (e.Route == "cashdrawer")
         {
             OnOpenCashDrawerClicked(this, EventArgs.Empty);
@@ -165,13 +171,35 @@ public partial class CashierDashboardPage : ContentPage
         await _navigationCoordinator.NavigateShellAsync("report", animated: false, source: this);
     }
 
+    private async Task PrintYesterdayZReportAsync()
+    {
+        var user = _authService.CurrentUser;
+        var permissionService = ServiceHelper.GetService<PermissionService>();
+        if (user is not { IsActive: true, Role: UserRole.Cashier } || permissionService is null ||
+            !await permissionService.HasCashierCapabilityAsync(CashierCapabilities.ReprintZ))
+        {
+            await AppAlertService.ShowAlertAsync("Yesterday Report Print", "You do not have permission to print yesterday's Z report.");
+            return;
+        }
+
+        try
+        {
+            var businessDate = DateTime.Today.AddDays(-1);
+            var snapshot = await _zReportService.GetSummaryAsync(businessDate, user.Name, includeTopItems: false);
+            snapshot.IsReprint = true;
+            var result = await _zReportPrintService.PrintAsync(snapshot, includeDetailSlip: false, printedByUserId: user.Id);
+            await AppAlertService.ShowAlertAsync(result.Success ? "Yesterday Report Printed" : "Print Failed", result.Message);
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Print Failed", ex.Message);
+        }
+    }
+
     private static IReadOnlyList<ApplicationNavigationItem> CashierMenuItems() =>
     [
         new("dashboard", "Dashboard", "dashboard.png"),
-        new("dailyreport", "Daily Report", "report.png"),
-        new("reprintz", "Reprint Z Report", "printers.png"),
-        new("yesterdayreport", "Yesterday's Report", "report.png"),
-        new("report", "Full Reports", "report.png"),
-        new("cashdrawer", "Cash Drawer", "cashdrawer.png")
+        new("report", "Reports", "report.png"),
+        new("yesterdayprint", "Yesterday Report Print", "printers.png")
     ];
 }
