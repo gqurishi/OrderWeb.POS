@@ -1574,21 +1574,30 @@ public partial class MainPage : ContentPage
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Cash drawer opening requires a live Mother POS connection.", "OK"); return; }
         var reason = await new CashDrawerReasonDialogPage().ShowAsync(Navigation);
         if (string.IsNullOrWhiteSpace(reason)) return;
-        decimal? amount = null; string? details = null;
+        CashDrawerFormResult? form = null;
         if (reason is "Shopping" or "Delivery" or "Cash Count" or "Other")
         {
-            if (reason is "Shopping" or "Other")
+            form = reason switch
             {
-                details = await DisplayPromptAsync(reason, reason == "Shopping" ? "What is the shopping item/purpose?" : "Reason for opening the drawer:", "Continue", "Cancel");
-                if (string.IsNullOrWhiteSpace(details)) return;
-            }
+                "Shopping" => await new CashDrawerFormDialogPage("Shopping", "Record cash taken from the till before opening the drawer.", "Take & Open", "#0F8278", "Shopping item or purpose", "Amount out").ShowAsync(Navigation),
+                "Delivery" => await new CashDrawerFormDialogPage("Delivery payout", "Record cash paid out for delivery before opening the drawer.", "Pay & Open", "#0F8278", null, "Amount out").ShowAsync(Navigation),
+                "Cash Count" => await new CashDrawerFormDialogPage("Cash count", "Enter the cash counted in the drawer.", "Record & Open", "#0F8278", null, "Counted cash").ShowAsync(Navigation),
+                _ => await new CashDrawerFormDialogPage("Other till expense", "Enter the reason for opening the cash drawer.", "Continue", "#2563EB", "Reason", "Amount out").ShowAsync(Navigation)
+            };
+            if (form is null) return;
+            if (false)
+            {
+                decimal? amount = null;
+                string? details = null;
             var entered = await DisplayPromptAsync(reason, reason == "Cash Count" ? "Enter counted cash (£):" : "Enter amount (£):", "Continue", "Cancel", keyboard: Keyboard.Numeric);
             if (!decimal.TryParse(entered, out var parsed) || parsed < 0) { await DisplayAlertAsync("Invalid amount", "Enter a valid amount.", "OK"); return; }
             amount = parsed;
+            }
         }
-        if (!await DisplayAlertAsync("Open Cash Drawer", $"Open the drawer for: {reason}?", "Open", "Cancel")) return;
+        form ??= new CashDrawerFormResult(null, null);
+        if (!await new CashDrawerConfirmDialogPage(reason).ShowAsync(Navigation)) return;
         button.IsEnabled = false;
-        try { var result = await _cashierClient!.OpenCashDrawerAsync(reason, amount, details); await DisplayAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
+        try { var result = await _cashierClient!.OpenCashDrawerAsync(reason, form.Amount, form.Details); await DisplayAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
         finally { button.IsEnabled = CanRunCashierLiveAction(); }
     }
 
@@ -4090,13 +4099,18 @@ public partial class MainPage : ContentPage
 
     private async Task<PrintRequestState?> RequestPrintAsync(string printType, string? orderId, bool redraw = true)
     {
-        if (printType == "cash drawer open" && (_currentSession == null || !_currentSession.HasPermission("client.cash_drawer.open")))
+        if (printType == "cash drawer open" && (_currentSession == null ||
+            (!_currentSession.HasPermission("client.cash_drawer.open") &&
+             !_currentSession.HasPermission(OrderWeb.Contracts.Capabilities.PosCapabilityKeys.OpenCashDrawer))))
         {
             ShowToast("This user cannot open the cash drawer from Client POS.");
             return null;
         }
 
-        if (printType != "cash drawer open" && (_currentSession == null || !_currentSession.HasPermission("client.order.print")))
+        if (printType != "cash drawer open" && (_currentSession == null ||
+            (!_currentSession.HasPermission(OrderWeb.Contracts.Capabilities.PosCapabilityKeys.PrintReceipts) &&
+             !_currentSession.HasPermission(OrderWeb.Contracts.Capabilities.PosCapabilityKeys.CreateOrders) &&
+             !_currentSession.HasPermission("client.order.print"))))
         {
             ShowToast("This user cannot send print requests from Client POS.");
             return null;
@@ -4106,24 +4120,9 @@ public partial class MainPage : ContentPage
         var request = await _printClient.RequestPrintAsync(printType, orderId, _currentSession);
         await _cache.SavePrintRequestAsync(request);
 
-        if (request.Status is "queued")
-        {
-            var printing = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(printing);
-            var printed = await _printClient.AdvanceStatusAsync(printing);
-            await _cache.SavePrintRequestAsync(printed);
-            request = printed;
-        }
-        else if (request.Status is "printer offline")
-        {
-            var failed = await _printClient.AdvanceStatusAsync(request);
-            await _cache.SavePrintRequestAsync(failed);
-            request = failed;
-        }
-
         _recentPrintRequests = await _cache.GetRecentPrintRequestsAsync();
         _connectionStatus = "Connected";
-        ShowToast($"{printType}: {request.Status}");
+        ShowToast($"{printType}: {request.Status} — {request.Message}");
         if (redraw)
         {
             ShowOrder();
