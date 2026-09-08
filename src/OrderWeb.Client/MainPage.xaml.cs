@@ -1474,7 +1474,6 @@ public partial class MainPage : ContentPage
             {
                 new Label { Text = "Cashier Dashboard", FontSize = 30, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText) },
                 new Label { Text = $"{_currentSession.UserName} · {LastTerminalName()} · {status}", FontSize = 15, TextColor = Color.FromArgb(SecondaryText) },
-                new Label { Text = "All reports, printing, and till activity are retrieved from and recorded by Mother POS.", FontSize = 15, TextColor = Color.FromArgb(SecondaryText) },
                 BuildCashierSummaryGrid(online)
             }
         };
@@ -1499,8 +1498,9 @@ public partial class MainPage : ContentPage
             content.Children.RemoveAt(0);
         }
         content.Children.Insert(0, new Label { Text = $"Business date: {DateTime.Today:dddd, dd MMMM yyyy}", FontSize = 15, TextColor = Color.FromArgb(SecondaryText) });
-        _cashierDataStatusLabel = new Label { Text = "Refreshing…", FontSize = 14, TextColor = Color.FromArgb(SecondaryText) };
-        content.Children.Insert(1, _cashierDataStatusLabel);
+        // Keep the status value for stale-data safety checks, but the shared
+        // top bar already presents connection state so it need not be repeated.
+        _cashierDataStatusLabel = new Label { Text = "Refreshing…", IsVisible = false };
         var frame = SharedAppFrame("Dashboard", new ScrollView { Content = content }, "dashboard");
         frame.SetSidebarVisible(false);
         frame.MenuItems = new[]
