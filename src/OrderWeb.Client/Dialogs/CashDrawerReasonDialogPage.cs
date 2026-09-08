@@ -3,7 +3,8 @@ namespace OrderWeb.Client.Dialogs;
 /// <summary>POS-styled drawer-reason selector shared visually with Mother.</summary>
 public sealed class CashDrawerReasonDialogPage : ContentPage
 {
-    private readonly TaskCompletionSource<string?> _completion = new();
+    private readonly TaskCompletionSource<string?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private INavigation? _hostNavigation;
     private bool _closed;
 
     public CashDrawerReasonDialogPage()
@@ -27,6 +28,7 @@ public sealed class CashDrawerReasonDialogPage : ContentPage
 
     public async Task<string?> ShowAsync(INavigation navigation)
     {
+        _hostNavigation = navigation;
         await navigation.PushModalAsync(this, false);
         return await _completion.Task;
     }
@@ -34,8 +36,18 @@ public sealed class CashDrawerReasonDialogPage : ContentPage
     private async Task CloseAsync(string? result)
     {
         if (_closed) return; _closed = true;
-        await Navigation.PopModalAsync(false);
-        _completion.TrySetResult(result);
+        try
+        {
+            var navigation = _hostNavigation ?? Navigation;
+            if (navigation.ModalStack.Contains(this))
+            {
+                await navigation.PopModalAsync(false);
+            }
+        }
+        finally
+        {
+            _completion.TrySetResult(result);
+        }
     }
 }
 
@@ -44,7 +56,8 @@ public sealed record CashDrawerFormResult(string? Details, decimal? Amount);
 /// <summary>Client-side presentation only; Mother validates and records the action.</summary>
 public sealed class CashDrawerFormDialogPage : ContentPage
 {
-    private readonly TaskCompletionSource<CashDrawerFormResult?> _completion = new();
+    private readonly TaskCompletionSource<CashDrawerFormResult?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private INavigation? _hostNavigation;
     private readonly Entry? _details;
     private readonly Entry? _amount;
     private bool _closed;
@@ -95,15 +108,16 @@ public sealed class CashDrawerFormDialogPage : ContentPage
         Content = new Grid { Padding = 24, Children = { new Grid { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Children = { card } } } };
     }
 
-    public async Task<CashDrawerFormResult?> ShowAsync(INavigation navigation) { await navigation.PushModalAsync(this, false); return await _completion.Task; }
-    private async Task CloseAsync(CashDrawerFormResult? result) { if (_closed) return; _closed = true; await Navigation.PopModalAsync(false); _completion.TrySetResult(result); }
+    public async Task<CashDrawerFormResult?> ShowAsync(INavigation navigation) { _hostNavigation = navigation; await navigation.PushModalAsync(this, false); return await _completion.Task; }
+    private async Task CloseAsync(CashDrawerFormResult? result) { if (_closed) return; _closed = true; try { var navigation = _hostNavigation ?? Navigation; if (navigation.ModalStack.Contains(this)) await navigation.PopModalAsync(false); } finally { _completion.TrySetResult(result); } }
     private static Border Field(string? label, View value) => new() { BackgroundColor = Color.FromArgb("#F8FAFC"), Stroke = Color.FromArgb("#D8E2F1"), StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 }, Padding = new Thickness(16, 6), Content = value };
     private static Border Icon(string accent, string text) => new() { WidthRequest = 80, HeightRequest = 80, HorizontalOptions = LayoutOptions.Center, BackgroundColor = Color.FromArgb(accent), StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 40 }, Content = new Label { Text = text, FontSize = 36, TextColor = Colors.White, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center } };
 }
 
 public sealed class CashDrawerConfirmDialogPage : ContentPage
 {
-    private readonly TaskCompletionSource<bool> _completion = new();
+    private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private INavigation? _hostNavigation;
     private bool _closed;
     public CashDrawerConfirmDialogPage(string reason)
     {
@@ -114,7 +128,7 @@ public sealed class CashDrawerConfirmDialogPage : ContentPage
         var card = new Border { WidthRequest = 600, MaximumWidthRequest = 600, Padding = new Thickness(46, 38), BackgroundColor = Colors.White, Stroke = Color.FromArgb("#DDE4EE"), StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 28 }, Content = content };
         Content = new Grid { Padding = 24, Children = { new Grid { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Children = { card } } } };
     }
-    public async Task<bool> ShowAsync(INavigation navigation) { await navigation.PushModalAsync(this, false); return await _completion.Task; }
+    public async Task<bool> ShowAsync(INavigation navigation) { _hostNavigation = navigation; await navigation.PushModalAsync(this, false); return await _completion.Task; }
     private Button Button(string text, string background, string foreground, bool result) { var button = new Button { Text = text, HeightRequest = 56, BackgroundColor = Color.FromArgb(background), TextColor = Color.FromArgb(foreground), FontSize = 18, FontAttributes = FontAttributes.Bold, CornerRadius = 16 }; button.Clicked += async (_, _) => await CloseAsync(result); return button; }
-    private async Task CloseAsync(bool result) { if (_closed) return; _closed = true; await Navigation.PopModalAsync(false); _completion.TrySetResult(result); }
+    private async Task CloseAsync(bool result) { if (_closed) return; _closed = true; try { var navigation = _hostNavigation ?? Navigation; if (navigation.ModalStack.Contains(this)) await navigation.PopModalAsync(false); } finally { _completion.TrySetResult(result); } }
 }
