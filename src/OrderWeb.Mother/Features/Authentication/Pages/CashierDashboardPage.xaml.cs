@@ -90,8 +90,22 @@ public partial class CashierDashboardPage : ContentPage
         VarianceLabel.Text = snapshot.CashCountVariance is { } variance ? $"£{variance:N2}" : "Not counted";
     }
 
-    private async void OnReportsClicked(object sender, EventArgs e) =>
-        await _navigationCoordinator.NavigateShellAsync("report", animated: false, source: sender as VisualElement);
+    private async void OnReportsClicked(object sender, EventArgs e)
+    {
+        var user = _authService.CurrentUser;
+        var permissionService = ServiceHelper.GetService<PermissionService>();
+        if (user is not { IsActive: true, Role: UserRole.Cashier } || permissionService is null ||
+            !await permissionService.HasCashierCapabilityAsync(CashierCapabilities.PreviewZ))
+        {
+            await AppAlertService.ShowAlertAsync("Z Report Preview", "You do not have permission to preview the Z report.");
+            return;
+        }
+
+        var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, user.Name, includeTopItems: false);
+        var canPrint = await permissionService.HasCashierCapabilityAsync(CashierCapabilities.PrintZ);
+        var printRequested = await new CashierZReportPreviewDialogPage(snapshot, canPrint).ShowAsync(Navigation);
+        if (printRequested) OnPrintZReportClicked(sender, EventArgs.Empty);
+    }
 
     private async void OnPrintZReportClicked(object sender, EventArgs e)
     {
