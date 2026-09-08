@@ -1563,7 +1563,7 @@ public partial class MainPage : ContentPage
     private async Task PrintCashierZReportAsync(Button button)
     {
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Z Report printing requires a live Mother POS connection.", "OK"); return; }
-        if (!await DisplayAlertAsync("Print Z Report", "Send the official Z Report to the Mother-configured printer?", "Print", "Cancel")) return;
+        if (!await new PrintZReportConfirmDialogPage().ShowAsync(Navigation)) return;
         button.IsEnabled = false;
         try { var result = await _cashierClient!.PrintZReportAsync(); await DisplayAlertAsync(result.Success ? "Z Report Printed" : "Print Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
         finally { button.IsEnabled = CanRunCashierLiveAction(); }
