@@ -14,6 +14,53 @@ public static class ClientHostAccess
     public static IReadOnlySet<string> Features => _features;
     public static IReadOnlySet<string> Routes => _routes;
 
+    /// <summary>
+    /// Keeps the Client User surface identical to the Mother User POS:
+    /// operational ordering and reservation routes only. The Mother's supplied
+    /// route set remains authoritative, so unavailable services stay hidden.
+    /// </summary>
+    public static IReadOnlySet<string> RoutesForRole(string? role)
+    {
+        if (!string.Equals(role, "User", StringComparison.OrdinalIgnoreCase))
+        {
+            return Routes;
+        }
+
+        var userRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "restaurant",
+            "collection",
+            "delivery",
+            "liveorder",
+            "reservation"
+        };
+        userRoutes.IntersectWith(Routes);
+        return userRoutes;
+    }
+
+    /// <summary>
+    /// Mother keeps User and Manager dashboards focused on the four primary
+    /// service actions. Additional Manager tools remain in the sidebar.
+    /// </summary>
+    public static IReadOnlySet<string> DashboardRoutesForRole(string? role)
+    {
+        if (!string.Equals(role, "User", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return RoutesForRole(role);
+        }
+
+        var dashboardRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "restaurant",
+            "collection",
+            "delivery",
+            "reservation"
+        };
+        dashboardRoutes.IntersectWith(Routes);
+        return dashboardRoutes;
+    }
+
     public static void Apply(IEnumerable<string>? features, IEnumerable<string>? routes = null)
     {
         // Fail closed: only Mother can grant Client features. Missing data is

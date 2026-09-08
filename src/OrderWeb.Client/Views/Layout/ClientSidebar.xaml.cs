@@ -15,6 +15,7 @@ public partial class ClientSidebar : ContentView
     {
         InitializeComponent();
         ApplyState();
+        Loaded += async (_, _) => await ApplyCurrentSessionAsync();
     }
 
     public event EventHandler<string>? MenuItemSelected;
@@ -24,6 +25,26 @@ public partial class ClientSidebar : ContentView
     public bool ShowFooter { get => (bool)GetValue(ShowFooterProperty); set => SetValue(ShowFooterProperty, value); }
 
     private static void OnStateChanged(BindableObject bindable, object oldValue, object newValue) => ((ClientSidebar)bindable).ApplyState();
+
+    private async Task ApplyCurrentSessionAsync()
+    {
+        try
+        {
+            var session = await new ClientCacheService().GetCurrentLoginSessionAsync();
+            if (string.IsNullOrWhiteSpace(session?.Role))
+            {
+                return;
+            }
+
+            Role = session.Role;
+            ShowFooter = string.Equals(session.Role, "Manager", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Retain the declared state when no Client session has been saved yet.
+        }
+    }
+
     private void ApplyState()
     {
         if (SharedSidebar == null) return;
@@ -31,10 +52,11 @@ public partial class ClientSidebar : ContentView
         SharedSidebar.SelectedRoute = RouteForTitle(SelectedMenu);
         SharedSidebar.ShowUpdateButton = ShowFooter;
         var capabilities = ClientCapabilityResolver.ForRole(Role);
+        var routes = ClientHostAccess.RoutesForRole(Role);
         SharedSidebar.ItemsSource = PosNavigationCatalog.Filter(
             capabilities,
             ClientHostAccess.Features,
-            ClientHostAccess.Routes);
+            routes);
     }
     private void OnSharedNavigationRequested(object? sender, NavigationRequestedEventArgs e)
     {

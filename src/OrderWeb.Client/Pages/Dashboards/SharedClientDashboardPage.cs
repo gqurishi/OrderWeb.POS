@@ -25,13 +25,14 @@ public class SharedClientDashboardPage : ContentPage
         var capabilities = ClientCapabilityResolver.ForRole(session.Role, session.Permissions);
         var features = ClientHostAccess.Features;
         var hostRoutes = ClientHostAccess.Routes;
+        var dashboardRoutes = ClientHostAccess.DashboardRoutesForRole(session.Role);
 
         var dashboardVm = new DashboardViewModel
         {
             Title = title,
             Subtitle = $"Signed in as {session.UserName}"
         };
-        dashboardVm.ApplyCapabilities(capabilities, features, hostRoutes);
+        dashboardVm.ApplyCapabilities(capabilities, features, dashboardRoutes);
         dashboardVm.TileSelected += async (_, tile) => await NavigateRouteAsync(tile.Route);
 
         var dashboard = new DashboardView { ViewModel = dashboardVm };
@@ -48,7 +49,7 @@ public class SharedClientDashboardPage : ContentPage
             SelectedRoute = "dashboard",
             AvailableCapabilities = capabilities,
             AvailableFeatures = features,
-            MenuItems = PosNavigationCatalog.Filter(capabilities, features, hostRoutes),
+            MenuItems = PosNavigationCatalog.Filter(capabilities, features, ClientHostAccess.RoutesForRole(session.Role)),
             ShowUpdateButton = string.Equals(session.Role, "Manager", StringComparison.OrdinalIgnoreCase)
                                || string.Equals(session.Role, "Admin", StringComparison.OrdinalIgnoreCase)
         };

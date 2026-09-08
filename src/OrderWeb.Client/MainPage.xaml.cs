@@ -1635,6 +1635,7 @@ public partial class MainPage : ContentPage
     {
         var session = _currentSession;
         var capabilities = ClientCapabilityResolver.ForRole(session?.Role, session?.Permissions);
+        var routes = ClientHostAccess.DashboardRoutesForRole(session?.Role);
         var viewModel = new DashboardViewModel
         {
             Title = DashboardTitle(),
@@ -1643,32 +1644,38 @@ public partial class MainPage : ContentPage
         };
         viewModel.TileSelected += (_, tile) => NavigateFromSharedDashboard(tile.Route);
         _sharedDashboardViewModel = viewModel;
-        ApplySharedDashboardState(viewModel, capabilities);
-        _ = RefreshSharedDashboardStateAsync(viewModel, capabilities);
+        ApplySharedDashboardState(viewModel, capabilities, routes);
+        _ = RefreshSharedDashboardStateAsync(viewModel, capabilities, routes);
         return new DashboardView { ViewModel = viewModel };
     }
 
-    private async Task RefreshSharedDashboardStateAsync(DashboardViewModel viewModel, IReadOnlySet<string> capabilities)
+    private async Task RefreshSharedDashboardStateAsync(
+        DashboardViewModel viewModel,
+        IReadOnlySet<string> capabilities,
+        IReadOnlySet<string> routes)
     {
         try
         {
             var status = await _cache.GetStatusAsync();
             if (!ReferenceEquals(viewModel, _sharedDashboardViewModel)) return;
             _cacheStatus = status;
-            ApplySharedDashboardState(viewModel, capabilities);
+            ApplySharedDashboardState(viewModel, capabilities, routes);
         }
         catch
         {
             if (!ReferenceEquals(viewModel, _sharedDashboardViewModel)) return;
             viewModel.IsOffline = true;
-            ApplySharedDashboardState(viewModel, capabilities);
+            ApplySharedDashboardState(viewModel, capabilities, routes);
         }
     }
 
-    private void ApplySharedDashboardState(DashboardViewModel viewModel, IReadOnlySet<string> capabilities)
+    private void ApplySharedDashboardState(
+        DashboardViewModel viewModel,
+        IReadOnlySet<string> capabilities,
+        IReadOnlySet<string> routes)
     {
         viewModel.IsOffline = IsMotherUnavailable();
-        viewModel.ApplyCapabilities(capabilities, ClientHostAccess.Features, ClientHostAccess.Routes);
+        viewModel.ApplyCapabilities(capabilities, ClientHostAccess.Features, routes);
     }
 
     private bool IsMotherUnavailable() => _connectionStatus.Contains("offline", StringComparison.OrdinalIgnoreCase) ||
@@ -4860,6 +4867,7 @@ public partial class MainPage : ContentPage
         var role = _currentSession?.Role;
         var capabilities = ClientCapabilityResolver.ForRole(role, _currentSession?.Permissions);
         var features = ClientHostAccess.Features;
+        var routes = ClientHostAccess.RoutesForRole(role);
         var frame = new ApplicationShellFrame
         {
             PageTitle = title,
@@ -4873,7 +4881,7 @@ public partial class MainPage : ContentPage
             SelectedRoute = selectedRoute,
             AvailableCapabilities = capabilities,
             AvailableFeatures = features,
-            MenuItems = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, ClientHostAccess.Routes),
+            MenuItems = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, routes),
             ShowUpdateButton = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase),
             ShowWelcomeBrand = isDashboard,
             ShowIdentity = !isDashboard,
