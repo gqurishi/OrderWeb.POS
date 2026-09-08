@@ -1497,7 +1497,6 @@ public partial class MainPage : ContentPage
             content.Children.RemoveAt(0);
             content.Children.RemoveAt(0);
         }
-        content.Children.Insert(0, new Label { Text = $"Business date: {DateTime.Today:dddd, dd MMMM yyyy}", FontSize = 15, TextColor = Color.FromArgb(SecondaryText) });
         // Keep the status value for stale-data safety checks, but the shared
         // top bar already presents connection state so it need not be repeated.
         _cashierDataStatusLabel = new Label { Text = "Refreshing…", IsVisible = false };
