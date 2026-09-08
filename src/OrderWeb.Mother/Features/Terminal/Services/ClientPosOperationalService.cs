@@ -12,15 +12,7 @@ namespace POS_in_NET.Services;
 public sealed class ClientPosOperationalService
 {
     private const string LiveOrderSourceFilter = @"
-        (
-            LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'
-            OR (
-                LOWER(COALESCE(o.source_channel, '')) = 'web'
-                AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
-                AND REPLACE(REPLACE(REPLACE(LOWER(COALESCE(o.payment_method, 'cash')), ' ', ''), '_', ''), '-', '')
-                    IN ('cash', 'cod', 'cashondelivery', 'cashoncollection')
-            )
-        )";
+        LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'";
 
     private const string ActiveLifecycleFilter = @"
         AND COALESCE(o.is_open, 1) = 1

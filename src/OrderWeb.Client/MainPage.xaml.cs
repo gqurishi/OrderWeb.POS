@@ -52,7 +52,6 @@ public partial class MainPage : ContentPage
     private readonly MotherOrderClient _orderClient = new();
     private readonly MotherCustomerClient _customerClient;
     private readonly MotherPrintClient _printClient = new();
-    private readonly MotherOnlineOrderClient _onlineOrderClient = new();
     private readonly MotherEventClient _motherEvents;
     private readonly MotherConfigurationVersionClient _configurationVersions;
     private readonly MotherHeartbeatClient _motherHeartbeat;
@@ -4847,70 +4846,6 @@ public partial class MainPage : ContentPage
         string AccentColor,
         Func<Task> OpenAsync);
 
-    private View OnlineOrderActions(CachedOnlineOrder order)
-    {
-        return new HorizontalStackLayout
-        {
-            Spacing = 8,
-            HorizontalOptions = LayoutOptions.End,
-            Children =
-            {
-                MiniCommand("View", "#64748B", (_, _) => ShowToast($"{order.OrderNumber}: {order.PayloadJson}")),
-                MiniCommand("Accept", "#2563EB", async (_, _) => await UpdateOnlineOrderStatusAsync(order, "Accepted")),
-                MiniCommand("Preparing", "#F59E0B", async (_, _) => await UpdateOnlineOrderStatusAsync(order, "Preparing")),
-                MiniCommand("Ready", "#7C3AED", async (_, _) => await UpdateOnlineOrderStatusAsync(order, "Ready")),
-                MiniCommand("Complete", "#64748B", async (_, _) => await UpdateOnlineOrderStatusAsync(order, "Completed"))
-            }
-        };
-    }
-
-    private Button MiniCommand(string text, string color, EventHandler click)
-    {
-        var button = new Button
-        {
-            Text = text,
-            FontSize = 12,
-            FontFamily = "OpenSansSemibold",
-            TextColor = Color.FromArgb(PageBackground),
-            BackgroundColor = Color.FromArgb(color),
-            CornerRadius = 8,
-            HeightRequest = 40,
-            WidthRequest = text.Length > 7 ? 92 : 74,
-            Padding = 0
-        };
-        button.Clicked += click;
-        return button;
-    }
-
-    private async Task UpdateOnlineOrderStatusAsync(CachedOnlineOrder order, string status)
-    {
-        if (_currentSession == null || !_currentSession.HasPermission("client.online_orders.manage"))
-        {
-            ShowToast("This user cannot update online order status.");
-            return;
-        }
-
-        _connectionStatus = "Syncing";
-        var updated = await _onlineOrderClient.UpdateStatusAsync(order, status, _currentSession);
-        await _cache.SaveOnlineOrderAsync(updated);
-        _connectionStatus = "Connected";
-        ShowToast($"{updated.OrderNumber}: {updated.Status}");
-        ShowLiveOrders();
-    }
-
-    private static string OnlineOrderStatusColor(string status)
-    {
-        return status switch
-        {
-            "New" => "#2563EB",
-            "Accepted" => "#059669",
-            "Preparing" => "#F59E0B",
-            "Ready" => "#7C3AED",
-            "Completed" or "Complete" => "#64748B",
-            _ => "#64748B"
-        };
-    }
-
     private View AppFrame(string title, View content, bool showSidebar)
     {
         return SharedAppFrame(title, content, RouteForTitle(title));
@@ -4987,7 +4922,6 @@ public partial class MainPage : ContentPage
         "restaurant" => "restaurant",
         "collection" => "collection",
         "delivery" => "delivery",
-        "web orders" => "weborders",
         "gift cards" => "giftcards",
         "loyalty points" => "loyalty",
         "reservation" => "reservation",
@@ -5309,7 +5243,7 @@ public partial class MainPage : ContentPage
         var status = _cacheStatus;
         var text = status == null
             ? "SQLite cache: initializing..."
-            : $"SQLite cache v{status.SchemaVersion ?? "?"}: {status.Categories} categories, {status.Products} products, {status.Tables} tables, {status.OpenOrders} open orders, {status.OnlineOrders} online orders, {status.PendingActions} pending actions.";
+            : $"SQLite cache v{status.SchemaVersion ?? "?"}: {status.Categories} categories, {status.Products} products, {status.Tables} tables, {status.OpenOrders} open local orders, {status.PendingActions} pending actions.";
 
         var checkpoint = status == null
             ? "Mother is still the source of truth."

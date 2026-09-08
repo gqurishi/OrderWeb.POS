@@ -26,7 +26,6 @@ public static class PosNavigationCatalog
         Item("loyalty", "Loyalty Points", "loyalty.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.CustomerPoints], 70),
         Item("reservation", "Reservation", "reservation.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.Reservations], 80),
         Item("orderhistory", "Order History", "orderhistory.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Payments], 90),
-        Item("weborders", "Web Orders", "weborders.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.WebOrders], 100),
         Item("report", "Reports", "report.png", [PosCapabilityKeys.ViewReports], [], 140),
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
         Item("printersetup", "Printers", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),

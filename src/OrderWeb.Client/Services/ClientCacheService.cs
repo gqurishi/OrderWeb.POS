@@ -334,21 +334,8 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var onlineOrder in payload.OnlineOrders)
-            {
-                connection.Execute(
-                    "INSERT OR REPLACE INTO online_orders_cache (id, mother_id, order_number, customer_name, order_type, due_time, status, total, payload_json, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    onlineOrder.Id,
-                    onlineOrder.MotherId,
-                    onlineOrder.OrderNumber,
-                    onlineOrder.CustomerName,
-                    onlineOrder.OrderType,
-                    onlineOrder.DueTime,
-                    onlineOrder.Status,
-                    onlineOrder.Total,
-                    JsonSerializer.Serialize(onlineOrder),
-                    now);
-            }
+            // Website orders are Mother-only. Keep the legacy schema for
+            // migration compatibility, but never hydrate it on a Client.
 
             foreach (var reservation in payload.Reservations)
             {
