@@ -73,6 +73,9 @@ public static class MotherCapabilityResolver
         set.Add(PosCapabilityKeys.TakeOrders);
         set.Add(PosCapabilityKeys.OpenTables);
         set.Add(PosCapabilityKeys.ManageCustomers);
+        // Waiters on Client POS must be able to fire kitchen/bar tickets and
+        // customer receipts through Mother IP printers. Printer setup stays Admin-only.
+        set.Add(PosCapabilityKeys.PrintReceipts);
 
         // Cashiers have a reports-and-till-only surface. Deliberately do not
         // grant any order, customer, payment, refund, discount, or approval

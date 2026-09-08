@@ -519,7 +519,23 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             return;
         }
-        if (request.PrintKitchen && !await EnsureCapabilityAsync(context, session, PosCapabilityKeys.PrintReceipts)) return;
+
+        var printDocuments = ResolveClientPrintDocuments(request.PrintKitchen, request.PrintReceipt, request.PrintDocuments);
+        if (printDocuments.Contains("kitchen_ticket") &&
+            !await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.PrintReceipts))
+        {
+            return;
+        }
+        if (printDocuments.Contains("customer_receipt") &&
+            !await EnsureCapabilityAsync(context, session, PosCapabilityKeys.PrintReceipts))
+        {
+            return;
+        }
+        if (printDocuments.Contains("reprint") &&
+            !await EnsureCapabilityAsync(context, session, PosCapabilityKeys.ReprintReceipts))
+        {
+            return;
+        }
 
         try
         {
@@ -555,24 +571,16 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             }
 
             object? print = null;
-            if (request.PrintKitchen)
+            if (printDocuments.Count > 0)
             {
-                var printRequestId = string.IsNullOrWhiteSpace(request.PrintRequestId) ? Guid.NewGuid().ToString("N") : request.PrintRequestId.Trim();
-                var duplicate = await GetPrintAuditAsync(printRequestId, session.TerminalId);
-                if (duplicate != null)
-                {
-                    print = duplicate;
-                }
-                else if (await TryBeginPrintAuditAsync(printRequestId, session, result.Order.Id, "kitchen_ticket"))
-                {
-                    var order = await new OrderService().GetOrderByExternalIdAsync(result.Order.Id);
-                    var routing = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
-                    var routingResult = order == null ? null : await routing.PrintOrderAsync(ToKitchenPrintOrder(order));
-                    var status = routingResult == null ? "failed" : routingResult.HasFailures && routingResult.AnyPrinted ? "partial" : routingResult.AnyPrinted ? "queued" : "failed";
-                    var message = status == "failed" ? "Mother could not queue the kitchen/bar tickets." : status == "partial" ? "Mother queued part of the order and retained the route failures on Mother." : "Mother queued the kitchen/bar tickets.";
-                    await StorePrintAuditAsync(printRequestId, session, result.Order.Id, "kitchen_ticket", status, message);
-                    print = new { printJobId = printRequestId, status, message };
-                }
+                var printRequestId = string.IsNullOrWhiteSpace(request.PrintRequestId)
+                    ? Guid.NewGuid().ToString("N")
+                    : request.PrintRequestId.Trim();
+                print = await ExecuteClientPrintDocumentsAsync(
+                    session,
+                    result.Order.Id,
+                    printDocuments,
+                    printRequestId);
             }
 
             await PublishDataChangedAsync("order.updated", result.Order.Id);
@@ -1349,84 +1357,46 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
 
-        var documentType = request.DocumentType?.Trim().ToLowerInvariant();
-        var requiredCapability = documentType == "reprint"
-            ? OrderWeb.Contracts.Capabilities.PosCapabilityKeys.ReprintReceipts
-            : OrderWeb.Contracts.Capabilities.PosCapabilityKeys.PrintReceipts;
-        if (!await EnsureCapabilityAsync(context, session, requiredCapability)) return;
-        if (documentType is not "customer_receipt" and not "reprint" and not "kitchen_ticket")
+        var documentType = NormalizeClientPrintDocument(request.DocumentType);
+        if (documentType is null)
         {
-            await WriteJsonAsync(context, HttpStatusCode.UnprocessableEntity, new { success = false, message = "The requested document type is not supported." });
-            return;
-        }
-
-        var duplicate = await GetPrintAuditAsync(request.RequestId, session.TerminalId);
-        if (duplicate != null)
-        {
-            await WriteJsonAsync(context, HttpStatusCode.OK, new { success = duplicate.Status is "queued" or "printed" or "partial", print = duplicate });
-            return;
-        }
-        if (!await TryBeginPrintAuditAsync(request.RequestId, session, request.OrderId, documentType))
-        {
-            var inFlight = await GetPrintAuditAsync(request.RequestId, session.TerminalId);
-            await WriteJsonAsync(context, HttpStatusCode.Conflict, new
+            await WriteJsonAsync(context, HttpStatusCode.UnprocessableEntity, new
             {
                 success = false,
-                message = "Mother is already processing this print request. Check print history before retrying.",
-                print = inFlight
+                message = "Supported Client print types are kitchen/bar tickets and customer receipts. Mother prints them on its network/IP printers."
             });
             return;
         }
 
-        var order = await new OrderService().GetOrderByExternalIdAsync(request.OrderId);
-        if (order == null)
+        if (documentType is "kitchen_ticket")
         {
-            await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, "failed", "Mother POS could not find this order.");
-            await WriteJsonAsync(context, HttpStatusCode.NotFound, new { success = false, message = "Mother POS could not find this order." });
-            return;
-        }
-
-        var printFeature = FeatureForOrderType(order.OrderType);
-        if (printFeature != null && !await EnsureFeatureAsync(context, session, printFeature))
-        {
-            await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, "failed", "This terminal is not allowed to print that order type.");
-            return;
-        }
-
-        string status;
-        string message;
-        if (documentType == "kitchen_ticket")
-        {
-            var routing = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
-            var kitchenOrder = ToKitchenPrintOrder(order);
-            var result = await routing.PrintOrderAsync(kitchenOrder);
-            status = result.HasFailures && result.AnyPrinted ? "partial" : result.AnyPrinted ? "printed" : "failed";
-            message = result.HasFailures
-                ? $"Kitchen print completed with failures: {string.Join("; ", result.FailedRoutes)}"
-                : result.AnyPrinted ? "Mother printed the kitchen ticket." : "Mother could not print the kitchen ticket; check the configured printer.";
+            if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.PrintReceipts))
+            {
+                return;
+            }
         }
         else
         {
-            var receiptService = ServiceHelper.GetService<ReceiptService>();
-            if (receiptService == null)
+            var requiredCapability = documentType == "reprint"
+                ? PosCapabilityKeys.ReprintReceipts
+                : PosCapabilityKeys.PrintReceipts;
+            if (!await EnsureCapabilityAsync(context, session, requiredCapability))
             {
-                await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, "failed", "Mother receipt service is unavailable.");
-                await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, message = "Mother receipt service is unavailable." });
                 return;
             }
-
-            var queued = await receiptService.PrintFullCustomerReceiptAsync(order);
-            status = queued ? "queued" : "failed";
-            message = queued ? "Mother queued the customer receipt." : "Mother could not queue the receipt; check the configured printer.";
         }
 
-        await StorePrintAuditAsync(request.RequestId, session, request.OrderId, documentType, status, message);
-        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"client_print:{documentType}", status);
+        var print = await ExecuteClientPrintDocumentsAsync(
+            session,
+            request.OrderId.Trim(),
+            [documentType],
+            request.RequestId.Trim());
+        var status = print.Status;
         var succeeded = status is "queued" or "printed" or "partial";
         await WriteJsonAsync(context, succeeded ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new
         {
             success = succeeded,
-            print = new { printJobId = request.RequestId, status, message }
+            print
         });
     }
 
@@ -1439,7 +1409,10 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
             return;
         }
-        if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.PrintReceipts)) return;
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.PrintReceipts))
+        {
+            return;
+        }
         var audit = string.IsNullOrWhiteSpace(requestId) ? null : await GetPrintAuditAsync(requestId, session.TerminalId);
         if (audit == null)
         {
@@ -1447,6 +1420,178 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
         await WriteJsonAsync(context, HttpStatusCode.OK, new { success = audit.Status is "queued" or "printed" or "partial", print = audit });
+    }
+
+    /// <summary>
+    /// Client never talks to printers. Mother queues kitchen/bar/receipt jobs onto
+    /// the configured network/IP printers and returns only the Mother print status.
+    /// </summary>
+    private async Task<ClientPrintAudit> ExecuteClientPrintDocumentsAsync(
+        ClientSessionValidation session,
+        string orderId,
+        IReadOnlyCollection<string> documents,
+        string printRequestId)
+    {
+        var duplicate = await GetPrintAuditAsync(printRequestId, session.TerminalId);
+        if (duplicate != null)
+        {
+            return duplicate;
+        }
+
+        var primaryDocument = documents.Contains("kitchen_ticket")
+            ? "kitchen_ticket"
+            : documents.Contains("reprint") ? "reprint" : "customer_receipt";
+
+        if (!await TryBeginPrintAuditAsync(printRequestId, session, orderId, primaryDocument))
+        {
+            return await GetPrintAuditAsync(printRequestId, session.TerminalId)
+                ?? new ClientPrintAudit(printRequestId, orderId, primaryDocument, "failed", "Mother is already processing this print request.");
+        }
+
+        var order = await new OrderService().GetOrderByExternalIdAsync(orderId);
+        if (order == null)
+        {
+            await StorePrintAuditAsync(printRequestId, session, orderId, primaryDocument, "failed", "Mother POS could not find this order.");
+            return new ClientPrintAudit(printRequestId, orderId, primaryDocument, "failed", "Mother POS could not find this order.");
+        }
+
+        var printFeature = FeatureForOrderType(order.OrderType);
+        if (printFeature != null && !await _clientAccess.HasFeatureAsync(session.TerminalId, printFeature))
+        {
+            await StorePrintAuditAsync(printRequestId, session, orderId, primaryDocument, "failed", "This terminal is not allowed to print that order type.");
+            return new ClientPrintAudit(printRequestId, orderId, primaryDocument, "failed", "This terminal is not allowed to print that order type.");
+        }
+
+        var messages = new List<string>();
+        var anyQueued = false;
+        var anyFailed = false;
+
+        if (documents.Contains("kitchen_ticket"))
+        {
+            var routing = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
+            var routingResult = await routing.PrintOrderAsync(ToKitchenPrintOrder(order));
+            if (routingResult.AnyPrinted)
+            {
+                anyQueued = true;
+                messages.Add(routingResult.HasFailures
+                    ? $"Kitchen/bar tickets partly queued on Mother IP printers: {string.Join("; ", routingResult.FailedRoutes)}"
+                    : "Kitchen/bar tickets queued on Mother IP printers.");
+            }
+            else
+            {
+                anyFailed = true;
+                messages.Add(routingResult.FailedRoutes.Count > 0
+                    ? $"Kitchen/bar print failed: {string.Join("; ", routingResult.FailedRoutes)}"
+                    : "Mother could not queue kitchen/bar tickets; check configured IP printers.");
+            }
+        }
+
+        if (documents.Contains("customer_receipt") || documents.Contains("reprint"))
+        {
+            var receiptService = ServiceHelper.GetService<ReceiptService>();
+            if (receiptService == null)
+            {
+                anyFailed = true;
+                messages.Add("Mother receipt service is unavailable.");
+            }
+            else
+            {
+                var queued = await receiptService.PrintFullCustomerReceiptAsync(order);
+                if (queued)
+                {
+                    anyQueued = true;
+                    messages.Add("Customer receipt queued on Mother IP receipt printer.");
+                }
+                else
+                {
+                    anyFailed = true;
+                    messages.Add("Mother could not queue the receipt; check the configured receipt printer.");
+                }
+            }
+        }
+
+        var status = anyQueued && anyFailed ? "partial" : anyQueued ? "queued" : "failed";
+        var message = messages.Count == 0
+            ? "Mother did not print any documents."
+            : string.Join(" ", messages);
+        await StorePrintAuditAsync(printRequestId, session, orderId, primaryDocument, status, message);
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"client_print:{primaryDocument}", status);
+        return new ClientPrintAudit(printRequestId, orderId, primaryDocument, status, message);
+    }
+
+    private static HashSet<string> ResolveClientPrintDocuments(
+        bool printKitchen,
+        bool printReceipt,
+        IReadOnlyList<string>? printDocuments)
+    {
+        var documents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (printKitchen)
+        {
+            documents.Add("kitchen_ticket");
+        }
+        if (printReceipt)
+        {
+            documents.Add("customer_receipt");
+        }
+
+        if (printDocuments != null)
+        {
+            foreach (var document in printDocuments)
+            {
+                var normalized = NormalizeClientPrintDocument(document);
+                if (normalized != null)
+                {
+                    documents.Add(normalized == "reprint" ? "reprint" : normalized);
+                }
+            }
+        }
+
+        return documents;
+    }
+
+    private static string? NormalizeClientPrintDocument(string? documentType)
+    {
+        var value = documentType?.Trim().ToLowerInvariant();
+        return value switch
+        {
+            "kitchen_ticket" or "kitchen" or "kitchen ticket" or "bar_ticket" or "bar" or "bar ticket" => "kitchen_ticket",
+            "customer_receipt" or "receipt" or "bill" or "customer receipt" => "customer_receipt",
+            "reprint" => "reprint",
+            _ => null
+        };
+    }
+
+    private async Task<bool> EnsureAnyCapabilityAsync(HttpContext context, ClientSessionValidation session, params string[] capabilities)
+    {
+        foreach (var capability in capabilities)
+        {
+            if (await HasCapabilityAsync(session, capability))
+            {
+                return true;
+            }
+        }
+
+        var denied = capabilities.Length == 1 ? capabilities[0] : string.Join(",", capabilities);
+        await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"capability_denied:{denied}", "denied");
+        await WriteJsonAsync(context, HttpStatusCode.Forbidden, new { success = false, message = "Your role is not allowed to perform this operation." });
+        return false;
+    }
+
+    private async Task<bool> HasCapabilityAsync(ClientSessionValidation session, string capability)
+    {
+        if (!ClientAccessPolicy.IsCapabilityAllowed(capability))
+        {
+            return false;
+        }
+
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand("SELECT role FROM users WHERE id = @userId AND is_active = TRUE LIMIT 1", connection);
+        command.Parameters.AddWithValue("@userId", session.UserId);
+        var roleValue = await command.ExecuteScalarAsync();
+        return Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) &&
+               role != UserRole.Admin &&
+               MotherCapabilityResolver.ForRole(role).Contains(capability);
     }
 
     private static TableOrder ToKitchenPrintOrder(Order order)
@@ -2964,6 +3109,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         int Guests,
         IReadOnlyList<ClientOrderLineHttpRequest>? Lines,
         bool PrintKitchen = false,
+        bool PrintReceipt = false,
+        IReadOnlyList<string>? PrintDocuments = null,
         string? PrintRequestId = null);
 
     private sealed record ClientOrderLineHttpRequest(

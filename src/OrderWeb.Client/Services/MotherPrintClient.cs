@@ -20,10 +20,7 @@ public sealed class MotherPrintClient
             return new PrintRequestState(requestId, printType, orderId, "failed", "Printing requires a synchronized Mother order and active session.", now, now);
         }
 
-        var documentType = printType.Equals("bill", StringComparison.OrdinalIgnoreCase) ||
-                           printType.Contains("receipt", StringComparison.OrdinalIgnoreCase)
-            ? "customer_receipt"
-            : printType.Equals("reprint", StringComparison.OrdinalIgnoreCase) ? "reprint" : "kitchen_ticket";
+        var documentType = NormalizeDocumentType(printType);
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         ClientCompatibilityHeaders.Apply(client);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
@@ -75,6 +72,29 @@ public sealed class MotherPrintClient
 
     // Kept for existing callers: only Mother may advance a print status.
     public Task<PrintRequestState> AdvanceStatusAsync(PrintRequestState request) => Task.FromResult(request);
+
+    private static string NormalizeDocumentType(string printType)
+    {
+        var value = printType?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (value == "reprint" || value.Contains("reprint", StringComparison.Ordinal))
+        {
+            return "reprint";
+        }
+
+        if (value is "bill" or "receipt" or "customer_receipt" or "customer receipt")
+        {
+            return "customer_receipt";
+        }
+
+        if (value.Contains("receipt", StringComparison.Ordinal))
+        {
+            return "customer_receipt";
+        }
+
+        // kitchen, bar, kitchen ticket, bar ticket → Mother OrderRoutingPrintService
+        // routes each line to the matching network/IP kitchen or bar printer.
+        return "kitchen_ticket";
+    }
 
     private static string NormalizeStatus(string? status) => status?.Trim().ToLowerInvariant() switch
     {

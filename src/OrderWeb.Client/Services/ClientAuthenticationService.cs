@@ -115,7 +115,8 @@ public static class ClientCapabilityResolver
             PosCapabilityKeys.SubmitOrders,
             PosCapabilityKeys.TakeOrders,
             PosCapabilityKeys.OpenTables,
-            PosCapabilityKeys.ManageCustomers
+            PosCapabilityKeys.ManageCustomers,
+            PosCapabilityKeys.PrintReceipts
         };
 
         if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
@@ -126,7 +127,6 @@ public static class ClientCapabilityResolver
             set.Add(PosCapabilityKeys.VoidOrders);
             set.Add(PosCapabilityKeys.Refund);
             set.Add(PosCapabilityKeys.TransferTables);
-            set.Add(PosCapabilityKeys.PrintReceipts);
             set.Add(PosCapabilityKeys.ReprintReceipts);
             set.Add(PosCapabilityKeys.OpenCashDrawer);
             set.Add(PosCapabilityKeys.ApproveManagerAction);

@@ -1585,14 +1585,6 @@ public partial class MainPage : ContentPage
                 _ => await new CashDrawerFormDialogPage("Other till expense", "Enter the reason for opening the cash drawer.", "Continue", "#2563EB", "Reason", "Amount out").ShowAsync(Navigation)
             };
             if (form is null) return;
-            if (false)
-            {
-                decimal? amount = null;
-                string? details = null;
-            var entered = await DisplayPromptAsync(reason, reason == "Cash Count" ? "Enter counted cash (£):" : "Enter amount (£):", "Continue", "Cancel", keyboard: Keyboard.Numeric);
-            if (!decimal.TryParse(entered, out var parsed) || parsed < 0) { await DisplayAlertAsync("Invalid amount", "Enter a valid amount.", "OK"); return; }
-            amount = parsed;
-            }
         }
         form ??= new CashDrawerFormResult(null, null);
         if (!await new CashDrawerConfirmDialogPage(reason).ShowAsync(Navigation)) return;

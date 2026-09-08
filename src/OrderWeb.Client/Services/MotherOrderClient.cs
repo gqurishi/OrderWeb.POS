@@ -101,7 +101,32 @@ public sealed class MotherOrderClient
 
     public async Task<MotherCommandResult> SendToKitchenAsync(MotherOrderState state)
     {
-        var saved = await UpsertOrderCoreAsync(state, null, null, null, null, true);
+        var saved = await UpsertOrderCoreAsync(
+            state,
+            null,
+            null,
+            null,
+            null,
+            printKitchen: true,
+            printReceipt: false,
+            printDocuments: ["kitchen_ticket"]);
+        return new MotherCommandResult(
+            saved.State with { Status = "sent_to_kitchen" },
+            saved.ConflictDetected,
+            saved.Message);
+    }
+
+    public async Task<MotherCommandResult> SendToKitchenAndReceiptAsync(MotherOrderState state)
+    {
+        var saved = await UpsertOrderCoreAsync(
+            state,
+            null,
+            null,
+            null,
+            null,
+            printKitchen: true,
+            printReceipt: true,
+            printDocuments: ["kitchen_ticket", "customer_receipt"]);
         return new MotherCommandResult(
             saved.State with { Status = "sent_to_kitchen" },
             saved.ConflictDetected,
@@ -159,7 +184,7 @@ public sealed class MotherOrderClient
         string? notes = null,
         string? scheduledTime = null,
         CachedCustomer? customer = null)
-        => await UpsertOrderCoreAsync(state, deliveryFee, notes, scheduledTime, customer, false);
+        => await UpsertOrderCoreAsync(state, deliveryFee, notes, scheduledTime, customer, false, false, null);
 
     private async Task<MotherCommandResult> UpsertOrderCoreAsync(
         MotherOrderState state,
@@ -167,7 +192,9 @@ public sealed class MotherOrderClient
         string? notes,
         string? scheduledTime,
         CachedCustomer? customer,
-        bool printKitchen)
+        bool printKitchen,
+        bool printReceipt,
+        IReadOnlyList<string>? printDocuments)
     {
         var auth = await GetAuthAsync();
         if (auth is null)
@@ -201,7 +228,9 @@ public sealed class MotherOrderClient
                 line.Notes,
                 line.Modifiers)).ToList(),
             printKitchen,
-            printKitchen ? Guid.NewGuid().ToString("N") : null);
+            printReceipt,
+            printDocuments,
+            printKitchen || printReceipt || (printDocuments?.Count > 0) ? Guid.NewGuid().ToString("N") : null);
 
         using var client = CreateClient(auth);
         using var response = await client.PostAsJsonAsync($"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders", body, JsonOptions);
@@ -210,6 +239,18 @@ public sealed class MotherOrderClient
         if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success || envelope.Order is null)
         {
             throw new InvalidOperationException(envelope?.Message ?? $"Mother POS could not save this order ({(int)response.StatusCode}).");
+        }
+
+        if (envelope.Print is not null)
+        {
+            await _cache.SavePrintRequestAsync(new PrintRequestState(
+                envelope.Print.PrintJobId ?? Guid.NewGuid().ToString("N"),
+                envelope.Print.DocumentType ?? (printKitchen ? "kitchen ticket" : "receipt"),
+                envelope.Order.Id,
+                NormalizePrintStatus(envelope.Print.Status),
+                envelope.Print.Message ?? "Mother print request accepted.",
+                DateTimeOffset.UtcNow.ToString("O"),
+                DateTimeOffset.UtcNow.ToString("O")));
         }
 
         var message = envelope.Print is null
@@ -337,6 +378,8 @@ public sealed class MotherOrderClient
         int Guests,
         IReadOnlyList<OrderLineHttpRequest> Lines,
         bool PrintKitchen,
+        bool PrintReceipt,
+        IReadOnlyList<string>? PrintDocuments,
         string? PrintRequestId);
 
     private sealed record OrderLineHttpRequest(
@@ -350,7 +393,7 @@ public sealed class MotherOrderClient
 
     private sealed record OrderEnvelope(bool Success, string? Message, OrderStateDto? Order, PrintState? Print);
 
-    private sealed record PrintState(string? PrintJobId, string? Status, string? Message);
+    private sealed record PrintState(string? PrintJobId, string? Status, string? Message, string? DocumentType = null);
 
     private sealed record OrderListEnvelope(bool Success, string? Message, IReadOnlyList<OrderStateDto>? Orders);
 
