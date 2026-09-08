@@ -2611,6 +2611,7 @@ public class OrderService
                 lifecycle = ToDbLifecycleState(order.LocalLifecycleState),
                 payload
             });
+        NotifyClientsOrderUpdated(order.OrderId);
     }
 
     private static async Task PublishOrderTerminalEventAsync(
@@ -2634,6 +2635,34 @@ public class OrderService
                 orderNumber = resolved.OrderNumber,
                 payload
             });
+        NotifyClientsOrderUpdated(resolved.EntityId);
+    }
+
+    /// <summary>
+    /// Phase 4: push order.updated to every paired Client POS after Mother persists a mutation
+    /// (Mother till or Client API). Clients then fetch the authoritative order.
+    /// </summary>
+    private static void NotifyClientsOrderUpdated(string? orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return;
+        }
+
+        try
+        {
+            var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
+            if (broadcast is null)
+            {
+                return;
+            }
+
+            _ = broadcast.PublishDataChangedAsync("order.updated", orderId.Trim());
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[OrderService] Client order.updated notify failed: {ex.Message}");
+        }
     }
 
     private static async Task<(string EntityId, string? OrderNumber)> ResolveOrderEventIdentityAsync(

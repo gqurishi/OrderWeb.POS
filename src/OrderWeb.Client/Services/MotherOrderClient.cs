@@ -22,14 +22,17 @@ public sealed class MotherOrderClient
 
     public async Task<MotherCommandResult> OpenOrCreateTableOrderAsync(CachedTable table, int covers, LoginSession? session)
     {
-        var now = DateTimeOffset.UtcNow.ToString("O");
-        var orderId = string.IsNullOrWhiteSpace(table.CurrentOrderId)
-            ? $"T{table.TableNumber}-{DateTimeOffset.UtcNow:HHmmss}"
-            : table.CurrentOrderId;
+        // Occupied table: load Mother copy — never upsert empty lines (would wipe the basket).
+        if (!string.IsNullOrWhiteSpace(table.CurrentOrderId))
+        {
+            return await OpenOrderForEditAsync(table.CurrentOrderId);
+        }
 
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        var orderId = Guid.NewGuid().ToString("N");
         var state = new MotherOrderState(
             orderId,
-            string.IsNullOrWhiteSpace(table.CurrentOrderId) ? $"Table {table.TableNumber}" : table.CurrentOrderId,
+            $"Table {table.TableNumber}",
             "Table",
             table.Id,
             table.TableNumber,
@@ -39,15 +42,49 @@ public sealed class MotherOrderClient
             0m,
             0m,
             0m,
-            table.Version + 1,
+            1,
             now,
             session?.UserName ?? "Client User");
 
         return await UpsertOrderAsync(state);
     }
 
-    public Task<MotherCommandResult> CreateCustomerOrderAsync(CustomerOrderDraft draft, LoginSession? session) =>
-        UpsertOrderAsync(BuildDraftState(draft, session), draft.DeliveryFee, draft.Notes, draft.PickupTime ?? draft.ScheduledTime, draft.Customer);
+    public Task<MotherCommandResult> CreateCustomerOrderAsync(CustomerOrderDraft draft, LoginSession? session, string? orderId = null) =>
+        UpsertOrderAsync(BuildDraftState(draft, session, orderId), draft.DeliveryFee, draft.Notes, draft.PickupTime ?? draft.ScheduledTime, draft.Customer);
+
+    public Task<MotherCommandResult> ReplaceLinesAsync(MotherOrderState state, IReadOnlyList<MotherOrderLine> lines) =>
+        UpsertOrderAsync(state with { Lines = lines.ToList() });
+
+    /// <summary>
+    /// Void/cancel a Collection, Delivery, or Table order on Mother (same OrderId).
+    /// </summary>
+    public async Task<MotherCommandResult> VoidCollectionOrderAsync(MotherOrderState state)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            throw new InvalidOperationException("This Client is not connected to Mother POS.");
+        }
+
+        if (string.IsNullOrWhiteSpace(state.OrderId))
+        {
+            throw new InvalidOperationException("A Mother order id is required to void.");
+        }
+
+        using var client = CreateClient(auth);
+        using var response = await client.PostAsJsonAsync(
+            $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/void",
+            new { orderId = state.OrderId },
+            JsonOptions);
+        var json = await response.Content.ReadAsStringAsync();
+        var envelope = JsonSerializer.Deserialize<OrderEnvelope>(json, JsonOptions);
+        if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success || envelope.Order is null)
+        {
+            throw new InvalidOperationException(envelope?.Message ?? $"Mother POS could not void this order ({(int)response.StatusCode}).");
+        }
+
+        return new MotherCommandResult(ToState(envelope.Order), false, envelope.Message ?? "Order voided on Mother POS.");
+    }
 
     public Task<MotherCommandResult> AddItemAsync(MotherOrderState state, CachedProduct product, IReadOnlyList<string> modifiers)
     {
@@ -135,14 +172,66 @@ public sealed class MotherOrderClient
 
     public async Task<MotherCommandResult> RefreshLatestAsync(MotherOrderState state)
     {
-        var orders = await GetOpenOrdersAsync();
-        var latest = orders?.FirstOrDefault(order => string.Equals(order.OrderId, state.OrderId, StringComparison.OrdinalIgnoreCase));
+        var latest = await GetOrderByIdAsync(state.OrderId);
         if (latest == null)
         {
             throw new InvalidOperationException("Mother POS could not reload this order.");
         }
 
         return new MotherCommandResult(latest, false, "Order refreshed from Mother POS.");
+    }
+
+    /// <summary>
+    /// Phase 2: load one Collection (or other) order fresh from Mother for edit on any Client terminal.
+    /// </summary>
+    public async Task<MotherCommandResult> OpenOrderForEditAsync(string orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            throw new InvalidOperationException("A Mother order id is required.");
+        }
+
+        var latest = await GetOrderByIdAsync(orderId.Trim());
+        if (latest == null)
+        {
+            throw new InvalidOperationException("Mother POS could not load this order. Check that Mother is online and the order is still open.");
+        }
+
+        await _cache.SaveOrderStateAsync(latest);
+        return new MotherCommandResult(latest, false, "Order opened from Mother POS.");
+    }
+
+    public async Task<MotherOrderState?> GetOrderByIdAsync(string orderId)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null || string.IsNullOrWhiteSpace(orderId))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var client = CreateClient(auth);
+            using var response = await client.GetAsync(
+                $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/{Uri.EscapeDataString(orderId.Trim())}");
+            var json = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var envelope = JsonSerializer.Deserialize<OrderEnvelope>(json, JsonOptions);
+            if (envelope is null || !envelope.Success || envelope.Order is null)
+            {
+                return null;
+            }
+
+            return ToState(envelope.Order);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<MotherOrderState>?> GetOpenOrdersAsync(string? orderType = null)
@@ -227,6 +316,9 @@ public sealed class MotherOrderClient
                 line.UnitPrice,
                 line.Notes,
                 line.Modifiers)).ToList(),
+            // Existing orders: send version so Mother rejects stale concurrent edits.
+            string.IsNullOrWhiteSpace(state.OrderId) ? null : state.Version,
+            string.IsNullOrWhiteSpace(state.OrderId) ? null : state.UpdatedUtc,
             printKitchen,
             printReceipt,
             printDocuments,
@@ -236,6 +328,19 @@ public sealed class MotherOrderClient
         using var response = await client.PostAsJsonAsync($"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders", body, JsonOptions);
         var json = await response.Content.ReadAsStringAsync();
         var envelope = JsonSerializer.Deserialize<OrderEnvelope>(json, JsonOptions);
+        if (envelope?.Order is not null &&
+            (response.StatusCode == System.Net.HttpStatusCode.Conflict || envelope.Conflict == true))
+        {
+            var conflictState = ToState(envelope.Order);
+            await _cache.SaveOrderStateAsync(conflictState);
+            return new MotherCommandResult(
+                conflictState,
+                true,
+                string.IsNullOrWhiteSpace(envelope.Message)
+                    ? "Order updated elsewhere — reload"
+                    : envelope.Message);
+        }
+
         if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success || envelope.Order is null)
         {
             throw new InvalidOperationException(envelope?.Message ?? $"Mother POS could not save this order ({(int)response.StatusCode}).");
@@ -259,11 +364,13 @@ public sealed class MotherOrderClient
         return new MotherCommandResult(ToState(envelope.Order), false, message);
     }
 
-    private static MotherOrderState BuildDraftState(CustomerOrderDraft draft, LoginSession? session)
+    private static MotherOrderState BuildDraftState(CustomerOrderDraft draft, LoginSession? session, string? orderId = null)
     {
         var now = DateTimeOffset.UtcNow.ToString("O");
+        // Stable Mother order id before first POST so retries cannot mint a second Collection row.
+        var stableOrderId = string.IsNullOrWhiteSpace(orderId) ? Guid.NewGuid().ToString("N") : orderId.Trim();
         return new MotherOrderState(
-            string.Empty,
+            stableOrderId,
             draft.OrderType,
             draft.OrderType,
             null,
@@ -377,6 +484,8 @@ public sealed class MotherOrderClient
         string? TableNumber,
         int Guests,
         IReadOnlyList<OrderLineHttpRequest> Lines,
+        int? ExpectedVersion,
+        string? ExpectedUpdatedUtc,
         bool PrintKitchen,
         bool PrintReceipt,
         IReadOnlyList<string>? PrintDocuments,
@@ -391,7 +500,7 @@ public sealed class MotherOrderClient
         string? Notes,
         IReadOnlyList<string> Modifiers);
 
-    private sealed record OrderEnvelope(bool Success, string? Message, OrderStateDto? Order, PrintState? Print);
+    private sealed record OrderEnvelope(bool Success, string? Message, OrderStateDto? Order, PrintState? Print, bool? Conflict = null);
 
     private sealed record PrintState(string? PrintJobId, string? Status, string? Message, string? DocumentType = null);
 

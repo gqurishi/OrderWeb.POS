@@ -475,7 +475,7 @@ public partial class TerminalHealthPage : ContentPage
             await _clientApiService.PublishDataChangedAsync("features.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
             await AppAlertService.ShowAlertAsync(
                 "Client Access Saved",
-                $"{terminal.TerminalName} will use this list at the next PIN login. Reservations stay off unless you turned them on.");
+                $"{terminal.TerminalName} will use this list at the next PIN login. Reservations are on by default so Client matches Mother.");
         }
         catch (Exception ex)
         {

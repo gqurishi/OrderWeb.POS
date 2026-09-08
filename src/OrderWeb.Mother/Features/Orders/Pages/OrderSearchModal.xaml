@@ -4,105 +4,64 @@
              x:Class="POS_in_NET.Pages.OrderSearchModal"
              BackgroundColor="{StaticResource DialogOverlayColor}">
 
-        <Frame BackgroundColor="White"
-            Margin="60"
-            Padding="24"
-            CornerRadius="16"
-            HasShadow="True"
-            VerticalOptions="Center"
-            HorizontalOptions="Center"
-            WidthRequest="500">
+    <Frame BackgroundColor="White"
+           Margin="60"
+           Padding="24"
+           CornerRadius="16"
+           HasShadow="True"
+           VerticalOptions="Center"
+           HorizontalOptions="Center"
+           WidthRequest="500">
 
         <VerticalStackLayout Spacing="20">
-            
-            <!-- Header -->
-            <Grid ColumnDefinitions="*,Auto">
-                <Label Text="Search Orders"
-                       FontSize="22"
-                       FontAttributes="Bold"
-                       TextColor="#1F2937"
-                       VerticalOptions="Center"
-                       Grid.Column="0"/>
-                
-                <Border BackgroundColor="Transparent"
-                        StrokeThickness="0"
-                        Padding="8"
-                        Grid.Column="1">
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnCancelClicked"/>
-                    </Border.GestureRecognizers>
-                    <Label Text=""
-                           FontSize="24"
-                           TextColor="#6B7280"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Center"/>
-                </Border>
-            </Grid>
+            <Label Text="Search Orders"
+                   FontSize="22"
+                   FontAttributes="Bold"
+                   TextColor="#1F2937" />
 
-            <!-- Search Input -->
-            <VerticalStackLayout Spacing="16">
-                <VerticalStackLayout Spacing="8">
-                    <Label Text="Order Number or Phone" FontSize="14" FontAttributes="Bold" TextColor="#374151"/>
-                    <Frame BackgroundColor="White"
-                           Padding="12"
-                           CornerRadius="8"
-                           HasShadow="False"
-                           BorderColor="#D1D5DB">
-                        <Frame.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnSearchFieldTapped"/>
-                        </Frame.GestureRecognizers>
-                        <Entry x:Name="SearchEntry"
-                               Placeholder="Tap to open keyboard"
-                               Keyboard="Text"
-                               TextColor="#1F2937"
-                               PlaceholderColor="#9CA3AF"
-                               FontSize="15"
-                               ReturnType="Search"
-                               IsReadOnly="True"
-                               InputTransparent="True"/>
-                    </Frame>
-                </VerticalStackLayout>
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Order Number or Phone"
+                       FontSize="14"
+                       FontAttributes="Bold"
+                       TextColor="#374151" />
+                <Border BackgroundColor="White"
+                        Stroke="#D1D5DB"
+                        StrokeThickness="1"
+                        Padding="12,4"
+                        StrokeShape="RoundRectangle 8"
+                        HeightRequest="48">
+                    <Entry x:Name="SearchEntry"
+                           Placeholder="Tap to open keyboard"
+                           Keyboard="Default"
+                           TextColor="#1F2937"
+                           PlaceholderColor="#9CA3AF"
+                           FontSize="16"
+                           VerticalOptions="Center"
+                           BackgroundColor="Transparent"
+                           ReturnType="Search"
+                           Completed="OnSearchClicked" />
+                </Border>
             </VerticalStackLayout>
 
-            <!-- Action Buttons -->
             <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                <Border BackgroundColor="#10B981"
-                        StrokeThickness="0"
-                        Padding="16,12"
-                        Grid.Column="0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8"/>
-                    </Border.StrokeShape>
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnSearchClicked"/>
-                    </Border.GestureRecognizers>
-                    <Label Text="Search" 
-                           TextColor="White"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Center"/>
-                </Border>
-
-                <Border BackgroundColor="#6B7280"
-                        StrokeThickness="0"
-                        Padding="16,12"
-                        Grid.Column="1">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8"/>
-                    </Border.StrokeShape>
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnCancelClicked"/>
-                    </Border.GestureRecognizers>
-                    <Label Text="Cancel" 
-                           TextColor="White"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Center"/>
-                </Border>
+                <Button Text="Search"
+                        BackgroundColor="#10B981"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        FontSize="15"
+                        HeightRequest="48"
+                        CornerRadius="8"
+                        Clicked="OnSearchClicked" />
+                <Button Grid.Column="1"
+                        Text="Cancel"
+                        BackgroundColor="#6B7280"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        FontSize="15"
+                        HeightRequest="48"
+                        CornerRadius="8"
+                        Clicked="OnCancelClicked" />
             </Grid>
-
         </VerticalStackLayout>
     </Frame>
 </ContentPage>

@@ -51,12 +51,12 @@ public sealed class ClientAccessPolicyTests
     }
 
     [Fact]
-    public void Reservations_MayBeGrantedToClient()
+    public void Reservations_AreGrantedToClientByDefault_MatchingMotherDashboard()
     {
         Assert.True(ClientAccessPolicy.IsFeatureGrantable(PosFeatureKeys.Reservations));
         Assert.True(ClientAccessPolicy.IsRouteAllowed("reservation"));
-        Assert.DoesNotContain(PosFeatureKeys.Reservations, ClientAccessPolicy.DefaultGrantedFeatures);
-        Assert.DoesNotContain("reservation", ClientAccessPolicy.RoutesForFeatures(ClientAccessPolicy.DefaultGrantedFeatures));
+        Assert.Contains(PosFeatureKeys.Reservations, ClientAccessPolicy.DefaultGrantedFeatures);
+        Assert.Contains("reservation", ClientAccessPolicy.RoutesForFeatures(ClientAccessPolicy.DefaultGrantedFeatures));
         Assert.Contains("reservation", ClientAccessPolicy.RoutesForFeatures([PosFeatureKeys.Reservations]));
     }
 

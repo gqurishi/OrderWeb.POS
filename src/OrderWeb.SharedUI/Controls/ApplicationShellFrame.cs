@@ -5,6 +5,7 @@ namespace OrderWeb.SharedUI.Controls;
 public class ApplicationShellFrame : ContentView
 {
     private readonly Grid _root;
+    private readonly Grid _appGrid;
     private readonly ContentView _contentHost;
     private readonly ApplicationHeader _header;
     private readonly ApplicationSidebar _sidebar;
@@ -48,7 +49,7 @@ public class ApplicationShellFrame : ContentView
     public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationShellFrame), propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyIdentity());
     public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowIdentity = (bool)v);
     public static readonly BindableProperty ShowConnectionProperty = BindableProperty.Create(nameof(ShowConnection), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowConnection = (bool)v);
-    public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowWelcomeBrand = (bool)v);
+    public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyWelcomeBrandLayout());
     public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowMinimize = (bool)v);
 
     public ApplicationShellFrame()
@@ -57,7 +58,14 @@ public class ApplicationShellFrame : ContentView
         _header.MenuClicked += (_, _) => IsNavigationOpen = !IsNavigationOpen;
         _header.LogoutClicked += (_, _) => LogoutRequested?.Invoke(this, EventArgs.Empty);
         _header.MinimizeClicked += (_, _) => MinimizeRequested?.Invoke(this, EventArgs.Empty);
-        _contentHost = new ContentView();
+        _header.HeightRequestChanged += (_, height) =>
+        {
+            if (_appGrid.RowDefinitions.Count > 0)
+            {
+                _appGrid.RowDefinitions[0].Height = height;
+            }
+        };
+        _contentHost = new ContentView { BackgroundColor = Colors.White };
 
         _sidebar = new ApplicationSidebar { HorizontalOptions = LayoutOptions.Start, TranslationX = -280 };
         _sidebar.NavigationRequested += (_, e) => { SelectedRoute = e.Route; IsNavigationOpen = false; NavigationRequested?.Invoke(this, e); };
@@ -94,11 +102,17 @@ public class ApplicationShellFrame : ContentView
         _dialogHost = new ContentView { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
         _dialogLayer = new Grid { IsVisible = false, ZIndex = 46, Padding = 20, BackgroundColor = Color.FromArgb("#66000000"), Children = { _dialogHost } };
 
-        var app = new Grid { RowDefinitions = { new RowDefinition(88), new RowDefinition(GridLength.Star) } };
-        app.Use(Grid.BackgroundColorProperty, "OwBackground"); app.Add(_header); app.Add(_contentHost, 0, 1);
-        _root = new Grid { Children = { app, _navigationLayer, _loadingLayer, _errorLayer, _toastLayer, _dialogLayer, _sessionExpiredLayer } };
+        _appGrid = new Grid
+        {
+            BackgroundColor = Colors.White,
+            RowDefinitions = { new RowDefinition(64), new RowDefinition(GridLength.Star) }
+        };
+        _appGrid.Add(_header);
+        _appGrid.Add(_contentHost, 0, 1);
+        _root = new Grid { BackgroundColor = Colors.White, Children = { _appGrid, _navigationLayer, _loadingLayer, _errorLayer, _toastLayer, _dialogLayer, _sessionExpiredLayer } };
         Content = _root;
         ApplyIdentity();
+        ApplyWelcomeBrandLayout();
     }
 
     public event EventHandler<NavigationRequestedEventArgs>? NavigationRequested;
@@ -151,6 +165,22 @@ public class ApplicationShellFrame : ContentView
         _header.UserName = UserName; _header.TerminalName = TerminalName; _header.ConnectionStatus = ConnectionStatus; _header.RestaurantName = RestaurantName; _header.RestaurantLogo = RestaurantLogo;
         // Sidebar keeps the Order Web product brand; the header shows the restaurant name.
         _sidebar.UserName = UserName; _sidebar.TerminalName = TerminalName; _sidebar.ConnectionStatus = ConnectionStatus; _sidebar.CurrentRole = UserRole; _sidebar.RestaurantName = "Order Web"; _sidebar.RestaurantLogo = RestaurantLogo;
+    }
+
+    private void ApplyWelcomeBrandLayout()
+    {
+        if (_header == null || _appGrid == null) return;
+        _header.ShowWelcomeBrand = ShowWelcomeBrand;
+        var height = _header.PreferredHeight;
+        if (_appGrid.RowDefinitions.Count > 0)
+        {
+            _appGrid.RowDefinitions[0].Height = height;
+        }
+
+        // Mother User dashboard is white end-to-end; non-dashboard pages keep the muted shell.
+        _appGrid.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
+        _contentHost.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
+        _root.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
     }
     private async void ApplyNavigation(bool open)
     {

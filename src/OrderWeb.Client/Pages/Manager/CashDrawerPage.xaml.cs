@@ -133,6 +133,12 @@ public partial class CashDrawerPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
+        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
         if (menu == "Cash Drawer" || !ClientHostAccess.CanOpenMenu(menu))
         {
             return;
@@ -140,7 +146,6 @@ public partial class CashDrawerPage : ContentPage
 
         await Navigation.PushAsync(menu switch
         {
-            "Dashboard" => new Pages.Dashboards.ManagerDashboardPage(),
             "Restaurant" => new TableLayoutPage(),
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
@@ -149,7 +154,7 @@ public partial class CashDrawerPage : ContentPage
             "Loyalty Points" => new LoyaltyPage(),
             "Reservation" => new ReservationPage(),
             "Order History" => new OrderHistoryPage(),
-            _ => new Pages.Dashboards.ManagerDashboardPage()
+            _ => new CashDrawerPage()
         }, false);
     }
 

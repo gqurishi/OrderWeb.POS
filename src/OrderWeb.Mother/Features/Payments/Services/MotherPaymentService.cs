@@ -50,11 +50,20 @@ public sealed class MotherPaymentService : IPaymentService
             return Failure(OperationErrorCode.NotFound, "Mother POS could not find this order.");
         }
 
-        // The client receives this value with the order snapshot.  Rejecting a
-        // stale snapshot prevents a terminal charging a changed/closed order.
-        if (request.ExpectedOrderRevision.HasValue && request.ExpectedOrderRevision.Value != order.UpdatedAt.Ticks)
+        // Accept either Mother UpdatedAt.Ticks or the shared Client Version token
+        // (ComputeOrderVersion) so reopen-and-pay from any Client works.
+        if (request.ExpectedOrderRevision.HasValue)
         {
-            return Failure(OperationErrorCode.Conflict, "This order changed on Mother POS. Refresh it before taking payment.");
+            var expected = request.ExpectedOrderRevision.Value;
+            var stamp = order.UpdatedAt == default ? order.CreatedAt : order.UpdatedAt;
+            var matchesTicks = expected == stamp.Ticks;
+            var matchesVersion = expected == OrderWeb.Contracts.Access.CollectionOrderHubRules.ComputeOrderVersion(
+                order.UpdatedAt,
+                order.CreatedAt);
+            if (!matchesTicks && !matchesVersion)
+            {
+                return Failure(OperationErrorCode.Conflict, "This order changed on Mother POS. Refresh it before taking payment.");
+            }
         }
 
         var reference = $"client:{request.TerminalId}:{request.RequestId}";
@@ -89,8 +98,39 @@ public sealed class MotherPaymentService : IPaymentService
             return Failure(OperationErrorCode.Conflict, "Mother POS did not approve the payment. It may already be paid or exceed the remaining balance.");
         }
 
+        await TryCompleteTableOrderAfterPaymentAsync(order);
+
         return OperationResult<PaymentResultDto>.Success(
             new PaymentResultDto(request.RequestId, request.OrderId, "approved", request.Amount, reference));
+    }
+
+    private async Task TryCompleteTableOrderAfterPaymentAsync(Order order)
+    {
+        try
+        {
+            var payments = await _orders.GetOrderPaymentsAsync(order.Id);
+            var approved = payments
+                .Where(payment => string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                .Sum(payment => payment.Amount);
+            if (approved + 0.009m < order.TotalAmount)
+            {
+                return;
+            }
+
+            await _orders.UpdateOrderStatusAsync(order.Id, OrderStatus.Completed);
+
+            if (order.TableSessionId is > 0)
+            {
+                await new TableSessionService().CloseSessionForOrderAsync(
+                    order.TableSessionId.Value,
+                    "paid",
+                    "Client POS");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MotherPayment] Table session release after pay failed: {ex.Message}");
+        }
     }
 
     public async Task<OperationResult<PaymentResultDto>> GetResultAsync(string paymentId, CancellationToken cancellationToken = default)

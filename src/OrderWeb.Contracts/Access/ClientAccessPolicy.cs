@@ -23,7 +23,8 @@ public static class ClientAccessPolicy
 
     /// <summary>
     /// Features a new Client terminal gets until Mother changes the list.
-    /// Reservations stay off until Mother turns them on for that terminal.
+    /// Includes Reservations so Client User/Manager dashboards match Mother
+    /// (Restaurant, Collection, Delivery, Reservations).
     /// </summary>
     public static readonly IReadOnlySet<string> DefaultGrantedFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,6 +32,7 @@ public static class ClientAccessPolicy
         PosFeatureKeys.Collection,
         PosFeatureKeys.Delivery,
         PosFeatureKeys.LiveOrders,
+        PosFeatureKeys.Reservations,
         PosFeatureKeys.Customers,
         PosFeatureKeys.Payments,
         PosFeatureKeys.GiftCards,

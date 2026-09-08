@@ -55,7 +55,7 @@ public partial class ClientSidebar : ContentView
         var routes = ClientHostAccess.RoutesForRole(Role);
         SharedSidebar.ItemsSource = PosNavigationCatalog.Filter(
             capabilities,
-            ClientHostAccess.Features,
+            ClientHostAccess.FeaturesForRole(Role),
             routes);
     }
     private void OnSharedNavigationRequested(object? sender, NavigationRequestedEventArgs e)

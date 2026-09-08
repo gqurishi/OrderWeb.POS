@@ -102,6 +102,12 @@ An Administrator PIN submitted through a Client POS returns `403 Forbidden` with
 6. Secrets and complete tokens must not be written to normal logs or user-facing diagnostics.
 7. Pairing codes are one-time credentials. A retry after successful activation must reuse saved terminal credentials rather than consuming the pairing code again.
 
+## Collection orders (multi-terminal — Phase 0 frozen)
+
+Mother is the hub and MariaDB is the only authoritative Collection order store. Any Client is a terminal: it may cache open orders for display, but create, edit, save, pay, void, kitchen, and print confirmation require Mother online. Client-to-Client Collection sync is not allowed. Full reopen-and-edit from any Client is a later Collection phase.
+
+Details: `docs/ClientPOS/COLLECTION_MULTI_TERMINAL_RULES.md` and `OrderWeb.Contracts.Access.CollectionOrderHubRules`.
+
 ## Coordinated verification
 
 Before releasing either application:

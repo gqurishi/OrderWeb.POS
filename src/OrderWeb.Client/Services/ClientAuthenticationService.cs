@@ -10,11 +10,16 @@ namespace OrderWeb.Client.Services;
 public sealed class ClientAuthenticationService : IAuthenticationService
 {
     private readonly MotherAuthClient _authClient;
+    private readonly Func<bool>? _isMotherOnline;
 
-    public ClientAuthenticationService(MotherAuthClient authClient)
+    public ClientAuthenticationService(MotherAuthClient authClient, Func<bool>? isMotherOnline = null)
     {
         _authClient = authClient;
+        _isMotherOnline = isMotherOnline;
     }
+
+    /// <summary>Last Mother login payload (features/routes) after a successful PIN auth.</summary>
+    public LoginSession? LastSuccessfulLogin { get; private set; }
 
     public async Task<OperationResult<UserSession>> LoginAsync(AuthenticationRequest request, CancellationToken cancellationToken = default)
     {
@@ -38,6 +43,15 @@ public sealed class ClientAuthenticationService : IAuthenticationService
                 return OperationResult<UserSession>.Failure(new OperationError(OperationErrorCode.Forbidden, "Staff PIN is for Clock In/Out only."));
             }
 
+            if (string.Equals(session.Role, "Cashier", StringComparison.OrdinalIgnoreCase) &&
+                _isMotherOnline is not null &&
+                !_isMotherOnline())
+            {
+                return OperationResult<UserSession>.Failure(new OperationError(
+                    OperationErrorCode.Offline,
+                    "Cashier access requires a live connection to Mother POS."));
+            }
+
             var permissions = session.Permissions?.ToHashSet(StringComparer.OrdinalIgnoreCase)
                               ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -47,6 +61,7 @@ public sealed class ClientAuthenticationService : IAuthenticationService
                 session.Role,
                 permissions);
 
+            LastSuccessfulLogin = session;
             return OperationResult<UserSession>.Success(new UserSession(
                 session.SessionToken,
                 user,
@@ -55,13 +70,17 @@ public sealed class ClientAuthenticationService : IAuthenticationService
         }
         catch (LoginException ex)
         {
-            var code = ex.Message.Contains("not paired", StringComparison.OrdinalIgnoreCase)
-                ? OperationErrorCode.Offline
-                : OperationErrorCode.Unauthorized;
+            LastSuccessfulLogin = null;
+            var code = ex.IsPairingInvalid || MotherAuthClient.ContainsPairingFailure(ex.Message)
+                ? OperationErrorCode.Forbidden
+                : ex.Message.Contains("not paired", StringComparison.OrdinalIgnoreCase)
+                    ? OperationErrorCode.Offline
+                    : OperationErrorCode.Unauthorized;
             return OperationResult<UserSession>.Failure(new OperationError(code, ex.Message));
         }
         catch (Exception ex)
         {
+            LastSuccessfulLogin = null;
             return OperationResult<UserSession>.Failure(new OperationError(OperationErrorCode.ServerError, ex.Message));
         }
     }
@@ -116,7 +135,8 @@ public static class ClientCapabilityResolver
             PosCapabilityKeys.TakeOrders,
             PosCapabilityKeys.OpenTables,
             PosCapabilityKeys.ManageCustomers,
-            PosCapabilityKeys.PrintReceipts
+            PosCapabilityKeys.PrintReceipts,
+            PosCapabilityKeys.TakePayments
         };
 
         if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))

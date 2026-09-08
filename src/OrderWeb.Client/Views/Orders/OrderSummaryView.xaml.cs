@@ -16,16 +16,17 @@ public partial class OrderSummaryView : ContentView
     public event EventHandler? VoidClicked;
     public event EventHandler? MoreClicked;
     public event EventHandler? PrintClicked;
+    public event EventHandler<OrderSummaryLine>? LineClicked;
 
     public void SetOrder(string title, string detail, IEnumerable<OrderSummaryLine> lines)
     {
         var lineList = lines.ToList();
         var subtotal = lineList.Sum(line => line.Quantity * line.UnitPrice);
         var vat = subtotal * 0.2m;
-	        var total = subtotal + vat;
-	
-	        TitleLabel.Text = title;
-	        DetailLabel.Text = detail;
+        var total = subtotal + vat;
+
+        TitleLabel.Text = title;
+        DetailLabel.Text = detail;
         TotalLabel.Text = $"£{total:F2}";
 
         LinesStack.Children.Clear();
@@ -49,7 +50,7 @@ public partial class OrderSummaryView : ContentView
         }
     }
 
-    private static View BuildLine(OrderSummaryLine line)
+    private View BuildLine(OrderSummaryLine line)
     {
         var meta = string.Join(" · ", new[] { line.Modifiers, line.Note }.Where(value => !string.IsNullOrWhiteSpace(value)));
         var detailStack = new VerticalStackLayout
@@ -72,7 +73,7 @@ public partial class OrderSummaryView : ContentView
         };
         Grid.SetColumn(priceLabel, 1);
 
-        return new Border
+        var border = new Border
         {
             BackgroundColor = Colors.White,
             StrokeThickness = 0,
@@ -92,6 +93,15 @@ public partial class OrderSummaryView : ContentView
                 }
             }
         };
+
+        if (!string.IsNullOrWhiteSpace(line.LineId))
+        {
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += (_, _) => LineClicked?.Invoke(this, line);
+            border.GestureRecognizers.Add(tap);
+        }
+
+        return border;
     }
 
     private void OnSendClicked(object sender, EventArgs e) => SendClicked?.Invoke(this, EventArgs.Empty);
@@ -103,4 +113,10 @@ public partial class OrderSummaryView : ContentView
     private void OnPrintClicked(object sender, EventArgs e) => PrintClicked?.Invoke(this, EventArgs.Empty);
 }
 
-public sealed record OrderSummaryLine(string Name, int Quantity, decimal UnitPrice, string? Modifiers = null, string? Note = null);
+public sealed record OrderSummaryLine(
+    string Name,
+    int Quantity,
+    decimal UnitPrice,
+    string? Modifiers = null,
+    string? Note = null,
+    string? LineId = null);

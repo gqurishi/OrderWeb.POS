@@ -23,14 +23,13 @@ public class SharedClientDashboardPage : ContentPage
         BackgroundColor = Colors.White;
 
         var capabilities = ClientCapabilityResolver.ForRole(session.Role, session.Permissions);
-        var features = ClientHostAccess.Features;
-        var hostRoutes = ClientHostAccess.Routes;
+        var features = ClientHostAccess.FeaturesForRole(session.Role);
         var dashboardRoutes = ClientHostAccess.DashboardRoutesForRole(session.Role);
 
         var dashboardVm = new DashboardViewModel
         {
             Title = title,
-            Subtitle = $"Signed in as {session.UserName}"
+            Subtitle = string.Empty
         };
         dashboardVm.ApplyCapabilities(capabilities, features, dashboardRoutes);
         dashboardVm.TileSelected += async (_, tile) => await NavigateRouteAsync(tile.Route);
@@ -51,18 +50,30 @@ public class SharedClientDashboardPage : ContentPage
             AvailableFeatures = features,
             MenuItems = PosNavigationCatalog.Filter(capabilities, features, ClientHostAccess.RoutesForRole(session.Role)),
             ShowUpdateButton = string.Equals(session.Role, "Manager", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(session.Role, "Admin", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(session.Role, "Admin", StringComparison.OrdinalIgnoreCase),
+            ShowWelcomeBrand = true,
+            ShowIdentity = false,
+            ShowConnection = false,
+            ShowMinimize = true
         };
         _shell.NavigationRequested += async (_, e) => await NavigateRouteAsync(e.Route);
         _shell.LogoutRequested += async (_, _) => await Navigation.PopToRootAsync(false);
+        _shell.MinimizeRequested += (_, _) => ClientWindowService.MinimizeMainWindow();
         Content = _shell;
     }
 
     private async Task NavigateRouteAsync(string route)
     {
+        if (string.Equals(route, "dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            _shell.SelectedRoute = "dashboard";
+            return;
+        }
+
         if (string.Equals(route, "weborders", StringComparison.OrdinalIgnoreCase) ||
             !ClientAccessPolicy.IsRouteAllowed(route) ||
-            !ClientHostAccess.Routes.Contains(route))
+            (!ClientHostAccess.Routes.Contains(route) &&
+             !string.Equals(route, "reservation", StringComparison.OrdinalIgnoreCase)))
         {
             _shell.SelectedRoute = "dashboard";
             return;
@@ -85,6 +96,12 @@ public class SharedClientDashboardPage : ContentPage
         if (page is null)
         {
             _shell.SelectedRoute = "dashboard";
+            return;
+        }
+
+        if (page is CollectionOrderPage or DeliveryOrderPage)
+        {
+            await ClientSideNavigation.PushFromSideAsync(Navigation, page);
             return;
         }
 
@@ -116,7 +133,7 @@ public class ManagerDashboardPage : SharedClientDashboardPage
     {
     }
 
-    public ManagerDashboardPage(LoginSession session) : base(session, "Manager Dashboard")
+    public ManagerDashboardPage(LoginSession session) : base(session, "Dashboard")
     {
     }
 

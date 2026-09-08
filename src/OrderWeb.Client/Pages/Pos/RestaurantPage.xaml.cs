@@ -10,23 +10,69 @@ namespace OrderWeb.Client.Pages.Pos;
 public partial class RestaurantPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
+    private readonly MotherLayoutClient _layoutClient;
     private readonly RestaurantTablesView _tablesView = new();
-    private readonly GuestCountControl _guestCount = new();
     private RestaurantTableDto? _pendingTable;
     private Grid? _guestOverlay;
+    private bool _isVisible;
 
     public RestaurantPage()
     {
         InitializeComponent();
         Shell.SetNavBarIsVisible(this, false);
+        _layoutClient = new MotherLayoutClient(_cache);
         _tablesView.TableSelected += OnTableSelected;
         Root.Children.Add(_tablesView);
         _ = LoadAsync();
     }
 
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        _isVisible = true;
+        MotherEventClient.SharedAuthoritativeDataChanged += OnMotherDataChanged;
+        _ = LoadAsync();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _isVisible = false;
+        MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherDataChanged;
+    }
+
+    private async void OnMotherDataChanged(object? sender, MotherDataChangedEventArgs e)
+    {
+        if (!_isVisible ||
+            string.IsNullOrWhiteSpace(e.EventType) ||
+            !(e.EventType.Contains("table", StringComparison.OrdinalIgnoreCase) ||
+              e.EventType.Contains("layout", StringComparison.OrdinalIgnoreCase) ||
+              e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        await MainThread.InvokeOnMainThreadAsync(LoadAsync);
+    }
+
     private async Task LoadAsync()
     {
         await _cache.InitializeAsync();
+        try
+        {
+            var layout = await _layoutClient.GetLayoutAsync();
+            if (layout is not null)
+            {
+                await _cache.ReplaceLayoutAsync(
+                    new FloorSnapshotDto(layout.Version, layout.Floors),
+                    new TableSnapshotDto(layout.Version, layout.Tables));
+            }
+        }
+        catch
+        {
+            // Fall back to cached floor below.
+        }
+
         var floors = await _cache.GetFloorsWithTablesAsync();
         if (floors.Count == 0)
         {
@@ -77,56 +123,45 @@ public partial class RestaurantPage : ContentPage
 
     private void ShowGuestOverlay()
     {
+        if (_pendingTable is null)
+        {
+            return;
+        }
+
         if (_guestOverlay is not null)
         {
             Root.Children.Remove(_guestOverlay);
         }
 
-        _guestCount.Count = 2;
-        var confirm = new SharedButton { Text = "Open table" };
-        confirm.Clicked += async (_, _) =>
+        _tablesView.SetHighlightedTable(_pendingTable.Id);
+
+        var picker = new GuestCountControl
+        {
+            TableTitle = $"Table {_pendingTable.Name}",
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        picker.ResetCustomEntry();
+        picker.Cancelled += (_, _) => HideGuestOverlay();
+        picker.CoverConfirmed += async (_, covers) =>
         {
             if (_pendingTable is null) return;
+            var table = _pendingTable;
             HideGuestOverlay();
-            await OpenOrderAsync(_pendingTable, _guestCount.Count);
+            await OpenOrderAsync(table, covers);
         };
-        var cancel = new SharedButton { Text = "Cancel", Variant = ButtonVariant.Secondary };
-        cancel.Clicked += (_, _) => HideGuestOverlay();
-
-        var buttons = new Grid
-        {
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
-            ColumnSpacing = 12
-        };
-        buttons.Add(cancel);
-        buttons.Add(confirm, 1);
-
-        var panel = new Border
-        {
-            Padding = 24,
-            StrokeThickness = 1,
-            WidthRequest = 360,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            Content = new VerticalStackLayout
-            {
-                Spacing = 16,
-                Children = { _guestCount, buttons }
-            }
-        };
-        panel.SetDynamicResource(Border.BackgroundColorProperty, "OwSurface");
-        panel.SetDynamicResource(Border.StrokeProperty, "OwBorder");
 
         _guestOverlay = new Grid
         {
             BackgroundColor = Color.FromArgb("#80000000"),
-            Children = { panel }
+            Children = { picker }
         };
         Root.Children.Add(_guestOverlay);
     }
 
     private void HideGuestOverlay()
     {
+        _tablesView.ClearHighlightedTable();
         if (_guestOverlay is null) return;
         Root.Children.Remove(_guestOverlay);
         _guestOverlay = null;

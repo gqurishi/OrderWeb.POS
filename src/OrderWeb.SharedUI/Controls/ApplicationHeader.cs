@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using Microsoft.Maui.Controls.Shapes;
 
 namespace OrderWeb.SharedUI.Controls;
 
@@ -13,6 +14,14 @@ public class ApplicationHeader : ContentView
     private readonly UserTerminalInfo _identity;
     private readonly ConnectionIndicator _connection;
     private readonly IDispatcherTimer _timer;
+    private readonly Button _minimize;
+    private readonly Button _back;
+    private readonly HorizontalStackLayout _contextActions;
+    private readonly Border _shell;
+    private readonly Grid _grid;
+    private readonly ImageButton _menuButton;
+    private readonly ImageButton _logoutButton;
+    private readonly VerticalStackLayout _clock;
 
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._title.Text = v?.ToString());
     public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._restaurantName.Text = v?.ToString() ?? string.Empty);
@@ -31,52 +40,112 @@ public class ApplicationHeader : ContentView
     public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._minimize.IsVisible = (bool)v);
     public static readonly BindableProperty ShowBackButtonProperty = BindableProperty.Create(nameof(ShowBackButton), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._back.IsVisible = (bool)v);
     public static readonly BindableProperty ContextActionsProperty = BindableProperty.Create(nameof(ContextActions), typeof(IEnumerable<HeaderAction>), typeof(ApplicationHeader), propertyChanged: (b, _, v) => ((ApplicationHeader)b).RebuildContextActions((IEnumerable<HeaderAction>?)v));
-    private readonly Button _minimize;
-    private readonly Button _back;
-    private readonly HorizontalStackLayout _contextActions;
-    private ImageButton? _menuButton;
 
     public ApplicationHeader()
     {
-        var menu = IconButton("mian.png", 38);
-        _menuButton = menu;
+        _menuButton = IconButton("mian.png", 32);
+        _logoutButton = IconButton("outred.png", 36);
         _back = new Button { Text = "‹", FontSize = 32, Padding = 0, WidthRequest = 38, HeightRequest = 38, MinimumWidthRequest = 44, MinimumHeightRequest = 44, BackgroundColor = Colors.Transparent, BorderWidth = 0 };
         _back.Use(Button.TextColorProperty, "OwTextPrimary");
         _back.IsVisible = false;
-        var logout = IconButton("outred.png", 38);
-        _minimize = new Button { Text = "−", IsVisible = false, WidthRequest = 36, HeightRequest = 36, MinimumWidthRequest = 36, MinimumHeightRequest = 36, Padding = 0, BackgroundColor = Colors.Transparent, BorderWidth = 0, FontSize = 22, FontAttributes = FontAttributes.Bold };
-        _minimize.Use(Button.TextColorProperty, "OwTextPrimary");
-        menu.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
+        _minimize = new Button
+        {
+            Text = "-",
+            IsVisible = false,
+            WidthRequest = 34,
+            HeightRequest = 34,
+            MinimumWidthRequest = 34,
+            MinimumHeightRequest = 34,
+            Padding = 0,
+            BackgroundColor = Colors.Transparent,
+            BorderWidth = 0,
+            BorderColor = Colors.Transparent,
+            FontSize = 22,
+            FontAttributes = FontAttributes.Bold,
+            Margin = new Thickness(0, 0, 10, 0),
+            TextColor = Color.FromArgb("#111827")
+        };
+        _menuButton.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
         _back.Clicked += (_, _) => BackRequested?.Invoke(this, EventArgs.Empty);
-        logout.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
+        _logoutButton.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
         _minimize.Clicked += (_, _) => MinimizeClicked?.Invoke(this, EventArgs.Empty);
 
         _restaurantLogo = new Image { WidthRequest = 30, HeightRequest = 30, Aspect = Aspect.AspectFit, IsVisible = false };
-        _welcome = new Label { Text = "Welcome to", FontSize = 12, IsVisible = false, HorizontalTextAlignment = TextAlignment.Start };
-        _welcome.Use(Label.TextColorProperty, "OwTextMuted");
-        _restaurantName = new Label { FontSize = 12, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
-        _restaurantName.Use(Label.TextColorProperty, "OwTextMuted");
+        _welcome = new Label
+        {
+            Text = "Welcome to",
+            FontSize = 12,
+            FontFamily = "InterMedium",
+            IsVisible = false,
+            HorizontalTextAlignment = TextAlignment.Start,
+            TextColor = Color.FromArgb("#6B7280")
+        };
+        _restaurantName = new Label
+        {
+            FontSize = 12,
+            FontFamily = "InterBold",
+            HorizontalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            TextColor = Color.FromArgb("#6B7280")
+        };
         _title = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
         _title.Use(Label.TextColorProperty, "OwTextStrong");
-        _date = new Label { FontSize = 12, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
-        _date.Use(Label.TextColorProperty, "OwTextStrong");
-        _time = new Label { FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
-        _time.Use(Label.TextColorProperty, "OwPrimary");
+        _date = new Label
+        {
+            FontSize = 12,
+            FontFamily = "InterMedium",
+            HorizontalTextAlignment = TextAlignment.End,
+            TextColor = Color.FromArgb("#374151")
+        };
+        _time = new Label
+        {
+            FontSize = 16,
+            FontFamily = "InterBold",
+            HorizontalTextAlignment = TextAlignment.End,
+            TextColor = Color.FromArgb("#3B82F6")
+        };
         _identity = new UserTerminalInfo { VerticalOptions = LayoutOptions.Center };
         _connection = new ConnectionIndicator { VerticalOptions = LayoutOptions.Center };
 
-        var clock = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Children = { _date, _time } };
+        _clock = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Margin = new Thickness(0, 0, 14, 0), Children = { _date, _time } };
         _contextActions = new HorizontalStackLayout { Spacing = 8, VerticalOptions = LayoutOptions.Center };
-        var right = new HorizontalStackLayout { Spacing = 14, VerticalOptions = LayoutOptions.Center, Children = { _contextActions, _identity, _connection, clock, _minimize, logout } };
-        var left = new HorizontalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center, Children = { menu, _back } };
+        var right = new HorizontalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, Children = { _contextActions, _identity, _connection, _clock, _minimize, _logoutButton } };
+        var left = new HorizontalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, Children = { _menuButton, _back } };
+        _menuButton.Margin = new Thickness(0, 0, 14, 0);
+        _logoutButton.Margin = new Thickness(0, 0, 6, 0);
         var restaurantIdentity = new HorizontalStackLayout { Spacing = 6, HorizontalOptions = LayoutOptions.Start, Children = { _restaurantLogo, _restaurantName } };
         var titleStack = new VerticalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Fill, Children = { _welcome, restaurantIdentity, _title } };
-        var grid = new Grid { Padding = new Thickness(16, 0), ColumnDefinitions = { new ColumnDefinition(98), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 12 };
-        grid.Use(Grid.HeightRequestProperty, "PosHeaderHeight");
-        grid.Add(left); grid.Add(titleStack, 1); grid.Add(right, 2);
-        var shell = new Border { StrokeThickness = 0, Content = grid };
-        shell.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
-        Content = shell;
+        _grid = new Grid
+        {
+            Padding = new Thickness(16, 0),
+            MinimumHeightRequest = 64,
+            HeightRequest = 64,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 12
+        };
+        _grid.Add(left);
+        _grid.Add(titleStack, 1);
+        _grid.Add(right, 2);
+        _shell = new Border
+        {
+            StrokeThickness = 0,
+            BackgroundColor = Colors.White,
+            Content = _grid,
+            Shadow = new Shadow
+            {
+                Brush = Color.FromArgb("#E5E7EB"),
+                Radius = 4,
+                Opacity = 0.1f,
+                Offset = new Point(0, 2)
+            }
+        };
+        Content = _shell;
 
         _timer = Dispatcher.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(1);
@@ -105,10 +174,22 @@ public class ApplicationHeader : ContentView
     public IEnumerable<HeaderAction>? ContextActions { get => (IEnumerable<HeaderAction>?)GetValue(ContextActionsProperty); set => SetValue(ContextActionsProperty, value); }
     public void SetMenuVisible(bool visible) { if (_menuButton != null) _menuButton.IsVisible = visible; }
 
+    /// <summary>Mother User dashboard header height (64). Non-dashboard pages stay taller.</summary>
+    public double PreferredHeight => ShowWelcomeBrand ? 64 : 88;
+
     protected override void OnParentSet() { base.OnParentSet(); if (Parent == null) _timer.Stop(); else if (!_timer.IsRunning) _timer.Start(); }
+
     private void UpdateClock()
     {
         var now = DateTime.Now;
+        // Mother User dashboard uses 24-hour clock with seconds.
+        if (ShowWelcomeBrand)
+        {
+            _date.Text = now.ToString("dddd, MMMM dd, yyyy");
+            _time.Text = now.ToString("HH:mm:ss");
+            return;
+        }
+
         _date.Text = now.ToString("dddd, MMMM d, yyyy");
         _time.Text = now.ToString("h:mm tt");
     }
@@ -120,10 +201,45 @@ public class ApplicationHeader : ContentView
         _title.IsVisible = !welcome;
         _restaurantLogo.IsVisible = !welcome && RestaurantLogo is ImageSource;
         _restaurantName.FontSize = welcome ? 21 : 12;
+        _restaurantName.FontFamily = welcome ? "InterBold" : "OpenSansRegular";
         _restaurantName.FontAttributes = welcome ? FontAttributes.Bold : FontAttributes.None;
         _restaurantName.HorizontalTextAlignment = welcome ? TextAlignment.Start : TextAlignment.Center;
         _restaurantName.TextColor = Color.FromArgb(welcome ? "#1F2937" : "#6B7280");
+
+        _menuButton.WidthRequest = welcome ? 32 : 38;
+        _menuButton.HeightRequest = welcome ? 32 : 38;
+        _menuButton.MinimumWidthRequest = welcome ? 32 : 44;
+        _menuButton.MinimumHeightRequest = welcome ? 32 : 44;
+        _menuButton.Padding = welcome ? 0 : 3;
+        _menuButton.Margin = new Thickness(0, 0, welcome ? 14 : 6, 0);
+
+        _logoutButton.WidthRequest = welcome ? 36 : 38;
+        _logoutButton.HeightRequest = welcome ? 36 : 38;
+        _logoutButton.MinimumWidthRequest = welcome ? 36 : 44;
+        _logoutButton.MinimumHeightRequest = welcome ? 36 : 44;
+
+        _minimize.WidthRequest = 34;
+        _minimize.HeightRequest = 34;
+        _minimize.Text = welcome ? "-" : "−";
+
+        _date.TextColor = Color.FromArgb(welcome ? "#374151" : "#1E293B");
+        _date.FontAttributes = welcome ? FontAttributes.None : FontAttributes.Bold;
+        _time.TextColor = Color.FromArgb("#3B82F6");
+
+        _grid.HeightRequest = PreferredHeight;
+        _grid.MinimumHeightRequest = PreferredHeight;
+        _grid.Padding = welcome ? new Thickness(16, 0) : new Thickness(16, 0);
+        _shell.BackgroundColor = Colors.White;
+        _shell.Shadow = welcome
+            ? new Shadow { Brush = Color.FromArgb("#E5E7EB"), Radius = 4, Opacity = 0.1f, Offset = new Point(0, 2) }
+            : null;
+
+        HeightRequestChanged?.Invoke(this, PreferredHeight);
+        UpdateClock();
     }
+
+    public event EventHandler<double>? HeightRequestChanged;
+
     private void RebuildContextActions(IEnumerable<HeaderAction>? actions)
     {
         if (_contextActions is null) return;
@@ -137,7 +253,19 @@ public class ApplicationHeader : ContentView
             _contextActions.Children.Add(button);
         }
     }
-    private static ImageButton IconButton(string source, double size) => new() { Source = source, WidthRequest = size, HeightRequest = size, MinimumWidthRequest = 44, MinimumHeightRequest = 44, Padding = 3, BackgroundColor = Colors.Transparent, Aspect = Aspect.AspectFit, VerticalOptions = LayoutOptions.Center };
+
+    private static ImageButton IconButton(string source, double size) => new()
+    {
+        Source = source,
+        WidthRequest = size,
+        HeightRequest = size,
+        MinimumWidthRequest = size,
+        MinimumHeightRequest = size,
+        Padding = 0,
+        BackgroundColor = Colors.Transparent,
+        Aspect = Aspect.AspectFit,
+        VerticalOptions = LayoutOptions.Center
+    };
 }
 
 public sealed class HeaderAction(string text, ICommand? command = null, object? parameter = null, bool isPrimary = false, bool isEnabled = true)

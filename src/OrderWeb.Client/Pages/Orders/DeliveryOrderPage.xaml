@@ -1,22 +1,20 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
              xmlns:models="clr-namespace:OrderWeb.Client.Models"
              x:Class="OrderWeb.Client.Pages.Orders.DeliveryOrderPage"
-             Shell.NavBarIsVisible="False"
+             Title="Delivery Order"
              BackgroundColor="#F8F9FA"
-             Title="Delivery Order">
+             Shell.NavBarIsVisible="False"
+             Shell.FlyoutBehavior="Disabled"
+             NavigationPage.HasNavigationBar="False"
+             NavigationPage.HasBackButton="False">
 
-    <Grid RowDefinitions="90,*" BackgroundColor="#F8F9FA">
-        <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
+    <!-- Exact Mother DeliveryCustomerModal layout (px, spacing, colors). No top bar. -->
+    <Grid Padding="16" RowDefinitions="Auto,*,Auto">
 
-        <Grid Grid.Row="1"
-              Padding="50"
-              RowDefinitions="Auto,*,Auto">
-        <VerticalStackLayout Grid.Row="0"
-                             Spacing="12"
-                             Margin="0,0,0,40">
+        <!-- Header -->
+        <VerticalStackLayout Grid.Row="0" Spacing="8" Margin="0,0,0,12">
             <Label Text="Delivery Order"
                    FontSize="36"
                    FontAttributes="Bold"
@@ -35,10 +33,13 @@
                      Margin="0,10,0,0" />
         </VerticalStackLayout>
 
+        <!-- Main Content -->
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Spacing="30"
+            <VerticalStackLayout Spacing="14"
                                  HorizontalOptions="Center"
-                                 WidthRequest="550">
+                                 MaximumWidthRequest="550">
+
+                <!-- Customer Name -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Customer Name"
                            FontSize="15"
@@ -47,19 +48,27 @@
                     <Border BackgroundColor="White"
                             StrokeThickness="2"
                             Stroke="#E2E8F0"
-                            StrokeShape="RoundRectangle 12"
                             Padding="0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCustomerNameFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="CustomerNameEntry"
                                Placeholder="e.g., John Smith"
                                FontSize="16"
                                TextColor="#1A202C"
                                PlaceholderColor="#A0AEC0"
+                               BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="56"
-                               Margin="16,0"
-                               BackgroundColor="Transparent" />
+                               Margin="16,0" />
                     </Border>
                 </VerticalStackLayout>
 
+                <!-- Phone Number -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Phone Number"
                            FontSize="15"
@@ -68,45 +77,60 @@
                     <Border BackgroundColor="White"
                             StrokeThickness="2"
                             Stroke="#E2E8F0"
-                            StrokeShape="RoundRectangle 12"
                             Padding="0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPhoneNumberFieldTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="PhoneNumberEntry"
                                Placeholder="e.g., 07123 456789"
                                Keyboard="Telephone"
                                FontSize="16"
                                TextColor="#1A202C"
                                PlaceholderColor="#A0AEC0"
+                               BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="56"
-                               Margin="16,0"
-                               BackgroundColor="Transparent" />
+                               Margin="16,0" />
                     </Border>
                 </VerticalStackLayout>
 
+                <!-- Delivery Address -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Delivery Address"
                            FontSize="15"
                            FontAttributes="Bold"
                            TextColor="#4A5568" />
 
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="12">
-                        <Border BackgroundColor="White"
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Border Grid.Column="0"
+                                BackgroundColor="White"
                                 StrokeThickness="2"
                                 Stroke="#E2E8F0"
-                                StrokeShape="RoundRectangle 12"
                                 Padding="0">
-                            <Entry x:Name="AddressLookupEntry"
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnPostcodeFieldTapped" />
+                            </Border.GestureRecognizers>
+                            <Entry x:Name="PostcodeEntry"
                                    Placeholder="Enter address or postcode..."
                                    FontSize="16"
                                    TextColor="#1A202C"
                                    PlaceholderColor="#A0AEC0"
+                                   BackgroundColor="Transparent"
+                                   IsReadOnly="True"
+                                   InputTransparent="True"
                                    HeightRequest="56"
-                                   Margin="16,0"
-                                   BackgroundColor="Transparent" />
+                                   Margin="16,0" />
                         </Border>
 
-                        <Button x:Name="SearchPostcodeButton"
-                                Grid.Column="1"
+                        <Button Grid.Column="1"
+                                x:Name="SearchPostcodeButton"
                                 Text="Search"
                                 BackgroundColor="#10B981"
                                 TextColor="White"
@@ -123,17 +147,22 @@
                             BackgroundColor="White"
                             StrokeThickness="2"
                             Stroke="#E2E8F0"
-                            StrokeShape="RoundRectangle 12"
                             Padding="0"
-                            MaximumHeightRequest="200"
+                            MaximumHeightRequest="240"
+                            MinimumHeightRequest="56"
                             Margin="0,8,0,0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
                         <CollectionView x:Name="AddressResultsCollection"
                                         SelectionMode="Single"
                                         SelectionChanged="OnAddressSelected">
                             <CollectionView.ItemTemplate>
                                 <DataTemplate x:DataType="models:AddressSuggestion">
                                     <Border Padding="16,12"
-                                            BackgroundColor="Transparent">
+                                            BackgroundColor="Transparent"
+                                            MinimumHeightRequest="52"
+                                            Margin="0,0,0,1">
                                         <Label Text="{Binding DisplayText}"
                                                FontSize="15"
                                                FontAttributes="Bold"
@@ -145,26 +174,60 @@
                         </CollectionView>
                     </Border>
 
-                    <VerticalStackLayout Spacing="16"
-                                         Margin="0,16,0,0">
+                    <VerticalStackLayout Spacing="16" Margin="0,16,0,0">
                         <VerticalStackLayout Spacing="8">
-                            <Label Text="Address"
+                            <Label Text="Flat / House Number"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1A202C" />
                             <Border BackgroundColor="White"
                                     StrokeThickness="2"
                                     Stroke="#E2E8F0"
-                                    StrokeShape="RoundRectangle 12"
                                     Padding="0">
-                                <Entry x:Name="AddressLine1Entry"
-                                       Placeholder="Street address"
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnHouseNumberFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="HouseNumberEntry"
+                                       Placeholder="e.g., Flat 2 or 24A"
                                        FontSize="16"
                                        TextColor="#1A202C"
                                        PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
                                        HeightRequest="56"
-                                       Margin="16,0"
-                                       BackgroundColor="Transparent" />
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Road Name"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnRoadNameFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="RoadNameEntry"
+                                       Placeholder="e.g., High Street"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
                             </Border>
                         </VerticalStackLayout>
 
@@ -176,150 +239,96 @@
                             <Border BackgroundColor="White"
                                     StrokeThickness="2"
                                     Stroke="#E2E8F0"
-                                    StrokeShape="RoundRectangle 12"
                                     Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCityFieldTapped" />
+                                </Border.GestureRecognizers>
                                 <Entry x:Name="CityEntry"
                                        Placeholder="City"
                                        FontSize="16"
                                        TextColor="#1A202C"
                                        PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
                                        HeightRequest="56"
-                                       Margin="16,0"
-                                       BackgroundColor="Transparent" />
+                                       Margin="16,0" />
                             </Border>
                         </VerticalStackLayout>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="12">
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="County"
-                                       FontSize="14"
-                                       FontAttributes="Bold"
-                                       TextColor="#1A202C" />
-                                <Border BackgroundColor="White"
-                                        StrokeThickness="2"
-                                        Stroke="#E2E8F0"
-                                        StrokeShape="RoundRectangle 12"
-                                        Padding="0">
-                                    <Entry x:Name="CountyEntry"
-                                           Placeholder="County"
-                                           FontSize="16"
-                                           TextColor="#1A202C"
-                                           PlaceholderColor="#A0AEC0"
-                                           HeightRequest="56"
-                                           Margin="16,0"
-                                           BackgroundColor="Transparent" />
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <VerticalStackLayout Grid.Column="1"
-                                                 Spacing="8">
-                                <Label Text="Postcode"
-                                       FontSize="14"
-                                       FontAttributes="Bold"
-                                       TextColor="#1A202C" />
-                                <Border BackgroundColor="White"
-                                        StrokeThickness="2"
-                                        Stroke="#E2E8F0"
-                                        StrokeShape="RoundRectangle 12"
-                                        Padding="0">
-                                    <Entry x:Name="PostcodeResultEntry"
-                                           Placeholder="Postcode"
-                                           FontSize="16"
-                                           TextColor="#1A202C"
-                                           PlaceholderColor="#A0AEC0"
-                                           HeightRequest="56"
-                                           Margin="16,0"
-                                           BackgroundColor="Transparent" />
-                                </Border>
-                            </VerticalStackLayout>
-                        </Grid>
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Postcode"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnPostcodeResultFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="PostcodeResultEntry"
+                                       Placeholder="Postcode"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
                     </VerticalStackLayout>
                 </VerticalStackLayout>
 
-                <Border x:Name="ZoneBorder"
-                        BackgroundColor="#EFF6FF"
-                        StrokeThickness="2"
-                        Stroke="#BFDBFE"
-                        StrokeShape="RoundRectangle 12"
-                        Padding="16"
-                        IsVisible="False">
-                    <Label x:Name="ZoneLabel"
-                           Text="Delivery zone not checked"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           TextColor="#1D4ED8"
-                           HorizontalTextAlignment="Center" />
-                </Border>
-
-                <VerticalStackLayout Spacing="12">
-                    <Label Text="Delivery Time"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           TextColor="#4A5568" />
-                    <Border BackgroundColor="White"
-                            StrokeThickness="2"
-                            Stroke="#E2E8F0"
-                            StrokeShape="RoundRectangle 12"
-                            Padding="0">
-                        <Entry x:Name="ScheduledTimeEntry"
-                               Placeholder="ASAP / 20:15"
-                               FontSize="16"
-                               TextColor="#1A202C"
-                               PlaceholderColor="#A0AEC0"
-                               HeightRequest="56"
-                               Margin="16,0"
-                               BackgroundColor="Transparent" />
-                    </Border>
-                </VerticalStackLayout>
-
-                <VerticalStackLayout Spacing="12">
-                    <Label Text="Order Notes"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           TextColor="#4A5568" />
-                    <Border BackgroundColor="White"
-                            StrokeThickness="2"
-                            Stroke="#E2E8F0"
-                            StrokeShape="RoundRectangle 12"
-                            Padding="12,6">
-                        <Editor x:Name="NotesEditor"
-                                Placeholder="Customer/order notes"
-                                FontSize="16"
-                                TextColor="#1A202C"
-                                PlaceholderColor="#A0AEC0"
-                                HeightRequest="88"
-                                BackgroundColor="Transparent" />
-                    </Border>
-                </VerticalStackLayout>
-
-                <Button Text="Search Existing Customer"
+                <Button x:Name="SearchCustomerButton"
+                        Text="Search Existing Customer"
                         BackgroundColor="#3B82F6"
                         TextColor="White"
                         FontSize="16"
                         HeightRequest="54"
                         CornerRadius="14"
                         Clicked="OnSearchCustomerClicked"
-                        Margin="0,5,0,0" />
+                        Margin="0,5,0,0">
+                    <Button.Shadow>
+                        <Shadow Brush="#3B82F6" Radius="8" Opacity="0.3" Offset="0,4" />
+                    </Button.Shadow>
+                </Button>
 
                 <Border x:Name="SearchResultsBorder"
                         IsVisible="False"
                         BackgroundColor="White"
                         StrokeThickness="2"
                         Stroke="#E2E8F0"
-                        StrokeShape="RoundRectangle 12"
                         Padding="0"
                         MaximumHeightRequest="320"
                         Margin="0,5,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Radius="12" Opacity="0.08" Offset="0,4" />
+                    </Border.Shadow>
                     <CollectionView x:Name="SearchResultsCollection"
                                     SelectionMode="Single"
                                     SelectionChanged="OnCustomerSelected">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:CachedCustomer">
                                 <Border Padding="18,16"
-                                        BackgroundColor="Transparent">
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="12">
+                                        BackgroundColor="Transparent"
+                                        Margin="0,0,0,1">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnCustomerTapped" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                         <VerticalStackLayout Spacing="6">
                                             <Label Text="{Binding Name}"
                                                    FontSize="16"
@@ -335,7 +344,7 @@
                                                    MaxLines="1" />
                                         </VerticalStackLayout>
                                         <Label Grid.Column="1"
-                                               Text=">"
+                                               Text="→"
                                                FontSize="22"
                                                TextColor="#3B82F6"
                                                VerticalOptions="Center" />
@@ -346,14 +355,16 @@
                     </CollectionView>
                 </Border>
 
-                <Border x:Name="NoResultsPanel"
+                <Border x:Name="NoResultsLabel"
                         IsVisible="False"
                         BackgroundColor="#FEF2F2"
                         StrokeThickness="2"
                         Stroke="#FEE2E2"
-                        StrokeShape="RoundRectangle 12"
                         Padding="20"
                         Margin="0,5,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
                     <Label Text="No customers found matching your search"
                            FontSize="15"
                            TextColor="#DC2626"
@@ -362,13 +373,16 @@
                 </Border>
 
                 <Label x:Name="StatusLabel"
-                       Text="Connected"
+                       Text=""
+                       IsVisible="False"
                        FontSize="14"
                        TextColor="#718096"
-                       HorizontalTextAlignment="Center" />
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
             </VerticalStackLayout>
         </ScrollView>
 
+        <!-- Bottom Buttons -->
         <Grid Grid.Row="2"
               ColumnDefinitions="*,1.2*"
               ColumnSpacing="16"
@@ -393,25 +407,11 @@
                     FontAttributes="Bold"
                     HeightRequest="56"
                     CornerRadius="14"
-                    Clicked="OnContinueClicked" />
-        </Grid>
-        </Grid>
-
-        <Grid x:Name="SidebarLayer"
-              Grid.RowSpan="2"
-              IsVisible="False"
-              BackgroundColor="Transparent">
-            <BoxView BackgroundColor="#01FFFFFF">
-                <BoxView.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnBackdropTapped" />
-                </BoxView.GestureRecognizers>
-            </BoxView>
-            <layout:ClientSidebar x:Name="Sidebar"
-                                  Role="Manager"
-                                  SelectedMenu="Delivery"
-                                  ShowFooter="True"
-                                  TranslationX="-280"
-                                  HorizontalOptions="Start" />
+                    Clicked="OnContinueClicked">
+                <Button.Shadow>
+                    <Shadow Brush="#3B82F6" Radius="10" Opacity="0.35" Offset="0,4" />
+                </Button.Shadow>
+            </Button>
         </Grid>
     </Grid>
 </ContentPage>

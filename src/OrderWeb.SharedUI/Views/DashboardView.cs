@@ -14,8 +14,14 @@ public class DashboardView : ContentView
 
     public DashboardView()
     {
-        _title = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, HorizontalOptions = LayoutOptions.Center };
-        _title.Use(Label.TextColorProperty, "OwTextPrimary");
+        _title = new Label
+        {
+            FontSize = 28,
+            FontAttributes = FontAttributes.Bold,
+            FontFamily = "InterBold",
+            HorizontalOptions = LayoutOptions.Center,
+            TextColor = Color.FromArgb("#111827")
+        };
         _subtitle = new Label { FontSize = 16, HorizontalOptions = LayoutOptions.Center };
         _subtitle.Use(Label.TextColorProperty, "OwTextMuted");
         _offline = new Label
@@ -35,12 +41,12 @@ public class DashboardView : ContentView
             Spacing = 18,
             Padding = new Thickness(24, 30),
             HorizontalOptions = LayoutOptions.Center,
-            MaximumWidthRequest = 960,
+            MaximumWidthRequest = 900,
             VerticalOptions = LayoutOptions.Center,
             Children = { _title, _subtitle, _offline, _tileGrid }
         };
 
-        Content = new ScrollView { Content = stack };
+        Content = new ScrollView { BackgroundColor = Colors.White, Content = stack };
     }
 
     public DashboardViewModel? ViewModel
@@ -67,6 +73,7 @@ public class DashboardView : ContentView
         if (_viewModel is null) return;
         _title.Text = _viewModel.Title;
         _subtitle.Text = _viewModel.Subtitle;
+        _subtitle.IsVisible = !string.IsNullOrWhiteSpace(_viewModel.Subtitle);
         _offline.IsVisible = _viewModel.IsOffline;
 
         _tileGrid.Children.Clear();
@@ -99,11 +106,42 @@ public class DashboardView : ContentView
                 Command = _viewModel.SelectTileCommand,
                 CommandParameter = model
             };
-            // Mother visual: large icon tiles
-            if (tile.Content is Border { Content: VerticalStackLayout layout } && layout.Children.OfType<Image>().FirstOrDefault() is { } image)
+            // Mother User dashboard: large icons + InterBold labels, light card chrome.
+            if (tile.Content is Border card)
             {
-                image.WidthRequest = 150;
-                image.HeightRequest = 150;
+                card.StrokeThickness = 1;
+                card.Stroke = Color.FromArgb("#E5E7EB");
+                card.BackgroundColor = Colors.White;
+                card.Shadow = null;
+                card.Padding = 14;
+                if (card.StrokeShape is Microsoft.Maui.Controls.Shapes.RoundRectangle rr)
+                {
+                    rr.CornerRadius = 20;
+                }
+
+                if (card.Content is Grid { Children: var children })
+                {
+                    foreach (var child in children)
+                    {
+                        if (child is VerticalStackLayout layout)
+                        {
+                            layout.Spacing = 8;
+                            if (layout.Children.OfType<Image>().FirstOrDefault() is { } image)
+                            {
+                                image.WidthRequest = 150;
+                                image.HeightRequest = 150;
+                            }
+
+                            if (layout.Children.OfType<Label>().FirstOrDefault() is { } label)
+                            {
+                                label.FontSize = 21;
+                                label.FontFamily = "InterBold";
+                                label.FontAttributes = FontAttributes.Bold;
+                                label.TextColor = Color.FromArgb("#111827");
+                            }
+                        }
+                    }
+                }
             }
 
             _tileGrid.Add(tile, col, row);

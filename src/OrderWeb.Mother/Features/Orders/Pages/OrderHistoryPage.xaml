@@ -47,8 +47,8 @@
 
                         <!-- Search Card -->
                     <Border Grid.Column="1"
-                            BackgroundColor="#F4ECFF"
-                            Stroke="#D8B4FE"
+                            BackgroundColor="#EFF6FF"
+                            Stroke="#BFDBFE"
                             StrokeThickness="1"
                             Padding="16"
                             MinimumHeightRequest="92">
@@ -59,17 +59,17 @@
                             <TapGestureRecognizer Tapped="OnSearchClicked"/>
                         </Border.GestureRecognizers>
                         <VerticalStackLayout Spacing="4" VerticalOptions="Center">
-                            <Label Text="SMART SEARCH"
+                            <Label Text="SEARCH ORDERS"
                                    FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#7C3AED"/>
-                            <Label Text="Find order by number or phone"
+                                   TextColor="#2563EB"/>
+                            <Label Text="Order number or phone"
                                    FontSize="18"
                                    FontAttributes="Bold"
-                                   TextColor="#4C1D95"/>
-                            <Label Text="Tap to search instantly"
+                                   TextColor="#1E3A8A"/>
+                            <Label Text="Tap to type and search"
                                    FontSize="11"
-                                   TextColor="#6D28D9"/>
+                                   TextColor="#1D4ED8"/>
                         </VerticalStackLayout>
                     </Border>
                 </Grid>

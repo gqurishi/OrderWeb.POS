@@ -11,4 +11,12 @@ These rules are frozen and must be applied by Mother and Client.
 - Reservations are disabled by default and appear only when Mother enables them for that terminal.
 - Client may request a print, but Mother resolves and controls the configured network/IP printer.
 
-The executable source of truth is `OrderWeb.Contracts.Access.ClientAccessPolicy`.
+## Collection multi-terminal (Phase 0 frozen)
+
+- Mother MariaDB is the only real Collection order; Client cache is never the master.
+- Create / edit / save / pay / void / kitchen print for Collection require Mother online.
+- Offline: viewing a cached open-order list is allowed; edit/save is blocked.
+- Full reopen-and-edit from any Client is Phase 2+; see `docs/ClientPOS/COLLECTION_MULTI_TERMINAL_RULES.md`.
+- Executable mirror: `OrderWeb.Contracts.Access.CollectionOrderHubRules`.
+
+The executable source of truth for Client access lists is `OrderWeb.Contracts.Access.ClientAccessPolicy`.

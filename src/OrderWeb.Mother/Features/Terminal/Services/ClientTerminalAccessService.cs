@@ -5,10 +5,14 @@ namespace POS_in_NET.Services;
 
 /// <summary>
 /// Per-Client-terminal feature grants stored on Mother. Web Orders is never persisted.
-/// Reservations stay off until Mother turns them on for that terminal.
+/// Reservations are on by default so Client dashboards match Mother.
 /// </summary>
 public sealed class ClientTerminalAccessService
 {
+    private const string PolicyMarkerTerminalId = "__orderweb_policy__";
+    private const string ReservationsDefaultMigrationKey = "reservations_default_v2";
+    private static int _reservationsDefaultMigrated; // 0 = unknown, 1 = done
+
     private readonly DatabaseService _databaseService;
 
     public ClientTerminalAccessService(DatabaseService databaseService)
@@ -48,6 +52,7 @@ public sealed class ClientTerminalAccessService
         await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
         await connection.OpenAsync(cancellationToken);
         await EnsureTableAsync(connection);
+        await MigrateReservationsDefaultOnAsync(connection, cancellationToken);
 
         var stored = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         await using (var command = new MySqlCommand(
@@ -59,7 +64,8 @@ public sealed class ClientTerminalAccessService
             while (await reader.ReadAsync(cancellationToken))
             {
                 var key = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
-                if (string.IsNullOrWhiteSpace(key))
+                if (string.IsNullOrWhiteSpace(key) ||
+                    string.Equals(key, ReservationsDefaultMigrationKey, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -146,6 +152,90 @@ public sealed class ClientTerminalAccessService
             command.Parameters.AddWithValue("@featureKey", key);
             command.Parameters.AddWithValue("@enabled", ClientAccessPolicy.DefaultGrantedFeatures.Contains(key));
             await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// One-time: enable Reservations for every Client terminal that still has the
+    /// old product default (off). After this runs, Terminal Health remains the
+    /// place to turn Reservations off for a specific Client.
+    /// </summary>
+    private static async Task MigrateReservationsDefaultOnAsync(
+        MySqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _reservationsDefaultMigrated) == 1)
+        {
+            return;
+        }
+
+        if (!ClientAccessPolicy.DefaultGrantedFeatures.Contains(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations))
+        {
+            Volatile.Write(ref _reservationsDefaultMigrated, 1);
+            return;
+        }
+
+        await using (var existsCommand = new MySqlCommand(@"
+            SELECT 1
+            FROM client_terminal_access
+            WHERE terminal_id = @terminalId AND feature_key = @featureKey
+            LIMIT 1", connection))
+        {
+            existsCommand.Parameters.AddWithValue("@terminalId", PolicyMarkerTerminalId);
+            existsCommand.Parameters.AddWithValue("@featureKey", ReservationsDefaultMigrationKey);
+            var existing = await existsCommand.ExecuteScalarAsync(cancellationToken);
+            if (existing is not null)
+            {
+                Volatile.Write(ref _reservationsDefaultMigrated, 1);
+                return;
+            }
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await using (var marker = new MySqlCommand(@"
+                INSERT INTO client_terminal_access (terminal_id, feature_key, is_enabled, updated_at)
+                VALUES (@terminalId, @featureKey, TRUE, NOW())",
+                connection,
+                transaction))
+            {
+                marker.Parameters.AddWithValue("@terminalId", PolicyMarkerTerminalId);
+                marker.Parameters.AddWithValue("@featureKey", ReservationsDefaultMigrationKey);
+                try
+                {
+                    await marker.ExecuteNonQueryAsync(cancellationToken);
+                }
+                catch (MySqlException ex) when (ex.Number is 1062)
+                {
+                    // Another process already claimed the migration.
+                    await transaction.RollbackAsync(cancellationToken);
+                    Volatile.Write(ref _reservationsDefaultMigrated, 1);
+                    return;
+                }
+            }
+
+            await using (var upgrade = new MySqlCommand(@"
+                UPDATE client_terminal_access
+                SET is_enabled = TRUE, updated_at = NOW()
+                WHERE feature_key = @featureKey
+                  AND terminal_id <> @policyTerminal
+                  AND is_enabled = FALSE",
+                connection,
+                transaction))
+            {
+                upgrade.Parameters.AddWithValue("@featureKey", OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+                upgrade.Parameters.AddWithValue("@policyTerminal", PolicyMarkerTerminalId);
+                await upgrade.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            Volatile.Write(ref _reservationsDefaultMigrated, 1);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
     }
 }

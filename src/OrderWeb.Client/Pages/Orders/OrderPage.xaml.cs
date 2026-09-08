@@ -4,11 +4,12 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Client.Views.Orders;
+using OrderWeb.Contracts.Access;
 
 namespace OrderWeb.Client.Pages.Orders;
 
 public partial class OrderPage : ContentPage
-    {
+{
         private readonly ClientCacheService _cache = new();
         private readonly MotherOrderClient _orderClient = new();
         private readonly MotherMenuClient _menuClient = new();
@@ -24,6 +25,8 @@ public partial class OrderPage : ContentPage
         private MotherOrderState? _currentOrder;
         private bool _loaded;
         private bool _orderContextLoaded;
+        private bool _isVisible;
+        private bool _liveReloadInFlight;
 
         public OrderPage()
         {
@@ -36,12 +39,34 @@ public partial class OrderPage : ContentPage
 
         MenuGrid.ItemTapped += async (_, item) => await AddItemAsync(item);
         Summary.SendClicked += async (_, _) => await SendToKitchenAsync();
-        Summary.PaymentClicked += async (_, _) => await Navigation.PushAsync(new PaymentPage(CurrentTotal(), _currentOrder?.OrderId, _currentOrder?.Version), false);
+        Summary.PaymentClicked += async (_, _) =>
+        {
+            if (_currentOrder is null)
+            {
+                await DisplayAlert("Payment", "Payment requires a Mother-confirmed order.", "OK");
+                return;
+            }
+
+            if (IsCustomerHubOrder(_currentOrder))
+            {
+                var online = await _offlinePolicy.IsMotherOnlineAsync();
+                if (!online)
+                {
+                    await DisplayAlert("Payment blocked", "Taking payment for this order requires Mother POS.", "OK");
+                    return;
+                }
+            }
+
+            await Navigation.PushAsync(
+                new PaymentPage(CurrentTotal(), _currentOrder.OrderId, _currentOrder.Version),
+                false);
+        };
         Summary.ServiceClicked += async (_, _) => await QueueOrderActionAsync("service_charge", "Service charge request queued for Mother POS.");
         Summary.NotesClicked += async (_, _) => await AddOrderNoteAsync();
         Summary.VoidClicked += async (_, _) => await VoidOrderAsync();
         Summary.MoreClicked += async (_, _) => await Navigation.PushModalAsync(new MoreOptionsDialog(), false);
         Summary.PrintClicked += async (_, _) => await PrintOrderAsync();
+        Summary.LineClicked += async (_, line) => await EditMotherLineAsync(line);
 
         SizeChanged += (_, _) => ApplyResponsiveLayout();
         UpdateClock();
@@ -67,6 +92,8 @@ public partial class OrderPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _isVisible = true;
+        MotherEventClient.SharedAuthoritativeDataChanged += OnMotherOrderUpdated;
         _clockTimer.Start();
             UpdateClock();
             if (!_loaded)
@@ -80,7 +107,73 @@ public partial class OrderPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _isVisible = false;
+        MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherOrderUpdated;
         _clockTimer.Stop();
+    }
+
+    private async void OnMotherOrderUpdated(object? sender, MotherDataChangedEventArgs e)
+    {
+        if (!_isVisible ||
+            _currentOrder is null ||
+            string.IsNullOrWhiteSpace(e.EventType) ||
+            !e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // version carries the Mother order id for order.updated
+        if (!string.IsNullOrWhiteSpace(e.Version) &&
+            !string.Equals(e.Version.Trim(), _currentOrder.OrderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await MainThread.InvokeOnMainThreadAsync(ReloadOpenOrderFromMotherAsync);
+    }
+
+    private async Task ReloadOpenOrderFromMotherAsync()
+    {
+        if (_currentOrder is null || _liveReloadInFlight)
+        {
+            return;
+        }
+
+        if (_basket.Count > 0)
+        {
+            _currentOrder = _currentOrder with
+            {
+                ConflictMessage = "Changed on another terminal — finish or discard local items, then reopen."
+            };
+            Refresh();
+            return;
+        }
+
+        _liveReloadInFlight = true;
+        try
+        {
+            var previousVersion = _currentOrder.Version;
+            var previousUpdated = _currentOrder.UpdatedUtc;
+            var result = await _orderClient.RefreshLatestAsync(_currentOrder);
+            var changedElsewhere =
+                result.State.Version != previousVersion ||
+                !string.Equals(result.State.UpdatedUtc, previousUpdated, StringComparison.Ordinal);
+            _currentOrder = result.State with
+            {
+                ConflictMessage = changedElsewhere ? null : _currentOrder.ConflictMessage
+            };
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            _basket.Clear();
+            Refresh();
+        }
+        catch
+        {
+            // Order may have been paid/voided elsewhere — leave current UI; Live Order will drop it.
+        }
+        finally
+        {
+            _liveReloadInFlight = false;
+        }
     }
 
     private async Task LoadMenuAsync()
@@ -159,16 +252,31 @@ public partial class OrderPage : ContentPage
             {
                 if (!string.IsNullOrWhiteSpace(_table.CurrentOrderId))
                 {
-                    var cached = await _cache.GetOrderStateAsync(_table.CurrentOrderId);
-                    if (cached != null)
+                    var online = await _offlinePolicy.IsMotherOnlineAsync();
+                    var decision = _offlinePolicy.Evaluate(ClientOperation.OpenCollectionOrder, online);
+                    if (!decision.Allowed)
                     {
-                        _currentOrder = cached;
-                        Refresh();
+                        await DisplayAlert("Open Table blocked", decision.Message, "OK");
                         return;
                     }
+
+                    var opened = await _orderClient.OpenOrderForEditAsync(_table.CurrentOrderId);
+                    _currentOrder = opened.State;
+                    await _cache.SaveOrderStateAsync(_currentOrder);
+                    Refresh();
+                    return;
                 }
 
                 var session = await _cache.GetCurrentLoginSessionAsync();
+                var createDecision = _offlinePolicy.Evaluate(
+                    ClientOperation.SaveCollectionOrder,
+                    await _offlinePolicy.IsMotherOnlineAsync());
+                if (!createDecision.Allowed)
+                {
+                    await DisplayAlert("Table Order blocked", createDecision.Message, "OK");
+                    return;
+                }
+
                 var result = await _orderClient.OpenOrCreateTableOrderAsync(_table, _covers, session);
                 _currentOrder = result.State;
                 await _cache.SaveOrderStateAsync(_currentOrder);
@@ -176,7 +284,7 @@ public partial class OrderPage : ContentPage
             }
             catch (Exception ex)
             {
-                await DisplayAlert("Table Order", $"Could not open this table order from the local client cache. Run bootstrap or Update All from Mother POS, then try again.\n\n{ex.Message}", "OK");
+                await DisplayAlert("Table Order", $"Could not open this table order from Mother POS.\n\n{ex.Message}", "OK");
             }
         }
 
@@ -228,10 +336,88 @@ public partial class OrderPage : ContentPage
                     line.Quantity,
                     line.UnitPrice,
                     line.Modifiers.Count > 0 ? string.Join(", ", line.Modifiers) : null,
-                    line.Notes))
+                    line.Notes,
+                    line.Id))
                 .ToList()
                 ?? _basket;
         }
+
+    private async Task EditMotherLineAsync(OrderSummaryLine summaryLine)
+    {
+        if (_currentOrder == null || string.IsNullOrWhiteSpace(summaryLine.LineId))
+        {
+            return;
+        }
+
+        if (IsCustomerHubOrder(_currentOrder))
+        {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.EditCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                await DisplayAlert("Order edit blocked", decision.Message, "OK");
+                return;
+            }
+        }
+
+        var motherLine = _currentOrder.Lines.FirstOrDefault(line =>
+            string.Equals(line.Id, summaryLine.LineId, StringComparison.OrdinalIgnoreCase));
+        if (motherLine == null)
+        {
+            return;
+        }
+
+        var action = await DisplayActionSheet(
+            $"{motherLine.Quantity} x {motherLine.Name}",
+            "Cancel",
+            "Remove item",
+            "+1 quantity",
+            "-1 quantity");
+        if (string.IsNullOrWhiteSpace(action) || action == "Cancel")
+        {
+            return;
+        }
+
+        try
+        {
+            MotherCommandResult result;
+            if (action == "Remove item")
+            {
+                result = await _orderClient.RemoveItemAsync(_currentOrder, motherLine);
+            }
+            else if (action == "+1 quantity")
+            {
+                result = await _orderClient.UpdateQuantityAsync(_currentOrder, motherLine, motherLine.Quantity + 1);
+            }
+            else if (action == "-1 quantity")
+            {
+                if (motherLine.Quantity <= 1)
+                {
+                    result = await _orderClient.RemoveItemAsync(_currentOrder, motherLine);
+                }
+                else
+                {
+                    result = await _orderClient.UpdateQuantityAsync(_currentOrder, motherLine, motherLine.Quantity - 1);
+                }
+            }
+            else
+            {
+                return;
+            }
+
+            _currentOrder = result.State;
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            _basket.Clear();
+            Refresh();
+            if (result.ConflictDetected)
+            {
+                await DisplayAlert("Order conflict", result.Message, "OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("Mother POS", ex.Message, "OK");
+        }
+    }
 
     private IEnumerable<CachedProduct> FilteredProducts()
     {
@@ -284,6 +470,16 @@ public partial class OrderPage : ContentPage
 
     private async Task AddItemAsync(CachedProduct item)
     {
+        if (_currentOrder != null && IsCustomerHubOrder(_currentOrder))
+        {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.EditCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                await DisplayAlert("Order edit blocked", decision.Message, "OK");
+                return;
+            }
+        }
+
         var selectedModifiers = item.ModifierGroups
             .SelectMany(group => group.Modifiers.Take(Math.Min(group.MaxSelect, 1)))
             .Select(modifier => modifier.Name)
@@ -297,27 +493,41 @@ public partial class OrderPage : ContentPage
             await Navigation.PushModalAsync(new ModifierDialog(), false);
         }
 
-        var existing = _basket.FirstOrDefault(line => line.Name == item.Name && line.Modifiers == modifiers);
-            if (existing != null)
-            {
-                var index = _basket.IndexOf(existing);
-                _basket[index] = existing with { Quantity = existing.Quantity + 1 };
-        }
-        else
+        if (_currentOrder != null)
         {
-                _basket.Add(new OrderSummaryLine(item.Name, 1, item.Price, modifiers));
-            }
-
-            if (_currentOrder != null)
+            try
             {
                 var result = await _orderClient.AddItemAsync(_currentOrder, item, selectedModifiers);
                 _currentOrder = result.State;
                 await _cache.SaveOrderStateAsync(_currentOrder);
                 _basket.Clear();
+                Refresh();
+                if (result.ConflictDetected)
+                {
+                    await DisplayAlert("Order conflict", result.Message, "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("Mother POS", ex.Message, "OK");
             }
 
-            Refresh();
+            return;
         }
+
+        var existing = _basket.FirstOrDefault(line => line.Name == item.Name && line.Modifiers == modifiers);
+        if (existing != null)
+        {
+            var index = _basket.IndexOf(existing);
+            _basket[index] = existing with { Quantity = existing.Quantity + 1 };
+        }
+        else
+        {
+            _basket.Add(new OrderSummaryLine(item.Name, 1, item.Price, modifiers));
+        }
+
+        Refresh();
+    }
 
     private async Task SendToKitchenAsync()
     {
@@ -327,7 +537,10 @@ public partial class OrderPage : ContentPage
                 return;
             }
 
-            var decision = _offlinePolicy.Evaluate(ClientOperation.SubmitFinalOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            var kitchenOp = _currentOrder != null && IsCustomerHubOrder(_currentOrder)
+                ? ClientOperation.PrintCollectionOrder
+                : ClientOperation.SubmitFinalOrder;
+            var decision = _offlinePolicy.Evaluate(kitchenOp, await _offlinePolicy.IsMotherOnlineAsync());
             if (!decision.Allowed)
             {
                 await DisplayAlert("Send to Kitchen blocked", decision.Message, "OK");
@@ -347,7 +560,10 @@ public partial class OrderPage : ContentPage
                 await _cache.SaveOrderStateAsync(_currentOrder);
                 _basket.Clear();
                 Refresh();
-                await DisplayAlert("Mother POS", result.Message, "OK");
+                await DisplayAlert(
+                    result.ConflictDetected ? "Order conflict" : "Mother POS",
+                    result.Message,
+                    "OK");
             }
             catch (Exception ex)
             {
@@ -362,6 +578,16 @@ public partial class OrderPage : ContentPage
                 await DisplayAlert("Print", "Add items before printing.", "OK");
                 return;
             }
+
+        if (_currentOrder != null && IsCustomerHubOrder(_currentOrder))
+        {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.PrintCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                await DisplayAlert("Print blocked", decision.Message, "OK");
+                return;
+            }
+        }
 
         await RequestPrintAsync("bill");
     }
@@ -383,17 +609,39 @@ public partial class OrderPage : ContentPage
             if (_basket.Count > 0)
             {
                 _basket[0] = _basket[0] with { Note = note.Trim() };
-            }
-            else if (_currentOrder?.Lines.Count > 0)
-            {
-                var firstLine = _currentOrder.Lines[0];
-                var result = await _orderClient.AddNoteAsync(_currentOrder, firstLine, note.Trim());
-                _currentOrder = result.State;
-                await _cache.SaveOrderStateAsync(_currentOrder);
+                Refresh();
+                return;
             }
 
-            await QueueOrderActionAsync("order_note", "Note request queued for Mother POS.");
-            Refresh();
+            if (_currentOrder?.Lines.Count > 0)
+            {
+                if (IsCustomerHubOrder(_currentOrder))
+                {
+                    var decision = _offlinePolicy.Evaluate(ClientOperation.EditCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+                    if (!decision.Allowed)
+                    {
+                        await DisplayAlert("Order edit blocked", decision.Message, "OK");
+                        return;
+                    }
+                }
+
+                try
+                {
+                    var firstLine = _currentOrder.Lines[0];
+                    var result = await _orderClient.AddNoteAsync(_currentOrder, firstLine, note.Trim());
+                    _currentOrder = result.State;
+                    await _cache.SaveOrderStateAsync(_currentOrder);
+                    Refresh();
+                    await DisplayAlert(
+                        result.ConflictDetected ? "Order conflict" : "Mother POS",
+                        result.Message,
+                        "OK");
+                }
+                catch (Exception ex)
+                {
+                    await DisplayAlert("Mother POS", ex.Message, "OK");
+                }
+            }
         }
 
         private async Task VoidOrderAsync()
@@ -409,6 +657,32 @@ public partial class OrderPage : ContentPage
         {
             return;
         }
+
+            if (_currentOrder != null && IsCustomerHubOrder(_currentOrder))
+            {
+                var decision = _offlinePolicy.Evaluate(ClientOperation.VoidCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+                if (!decision.Allowed)
+                {
+                    await DisplayAlert("Void blocked", decision.Message, "OK");
+                    return;
+                }
+
+                try
+                {
+                    var result = await _orderClient.VoidCollectionOrderAsync(_currentOrder);
+                    _currentOrder = result.State;
+                    await _cache.SaveOrderStateAsync(_currentOrder);
+                    _basket.Clear();
+                    Refresh();
+                    await DisplayAlert("Mother POS", result.Message, "OK");
+                }
+                catch (Exception ex)
+                {
+                    await DisplayAlert("Void failed", ex.Message, "OK");
+                }
+
+                return;
+            }
 
             _basket.Clear();
             if (_currentOrder != null)
@@ -428,6 +702,9 @@ public partial class OrderPage : ContentPage
             await QueueOrderActionAsync("void_order", "Void request queued for Mother POS.");
             Refresh();
         }
+
+    private static bool IsCustomerHubOrder(MotherOrderState order) =>
+        CustomerOrderHubRules.IsCustomerHubOrderType(order.OrderType);
 
     private async Task QueueOrderActionAsync(string actionType, string message)
     {

@@ -1,7 +1,6 @@
 using OrderWeb.Client.Models;
-using OrderWeb.Client.Pages.Manager;
-using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.Client.Views.Dialogs;
 
 namespace OrderWeb.Client.Pages.Orders;
 
@@ -13,59 +12,91 @@ public partial class CollectionOrderPage : ContentPage
     private readonly ClientOfflinePolicy _offlinePolicy = new();
     private CachedCustomer? _selectedCustomer;
     private bool _isContinuing;
+    private bool _isClosing;
+    private bool _isOpeningKeyboard;
+    private bool _enterAnimationStarted;
+    /// <summary>Stable Mother order id for this Collection create attempt (avoids dual rows on retry).</summary>
+    private string? _pendingCollectionOrderId;
 
     public CollectionOrderPage()
     {
         InitializeComponent();
-        TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
-        Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
-        Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllAsync();
+        Shell.SetNavBarIsVisible(this, false);
+        Shell.SetFlyoutBehavior(this, FlyoutBehavior.Disabled);
+        NavigationPage.SetHasNavigationBar(this, false);
+        NavigationPage.SetHasBackButton(this, false);
+        // Start off-screen so Delivery/Collection slide in from the right like Mother.
+        Opacity = 0;
+        TranslationX = 420;
     }
 
-    private async Task OpenSidebarAsync()
+    protected override async void OnAppearing()
     {
-        SidebarLayer.IsVisible = true;
-        Sidebar.TranslationX = -280;
-        await Sidebar.TranslateTo(0, 0, 180, Easing.CubicOut);
-    }
-
-    private async Task CloseSidebarAsync()
-    {
-        await Sidebar.TranslateTo(-280, 0, 160, Easing.CubicIn);
-        SidebarLayer.IsVisible = false;
-    }
-
-    private async Task NavigateFromSidebarAsync(string menu)
-    {
-        await CloseSidebarAsync();
-        if (menu == "Collection" || !ClientHostAccess.CanOpenMenu(menu))
+        base.OnAppearing();
+        if (_enterAnimationStarted)
         {
             return;
         }
 
-        await Navigation.PushAsync(menu switch
-        {
-            "Dashboard" => new Pages.Dashboards.ManagerDashboardPage(),
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new TableLayoutPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Gift Cards" => new GiftCardPage(),
-            "Loyalty Points" => new LoyaltyPage(),
-            "Reservation" => new ReservationPage(),
-            "Order History" => new OrderHistoryPage(),
-            _ => new CollectionOrderPage()
-        }, false);
+        _enterAnimationStarted = true;
+        var width = Width > 1 ? Width : (DeviceDisplay.MainDisplayInfo.Width / DeviceDisplay.MainDisplayInfo.Density);
+        TranslationX = Math.Max(width, 420);
+        Opacity = 1;
+        await this.TranslateToAsync(0, 0, 280, Easing.CubicOut);
     }
 
-    private async Task UpdateAllAsync()
+    private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
     {
-        await CloseSidebarAsync();
-        ShowStatus("Connect to Mother POS to refresh all client cache data.", "#64748B");
+        await OpenKeyboardForEntryAsync(CustomerNameEntry);
     }
 
-    private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
+    private async void OnPhoneNumberFieldTapped(object sender, TappedEventArgs e)
+    {
+        await OpenKeyboardForEntryAsync(PhoneNumberEntry);
+    }
+
+    private async Task OpenKeyboardForEntryAsync(Entry entry)
+    {
+        if (_isOpeningKeyboard)
+        {
+            return;
+        }
+
+        _isOpeningKeyboard = true;
+        try
+        {
+            entry.Unfocus();
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(GetKeyboardTitle(entry), "DONE");
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+
+            var result = await keyboard.ShowAsync(this);
+            if (result != null)
+            {
+                entry.Text = result.Trim();
+            }
+        }
+        finally
+        {
+            _isOpeningKeyboard = false;
+        }
+    }
+
+    private string GetKeyboardTitle(Entry entry)
+    {
+        if (entry == CustomerNameEntry)
+        {
+            return "Customer name";
+        }
+
+        if (entry == PhoneNumberEntry)
+        {
+            return "Phone number";
+        }
+
+        return "Keyboard";
+    }
 
     private async void OnSearchClicked(object sender, EventArgs e)
     {
@@ -192,7 +223,7 @@ public partial class CollectionOrderPage : ContentPage
 
         try
         {
-            var decision = _offlinePolicy.Evaluate(ClientOperation.SubmitFinalOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            var decision = _offlinePolicy.Evaluate(ClientOperation.SaveCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
             if (!decision.Allowed)
             {
                 ShowStatus(decision.Message, "#DC2626");
@@ -204,8 +235,17 @@ public partial class CollectionOrderPage : ContentPage
 
             ShowStatus("Opening collection order...", "#64748B");
             var session = await _cache.GetCurrentLoginSessionAsync();
-            var orderResult = await _orderClient.CreateCustomerOrderAsync(draft with { Customer = savedCustomer }, session);
+            _pendingCollectionOrderId ??= Guid.NewGuid().ToString("N");
+            var orderResult = await _orderClient.CreateCustomerOrderAsync(
+                draft with { Customer = savedCustomer },
+                session,
+                _pendingCollectionOrderId);
             await _cache.SaveOrderStateAsync(orderResult.State);
+            _pendingCollectionOrderId = null;
+            if (orderResult.ConflictDetected)
+            {
+                ShowStatus(orderResult.Message, "#D97706");
+            }
 
             await Navigation.PushAsync(new OrderPage(orderResult.State), false);
         }
@@ -224,9 +264,30 @@ public partial class CollectionOrderPage : ContentPage
         }
     }
 
-    private async void OnCancelClicked(object sender, EventArgs e)
+    private async void OnCancelClicked(object sender, EventArgs e) => await CloseAsync();
+
+    private async Task CloseAsync()
     {
-        await Navigation.PopAsync(false);
+        if (_isClosing)
+        {
+            return;
+        }
+
+        _isClosing = true;
+        try
+        {
+            var width = Width > 1 ? Width : 420;
+            await this.TranslateToAsync(width, 0, 220, Easing.CubicIn);
+            await ClientSideNavigation.PopFromSideAsync(Navigation);
+        }
+        catch
+        {
+            await ClientSideNavigation.PopFromSideAsync(Navigation);
+        }
+        finally
+        {
+            _isClosing = false;
+        }
     }
 
     private void ShowStatus(string message, string color)

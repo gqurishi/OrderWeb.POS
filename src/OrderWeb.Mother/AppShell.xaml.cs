@@ -460,13 +460,15 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         var features = MotherFeatureSet();
         var hostRoutes = role switch
         {
+            // Dashboard first so User/Manager can return home from any page,
+            // matching Admin sidebar behavior (shared catalog route "dashboard").
             UserRole.User => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "restaurant", "collection", "delivery", "liveorder", "reservation"
+                "dashboard", "restaurant", "collection", "delivery", "liveorder", "reservation"
             },
             UserRole.Manager => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
+                "dashboard", "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
                 "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
             },
             UserRole.Cashier => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -488,6 +490,13 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         SharedSidebar.AvailableCapabilities = capabilities;
         SharedSidebar.AvailableFeatures = features;
         SharedSidebar.ItemsSource = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, hostRoutes);
+        if (_roleAccessService.TryResolveRoute(CurrentState?.Location?.OriginalString ?? string.Empty, out var currentRoute))
+        {
+            SharedSidebar.SelectedRoute = currentRoute is "userdashboard" or "managerdashboard" or "cashierdashboard" or "dashboard"
+                ? "dashboard"
+                : currentRoute;
+        }
+
         SharedSidebar.Refresh();
     }
 

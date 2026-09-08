@@ -47,8 +47,8 @@ public partial class ManagerDashboardPage : ContentPage
 
         var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
         {
-            Title = "Manager Dashboard",
-            Subtitle = _authService.CurrentUser?.Name is { Length: > 0 } name ? $"Welcome, {name}" : "Manager"
+            Title = "Dashboard",
+            Subtitle = string.Empty
         };
         vm.ApplyCapabilities(capabilities, features, new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {

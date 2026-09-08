@@ -1,9 +1,10 @@
-using POS_in_NET.Services;
+﻿using POS_in_NET.Services;
 using POS_in_NET.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using OrderWeb.SharedUI.Views;
 
 namespace POS_in_NET.Pages;
 
@@ -79,29 +80,30 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         _reservationSyncService = ServiceHelper.GetService<ReservationSyncService>();
         AttachReservationSyncHandler();
         BindingContext = this;
+        WireSharedReservationView();
         RefreshView();
     }
 
-    private void OnReservationPageSizeChanged(object? sender, EventArgs e)
+    private void WireSharedReservationView()
     {
-        if (Width <= 0 || MainLayoutGrid.ColumnDefinitions.Count < 2)
-        {
-            return;
-        }
-
-        if (Width < 1000)
-        {
-            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(250);
-        }
-        else if (Width < 1250)
-        {
-            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(280);
-        }
-        else
-        {
-            MainLayoutGrid.ColumnDefinitions[0].Width = new GridLength(340);
-        }
+        Reservation.UpdateRequested += OnUpdateClicked;
+        Reservation.NewReservationRequested += OnNewReservationClicked;
+        Reservation.TodayRequested += OnTodayClicked;
+        Reservation.PreviousMonthRequested += OnPreviousMonthClicked;
+        Reservation.NextMonthRequested += OnNextMonthClicked;
+        Reservation.SearchBoxFocused += OnSearchBoxTapped;
+        Reservation.SearchTextChanged += OnSearchTextChanged;
+        Reservation.CalendarDaySelected += OnCalendarDaySelected;
+        Reservation.ReservationSelected += (_, row) => SelectedReservation = row;
+        Reservation.ShowRequested += async (_, row) => await UpdateReservationAttendanceAsync(row, "arrived");
+        Reservation.DetailsRequested += (_, row) => SelectedReservation = row;
+        Reservation.NoShowRequested += async (_, row) => await UpdateReservationAttendanceAsync(row, "no_show");
+        Reservation.CancelRequested += async (_, row) => await UpdateReservationAttendanceAsync(row, "cancelled");
+        Reservation.DetailsClosed += (_, _) => SelectedReservation = null;
     }
+
+    private void OnReservationPageSizeChanged(object? sender, EventArgs e) =>
+        Reservation.ApplyResponsiveCalendarWidth(Width);
 
     protected override async void OnAppearing()
     {
@@ -203,7 +205,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     private async void OnUpdateClicked(object sender, EventArgs e)
     {
         _searchText = string.Empty;
-        SearchEntry.Text = string.Empty;
+        Reservation.ClearSearch();
 
         if (_reservationSyncService == null)
         {
@@ -259,12 +261,12 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         });
     }
 
-    private void OnSearchBoxTapped(object sender, TappedEventArgs e)
+    private void OnSearchBoxTapped(object? sender, EventArgs e)
     {
-        SearchEntry.Focus();
+        Reservation.FocusSearch();
     }
 
-    private async void OnCalendarDaySelected(object sender, SelectionChangedEventArgs e)
+    private async void OnCalendarDaySelected(object? sender, SelectionChangedEventArgs e)
     {
         if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day)
         {
@@ -274,7 +276,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         _selectedDate = day.Date;
         var monthChanged = day.Date.Month != _displayedMonth.Month || day.Date.Year != _displayedMonth.Year;
         _displayedMonth = new DateTime(_selectedDate.Year, _selectedDate.Month, 1);
-        CalendarCollectionView.SelectedItem = null;
+        Reservation.ClearCalendarSelection();
 
         if (monthChanged)
         {
@@ -465,57 +467,6 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         };
     }
 
-    private async void OnReservationShowClicked(object sender, EventArgs e)
-    {
-        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
-        {
-            return;
-        }
-
-        await UpdateReservationAttendanceAsync(row, "arrived");
-    }
-
-    private void OnReservationRowTapped(object sender, TappedEventArgs e)
-    {
-        if (sender is BindableObject bindable && bindable.BindingContext is ReservationRow row)
-        {
-            SelectedReservation = row;
-        }
-    }
-
-    private void OnReservationDetailsClicked(object sender, EventArgs e)
-    {
-        if (sender is BindableObject bindable && bindable.BindingContext is ReservationRow row)
-        {
-            SelectedReservation = row;
-        }
-    }
-
-    private void OnCloseDetailsClicked(object sender, EventArgs e)
-    {
-        SelectedReservation = null;
-    }
-
-    private async void OnReservationNoShowClicked(object sender, EventArgs e)
-    {
-        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
-        {
-            return;
-        }
-
-        await UpdateReservationAttendanceAsync(row, "no_show");
-    }
-
-    private async void OnReservationCancelClicked(object sender, EventArgs e)
-    {
-        if (sender is not BindableObject bindable || bindable.BindingContext is not ReservationRow row)
-        {
-            return;
-        }
-
-        await UpdateReservationAttendanceAsync(row, "cancelled");
-    }
-
     private async Task UpdateReservationAttendanceAsync(ReservationRow row, string status)
     {
         if (_reservationSyncService == null)
@@ -600,183 +551,4 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
-}
-
-public sealed class ReservationCalendarDay
-{
-    public ReservationCalendarDay(DateTime date, bool isCurrentMonth, bool isSelected, int reservationCount)
-    {
-        Date = date;
-        IsCurrentMonth = isCurrentMonth;
-        IsSelected = isSelected;
-        ReservationCount = reservationCount;
-    }
-
-    public DateTime Date { get; }
-    public bool IsCurrentMonth { get; }
-    public bool IsSelected { get; }
-    public int ReservationCount { get; }
-
-    public string DayText => Date.Day.ToString(CultureInfo.InvariantCulture);
-    public Color BackgroundColor => IsSelected
-        ? Color.FromArgb("#2563EB")
-        : ReservationCount > 0
-            ? Color.FromArgb("#DBEAFE")
-            : Colors.White;
-    public Color BorderColor => IsSelected
-        ? Color.FromArgb("#2563EB")
-        : ReservationCount > 0
-            ? Color.FromArgb("#60A5FA")
-            : Color.FromArgb("#E2E8F0");
-    public Color TextColor => IsSelected
-        ? Colors.White
-        : ReservationCount > 0
-            ? Color.FromArgb("#1D4ED8")
-            : IsCurrentMonth ? Color.FromArgb("#0F172A") : Color.FromArgb("#CBD5E1");
-    public Color CountColor => IsSelected ? Colors.White : Color.FromArgb("#2563EB");
-}
-
-public sealed class ReservationRow
-{
-    public ReservationRow(
-        string cloudId,
-        string? localId,
-        DateTime date,
-        TimeOnly time,
-        string name,
-        string phone,
-        int guests,
-        string table,
-        string status,
-        string note,
-        string reference,
-        string source,
-        string email,
-        string promoCode,
-        string allergies,
-        string specialRequests)
-    {
-        CloudId = cloudId;
-        LocalId = localId;
-        Date = date.Date;
-        Time = time;
-        Name = name;
-        Phone = phone;
-        Guests = guests;
-        Table = table;
-        Status = string.IsNullOrWhiteSpace(status) ? "Booked" : status;
-        Note = note;
-        Reference = reference;
-        Source = source;
-        Email = email;
-        PromoCode = promoCode;
-        Allergies = allergies;
-        SpecialRequests = specialRequests;
-    }
-
-    public string CloudId { get; }
-    public string? LocalId { get; }
-    public DateTime Date { get; }
-    public TimeOnly Time { get; }
-    public string TimeText => Time.ToString("HH:mm", CultureInfo.InvariantCulture);
-    public string Name { get; }
-    public string Phone { get; }
-    public int Guests { get; }
-    public string Table { get; }
-    public string Status { get; }
-    public string Note { get; }
-    public string Reference { get; }
-    public string Source { get; }
-    public string Email { get; }
-    public string PromoCode { get; }
-    public string Allergies { get; }
-    public string SpecialRequests { get; }
-
-    public string DateTimeText => $"{Date:dddd, dd MMMM yyyy} at {TimeText}";
-    public string PhoneDisplay => string.IsNullOrWhiteSpace(Phone) ? "No phone saved" : Phone;
-    public string EmailDisplay => string.IsNullOrWhiteSpace(Email) ? "No email saved" : Email;
-    public string GuestsText => Guests == 1 ? "1 guest" : $"{Guests} guests";
-    public string TableDisplay => Table == "-" ? "Table not assigned" : $"Table {Table}";
-    public string StatusDisplay => $"Status: {Status}";
-    public string ReferenceDisplay => string.IsNullOrWhiteSpace(Reference) ? "No reference" : Reference;
-    public string PromoCodeDisplay => string.IsNullOrWhiteSpace(PromoCode) ? "No promocode" : PromoCode;
-    public string AllergiesDisplay => string.IsNullOrWhiteSpace(Allergies) ? "No allergies or dietary notes" : Allergies;
-    public string SpecialRequestsDisplay => HasSpecialRequests ? SpecialRequests.Trim() : string.Empty;
-    public string SourceDisplay => Source.Trim().ToLowerInvariant() switch
-    {
-        "online" => "Online",
-        "walk_in" or "walkin" or "walk-in" => "Walk-in",
-        "phone" => "Phone",
-        "pos" => "POS",
-        _ => string.IsNullOrWhiteSpace(Source) ? "Booking" : Source
-    };
-    public bool HasNote => !string.IsNullOrWhiteSpace(Note);
-    public bool HasPromoCode => !string.IsNullOrWhiteSpace(PromoCode);
-    public bool HasAllergies => !string.IsNullOrWhiteSpace(Allergies);
-    public bool HasSpecialRequests => !string.IsNullOrWhiteSpace(SpecialRequests)
-                                      && !IsUploadDiagnostic(SpecialRequests);
-    public bool HasAnySpecialInfo => HasAllergies || HasSpecialRequests;
-    public string PromoBadgeText => HasPromoCode ? $"Promo: {PromoCode}" : string.Empty;
-    public string PromoColumnText => HasPromoCode ? PromoCode : "-";
-    public Color PromoColumnTextColor => HasPromoCode ? Color.FromArgb("#1D4ED8") : Color.FromArgb("#94A3B8");
-    public Color StatusBadgeBackground => NormalizedStatus switch
-    {
-        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#DCFCE7"),
-        "no_show" or "noshow" => Color.FromArgb("#FFF1F2"),
-        "cancelled" or "canceled" => Color.FromArgb("#F1F5F9"),
-        _ => Color.FromArgb("#EFF6FF")
-    };
-    public Color StatusBadgeBorder => NormalizedStatus switch
-    {
-        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#86EFAC"),
-        "no_show" or "noshow" => Color.FromArgb("#FECDD3"),
-        "cancelled" or "canceled" => Color.FromArgb("#CBD5E1"),
-        _ => Color.FromArgb("#BFDBFE")
-    };
-    public Color StatusBadgeTextColor => NormalizedStatus switch
-    {
-        "arrived" or "show" or "shown" or "seated" => Color.FromArgb("#047857"),
-        "no_show" or "noshow" => Color.FromArgb("#E11D48"),
-        "cancelled" or "canceled" => Color.FromArgb("#475569"),
-        _ => Color.FromArgb("#1D4ED8")
-    };
-
-    private static bool IsUploadDiagnostic(string value)
-    {
-        var text = value.Trim();
-        return text.StartsWith("Input string was not in a correct format", StringComparison.OrdinalIgnoreCase)
-               || text.StartsWith("HTTP ", StringComparison.OrdinalIgnoreCase)
-               || text.StartsWith("Cloud upload failed", StringComparison.OrdinalIgnoreCase)
-               || text.StartsWith("Invalid cloud response", StringComparison.OrdinalIgnoreCase);
-    }
-
-    public bool IsArrived => NormalizedStatus is "arrived" or "show" or "shown" or "seated";
-    public bool IsNoShow => string.Equals(Status, "No Show", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(Status, "No-show", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(NormalizedStatus, "no_show", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(NormalizedStatus, "noshow", StringComparison.OrdinalIgnoreCase);
-    public bool IsCancelled => string.Equals(Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(Status, "Canceled", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(NormalizedStatus, "cancelled", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(NormalizedStatus, "canceled", StringComparison.OrdinalIgnoreCase);
-    public bool IsFinalAttendance => IsArrived || IsNoShow || IsCancelled;
-    public bool IsShowButtonVisible => !IsNoShow && !IsCancelled;
-    public bool IsNoShowButtonVisible => !IsArrived && !IsCancelled;
-    public bool IsCancelButtonVisible => !IsArrived && !IsNoShow;
-    public bool IsShowButtonEnabled => !IsFinalAttendance;
-    public bool IsNoShowButtonEnabled => !IsFinalAttendance;
-    public bool IsCancelButtonEnabled => !IsFinalAttendance;
-    public string ShowButtonText => IsArrived ? "Shown" : "Show";
-    public string NoShowButtonText => IsNoShow ? "No Show" : "No Show";
-    public string CancelButtonText => IsCancelled ? "Cancelled" : "Cancel";
-    public Color ShowButtonBackground => IsArrived ? Color.FromArgb("#064E3B") : Color.FromArgb("#DCFCE7");
-    public Color ShowButtonBorderColor => IsArrived ? Color.FromArgb("#064E3B") : Color.FromArgb("#86EFAC");
-    public Color ShowButtonTextColor => IsArrived ? Colors.White : Color.FromArgb("#047857");
-    public Color NoShowButtonBackground => IsNoShow ? Color.FromArgb("#7F1D1D") : Color.FromArgb("#FFF1F2");
-    public Color NoShowButtonBorderColor => IsNoShow ? Color.FromArgb("#FCA5A5") : Color.FromArgb("#FECDD3");
-    public Color NoShowButtonTextColor => IsNoShow ? Colors.White : Color.FromArgb("#E11D48");
-    public Color CancelButtonBackground => IsCancelled ? Color.FromArgb("#334155") : Color.FromArgb("#FEF2F2");
-    public Color CancelButtonBorderColor => IsCancelled ? Color.FromArgb("#334155") : Color.FromArgb("#FECACA");
-    public Color CancelButtonTextColor => IsCancelled ? Colors.White : Color.FromArgb("#DC2626");
-    private string NormalizedStatus => Status.Trim().Replace("-", "_").Replace(" ", "_").ToLowerInvariant();
 }

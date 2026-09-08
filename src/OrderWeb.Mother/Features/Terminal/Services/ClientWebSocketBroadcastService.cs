@@ -93,7 +93,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/delivery-zones/lookup", HandleDeliveryZoneLookupAsync);
             app.MapGet("/api/client/delivery-zones/quote", HandleDeliveryZoneQuoteAsync);
             app.MapGet("/api/client/orders", HandleListOrdersAsync);
+            app.MapGet("/api/client/orders/{orderId}", HandleGetOrderAsync);
             app.MapPost("/api/client/orders", HandleUpsertOrderAsync);
+            app.MapPost("/api/client/orders/void", HandleVoidOrderAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
             app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
             app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
@@ -209,6 +211,36 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
     /// <summary>Call after a Mother configuration transaction commits.</summary>
     public Task PublishConfigurationChangedAsync(string section, string? correlationId = null) =>
         PublishDataChangedAsync($"{section.Trim().ToLowerInvariant()}.updated", string.Empty, correlationId);
+
+    /// <summary>
+    /// Phase 4: Client API mutations run inside Mother but must refresh Mother Live Order UI
+    /// as a remote change (source != Mother till name), otherwise DatabaseChangeMonitor skips them.
+    /// </summary>
+    private void NotifyMotherUiOfClientOrderChange(string? orderId, string? orderNumber, string? terminalId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return;
+        }
+
+        var sourceName = string.IsNullOrWhiteSpace(terminalId)
+            ? "Client POS"
+            : $"Client {terminalId.Trim()}";
+
+        try
+        {
+            AppDataRefreshService.RequestRefresh(
+                AppDataRefreshType.Orders | AppDataRefreshType.Tables,
+                sourceTerminalName: sourceName,
+                orderNumber: orderNumber,
+                entityType: "order",
+                entityId: orderId.Trim());
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Mother UI order refresh notify failed: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Revokes a terminal session in Mother storage before notifying that exact
@@ -483,6 +515,68 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
     }
 
+    private async Task HandleGetOrderAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakeOrders))
+        {
+            return;
+        }
+
+        var orderId = context.Request.RouteValues["orderId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "A Mother order id is required."
+            });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.GetOrderAsync(orderId);
+            if (!result.Success || result.Order == null)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    message = result.Message
+                });
+                return;
+            }
+
+            var feature = FeatureForOrderType(result.Order.OrderType) ?? PosFeatureKeys.Collection;
+            if (!await EnsureFeatureAsync(context, session, feature))
+            {
+                return;
+            }
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message,
+                order = result.Order
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order load failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load this Client order."
+            });
+        }
+    }
+
     private async Task HandleUpsertOrderAsync(HttpContext context)
     {
         if (!TryAllowRequest(context, "client-orders", 40, TimeSpan.FromMinutes(1)))
@@ -559,10 +653,24 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     line.Quantity,
                     line.UnitPrice,
                     line.Notes,
-                    line.Modifiers)).ToList()));
-            if (!result.Success || result.Order == null)
+                    line.Modifiers)).ToList(),
+                request.ExpectedVersion,
+                request.ExpectedUpdatedUtc));
+            if (!result.Success)
             {
                 await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    conflict = result.StatusCode == 409 && result.Order != null,
+                    message = result.Message,
+                    order = result.Order
+                });
+                return;
+            }
+
+            if (result.Order == null)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
                 {
                     success = false,
                     message = result.Message
@@ -583,7 +691,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     printRequestId);
             }
 
-            await PublishDataChangedAsync("order.updated", result.Order.Id);
+            // WS order.updated is published from OrderService after persist.
+            NotifyMotherUiOfClientOrderChange(result.Order.Id, result.Order.OrderNumber, session.TerminalId);
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
                 success = true,
@@ -599,6 +708,70 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             {
                 success = false,
                 message = "Mother POS could not save this Client order."
+            });
+        }
+    }
+
+    private async Task HandleVoidOrderAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.VoidOrders, PosCapabilityKeys.VoidItems, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderVoidHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
+            {
+                success = false,
+                message = "A Mother order id is required to void."
+            });
+            return;
+        }
+
+        try
+        {
+            var existing = await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
+            var feature = FeatureForOrderType(existing?.OrderType) ?? PosFeatureKeys.Collection;
+            if (!await EnsureFeatureAsync(context, session, feature))
+            {
+                return;
+            }
+
+            var result = await _operational.VoidOrderAsync(request.OrderId);
+            if (!result.Success || result.Order == null)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+                {
+                    success = false,
+                    message = result.Message
+                });
+                return;
+            }
+
+            NotifyMotherUiOfClientOrderChange(result.Order.Id, result.Order.OrderNumber, session.TerminalId);
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message,
+                order = result.Order
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order void failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not void this Client order."
             });
         }
     }
@@ -1308,7 +1481,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         await WriteJsonAsync(context, HttpStatusCode.OK, new { success = true, payment = result.Value });
         await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_payment", "approved");
-        await PublishDataChangedAsync("order.updated", request.OrderId);
+        // WS order.updated is published from OrderService after payment persist.
+        NotifyMotherUiOfClientOrderChange(request.OrderId, null, session.TerminalId);
     }
 
     private async Task HandlePaymentStatusAsync(HttpContext context)
@@ -3108,10 +3282,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string? TableNumber,
         int Guests,
         IReadOnlyList<ClientOrderLineHttpRequest>? Lines,
+        int? ExpectedVersion = null,
+        string? ExpectedUpdatedUtc = null,
         bool PrintKitchen = false,
         bool PrintReceipt = false,
         IReadOnlyList<string>? PrintDocuments = null,
         string? PrintRequestId = null);
+
+    private sealed record ClientOrderVoidHttpRequest(string? OrderId);
 
     private sealed record ClientOrderLineHttpRequest(
         string? Id,

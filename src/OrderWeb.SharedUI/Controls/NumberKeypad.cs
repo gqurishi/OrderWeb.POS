@@ -32,7 +32,7 @@ public class NumberKeypad : ContentView
 
         if (ShowActions) AddAction(grid, "Clear", 3, 0, false);
         AddKey(grid, "0", 3, 1);
-        if (ShowActions) AddAction(grid, "⌫", 3, 2, true);
+        if (ShowActions) AddAction(grid, "X", 3, 2, true);
         Content = grid;
     }
 
@@ -56,7 +56,9 @@ public class NumberKeypad : ContentView
     private void AddAction(Grid grid, string text, int row, int column, bool backspace)
     {
         var button = NewButton(text);
-        button.FontSize = KeySize >= 90 ? 18 : 14;
+        button.FontSize = backspace
+            ? (KeySize >= 90 ? 32 : 22)
+            : (KeySize >= 90 ? 18 : 14);
         if (backspace) button.Use(Button.TextColorProperty, "OwError");
         button.Clicked += (_, _) =>
         {

@@ -11,9 +11,12 @@ public partial class LiveOrderPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
     private readonly MotherOrderClient _orderClient = new();
+    private readonly ClientOfflinePolicy _offlinePolicy = new();
     private readonly IDispatcherTimer _clockTimer;
     private string _selectedFilter = "All";
     private IReadOnlyList<LiveOrderCardModel> _allCards = Array.Empty<LiveOrderCardModel>();
+    private bool _isVisible;
+    private bool _refreshInFlight;
 
     public LiveOrderPage()
     {
@@ -32,26 +35,56 @@ public partial class LiveOrderPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        _isVisible = true;
+        MotherEventClient.SharedAuthoritativeDataChanged += OnMotherDataChanged;
+        _clockTimer.Start();
         await RefreshOrdersAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _isVisible = false;
+        MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherDataChanged;
         _clockTimer.Stop();
+    }
+
+    private async void OnMotherDataChanged(object? sender, MotherDataChangedEventArgs e)
+    {
+        if (!_isVisible ||
+            string.IsNullOrWhiteSpace(e.EventType) ||
+            !e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await MainThread.InvokeOnMainThreadAsync(() => RefreshOrdersAsync());
     }
 
     private async Task RefreshOrdersAsync()
     {
-        var motherOrders = await _orderClient.GetOpenOrdersAsync();
-        if (motherOrders != null)
+        if (_refreshInFlight)
         {
-            await _cache.ReplaceOperationalOrdersAsync(motherOrders);
+            return;
         }
 
-        var openOrders = await _cache.GetOpenOrderStatesAsync();
-        _allCards = BuildLiveOrderCards(openOrders);
-        RenderCards();
+        _refreshInFlight = true;
+        try
+        {
+            var motherOrders = await _orderClient.GetOpenOrdersAsync();
+            if (motherOrders != null)
+            {
+                await _cache.ReplaceOperationalOrdersAsync(motherOrders);
+            }
+
+            var openOrders = await _cache.GetOpenOrderStatesAsync();
+            _allCards = BuildLiveOrderCards(openOrders);
+            RenderCards();
+        }
+        finally
+        {
+            _refreshInFlight = false;
+        }
     }
 
     private void RenderCards()
@@ -91,6 +124,7 @@ public partial class LiveOrderPage : ContentPage
             cards.Add(new LiveOrderCardModel(
                 Type: type,
                 Title: type,
+                OrderId: order.OrderId,
                 OrderNumber: FormatLiveOrderNumber(order.OrderNumber, order.OrderId),
                 Subtitle: subtitle,
                 Total: order.Total,
@@ -174,9 +208,36 @@ public partial class LiveOrderPage : ContentPage
         };
 
         var tap = new TapGestureRecognizer();
-        tap.Tapped += async (_, _) => await DisplayAlert(card.OrderNumber, card.Details, "OK");
+        tap.Tapped += async (_, _) => await OpenLiveOrderCardAsync(card);
         border.GestureRecognizers.Add(tap);
         return border;
+    }
+
+    private async Task OpenLiveOrderCardAsync(LiveOrderCardModel card)
+    {
+        if (card.Type is "Collection" or "Delivery" or "Table")
+        {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.OpenCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                await DisplayAlert($"Open {card.Type} blocked", decision.Message, "OK");
+                return;
+            }
+
+            try
+            {
+                var result = await _orderClient.OpenOrderForEditAsync(card.OrderId);
+                await Navigation.PushAsync(new OrderPage(result.State), false);
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert($"Open {card.Type} failed", ex.Message, "OK");
+            }
+
+            return;
+        }
+
+        await DisplayAlert(card.OrderNumber, card.Details, "OK");
     }
 
     private void ApplyFilterButtonStyles()
@@ -232,6 +293,12 @@ public partial class LiveOrderPage : ContentPage
     private async Task SelectSidebarItemAsync(string label)
     {
         await CloseSidebarAsync();
+        if (string.Equals(label, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
         if (label == "Live Order" || !ClientHostAccess.CanOpenMenu(label))
         {
             return;
@@ -239,7 +306,6 @@ public partial class LiveOrderPage : ContentPage
 
         await Navigation.PushAsync(label switch
         {
-            "Dashboard" => new Pages.Dashboards.ManagerDashboardPage(),
             "Cash Drawer" => new CashDrawerPage(),
             "Restaurant" => new TableLayoutPage(),
             "Collection" => new CollectionOrderPage(),
@@ -302,6 +368,7 @@ public partial class LiveOrderPage : ContentPage
     private sealed record LiveOrderCardModel(
         string Type,
         string Title,
+        string OrderId,
         string OrderNumber,
         string Subtitle,
         decimal Total,

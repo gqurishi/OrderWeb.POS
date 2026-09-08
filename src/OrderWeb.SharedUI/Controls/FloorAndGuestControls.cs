@@ -1,4 +1,5 @@
 using OrderWeb.Contracts.Dtos;
+using Microsoft.Maui.Controls.Shapes;
 
 namespace OrderWeb.SharedUI.Controls;
 
@@ -52,55 +53,215 @@ public class FloorSelector : ContentView
     }
 }
 
+/// <summary>
+/// Mother-style "How many guests?" picker: 1–12 grid, Other number + Go, red X close.
+/// Tapping a cover count confirms immediately (same as Mother VisualTablePage).
+/// </summary>
 public class GuestCountControl : ContentView
 {
-    private readonly Label _value;
+    private readonly Label _titleLabel;
+    private readonly Entry _otherEntry;
+    private int _pendingCustom;
 
-    public static readonly BindableProperty CountProperty = BindableProperty.Create(
-        nameof(Count), typeof(int), typeof(GuestCountControl), 2, BindingMode.TwoWay,
-        propertyChanged: (b, _, v) => ((GuestCountControl)b)._value.Text = v?.ToString() ?? "0");
-
-    public static readonly BindableProperty MinimumProperty = BindableProperty.Create(nameof(Minimum), typeof(int), typeof(GuestCountControl), 1);
-    public static readonly BindableProperty MaximumProperty = BindableProperty.Create(nameof(Maximum), typeof(int), typeof(GuestCountControl), 99);
+    public static readonly BindableProperty TableTitleProperty = BindableProperty.Create(
+        nameof(TableTitle), typeof(string), typeof(GuestCountControl), "Table",
+        propertyChanged: (b, _, v) => ((GuestCountControl)b)._titleLabel.Text = v?.ToString() ?? "Table");
 
     public GuestCountControl()
     {
-        var minus = new SharedButton { Text = "−", WidthRequest = 56, HeightRequest = 48, Variant = ButtonVariant.Secondary };
-        var plus = new SharedButton { Text = "+", WidthRequest = 56, HeightRequest = 48 };
-        _value = new Label
+        _titleLabel = new Label
         {
-            Text = "2",
-            FontSize = 28,
-            FontAttributes = FontAttributes.Bold,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
-            WidthRequest = 64
+            Text = "Table",
+            FontSize = 20,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb("#1F2937")
         };
-        _value.Use(Label.TextColorProperty, "OwTextPrimary");
-        minus.Clicked += (_, _) => { if (Count > Minimum) Count--; };
-        plus.Clicked += (_, _) => { if (Count < Maximum) Count++; };
 
-        var title = new Label { Text = "How many guests?", FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center };
-        title.Use(Label.TextColorProperty, "OwTextStrong");
-
-        Content = new VerticalStackLayout
+        var close = new Border
         {
-            Spacing = 12,
-            HorizontalOptions = LayoutOptions.Center,
+            BackgroundColor = Color.FromArgb("#FEE2E2"),
+            StrokeThickness = 0,
+            WidthRequest = 36,
+            HeightRequest = 36,
+            StrokeShape = new RoundRectangle { CornerRadius = 18 },
+            Content = new Label
+            {
+                Text = "X",
+                FontSize = 16,
+                FontFamily = "OpenSansSemibold",
+                TextColor = Color.FromArgb("#DC2626"),
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center
+            }
+        };
+        var closeTap = new TapGestureRecognizer();
+        closeTap.Tapped += (_, _) => Cancelled?.Invoke(this, EventArgs.Empty);
+        close.GestureRecognizers.Add(closeTap);
+
+        var header = new Grid
+        {
+            Padding = new Thickness(24, 20),
+            BackgroundColor = Color.FromArgb("#F9FAFB"),
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
             Children =
             {
-                title,
-                new HorizontalStackLayout
+                new VerticalStackLayout
                 {
-                    Spacing = 12,
-                    HorizontalOptions = LayoutOptions.Center,
-                    Children = { minus, _value, plus }
-                }
+                    Spacing = 4,
+                    Children =
+                    {
+                        _titleLabel,
+                        new Label
+                        {
+                            Text = "How many guests?",
+                            FontSize = 14,
+                            FontFamily = "OpenSansRegular",
+                            TextColor = Color.FromArgb("#6B7280")
+                        }
+                    }
+                },
+                close
+            }
+        };
+        Grid.SetColumn(close, 1);
+
+        var numbers = new Grid
+        {
+            Padding = 20,
+            ColumnSpacing = 10,
+            RowSpacing = 10,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Star)
+            },
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto)
+            }
+        };
+
+        for (var i = 1; i <= 12; i++)
+        {
+            var covers = i;
+            var button = new Button
+            {
+                Text = i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                FontSize = 18,
+                FontFamily = "OpenSansSemibold",
+                BackgroundColor = Color.FromArgb("#F3F4F6"),
+                TextColor = Color.FromArgb("#1F2937"),
+                CornerRadius = 10,
+                HeightRequest = 56,
+                Padding = 0
+            };
+            button.Clicked += (_, _) => CoverConfirmed?.Invoke(this, covers);
+            numbers.Add(button, (i - 1) % 4, (i - 1) / 4);
+        }
+
+        _otherEntry = new Entry
+        {
+            Placeholder = "Other number...",
+            FontSize = 15,
+            FontFamily = "OpenSansRegular",
+            BackgroundColor = Colors.White,
+            Keyboard = Keyboard.Numeric,
+            HeightRequest = 48,
+            TextColor = Color.FromArgb("#1F2937"),
+            PlaceholderColor = Color.FromArgb("#9CA3AF")
+        };
+
+        var go = new Button
+        {
+            Text = "Go",
+            FontSize = 14,
+            FontFamily = "OpenSansSemibold",
+            BackgroundColor = Color.FromArgb("#3B82F6"),
+            TextColor = Colors.White,
+            CornerRadius = 8,
+            WidthRequest = 72,
+            HeightRequest = 48,
+            Padding = new Thickness(20, 12)
+        };
+        go.Clicked += (_, _) =>
+        {
+            var text = _otherEntry.Text?.Trim();
+            if (int.TryParse(text, out var covers) && covers > 0)
+            {
+                CoverConfirmed?.Invoke(this, covers);
+                return;
+            }
+
+            if (_pendingCustom > 0)
+            {
+                CoverConfirmed?.Invoke(this, _pendingCustom);
+            }
+        };
+
+        var otherHost = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#D1D5DB"),
+            StrokeThickness = 1,
+            Padding = new Thickness(12, 0),
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Content = _otherEntry
+        };
+
+        var footer = new Border
+        {
+            BackgroundColor = Color.FromArgb("#F9FAFB"),
+            StrokeThickness = 0,
+            Padding = new Thickness(20, 16),
+            Content = new Grid
+            {
+                ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+                ColumnSpacing = 12,
+                Children = { otherHost, go }
+            }
+        };
+        Grid.SetColumn(go, 1);
+
+        Content = new Border
+        {
+            WidthRequest = 380,
+            BackgroundColor = Colors.White,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Shadow = new Shadow
+            {
+                Brush = Brush.Black,
+                Offset = new Point(0, 8),
+                Radius = 24,
+                Opacity = 0.25f
+            },
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            Content = new VerticalStackLayout
+            {
+                Spacing = 0,
+                Children = { header, numbers, footer }
             }
         };
     }
 
-    public int Count { get => (int)GetValue(CountProperty); set => SetValue(CountProperty, value); }
-    public int Minimum { get => (int)GetValue(MinimumProperty); set => SetValue(MinimumProperty, value); }
-    public int Maximum { get => (int)GetValue(MaximumProperty); set => SetValue(MaximumProperty, value); }
+    public event EventHandler<int>? CoverConfirmed;
+    public event EventHandler? Cancelled;
+
+    public string TableTitle
+    {
+        get => (string)GetValue(TableTitleProperty);
+        set => SetValue(TableTitleProperty, value);
+    }
+
+    public void ResetCustomEntry()
+    {
+        _pendingCustom = 0;
+        _otherEntry.Text = string.Empty;
+        _otherEntry.Placeholder = "Other number...";
+    }
 }

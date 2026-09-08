@@ -57,6 +57,8 @@ public partial class MainPage : ContentPage
     private readonly MotherHeartbeatClient _motherHeartbeat;
     private readonly MotherLayoutClient _layoutClient;
     private readonly MotherMenuClient _menuClient;
+    private ClientAuthenticationService? _sharedLoginAuth;
+    private LoginViewModel? _sharedLoginViewModel;
     private IReadOnlyList<CachedFloor> _cachedFloors = Array.Empty<CachedFloor>();
     private CachedFloor? _selectedCachedFloor;
     private CachedTable? _selectedCachedTable;
@@ -67,6 +69,7 @@ public partial class MainPage : ContentPage
     private MotherOrderState? _currentOrder;
     private CacheStatus? _cacheStatus;
     private int _guests = 4;
+    private string? _pendingCustomerOrderId;
     private string _pin = string.Empty;
     private string? _loginStatusMessage;
     private bool _loginMotherUnreachable;
@@ -81,6 +84,9 @@ public partial class MainPage : ContentPage
     private string _terminalDisabledReason = "This Client POS has been disabled by the Mother POS.";
     private bool _posSidebarOpen;
     private string _posSelectedMenu = "Dashboard";
+    private string _liveOrderFilter = "All";
+    private bool _isViewingOrderScreen;
+    private bool _openOrderLiveReloadInFlight;
     private VisualElement? _posSidebarView;
     private Grid? _posSidebarOverlay;
     private Entry? _motherIpEntry;
@@ -93,6 +99,7 @@ public partial class MainPage : ContentPage
     private readonly IDispatcherTimer _clockTimer;
     private ApplicationShellFrame? _activeApplicationFrame;
     private DashboardViewModel? _sharedDashboardViewModel;
+    private RestaurantTablesView? _restaurantTablesView;
     private readonly Label[] _cashierSummaryLabels = new Label[8];
     private Label? _cashierDataStatusLabel;
     private MotherCashierClient? _cashierClient;
@@ -430,11 +437,63 @@ public partial class MainPage : ContentPage
         // from Mother instead of merging event payloads into the Client cache.
         await RefreshAuthoritativeClientCacheAsync();
         _cacheStatus = await _cache.GetStatusAsync();
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        await MainThread.InvokeOnMainThreadAsync(async () =>
         {
             _connectionStatus = "Updates available";
+
+            if (IsOrderUpdatedEvent(e) &&
+                _isViewingOrderScreen &&
+                _currentOrder is not null &&
+                (string.IsNullOrWhiteSpace(e.Version) ||
+                 string.Equals(e.Version.Trim(), _currentOrder.OrderId, StringComparison.OrdinalIgnoreCase)))
+            {
+                await ReloadOpenOrderFromMotherLiveAsync();
+                return;
+            }
+
             RefreshCurrentPosPage();
         });
+    }
+
+    private static bool IsOrderUpdatedEvent(MotherDataChangedEventArgs e) =>
+        !string.IsNullOrWhiteSpace(e.EventType) &&
+        e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase);
+
+    private async Task ReloadOpenOrderFromMotherLiveAsync()
+    {
+        if (_currentOrder is null || _openOrderLiveReloadInFlight)
+        {
+            return;
+        }
+
+        _openOrderLiveReloadInFlight = true;
+        try
+        {
+            var previousVersion = _currentOrder.Version;
+            var previousUpdated = _currentOrder.UpdatedUtc;
+            var opened = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
+            var changedElsewhere =
+                opened.State.Version != previousVersion ||
+                !string.Equals(opened.State.UpdatedUtc, previousUpdated, StringComparison.Ordinal);
+            await ApplyMotherOrderResultAsync(opened);
+            if (changedElsewhere)
+            {
+                ShowToast("Order updated from another terminal");
+            }
+
+            ShowOrder();
+        }
+        catch
+        {
+            ShowToast("Order changed on Mother — returning to Live Order");
+            _currentOrder = null;
+            _isViewingOrderScreen = false;
+            ShowLiveOrders(_liveOrderFilter);
+        }
+        finally
+        {
+            _openOrderLiveReloadInFlight = false;
+        }
     }
 
     private void OnMotherConnectionChanged(object? sender, MotherConnectionChangedEventArgs e)
@@ -973,147 +1032,88 @@ public partial class MainPage : ContentPage
             _loginMotherUnreachable = false;
             _adminBlockedVisible = false;
         }
+
         Root.Children.Clear();
-        Root.BackgroundColor = Color.FromArgb(PageBackground);
+        Root.BackgroundColor = Colors.White;
+        _useLoginClockFormat = false;
+        _timeLabel = null;
+        _dateLabel = null;
+        _statusLabel = null;
 
-        var layout = new Grid
-        {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star)
-            }
-        };
+        EnsureSharedLoginWired();
+        _sharedLoginViewModel!.SetRestaurantName(CurrentRestaurantName());
 
-        var left = new Grid
-        {
-            BackgroundColor = Color.FromArgb("#F8F9FA"),
-            Padding = new Thickness(48, 40),
-            Children =
-            {
-                new VerticalStackLayout
-                {
-                    Spacing = 58,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center,
-                    Children =
-                    {
-                        new Label { Text = "POS", FontSize = 58, FontFamily = "OpenSansRegular", TextColor = Color.FromArgb(PrimaryAction), HorizontalTextAlignment = TextAlignment.Center },
-                        new VerticalStackLayout
-                        {
-                            Spacing = 10,
-                            Margin = new Thickness(0, 20, 0, 0),
-                            HorizontalOptions = LayoutOptions.Center,
-                            Children =
-                            {
-                                new Label { Text = "Welcome Back!", FontSize = 32, FontFamily = "OpenSansBold", TextColor = Color.FromArgb(MainText), HorizontalTextAlignment = TextAlignment.Center },
-                                new Label { Text = CurrentRestaurantName(), FontSize = 24, FontFamily = "OpenSansBold", TextColor = Color.FromArgb(MainText), Opacity = 0.72, HorizontalTextAlignment = TextAlignment.Center, MaximumWidthRequest = 300 }
-                            }
-                        }
-                    }
-                }
-            }
-        };
+        // Same shared LoginView Mother uses (colors, keypad, clock, Clock In/Out).
+        Root.Children.Add(new LoginView { ViewModel = _sharedLoginViewModel });
 
-        var rightStack = new VerticalStackLayout
-        {
-            Spacing = 46,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            MaximumWidthRequest = 430
-        };
-
-        var pinHeader = new VerticalStackLayout
-        {
-            Spacing = 28,
-            HorizontalOptions = LayoutOptions.Center
-        };
-        pinHeader.Children.Add(new Label
-        {
-            Text = "Enter your PIN or swipe employee card",
-            FontSize = 18,
-            FontFamily = "OpenSansRegular",
-            TextColor = Color.FromArgb(SecondaryText),
-            HorizontalTextAlignment = TextAlignment.Center
-        });
-        pinHeader.Children.Add(BuildPinDots());
-        _statusLabel = new Label
-        {
-            IsVisible = !string.IsNullOrWhiteSpace(_loginStatusMessage),
-            Text = _loginStatusMessage ?? string.Empty,
-            FontSize = 15,
-            FontFamily = "OpenSansSemibold",
-            TextColor = Color.FromArgb(Danger),
-            HorizontalTextAlignment = TextAlignment.Center,
-            LineBreakMode = LineBreakMode.WordWrap,
-            MaximumWidthRequest = 340
-        };
-        pinHeader.Children.Add(_statusLabel);
-        if (_loginMotherUnreachable)
-        {
-            pinHeader.Children.Add(OutlineButton("Can't connect / Change Mother", (_, _) => OpenMotherReconnectFromLogin()));
-        }
-        rightStack.Children.Add(pinHeader);
-        rightStack.Children.Add(new VerticalStackLayout
-        {
-            Spacing = 36,
-            HorizontalOptions = LayoutOptions.Center,
-            Children =
-            {
-                BuildKeypad(),
-                LoginClockButton(),
-                ChangeMotherLinkButton()
-            }
-        });
-
-        var loginScroll = new ScrollView
-        {
-            Content = rightStack,
-            VerticalOptions = LayoutOptions.Center,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Never
-        };
-
-        var right = new Grid
-        {
-            BackgroundColor = Color.FromArgb(PageBackground),
-            Padding = new Thickness(44, 34),
-            Children =
-            {
-                loginScroll,
-                LoginClock()
-            }
-        };
-
-        layout.Children.Add(left);
-        layout.Children.Add(right);
-        SetColumn(layout.Children[1], 1);
-
-        var minimizeButton = new Button
-        {
-            Text = "-",
-            WidthRequest = 44,
-            HeightRequest = 44,
-            Padding = 0,
-            CornerRadius = 0,
-            BackgroundColor = Colors.Transparent,
-            BorderColor = Colors.Transparent,
-            BorderWidth = 0,
-            TextColor = Color.FromArgb("#111827"),
-            FontSize = 24,
-            FontFamily = "OpenSansBold",
-            HorizontalOptions = LayoutOptions.End,
-            VerticalOptions = LayoutOptions.Start,
-            Margin = new Thickness(0, 14, 18, 0),
-            ZIndex = 10
-        };
-        minimizeButton.Clicked += (_, _) => ClientWindowService.MinimizeMainWindow();
-        layout.Children.Add(minimizeButton);
-        Grid.SetColumnSpan(minimizeButton, 2);
-
-        Root.Children.Add(layout);
         if (_adminBlockedVisible)
         {
             Root.Children.Add(BuildAdminBlockedOverlay());
+        }
+    }
+
+    private void EnsureSharedLoginWired()
+    {
+        if (_sharedLoginAuth is null)
+        {
+            _sharedLoginAuth = new ClientAuthenticationService(
+                _authClient,
+                () => !IsMotherUnavailable());
+        }
+
+        if (_sharedLoginViewModel is not null)
+        {
+            return;
+        }
+
+        _sharedLoginViewModel = new LoginViewModel(_sharedLoginAuth);
+        _sharedLoginViewModel.LoginSucceeded += OnSharedLoginSucceeded;
+        _sharedLoginViewModel.ClockInOutRequested += (_, _) => ShowClockTimeModal();
+        _sharedLoginViewModel.MinimizeRequested += (_, _) => ClientWindowService.MinimizeMainWindow();
+    }
+
+    private async void OnSharedLoginSucceeded(object? sender, UserSession session)
+    {
+        try
+        {
+            var login = _sharedLoginAuth?.LastSuccessfulLogin;
+            if (login is null)
+            {
+                login = new LoginSession(
+                    session.User.UserId,
+                    session.User.DisplayName,
+                    session.User.Role,
+                    session.User.Permissions.ToList(),
+                    session.SessionId,
+                    session.ExpiresAtUtc);
+            }
+
+            if (string.Equals(login.Role, "Cashier", StringComparison.OrdinalIgnoreCase) && IsMotherUnavailable())
+            {
+                ShowLogin();
+                return;
+            }
+
+            await _cache.SaveLoginSessionAsync(login);
+            ClientHostAccess.ApplyFromSession(login);
+            _currentSession = login;
+            _pin = string.Empty;
+            _loginStatusMessage = null;
+            _loginMotherUnreachable = false;
+            _ = RefreshMotherOperationalCacheAsync();
+
+            if (string.Equals(login.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowCashierDashboard();
+                return;
+            }
+
+            ShowDashboard();
+        }
+        catch (Exception ex)
+        {
+            _loginStatusMessage = ex.Message;
+            ShowLogin(false);
         }
     }
 
@@ -1608,6 +1608,7 @@ public partial class MainPage : ContentPage
         }
 
         _posSelectedMenu = "Dashboard";
+        _isViewingOrderScreen = false;
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
         if (IsMotherOnlyRole(_currentSession?.Role))
@@ -1639,7 +1640,7 @@ public partial class MainPage : ContentPage
         var viewModel = new DashboardViewModel
         {
             Title = DashboardTitle(),
-            Subtitle = session?.UserName is { Length: > 0 } name ? $"Welcome, {name}" : (IsManagerRole() ? "Welcome, manager" : "Welcome"),
+            Subtitle = string.Empty,
             IsOffline = IsMotherUnavailable()
         };
         viewModel.TileSelected += (_, tile) => NavigateFromSharedDashboard(tile.Route);
@@ -1675,7 +1676,7 @@ public partial class MainPage : ContentPage
         IReadOnlySet<string> routes)
     {
         viewModel.IsOffline = IsMotherUnavailable();
-        viewModel.ApplyCapabilities(capabilities, ClientHostAccess.Features, routes);
+        viewModel.ApplyCapabilities(capabilities, ClientHostAccess.FeaturesForRole(_currentSession?.Role), routes);
     }
 
     private bool IsMotherUnavailable() => _connectionStatus.Contains("offline", StringComparison.OrdinalIgnoreCase) ||
@@ -1855,6 +1856,13 @@ public partial class MainPage : ContentPage
 
     private async void OpenManagerToolPage(ContentPage page)
     {
+        // Mother Collection/Delivery temporary routes slide in from the side.
+        if (page is Pages.Orders.CollectionOrderPage or Pages.Orders.DeliveryOrderPage)
+        {
+            await ClientSideNavigation.PushFromSideAsync(Navigation, page);
+            return;
+        }
+
         await Navigation.PushAsync(page, false);
     }
 
@@ -2044,17 +2052,24 @@ public partial class MainPage : ContentPage
             case "Restaurant":
                 ShowRestaurantLayout();
                 break;
-            case "Cash Drawer":
-                OpenManagerToolPage(new CashDrawerPage());
-                break;
             case "Live Order":
-                ShowLiveOrders();
+                // Keep an open order on screen; list refresh must not wipe mid-edit.
+                if (_isViewingOrderScreen && _currentOrder is not null)
+                {
+                    break;
+                }
+
+                ShowLiveOrders(_liveOrderFilter);
                 break;
             case "Collection":
-                OpenManagerToolPage(new Pages.Orders.CollectionOrderPage());
-                break;
             case "Delivery":
-                OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage());
+            case "Cash Drawer":
+            case "Gift Cards":
+            case "Loyalty Points":
+            case "Reservation":
+            case "Order History":
+                // Pushed tool / customer-form pages must stay put on Mother sync.
+                // Re-opening them restarts the side-slide and clears in-progress input.
                 break;
             default:
                 ShowDashboard();
@@ -2487,6 +2502,7 @@ public partial class MainPage : ContentPage
     private async void ShowRestaurantLayout()
     {
         _posSelectedMenu = "Restaurant";
+        _isViewingOrderScreen = false;
         await LoadSharedRestaurantLayoutAsync(null);
     }
 
@@ -2497,6 +2513,7 @@ public partial class MainPage : ContentPage
             ConnectionStatus = _connectionStatus,
             IsLoading = true
         };
+        _restaurantTablesView = tablesView;
         tablesView.FloorSelected += (_, floorId) =>
         {
             _selectedCachedFloor = _cachedFloors.FirstOrDefault(floor => string.Equals(floor.Id.ToString(), floorId, StringComparison.OrdinalIgnoreCase));
@@ -2563,6 +2580,7 @@ public partial class MainPage : ContentPage
             }
 
             await _cache.ReplaceLayoutAsync(new FloorSnapshotDto(layout.Version, layout.Floors), new TableSnapshotDto(layout.Version, layout.Tables));
+            _cachedFloors = await _cache.GetFloorsWithTablesAsync();
         }
         catch
         {
@@ -2588,38 +2606,27 @@ public partial class MainPage : ContentPage
     private void ShowSharedGuestDialog(CachedTable table)
     {
         if (_activeApplicationFrame is not { } frame) return;
-        var guests = new GuestCountControl { Count = Math.Clamp(table.Covers > 0 ? table.Covers : 2, 1, Math.Max(table.Seats, 1)) };
-        var cancel = new SharedButton { Text = "Cancel", Variant = ButtonVariant.Secondary };
-        var confirm = new SharedButton { Text = "Open table" };
-        cancel.Clicked += (_, _) => frame.DialogContent = null;
-        confirm.Clicked += async (_, _) =>
+
+        _restaurantTablesView?.SetHighlightedTable(table.Id.ToString());
+
+        var picker = new GuestCountControl
         {
+            TableTitle = $"Table {table.TableNumber}"
+        };
+        picker.ResetCustomEntry();
+        picker.Cancelled += (_, _) =>
+        {
+            _restaurantTablesView?.ClearHighlightedTable();
             frame.DialogContent = null;
-            await OpenTableOrderAsync(table, guests.Count);
         };
-        var actions = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 12 };
-        actions.Add(cancel);
-        actions.Add(confirm, 1);
-        var panel = new Border
+        picker.CoverConfirmed += async (_, covers) =>
         {
-            WidthRequest = 380,
-            Padding = 24,
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 18 },
-            Content = new VerticalStackLayout
-            {
-                Spacing = 16,
-                Children =
-                {
-                    new Label { Text = $"Table {table.TableNumber}", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center },
-                    guests,
-                    actions
-                }
-            }
+            _restaurantTablesView?.ClearHighlightedTable();
+            frame.DialogContent = null;
+            await OpenTableOrderAsync(table, covers);
         };
-        panel.SetDynamicResource(Border.BackgroundColorProperty, "OwSurface");
-        panel.SetDynamicResource(Border.StrokeProperty, "OwBorder");
-        frame.DialogContent = panel;
+
+        frame.DialogContent = picker;
     }
 
     private async Task LoadRestaurantLayoutAsync(int? floorId)
@@ -3161,14 +3168,32 @@ public partial class MainPage : ContentPage
 
     private async Task OpenTableOrderAsync(CachedTable table, int covers)
     {
+        var decision = _offlinePolicy.Evaluate(
+            ClientOperation.OpenCollectionOrder,
+            await _offlinePolicy.IsMotherOnlineAsync());
+        if (!decision.Allowed)
+        {
+            ShowToast(decision.Message);
+            return;
+        }
+
         _selectedCachedTable = table;
         _guests = Math.Max(covers, 1);
         _connectionStatus = "Syncing";
-        var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
-        await ApplyMotherOrderResultAsync(result);
-        await LoadOrderMenuAsync();
-        _connectionStatus = "Connected";
-        ShowOrder();
+        try
+        {
+            var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
+            await ApplyMotherOrderResultAsync(result);
+            await LoadOrderMenuAsync();
+            await RefreshRestaurantLayoutCacheAsync();
+            _connectionStatus = "Connected";
+            ShowOrder();
+        }
+        catch (Exception ex)
+        {
+            _connectionStatus = "Connected";
+            ShowToast(ex.Message);
+        }
     }
 
     private async Task ApplyMotherOrderResultAsync(MotherCommandResult result)
@@ -3177,8 +3202,10 @@ public partial class MainPage : ContentPage
         await _cache.SaveOrderStateAsync(result.State);
         if (result.ConflictDetected)
         {
-            _connectionStatus = "Syncing";
-            ShowToast(result.Message);
+            _connectionStatus = "Connected";
+            ShowToast(string.IsNullOrWhiteSpace(result.Message)
+                ? "Order updated elsewhere — reload"
+                : result.Message);
         }
     }
 
@@ -3195,6 +3222,7 @@ public partial class MainPage : ContentPage
 
     private void ShowOrder()
     {
+        _isViewingOrderScreen = true;
         Root.Children.Clear();
         Root.Children.Add(AppFrame(OrderScreenTitle(), OrderContent(), false));
     }
@@ -3411,12 +3439,25 @@ public partial class MainPage : ContentPage
     private async Task AddProductToOrderAsync(CachedProduct product, IReadOnlyList<string> selectedModifiers)
     {
         if (_currentOrder is null) return;
+        if (IsCustomerHubOrderType(_currentOrder.OrderType))
+        {
+            var decision = _offlinePolicy.Evaluate(ClientOperation.EditCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                ShowToast(decision.Message);
+                return;
+            }
+        }
+
         _connectionStatus = "Syncing";
         var result = await _orderClient.AddItemAsync(_currentOrder, product, selectedModifiers);
         await ApplyMotherOrderResultAsync(result);
         _connectionStatus = "Connected";
         ShowOrder();
     }
+
+    private static bool IsCustomerHubOrderType(string? orderType) =>
+        OrderWeb.Contracts.Access.CustomerOrderHubRules.IsCustomerHubOrderType(orderType);
 
     private View OrderSummary()
     {
@@ -3674,6 +3715,11 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!await EnsureCollectionMutationAllowedAsync(ClientOperation.EditCollectionOrder))
+        {
+            return;
+        }
+
         _connectionStatus = "Syncing";
         var result = await _orderClient.UpdateQuantityAsync(_currentOrder, line, quantity);
         await ApplyMotherOrderResultAsync(result);
@@ -3688,11 +3734,33 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (!await EnsureCollectionMutationAllowedAsync(ClientOperation.EditCollectionOrder))
+        {
+            return;
+        }
+
         _connectionStatus = "Syncing";
         var result = await _orderClient.RemoveItemAsync(_currentOrder, line);
         await ApplyMotherOrderResultAsync(result);
         _connectionStatus = "Connected";
         ShowOrder();
+    }
+
+    private async Task<bool> EnsureCollectionMutationAllowedAsync(ClientOperation operation)
+    {
+        if (_currentOrder is null || !IsCustomerHubOrderType(_currentOrder.OrderType))
+        {
+            return true;
+        }
+
+        var decision = _offlinePolicy.Evaluate(operation, await _offlinePolicy.IsMotherOnlineAsync());
+        if (!decision.Allowed)
+        {
+            ShowToast(decision.Message);
+            return false;
+        }
+
+        return true;
     }
 
     private async Task AddNoteToFirstLineAsync()
@@ -3707,6 +3775,11 @@ public partial class MainPage : ContentPage
         PresentOrderDialog(dialog, async () =>
         {
             if (string.IsNullOrWhiteSpace(dialog.Note)) return;
+            if (!await EnsureCollectionMutationAllowedAsync(ClientOperation.EditCollectionOrder))
+            {
+                return;
+            }
+
             _connectionStatus = "Syncing";
             var result = await _orderClient.AddNoteAsync(_currentOrder, line, dialog.Note.Trim());
             await ApplyMotherOrderResultAsync(result);
@@ -3720,6 +3793,18 @@ public partial class MainPage : ContentPage
         if (_currentOrder == null)
         {
             return;
+        }
+
+        if (IsCustomerHubOrderType(_currentOrder.OrderType))
+        {
+            var decision = _offlinePolicy.Evaluate(
+                ClientOperation.PrintCollectionOrder,
+                await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                ShowToast(decision.Message);
+                return;
+            }
         }
 
         _connectionStatus = "Syncing";
@@ -3790,12 +3875,42 @@ public partial class MainPage : ContentPage
         });
     }
 
-    private void ShowVoidOrderDialog()
+    private async void ShowVoidOrderDialog()
     {
         if (_currentOrder is null) { ShowToast("There is no open order to void."); return; }
         var dialog = new VoidOrderConfirmationDialog();
         PresentOrderDialog(dialog, async () =>
         {
+            if (IsCustomerHubOrderType(_currentOrder.OrderType))
+            {
+                var decision = _offlinePolicy.Evaluate(
+                    ClientOperation.VoidCollectionOrder,
+                    await _offlinePolicy.IsMotherOnlineAsync());
+                if (!decision.Allowed)
+                {
+                    ShowToast(decision.Message);
+                    return;
+                }
+
+                try
+                {
+                    _connectionStatus = "Syncing";
+                    var result = await _orderClient.VoidCollectionOrderAsync(_currentOrder);
+                    await ApplyMotherOrderResultAsync(result);
+                    await RefreshRestaurantLayoutCacheAsync();
+                    _connectionStatus = "Connected";
+                    ShowToast(result.Message);
+                    ShowOrder();
+                }
+                catch (Exception ex)
+                {
+                    _connectionStatus = "Connected";
+                    ShowToast(ex.Message);
+                }
+
+                return;
+            }
+
             await QueueClientActionAsync("void_order", "Void request queued for Mother POS. It is not confirmed until Mother accepts it.");
             ShowToast("Void request is pending Mother confirmation.");
         });
@@ -3810,6 +3925,11 @@ public partial class MainPage : ContentPage
         {
             var note = dialog.SelectedIds.FirstOrDefault()?.Replace('-', ' ') ?? string.Empty;
             if (string.IsNullOrWhiteSpace(note)) return;
+            if (!await EnsureCollectionMutationAllowedAsync(ClientOperation.EditCollectionOrder))
+            {
+                return;
+            }
+
             var result = await _orderClient.AddNoteAsync(_currentOrder, line, note);
             await ApplyMotherOrderResultAsync(result);
             ShowOrder();
@@ -4115,6 +4235,14 @@ public partial class MainPage : ContentPage
             return null;
         }
 
+        if (printType != "cash drawer open" &&
+            _currentOrder is not null &&
+            IsCustomerHubOrderType(_currentOrder.OrderType) &&
+            !await EnsureCollectionMutationAllowedAsync(ClientOperation.PrintCollectionOrder))
+        {
+            return null;
+        }
+
         _connectionStatus = "Syncing";
         var request = await _printClient.RequestPrintAsync(printType, orderId, _currentSession);
         await _cache.SavePrintRequestAsync(request);
@@ -4231,7 +4359,10 @@ public partial class MainPage : ContentPage
         }
 
         var online = await new ClientOfflinePolicy(_cache).IsMotherOnlineAsync();
-        var decision = new ClientOfflinePolicy(_cache).Evaluate(ClientOperation.SubmitFinalOrder, online);
+        var saveOp = IsCustomerHubOrderType(submission.OrderType)
+            ? ClientOperation.SaveCollectionOrder
+            : ClientOperation.SubmitFinalOrder;
+        var decision = new ClientOfflinePolicy(_cache).Evaluate(saveOp, online);
         if (!decision.Allowed)
         {
             view.SetStatus(decision.Message);
@@ -4250,8 +4381,13 @@ public partial class MainPage : ContentPage
             var saved = await _customerClient.SaveCustomerAsync(draft);
             await _cache.CacheCustomerForActiveOrderAsync(saved, isDelivery: submission.OrderType == "Delivery");
 
-            var result = await _orderClient.CreateCustomerOrderAsync(draft with { Customer = saved }, _currentSession);
+            _pendingCustomerOrderId ??= Guid.NewGuid().ToString("N");
+            var result = await _orderClient.CreateCustomerOrderAsync(
+                draft with { Customer = saved },
+                _currentSession,
+                _pendingCustomerOrderId);
             await ApplyMotherOrderResultAsync(result);
+            _pendingCustomerOrderId = null;
             view.SetStatus("Mother confirmed the customer and opened the order.");
             ShowOrder();
         }
@@ -4266,12 +4402,12 @@ public partial class MainPage : ContentPage
         if (title.StartsWith("Delivery", StringComparison.OrdinalIgnoreCase))
         {
             _posSelectedMenu = "Delivery";
-            _ = Navigation.PushAsync(new Pages.Orders.DeliveryOrderPage(), false);
+            _ = ClientSideNavigation.PushFromSideAsync(Navigation, new Pages.Orders.DeliveryOrderPage());
             return;
         }
 
         _posSelectedMenu = "Collection";
-        _ = Navigation.PushAsync(new Pages.Orders.CollectionOrderPage(), false);
+        _ = ClientSideNavigation.PushFromSideAsync(Navigation, new Pages.Orders.CollectionOrderPage());
     }
 
     // Retained only as a rollback implementation while the shared payment route
@@ -4492,11 +4628,27 @@ public partial class MainPage : ContentPage
 
     private void ShowPayment() => ShowSharedPayment();
 
-    private void ShowSharedPayment()
+    private async void ShowSharedPayment()
     {
         if (_currentOrder is null)
         {
             ShowToast("Payment requires a Mother-confirmed order.");
+            return;
+        }
+
+        if (IsCustomerHubOrderType(_currentOrder.OrderType))
+        {
+            var online = await _offlinePolicy.IsMotherOnlineAsync();
+            if (!online)
+            {
+                ShowToast("Taking payment for this order requires Mother POS.");
+                return;
+            }
+        }
+
+        if (_currentSession?.HasPermission(OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments) != true)
+        {
+            ShowToast("Your role cannot take payments on this Client.");
             return;
         }
 
@@ -4505,6 +4657,12 @@ public partial class MainPage : ContentPage
         var paymentView = new PaymentView { ViewModel = viewModel };
         paymentView.SubmissionRequested += async (_, submission) =>
         {
+            if (_currentOrder is null)
+            {
+                viewModel.ApplyAuthoritativeResult(false, "Payment requires a Mother-confirmed order.", false);
+                return;
+            }
+
             var result = await paymentService.TakePaymentAsync(
                 _currentOrder.OrderId,
                 submission.Method,
@@ -4513,9 +4671,22 @@ public partial class MainPage : ContentPage
                 expectedOrderRevision: _currentOrder.Version,
                 correlationId: submission.CorrelationId);
             viewModel.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
-            if (result.Approved && submission.PrintReceipt)
+            if (result.Approved)
             {
-                await RequestPrintAsync("customer receipt", _currentOrder.OrderId, false);
+                try
+                {
+                    var refreshed = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
+                    await ApplyMotherOrderResultAsync(refreshed);
+                }
+                catch
+                {
+                    // Payment already succeeded; refresh is best-effort.
+                }
+
+                if (submission.PrintReceipt)
+                {
+                    await RequestPrintAsync("customer receipt", _currentOrder.OrderId, false);
+                }
             }
         };
         viewModel.StatusCheckRequested += async (_, requestId) =>
@@ -4573,13 +4744,15 @@ public partial class MainPage : ContentPage
             : Array.Empty<object>();
     }
 
-    private void ShowLiveOrders() => ShowLiveOrders("All");
+    private void ShowLiveOrders() => ShowLiveOrders(_liveOrderFilter);
 
     private async void ShowLiveOrders(string selectedFilter)
     {
         _posSelectedMenu = "Live Order";
-        Root.Children.Clear();
+        _isViewingOrderScreen = false;
         selectedFilter = NormalizeLiveOrderType(selectedFilter);
+        _liveOrderFilter = selectedFilter;
+        Root.Children.Clear();
 
         var motherOrders = await _orderClient.GetOpenOrdersAsync();
         if (motherOrders != null)
@@ -4716,6 +4889,42 @@ public partial class MainPage : ContentPage
                 AccentColor: accent,
                 OpenAsync: async () =>
                 {
+                    if (type is "Collection" or "Delivery" or "Table")
+                    {
+                        var decision = _offlinePolicy.Evaluate(
+                            ClientOperation.OpenCollectionOrder,
+                            await _offlinePolicy.IsMotherOnlineAsync());
+                        if (!decision.Allowed)
+                        {
+                            ShowToast(decision.Message);
+                            return;
+                        }
+
+                        try
+                        {
+                            _connectionStatus = "Syncing";
+                            var opened = await _orderClient.OpenOrderForEditAsync(order.OrderId);
+                            _currentOrder = opened.State;
+                            _selectedCachedTable = opened.State.TableId.HasValue
+                                ? _cachedFloors.SelectMany(floor => floor.Tables)
+                                    .FirstOrDefault(table => table.Id == opened.State.TableId.Value)
+                                : null;
+                            _guests = Math.Max(_currentOrder.Guests, 1);
+                            await _cache.SaveOrderStateAsync(_currentOrder);
+                            await LoadOrderMenuAsync();
+                            _connectionStatus = "Connected";
+                            ShowToast(opened.Message);
+                            ShowOrder();
+                        }
+                        catch (Exception ex)
+                        {
+                            _connectionStatus = "Connected";
+                            ShowToast(ex.Message);
+                        }
+
+                        return;
+                    }
+
                     _currentOrder = order;
                     _selectedCachedTable = order.TableId.HasValue
                         ? _cachedFloors.SelectMany(floor => floor.Tables).FirstOrDefault(table => table.Id == order.TableId.Value)
@@ -4866,7 +5075,7 @@ public partial class MainPage : ContentPage
         var isDashboard = title.Contains("Dashboard", StringComparison.OrdinalIgnoreCase);
         var role = _currentSession?.Role;
         var capabilities = ClientCapabilityResolver.ForRole(role, _currentSession?.Permissions);
-        var features = ClientHostAccess.Features;
+        var features = ClientHostAccess.FeaturesForRole(role);
         var routes = ClientHostAccess.RoutesForRole(role);
         var frame = new ApplicationShellFrame
         {
@@ -4898,8 +5107,7 @@ public partial class MainPage : ContentPage
         return frame;
     }
 
-    private string DashboardTitle() =>
-        IsManagerRole() ? "Manager Dashboard" : "Dashboard";
+    private string DashboardTitle() => "Dashboard";
 
     private bool IsManagerRole() =>
         string.Equals(_currentSession?.Role, "Manager", StringComparison.OrdinalIgnoreCase);

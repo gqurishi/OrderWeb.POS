@@ -30,8 +30,9 @@ public class RestaurantTablesView : ContentView
     };
     private readonly AbsoluteLayout _canvas;
     private readonly VerticalStackLayout _empty;
-    private readonly List<View> _tableViews = [];
+    private readonly List<(Border Card, RestaurantTableDto Table)> _tableViews = [];
     private string? _selectedFloorId;
+    private string? _highlightedTableId;
 
     public static readonly BindableProperty ConnectionStatusProperty = BindableProperty.Create(nameof(ConnectionStatus), typeof(string), typeof(RestaurantTablesView), "Mother online", propertyChanged: (b, _, _) => ((RestaurantTablesView)b).ApplyPresentationState());
     public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(RestaurantTablesView), false, propertyChanged: (b, _, _) => ((RestaurantTablesView)b).ApplyPresentationState());
@@ -169,6 +170,18 @@ public class RestaurantTablesView : ContentView
         RebuildTables();
     }
 
+    /// <summary>Highlights a table in Mother blue while the guest picker is open.</summary>
+    public void SetHighlightedTable(string? tableId)
+    {
+        _highlightedTableId = string.IsNullOrWhiteSpace(tableId) ? null : tableId.Trim();
+        foreach (var (card, table) in _tableViews)
+        {
+            ApplyTableAppearance(card, table);
+        }
+    }
+
+    public void ClearHighlightedTable() => SetHighlightedTable(null);
+
     private void RebuildFloorTabs()
     {
         _floorTabs.Children.Clear();
@@ -210,9 +223,9 @@ public class RestaurantTablesView : ContentView
 
     private void RebuildTables()
     {
-        foreach (var view in _tableViews)
+        foreach (var (card, _) in _tableViews)
         {
-            _canvas.Children.Remove(view);
+            _canvas.Children.Remove(card);
         }
         _tableViews.Clear();
 
@@ -231,20 +244,17 @@ public class RestaurantTablesView : ContentView
             AbsoluteLayout.SetLayoutBounds(card, new Rect(x, y, 120, 120));
             AbsoluteLayout.SetLayoutFlags(card, AbsoluteLayoutFlags.None);
             _canvas.Children.Add(card);
-            _tableViews.Add(card);
+            _tableViews.Add((card, table));
             index++;
         }
     }
 
     private Border CreateTableCard(RestaurantTableDto table)
     {
-        var (bg, border, text) = TableColors(table);
         var card = new Border
         {
-            BackgroundColor = bg,
-            Stroke = border,
-            StrokeThickness = 2,
             Padding = 8,
+            StrokeThickness = 2,
             StrokeShape = new RoundRectangle { CornerRadius = 12 },
             Shadow = new Shadow
             {
@@ -273,25 +283,49 @@ public class RestaurantTablesView : ContentView
                         Text = table.Name,
                         FontSize = 16,
                         FontAttributes = FontAttributes.Bold,
-                        TextColor = text,
                         HorizontalOptions = LayoutOptions.Center
                     },
                     new Ellipse
                     {
                         WidthRequest = 10,
                         HeightRequest = 10,
-                        Fill = new SolidColorBrush(border),
                         HorizontalOptions = LayoutOptions.Center
                     }
                 }
             }
         };
 
+        ApplyTableAppearance(card, table);
+
         var captured = table;
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => TableSelected?.Invoke(this, new TableSelectedEventArgs(captured));
         card.GestureRecognizers.Add(tap);
         return card;
+    }
+
+    private void ApplyTableAppearance(Border card, RestaurantTableDto table)
+    {
+        var highlighted = !string.IsNullOrWhiteSpace(_highlightedTableId) &&
+                          string.Equals(table.Id, _highlightedTableId, StringComparison.OrdinalIgnoreCase);
+        var (bg, border, text) = highlighted
+            ? (Color.FromArgb("#3B82F6"), Color.FromArgb("#1D4ED8"), Colors.White)
+            : TableColors(table);
+
+        card.BackgroundColor = bg;
+        card.Stroke = border;
+        if (card.Content is VerticalStackLayout stack)
+        {
+            if (stack.Children.Count > 1 && stack.Children[1] is Label label)
+            {
+                label.TextColor = text;
+            }
+
+            if (stack.Children.Count > 2 && stack.Children[2] is Ellipse dot)
+            {
+                dot.Fill = new SolidColorBrush(highlighted ? Colors.White : border);
+            }
+        }
     }
 
     private void ApplyPresentationState()

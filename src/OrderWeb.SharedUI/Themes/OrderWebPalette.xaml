@@ -30,6 +30,7 @@
     <Color x:Key="OwSuccess">#10B981</Color>
     <Color x:Key="OwSuccessStrong">#059669</Color>
     <Color x:Key="OwSuccessSoft">#ECFDF5</Color>
+    <Color x:Key="OwSuccessSoftBorder">#A7F3D0</Color>
     <Color x:Key="OwSuccessText">#065F46</Color>
 
     <Color x:Key="OwWarning">#F59E0B</Color>

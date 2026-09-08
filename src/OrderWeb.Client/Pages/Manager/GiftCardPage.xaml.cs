@@ -3,21 +3,30 @@ namespace OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.SharedUI.Views;
 
 public partial class GiftCardPage : ContentPage
 {
     public GiftCardPage()
     {
         InitializeComponent();
-        LoadEmptyState();
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
+
+        Gift.ActivateLookupRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.ActivateRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.GenerateSellCardRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.SellRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.TopUpLookupRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.TopUpRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.RedeemLookupRequested += async (_, _) => await ShowMotherOnlyAsync();
+        Gift.RedeemRequested += async (_, _) => await ShowMotherOnlyAsync();
     }
 
-    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Gift-card data is available only through Mother POS.", "OK");
-    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Connect to Mother POS before redeeming a gift card.", "OK");
-    private async void OnAddBalanceClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Gift-card top-up must be completed by Mother POS.", "OK");
+    private async Task ShowMotherOnlyAsync() =>
+        await DisplayAlert("Gift Cards", "Gift-card operations are available through Mother POS.", "OK");
+
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()
@@ -36,6 +45,12 @@ public partial class GiftCardPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
+        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
         if (!ClientHostAccess.CanOpenMenu(menu))
         {
             return;
@@ -53,13 +68,5 @@ public partial class GiftCardPage : ContentPage
             "Order History" => new OrderHistoryPage(),
             _ => new GiftCardPage()
         }, false);
-    }
-
-    private void LoadEmptyState()
-    {
-        GiftCardNameLabel.Text = "No gift card selected";
-        GiftCardStatusLabel.Text = "Connect to Mother POS";
-        GiftCardNumberLabel.Text = "Card: -";
-        GiftCardBalanceLabel.Text = "£0.00";
     }
 }

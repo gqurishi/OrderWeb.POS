@@ -38,6 +38,12 @@ public partial class OrderHistoryPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
+        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
         if (!ClientHostAccess.CanOpenMenu(menu))
         {
             return;

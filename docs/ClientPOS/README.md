@@ -55,6 +55,8 @@ The cross-application API and ownership rules are documented in `../docs/MOTHER_
 
 Client role, Manager-operation, offline, audit, verification, and release policy is documented in `CLIENT_ROLE_POLICY.md` and `CLIENT_OPERATIONS_AND_RELEASE.md`.
 
+Collection multi-terminal ownership (Mother hub, Phase 0 frozen) is documented in `COLLECTION_MULTI_TERMINAL_RULES.md`.
+
 ## Phase 0 Status
 
 Phase 0 defines the product rules and Version 1 scope before any app code is built.

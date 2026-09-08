@@ -49,7 +49,7 @@ public partial class UserDashboardPage : ContentPage
         var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
         {
             Title = "Dashboard",
-            Subtitle = _currentUser?.Name is { Length: > 0 } name ? $"Welcome, {name}" : "Welcome"
+            Subtitle = string.Empty
         };
         vm.ApplyCapabilities(capabilities, features, new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {

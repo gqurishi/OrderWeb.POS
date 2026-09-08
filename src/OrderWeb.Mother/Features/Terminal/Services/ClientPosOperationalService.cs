@@ -1,6 +1,7 @@
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using MySqlConnector;
+using OrderWeb.Contracts.Access;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -258,11 +259,49 @@ public sealed class ClientPosOperationalService
         }
         else
         {
+            // Phase 3: concurrent edit — reject stale saves.
+            if (HasOptimisticConcurrencyConflict(existing, request.ExpectedVersion, request.ExpectedUpdatedUtc))
+            {
+                return ClientOrderUpsertResult.Conflict(
+                    ToClientOrder(existing),
+                    "Order updated elsewhere — reload");
+            }
+
             order.OrderNumber = existing.OrderNumber;
             order.CreatedAt = existing.CreatedAt;
             order.Status = existing.Status;
             order.LocalLifecycleState = existing.LocalLifecycleState;
             order.IsOpen = existing.IsOpen;
+
+            // Resume / open-for-edit must never wipe Mother lines with an empty payload.
+            if (incomingLines.Count == 0 && existing.Items.Count > 0)
+            {
+                if (tableSessionId.HasValue)
+                {
+                    var linkedOnly = await new TableSessionService().LinkOrderToSessionAsync(
+                        tableSessionId.Value,
+                        existing.OrderId,
+                        TableSessionStatus.Ordering,
+                        "Client POS");
+                    if (!linkedOnly.success)
+                    {
+                        return ClientOrderUpsertResult.Fail(409, linkedOnly.message);
+                    }
+                }
+
+                var resumed = ToClientOrder(existing);
+                if (orderType == "table")
+                {
+                    resumed = resumed with
+                    {
+                        TableId = request.TableId,
+                        TableNumber = request.TableNumber?.Trim(),
+                        Guests = Math.Max(1, request.Guests)
+                    };
+                }
+
+                return ClientOrderUpsertResult.Ok(resumed, "Order resumed from Mother POS.");
+            }
         }
 
         var saved = await _orderService.SaveOrderAsync(order);
@@ -301,6 +340,98 @@ public sealed class ClientPosOperationalService
             };
         }
         return ClientOrderUpsertResult.Ok(clientOrder);
+    }
+
+    /// <summary>
+    /// Voids a local Collection (or other Client) order on Mother so Live Order drops it.
+    /// Uses the same OrderService status path as Mother till cancel/void.
+    /// </summary>
+    public async Task<ClientOrderUpsertResult> VoidOrderAsync(string? orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return ClientOrderUpsertResult.Fail(400, "A Mother order id is required to void.");
+        }
+
+        var existing = await _orderService.GetOrderByExternalIdAsync(orderId.Trim());
+        if (existing == null)
+        {
+            return ClientOrderUpsertResult.Fail(404, "Mother POS could not find this order.");
+        }
+
+        if (existing.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided)
+        {
+            return ClientOrderUpsertResult.Fail(409, "This order is already paid or voided on Mother POS.");
+        }
+
+        var voided = await _orderService.UpdateOrderStatusAsync(existing.Id, OrderStatus.Cancelled);
+        if (!voided)
+        {
+            return ClientOrderUpsertResult.Fail(422, "Mother POS could not void this order.");
+        }
+
+        if (existing.TableSessionId is > 0)
+        {
+            await new TableSessionService().CloseSessionForOrderAsync(
+                existing.TableSessionId.Value,
+                "voided",
+                "Client POS");
+        }
+
+        var persisted = await _orderService.GetOrderByExternalIdAsync(existing.OrderId);
+        if (persisted == null)
+        {
+            return ClientOrderUpsertResult.Fail(500, "Mother POS voided the order but could not reload it.");
+        }
+
+        return ClientOrderUpsertResult.Ok(ToClientOrder(persisted), "Order voided on Mother POS.");
+    }
+
+    /// <summary>Fresh load of one open order for Client reopen/edit (Phase 2 Collection).</summary>
+    public async Task<ClientOrderUpsertResult> GetOrderAsync(string? orderId)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return ClientOrderUpsertResult.Fail(400, "A Mother order id is required.");
+        }
+
+        var existing = await _orderService.GetOrderByExternalIdAsync(orderId.Trim());
+        if (existing == null)
+        {
+            return ClientOrderUpsertResult.Fail(404, "Mother POS could not find this order.");
+        }
+
+        if (existing.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided ||
+            existing.IsOpen == false)
+        {
+            return ClientOrderUpsertResult.Fail(409, "This order is closed on Mother POS and cannot be edited.");
+        }
+
+        var clientOrder = ToClientOrder(existing);
+        if (string.Equals(NormalizeSavedOrderType(existing.OrderType), "table", StringComparison.OrdinalIgnoreCase) &&
+            existing.TableSessionId is > 0)
+        {
+            var session = await new TableSessionService().GetSessionByIdAsync(existing.TableSessionId.Value);
+            if (session != null)
+            {
+                var tableNumber = session.Table?.TableNumber;
+                if (string.IsNullOrWhiteSpace(tableNumber) &&
+                    !string.IsNullOrWhiteSpace(existing.CustomerName) &&
+                    existing.CustomerName.StartsWith("Table ", StringComparison.OrdinalIgnoreCase))
+                {
+                    tableNumber = existing.CustomerName["Table ".Length..].Trim();
+                }
+
+                clientOrder = clientOrder with
+                {
+                    TableId = session.TableId,
+                    TableNumber = tableNumber,
+                    Guests = Math.Max(1, session.PartySize)
+                };
+            }
+        }
+
+        return ClientOrderUpsertResult.Ok(clientOrder, "Order loaded from Mother POS.");
     }
 
     public async Task<IReadOnlyList<ClientOperationalOrder>> ListOpenOrdersAsync(string? orderType)
@@ -454,7 +585,7 @@ public sealed class ClientPosOperationalService
             order.SubtotalAmount,
             order.TaxAmount,
             order.TotalAmount,
-            Math.Max(1, (int)(order.UpdatedAt.Ticks % int.MaxValue)),
+            Math.Max(1, ComputeClientOrderVersion(order)),
             (order.UpdatedAt == default ? DateTime.Now : order.UpdatedAt).ToUniversalTime().ToString("O"),
             customer);
     }
@@ -474,6 +605,35 @@ public sealed class ClientPosOperationalService
             "table" or "tbl" or "dine_in" or "dine-in" => "table",
             _ => "pickup"
         };
+    }
+
+    /// <summary>
+    /// Same version token Clients receive on order payloads. Used for optimistic concurrency.
+    /// </summary>
+    public static int ComputeClientOrderVersion(Order order) =>
+        CollectionOrderHubRules.ComputeOrderVersion(order.UpdatedAt, order.CreatedAt);
+
+    private static bool HasOptimisticConcurrencyConflict(
+        Order existing,
+        int? expectedVersion,
+        string? expectedUpdatedUtc)
+    {
+        if (expectedVersion is > 0)
+        {
+            return expectedVersion.Value != ComputeClientOrderVersion(existing);
+        }
+
+        if (string.IsNullOrWhiteSpace(expectedUpdatedUtc) ||
+            !DateTimeOffset.TryParse(expectedUpdatedUtc, out var expected) ||
+            existing.UpdatedAt == default)
+        {
+            // Legacy callers without version: allow (create path / older Clients).
+            return false;
+        }
+
+        var current = new DateTimeOffset(
+            DateTime.SpecifyKind(existing.UpdatedAt, DateTimeKind.Local)).ToUniversalTime();
+        return Math.Abs((current - expected.ToUniversalTime()).TotalSeconds) > 1;
     }
 
     private static string NormalizeClientOrderType(string? orderType)
@@ -698,7 +858,9 @@ public sealed record ClientOrderUpsertRequest(
     int? TableId,
     string? TableNumber,
     int Guests,
-    IReadOnlyList<ClientOrderLineRequest>? Lines);
+    IReadOnlyList<ClientOrderLineRequest>? Lines,
+    int? ExpectedVersion = null,
+    string? ExpectedUpdatedUtc = null);
 
 public sealed record ClientOrderLineRequest(
     string? Id,
@@ -738,6 +900,12 @@ public sealed record ClientOrderUpsertResult(bool Success, int StatusCode, strin
 {
     public static ClientOrderUpsertResult Ok(ClientOperationalOrder order) =>
         new(true, 200, "Order saved on Mother POS.", order);
+
+    public static ClientOrderUpsertResult Ok(ClientOperationalOrder order, string message) =>
+        new(true, 200, message, order);
+
+    public static ClientOrderUpsertResult Conflict(ClientOperationalOrder order, string message) =>
+        new(false, 409, message, order);
 
     public static ClientOrderUpsertResult Fail(int statusCode, string message) =>
         new(false, statusCode, message, null);
