@@ -42,7 +42,9 @@ public sealed record MotherOrderState(
     int Version,
     string UpdatedUtc,
     string? ServerName = null,
-    string? ConflictMessage = null);
+    string? ConflictMessage = null,
+    string? CustomerName = null,
+    string? CustomerPhone = null);
 
 public sealed record MotherOrderLine(
     string Id,

@@ -109,12 +109,15 @@ public partial class ManagerDashboardPage : ContentPage
         _inactivityService.ResetActivity();
         _inactivityService.TrackPage(this);
 
-        var user = _authService.CurrentUser;
+        if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+        {
+            return;
+        }
 
-        if (!_roleAccessService.IsManagerOrAdmin(user?.Role))
+        if (!_roleAccessService.IsManagerOrAdmin(_authService.CurrentUser?.Role))
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access Manager Dashboard.");
-            await _navigationCoordinator.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(user?.Role));
+            await _navigationCoordinator.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
             return;
         }
 

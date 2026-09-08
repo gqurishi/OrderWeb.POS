@@ -37,7 +37,9 @@ public partial class ClientSidebar : ContentView
             }
 
             Role = session.Role;
-            ShowFooter = string.Equals(session.Role, "Manager", StringComparison.OrdinalIgnoreCase);
+            // Match Mother: Update All is available for User and Manager on the POS sidebar.
+            ShowFooter = string.Equals(session.Role, "Manager", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(session.Role, "User", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

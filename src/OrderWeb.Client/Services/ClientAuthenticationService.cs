@@ -36,7 +36,8 @@ public sealed class ClientAuthenticationService : IAuthenticationService
             {
                 return OperationResult<UserSession>.Failure(new OperationError(
                     OperationErrorCode.Forbidden,
-                    "Admin can't sign in on Client POS. Use Mother POS. This terminal is for User, Manager, and Cashier."));
+                    "Admin can't sign in on Client POS. Use Mother POS. This terminal is for User, Manager, and Cashier.",
+                    Detail: "admin_mother_only"));
             }
             if (string.Equals(session.Role, "Staff", StringComparison.OrdinalIgnoreCase))
             {
@@ -71,12 +72,22 @@ public sealed class ClientAuthenticationService : IAuthenticationService
         catch (LoginException ex)
         {
             LastSuccessfulLogin = null;
+            if (string.Equals(ex.ErrorCode, "admin_mother_only", StringComparison.OrdinalIgnoreCase))
+            {
+                return OperationResult<UserSession>.Failure(new OperationError(
+                    OperationErrorCode.Forbidden,
+                    string.IsNullOrWhiteSpace(ex.Message)
+                        ? "Admin can't sign in on Client POS. Use Mother POS."
+                        : ex.Message,
+                    Detail: "admin_mother_only"));
+            }
+
             var code = ex.IsPairingInvalid || MotherAuthClient.ContainsPairingFailure(ex.Message)
                 ? OperationErrorCode.Forbidden
                 : ex.Message.Contains("not paired", StringComparison.OrdinalIgnoreCase)
                     ? OperationErrorCode.Offline
                     : OperationErrorCode.Unauthorized;
-            return OperationResult<UserSession>.Failure(new OperationError(code, ex.Message));
+            return OperationResult<UserSession>.Failure(new OperationError(code, ex.Message, Detail: ex.ErrorCode));
         }
         catch (Exception ex)
         {

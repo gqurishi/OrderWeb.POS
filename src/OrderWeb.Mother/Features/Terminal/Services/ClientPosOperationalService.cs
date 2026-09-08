@@ -2,6 +2,7 @@ using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using MySqlConnector;
 using OrderWeb.Contracts.Access;
+using OrderWeb.Contracts.Synchronization;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -17,7 +18,13 @@ public sealed class ClientPosOperationalService
 
     private const string ActiveLifecycleFilter = @"
         AND COALESCE(o.is_open, 1) = 1
-        AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) NOT IN ('paid', 'voided')";
+        AND COALESCE(o.draft_abandoned_flag, 0) = 0
+        AND (
+              LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
+              OR o.first_sent_at IS NOT NULL
+              OR COALESCE(o.send_attempt_count, 0) > 0
+              OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready')
+            )";
 
     private readonly DatabaseService _databaseService;
     private readonly ReservationSyncService _reservationSync;
@@ -41,12 +48,12 @@ public sealed class ClientPosOperationalService
             .ThenBy(category => category.Name)
             .ToList();
         var items = await _menuItemService.GetAllItemsAsync();
+        var usedIds = new HashSet<int>();
         var categoryIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var snapshotCategories = new List<ClientMenuCategoryDto>();
-        var categoryId = 0;
         foreach (var category in categories)
         {
-            categoryId++;
+            var categoryId = StableEntityId.FromKey($"cat:{category.Id}", usedIds);
             categoryIds[category.Id] = categoryId;
             snapshotCategories.Add(new ClientMenuCategoryDto(
                 categoryId,
@@ -62,17 +69,13 @@ public sealed class ClientPosOperationalService
         var modifierGroups = new List<ClientMenuModifierGroupDto>();
         var modifiers = new List<ClientMenuModifierDto>();
         var productModifiers = new List<ClientMenuProductModifierDto>();
-        var productId = 0;
-        var priceId = 0;
-        var groupId = 0;
-        var modifierId = 0;
 
         foreach (var item in items
                      .Where(item => !string.IsNullOrWhiteSpace(item.CategoryId) && categoryIds.ContainsKey(item.CategoryId))
                      .OrderBy(item => item.DisplayOrder)
                      .ThenBy(item => item.Name))
         {
-            productId++;
+            var productId = StableEntityId.FromKey($"prod:{item.Id}", usedIds);
             var snapshotCategoryId = categoryIds[item.CategoryId];
             products.Add(new ClientMenuProductDto(
                 productId,
@@ -85,12 +88,22 @@ public sealed class ClientPosOperationalService
 
             var takeaway = item.GetEffectivePrice("takeaway");
             var dineIn = item.GetEffectivePrice("table");
-            priceId++;
-            prices.Add(new ClientMenuPriceDto(priceId, productId, "takeaway", takeaway, "GBP", null));
+            prices.Add(new ClientMenuPriceDto(
+                StableEntityId.FromKey($"price:{item.Id}:takeaway", usedIds),
+                productId,
+                "takeaway",
+                takeaway,
+                "GBP",
+                null));
             if (dineIn != takeaway)
             {
-                priceId++;
-                prices.Add(new ClientMenuPriceDto(priceId, productId, "dine_in", dineIn, "GBP", null));
+                prices.Add(new ClientMenuPriceDto(
+                    StableEntityId.FromKey($"price:{item.Id}:dine_in", usedIds),
+                    productId,
+                    "dine_in",
+                    dineIn,
+                    "GBP",
+                    null));
             }
 
             var addons = item.Addons
@@ -101,10 +114,11 @@ public sealed class ClientPosOperationalService
                 continue;
             }
 
-            groupId++;
+            var groupMotherId = $"{item.Id}:addons";
+            var groupId = StableEntityId.FromKey($"mgroup:{groupMotherId}", usedIds);
             modifierGroups.Add(new ClientMenuModifierGroupDto(
                 groupId,
-                $"{item.Id}:addons",
+                groupMotherId,
                 "Add-ons",
                 0,
                 Math.Max(addons.Count, 1),
@@ -112,10 +126,10 @@ public sealed class ClientPosOperationalService
             productModifiers.Add(new ClientMenuProductModifierDto(productId, groupId, 0));
             foreach (var addon in addons)
             {
-                modifierId++;
+                var modifierMotherId = string.IsNullOrWhiteSpace(addon.Id) ? $"{item.Id}:{addon.Name}" : addon.Id;
                 modifiers.Add(new ClientMenuModifierDto(
-                    modifierId,
-                    string.IsNullOrWhiteSpace(addon.Id) ? $"{item.Id}:{addon.Name}" : addon.Id,
+                    StableEntityId.FromKey($"mod:{modifierMotherId}", usedIds),
+                    modifierMotherId,
                     groupId,
                     addon.Name,
                     addon.Price,
@@ -247,6 +261,31 @@ public sealed class ClientPosOperationalService
         order.TotalAmount = foodSubtotal + order.DeliveryFee;
 
         var existing = await _orderService.GetOrderByExternalIdAsync(order.OrderId);
+
+        // Match Mother till: open the table (session / Occupied) and let Client show the order
+        // create screen with an empty basket. Persist the Mother ledger row only once items exist.
+        if (existing == null && orderType == "table" && incomingLines.Count == 0)
+        {
+            var customerSummary = string.Join(" · ", new[] { customerName, order.CustomerPhone }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+            var draft = new ClientOperationalOrder(
+                order.OrderId,
+                string.Empty,
+                "Table",
+                customerName,
+                request.TableId,
+                request.TableNumber?.Trim(),
+                Math.Max(1, request.Guests),
+                Array.Empty<ClientOperationalOrderLine>(),
+                0m,
+                0m,
+                0m,
+                0,
+                DateTime.UtcNow.ToString("O"),
+                string.IsNullOrWhiteSpace(customerSummary) ? null : customerSummary);
+            return ClientOrderUpsertResult.Ok(draft, "Table ready — add items to create the order.");
+        }
+
         if (existing == null)
         {
             var numbers = new OrderNumberService(_databaseService);

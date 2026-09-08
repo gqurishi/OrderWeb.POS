@@ -1,3 +1,5 @@
+using OrderWeb.Client.Services;
+
 namespace OrderWeb.Client.Views.Layout;
 
 public partial class ClientTopBar : ContentView
@@ -33,6 +35,31 @@ public partial class ClientTopBar : ContentView
 
     public event EventHandler? MenuClicked;
     public event EventHandler? LogoutClicked;
+    public event EventHandler? MinimizeClicked;
+
+    /// <summary>Mother TopBar.SetPageTitle — page chrome title (e.g. Collection Order).</summary>
+    public void SetPageTitle(string title)
+    {
+        SharedHeader.Title = string.IsNullOrWhiteSpace(title) ? "Order" : title.Trim();
+    }
+
+    public void ConfigurePosChrome(
+        string title,
+        string? userName = null,
+        string? terminalName = null,
+        string connectionStatus = "Connected")
+    {
+        SetPageTitle(title);
+        SharedHeader.ShowBackButton = false;
+        SharedHeader.ShowIdentity = true;
+        SharedHeader.ShowMinimize = true;
+        SharedHeader.ShowConnection = true;
+        SharedHeader.UserName = string.IsNullOrWhiteSpace(userName) ? "user" : userName.Trim();
+        SharedHeader.TerminalName = string.IsNullOrWhiteSpace(terminalName) ? "Client" : terminalName.Trim();
+        SharedHeader.ConnectionStatus = connectionStatus;
+        SharedHeader.MinimizeClicked -= OnMinimizeClicked;
+        SharedHeader.MinimizeClicked += OnMinimizeClicked;
+    }
 
     public string RestaurantName
     {
@@ -84,5 +111,11 @@ public partial class ClientTopBar : ContentView
     private void OnLogoutClicked(object sender, EventArgs e)
     {
         LogoutClicked?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnMinimizeClicked(object? sender, EventArgs e)
+    {
+        MinimizeClicked?.Invoke(this, EventArgs.Empty);
+        ClientWindowService.MinimizeMainWindow();
     }
 }

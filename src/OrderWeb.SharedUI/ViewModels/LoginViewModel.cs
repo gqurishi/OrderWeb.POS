@@ -35,6 +35,8 @@ public sealed class LoginViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler<UserSession>? LoginSucceeded;
+    /// <summary>Fired when Admin/SuperAdmin PIN is rejected for Client POS (use Mother instead).</summary>
+    public event EventHandler? AdminAccessBlocked;
     public event EventHandler? ClockInOutRequested;
     public event EventHandler? MinimizeRequested;
 
@@ -150,6 +152,13 @@ public sealed class LoginViewModel : INotifyPropertyChanged
             }
 
             Pin = string.Empty;
+            if (IsAdminMotherOnly(result.Error))
+            {
+                ClearStatus();
+                AdminAccessBlocked?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
             HasError = true;
             StatusMessage = result.Error?.Message ?? "Wrong PIN. Try again.";
         }
@@ -169,6 +178,22 @@ public sealed class LoginViewModel : INotifyPropertyChanged
     {
         StatusMessage = string.Empty;
         HasError = false;
+    }
+
+    private static bool IsAdminMotherOnly(OperationError? error)
+    {
+        if (error is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(error.Detail, "admin_mother_only", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return error.Code == OperationErrorCode.Forbidden &&
+               error.Message.Contains("Admin can't sign in", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>

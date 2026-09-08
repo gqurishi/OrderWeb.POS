@@ -1942,10 +1942,8 @@ namespace POS_in_NET.Pages
                 return false;
             }
 
-            if ((lifecycleState is LocalLifecycleState.SentPartial or LocalLifecycleState.SentFull) && !_rolloutConfig.EnableSendDurability)
-            {
-                return false;
-            }
+            // EnableSendDurability only gates durable send-batch tracking, not writing
+            // sent_partial/sent_full (needed for Live Order after Send to Kitchen).
 
             if ((_isLoadingPersistentOrder || _isFinalizingOrder && lifecycleOverride == null) || (lifecycleOverride == null && !_draftDirty && !force))
             {

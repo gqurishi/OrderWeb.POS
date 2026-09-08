@@ -120,8 +120,19 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                 e.Cancel();
                 _isShellNavigationChanging = false;
                 _pendingShellTarget = null;
+                var signedIn = _authService.CurrentUser != null;
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
+                    if (!signedIn)
+                    {
+                        if (!string.Equals(route, "login", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
+                        }
+
+                        return;
+                    }
+
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this page.");
                 });
             }
@@ -197,10 +208,13 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             OrderPlacementPageSimple.InvalidateMenuCache();
             AppDataRefreshService.RequestRefresh(AppDataChangeKind.All);
 
+            // Push Clients so every paired terminal refreshes authoritative data.
+            await NotifyPairedClientsUpdateAllAsync();
+
             // Show success message
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
                 "Update Complete",
-                $"All active screens were asked to reload fresh data.\n{cloudSyncMessage}");
+                $"All active screens were asked to reload fresh data.\nPaired Client POS terminals were notified to sync.\n{cloudSyncMessage}");
         }
         catch (Exception ex)
         {
@@ -209,6 +223,28 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         finally
         {
             SetSyncingState(false);
+        }
+    }
+
+    private static async Task NotifyPairedClientsUpdateAllAsync()
+    {
+        try
+        {
+            var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
+            if (broadcast is null)
+            {
+                return;
+            }
+
+            // Any authoritative event triggers Client full cache refresh.
+            await broadcast.PublishDataChangedAsync("menu.updated", string.Empty);
+            await broadcast.PublishConfigurationChangedAsync("layout");
+            await broadcast.PublishDataChangedAsync("tables.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            await broadcast.PublishDataChangedAsync("order.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AppShell] Client Update All notify failed: {ex.Message}");
         }
     }
 
@@ -289,6 +325,12 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
                     if (!IsRouteAllowed(route))
                     {
+                        if (_authService.CurrentUser == null)
+                        {
+                            await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
+                            return;
+                        }
+
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this feature.");
                         return;
                     }
@@ -357,6 +399,12 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             }
             if (!IsRouteAllowed(route))
             {
+                if (_authService.CurrentUser == null)
+                {
+                    await NavigationCoordinator.Shared.NavigateShellAsync("login", animated: false);
+                    return;
+                }
+
                 await AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to access this feature.");
                 return;
             }

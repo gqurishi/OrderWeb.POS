@@ -14,7 +14,7 @@ Executable mirror: `OrderWeb.Contracts.Access.CustomerOrderHubRules` (`IsTableOr
 2. Client SQLite is cache only (floor + order).  
 3. Mother is the hub — no Client-to-Client sync.  
 4. Same Mother order id everywhere.  
-5. Opening a table creates/resumes a Mother table session (Occupied).  
+5. Opening a free table opens the order-create screen (empty basket OK), occupies the Mother table session, and creates the ledger order on the first item.  
 6. Void or full pay closes the session and sets the table Available.  
 7. Online-required mutations for open/edit/pay/void/kitchen/print.  
 8. Offline: view cached floor/list OK; open-for-edit / save blocked.  
@@ -26,7 +26,7 @@ Executable mirror: `OrderWeb.Contracts.Access.CustomerOrderHubRules` (`IsTableOr
 
 | Capability | Status |
 |---|---|
-| Open free table → Mother session + order (stable Guid OrderId) | **Pass** |
+| Open free table → Mother session + order-create (empty basket OK; ledger on first item) | **Pass** |
 | Reopen occupied table → `OpenOrderForEditAsync` (never wipe lines) | **Pass** |
 | Live Order Table card → Mother reopen | **Pass** |
 | Edit lines / conflict 409 | **Pass** |

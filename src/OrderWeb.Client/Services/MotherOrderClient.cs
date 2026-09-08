@@ -28,25 +28,38 @@ public sealed class MotherOrderClient
             return await OpenOrderForEditAsync(table.CurrentOrderId);
         }
 
+        // Free table: open order-create with empty basket (same UX as Collection/Delivery).
+        // Mother occupies the table session; ledger row is created on the first item save.
         var now = DateTimeOffset.UtcNow.ToString("O");
         var orderId = Guid.NewGuid().ToString("N");
+        var guests = Math.Max(covers, table.Covers > 0 ? table.Covers : 1);
         var state = new MotherOrderState(
             orderId,
-            $"Table {table.TableNumber}",
+            string.Empty,
             "Table",
             table.Id,
             table.TableNumber,
-            Math.Max(covers, table.Covers > 0 ? table.Covers : 1),
+            guests,
             "open",
             Array.Empty<MotherOrderLine>(),
             0m,
             0m,
             0m,
-            1,
+            0,
             now,
-            session?.UserName ?? "Client User");
+            session?.UserName ?? "Client User",
+            $"Table {table.TableNumber}");
 
-        return await UpsertOrderAsync(state);
+        try
+        {
+            return await UpsertOrderAsync(state);
+        }
+        catch
+        {
+            // Still open the Client order-create section with a local draft.
+            await _cache.SaveOrderStateAsync(state);
+            return new MotherCommandResult(state, false, "Table ready — add items to create the order.");
+        }
     }
 
     public Task<MotherCommandResult> CreateCustomerOrderAsync(CustomerOrderDraft draft, LoginSession? session, string? orderId = null) =>
@@ -236,34 +249,44 @@ public sealed class MotherOrderClient
 
     public async Task<IReadOnlyList<MotherOrderState>?> GetOpenOrdersAsync(string? orderType = null)
     {
+        var (orders, _) = await TryGetOpenOrdersAsync(orderType);
+        return orders;
+    }
+
+    public async Task<(IReadOnlyList<MotherOrderState>? Orders, string? Error)> TryGetOpenOrdersAsync(
+        string? orderType = null,
+        CancellationToken cancellationToken = default)
+    {
         var auth = await GetAuthAsync();
         if (auth is null)
         {
-            return null;
+            return (null, "Client is not logged in to Mother POS.");
         }
 
         var query = string.IsNullOrWhiteSpace(orderType) ? string.Empty : $"?orderType={Uri.EscapeDataString(orderType)}";
         try
         {
             using var client = CreateClient(auth);
-            using var response = await client.GetAsync($"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders{query}");
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await client.GetAsync(
+                $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders{query}",
+                cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var envelope = JsonSerializer.Deserialize<OrderListEnvelope>(json, JsonOptions);
             if (!response.IsSuccessStatusCode)
             {
-                return null;
+                return (null, envelope?.Message ?? $"Mother open-orders pull failed ({(int)response.StatusCode}).");
             }
 
-            var envelope = JsonSerializer.Deserialize<OrderListEnvelope>(json, JsonOptions);
             if (envelope is null || !envelope.Success)
             {
-                return null;
+                return (null, envelope?.Message ?? "Mother POS returned an empty open-orders response.");
             }
 
-            return (envelope.Orders ?? []).Select(ToState).ToList();
+            return ((envelope.Orders ?? []).Select(ToState).ToList(), null);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 
@@ -298,8 +321,8 @@ public sealed class MotherOrderClient
         var body = new OrderUpsertHttpRequest(
             state.OrderId,
             state.OrderType,
-            customer?.Name ?? SplitCustomer(state.ConflictMessage).Name,
-            customer?.Phone ?? SplitCustomer(state.ConflictMessage).Phone,
+            customer?.Name ?? state.CustomerName ?? SplitCustomer(state.ConflictMessage).Name,
+            customer?.Phone ?? state.CustomerPhone ?? SplitCustomer(state.ConflictMessage).Phone,
             customer?.Email,
             customer?.Address,
             fee,
@@ -361,7 +384,12 @@ public sealed class MotherOrderClient
         var message = envelope.Print is null
             ? envelope.Message ?? "Order saved on Mother POS."
             : $"{envelope.Message ?? "Order saved on Mother POS."} Print status: {NormalizePrintStatus(envelope.Print.Status)}. {envelope.Print.Message}".Trim();
-        return new MotherCommandResult(ToState(envelope.Order), false, message);
+        var saved = WithCustomer(
+            ToState(envelope.Order),
+            customer?.Name ?? state.CustomerName,
+            customer?.Phone ?? state.CustomerPhone);
+        await _cache.SaveOrderStateAsync(saved);
+        return new MotherCommandResult(saved, false, message);
     }
 
     private static MotherOrderState BuildDraftState(CustomerOrderDraft draft, LoginSession? session, string? orderId = null)
@@ -384,7 +412,9 @@ public sealed class MotherOrderClient
             1,
             now,
             session?.UserName ?? "Client User",
-            $"{draft.Customer.Name} · {draft.Customer.Phone}");
+            null,
+            draft.Customer.Name,
+            draft.Customer.Phone);
     }
 
     private async Task<MotherClientAuth?> GetAuthAsync()
@@ -440,6 +470,20 @@ public sealed class MotherOrderClient
             order.UpdatedUtc ?? DateTimeOffset.UtcNow.ToString("O"),
             null,
             order.ConflictMessage);
+
+    private static MotherOrderState WithCustomer(MotherOrderState state, string? name, string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(phone))
+        {
+            return state;
+        }
+
+        return state with
+        {
+            CustomerName = string.IsNullOrWhiteSpace(name) ? state.CustomerName : name.Trim(),
+            CustomerPhone = string.IsNullOrWhiteSpace(phone) ? state.CustomerPhone : phone.Trim()
+        };
+    }
 
     private static (string? Name, string? Phone) SplitCustomer(string? summary)
     {

@@ -4,6 +4,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Dtos;
 
 namespace OrderWeb.Client.Pages.Orders;
 
@@ -22,6 +23,7 @@ public partial class LiveOrderPage : ContentPage
     {
         InitializeComponent();
         Sidebar.MenuItemSelected += async (_, label) => await SelectSidebarItemAsync(label);
+        Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllFromMotherAsync();
 
         _clockTimer = Dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(1);
@@ -84,6 +86,27 @@ public partial class LiveOrderPage : ContentPage
         finally
         {
             _refreshInFlight = false;
+        }
+    }
+
+    private async Task UpdateAllFromMotherAsync()
+    {
+        if (!await _offlinePolicy.IsMotherOnlineAsync())
+        {
+            await DisplayAlert("Update All", "Mother POS is offline. Connect to Mother to sync this terminal.", "OK");
+            return;
+        }
+
+        try
+        {
+            var sync = new MotherOperationalSyncClient(_cache);
+            var result = await sync.PullAllAsync();
+            await RefreshOrdersAsync();
+            await DisplayAlert("Update All", result.SummaryMessage(), "OK");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("Update All failed", ex.Message, "OK");
         }
     }
 
@@ -227,7 +250,9 @@ public partial class LiveOrderPage : ContentPage
             try
             {
                 var result = await _orderClient.OpenOrderForEditAsync(card.OrderId);
-                await Navigation.PushAsync(new OrderPage(result.State), false);
+                await Navigation.PushAsync(
+                    new OrderPage(result.State, result.State.CustomerName, result.State.CustomerPhone),
+                    false);
             }
             catch (Exception ex)
             {

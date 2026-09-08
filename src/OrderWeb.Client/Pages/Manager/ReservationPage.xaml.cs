@@ -30,6 +30,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     public ReservationPage()
     {
         InitializeComponent();
+        ClientPageChrome.HideSystemBackChrome(this);
         BindingContext = this;
         _motherReservations = new MotherReservationClient(_cache);
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
@@ -50,6 +51,8 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
         RefreshCalendar();
     }
+
+    protected override bool OnBackButtonPressed() => true;
 
     private void WireSharedReservationView()
     {
@@ -122,6 +125,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        ClientPageChrome.HideSystemBackChrome(this);
         // Mother may revoke reservations for this terminal at any time. Fail
         // closed before subscribing, loading cache, or presenting bookings.
         if (!ClientHostAccess.CanOpenMenu("Reservation"))

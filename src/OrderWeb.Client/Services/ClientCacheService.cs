@@ -79,6 +79,22 @@ public sealed class ClientCacheService
     {
         await InitializeAsync();
         ValidateSnapshot(payload);
+
+        // Pairing from Mother is credentials-only today. Never wipe menu/floors/tables/orders
+        // when the snapshot has no operational data — that caused "everything deleted" on Client.
+        var hasOperationalData =
+            payload.Categories.Count > 0 ||
+            payload.Products.Count > 0 ||
+            payload.Floors.Count > 0 ||
+            payload.Tables.Count > 0 ||
+            payload.OpenOrders.Count > 0;
+
+        if (!hasOperationalData)
+        {
+            await SavePairingCredentialsOnlyAsync(payload);
+            return;
+        }
+
         var checksum = ComputeSnapshotChecksum(payload);
         var startedUtc = DateTimeOffset.UtcNow.ToString("O");
         // This marker is not a data-version update. It lets startup recover
@@ -405,6 +421,59 @@ public sealed class ClientCacheService
         await PurgeLegacyDemoMenuDataAsync();
     }
 
+    /// <summary>
+    /// Pairing-only bootstrap: update Mother connection credentials without clearing
+    /// menu, floors, tables, or open orders already cached on this Client.
+    /// </summary>
+    private async Task SavePairingCredentialsOnlyAsync(BootstrapPayload payload)
+    {
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        await _database.RunInTransactionAsync(connection =>
+        {
+            connection.Execute(
+                "INSERT OR REPLACE INTO restaurant_info (id, mother_id, name, description, currency, time_zone, updated_utc) VALUES (1, ?, ?, ?, ?, ?, ?)",
+                payload.Restaurant.MotherId,
+                payload.Restaurant.Name,
+                payload.Restaurant.Description,
+                payload.Restaurant.Currency,
+                payload.Restaurant.TimeZone,
+                now);
+
+            connection.Execute(
+                "INSERT OR REPLACE INTO mother_connection (id, mode, status, display_name, api_base_url, websocket_url, pairing_code_hint, terminal_id, last_seen_utc, created_utc, updated_utc) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_utc FROM mother_connection WHERE id = 1), ?), ?)",
+                "paired",
+                "bootstrapped",
+                payload.Terminal.TerminalName,
+                payload.Terminal.ApiBaseUrl,
+                payload.Terminal.WebSocketUrl,
+                payload.Terminal.PairingCodeHint,
+                payload.Terminal.TerminalId,
+                now,
+                now,
+                now);
+
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('terminal_id', ?, ?)", payload.Terminal.TerminalId, now);
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('api_base_url', ?, ?)", payload.Terminal.ApiBaseUrl, now);
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('websocket_url', ?, ?)", payload.Terminal.WebSocketUrl, now);
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('terminal_name', ?, ?)", payload.Terminal.TerminalName, now);
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('device_role', ?, ?)", payload.Terminal.DeviceRole, now);
+            connection.Execute("INSERT OR REPLACE INTO device_config (key, value, updated_utc) VALUES ('restaurant_name', ?, ?)", payload.Restaurant.Name, now);
+
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('schema_version', ?, ?)", payload.Sync.SchemaVersion.ToString(), now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('last_bootstrap_time', ?, ?)", payload.Sync.GeneratedUtc, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('bootstrap_id', ?, ?)", payload.Sync.BootstrapId, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('sync_in_progress', 'false', ?)", now);
+            connection.Execute(
+                "INSERT INTO sync_history (sync_kind, status, bootstrap_id, payload_version, checksum, message, started_utc, completed_utc) VALUES ('pairing_credentials', 'completed', ?, 1, '', 'Pairing credentials saved; operational cache preserved.', ?, ?)",
+                payload.Sync.BootstrapId,
+                now,
+                now);
+        });
+
+        await SecureStorage.Default.SetAsync(SecureTerminalTokenKey, payload.Terminal.TerminalToken);
+        await _database.ExecuteAsync("DELETE FROM device_config WHERE key = 'terminal_token'");
+    }
+
     public async Task<CacheStatus> GetStatusAsync()
     {
         await InitializeAsync();
@@ -468,9 +537,75 @@ public sealed class ClientCacheService
             .ToList();
     }
 
-    public async Task ReplaceLayoutAsync(FloorSnapshotDto floors, TableSnapshotDto tables)
+    /// <summary>
+    /// Replaces cached floors/tables only after the snapshot validates.
+    /// Returns Kept when empty/invalid would destroy a good cache (Phase 1/2 guards).
+    /// </summary>
+    public async Task<CacheReplaceResult> ReplaceLayoutAsync(FloorSnapshotDto floors, TableSnapshotDto tables)
     {
         await InitializeAsync();
+        var existingTables = await ExecuteScalarAsync<int>("SELECT COUNT(*) FROM tables");
+
+        var validFloors = new List<(int Id, string MotherId, string Name, int SortOrder)>();
+        var floorIds = new HashSet<int>();
+        foreach (var floor in floors.Floors)
+        {
+            if (!int.TryParse(floor.Id, out var floorId) || floorId <= 0 || string.IsNullOrWhiteSpace(floor.Name))
+            {
+                continue;
+            }
+
+            if (!floorIds.Add(floorId))
+            {
+                continue;
+            }
+
+            validFloors.Add((floorId, floor.Id, floor.Name.Trim(), floor.SortOrder));
+        }
+
+        foreach (var table in tables.Tables)
+        {
+            if (!int.TryParse(table.FloorId, out var floorId) || floorId <= 0 || floorIds.Contains(floorId))
+            {
+                continue;
+            }
+
+            floorIds.Add(floorId);
+            validFloors.Add((floorId, floorId.ToString(), $"Floor {floorId}", floorId));
+        }
+
+        var validTables = new List<(int Id, string MotherId, int FloorId, RestaurantTableDto Table)>();
+        foreach (var table in tables.Tables)
+        {
+            if (!int.TryParse(table.Id, out var tableId) ||
+                !int.TryParse(table.FloorId, out var floorId) ||
+                tableId <= 0 ||
+                !floorIds.Contains(floorId) ||
+                string.IsNullOrWhiteSpace(table.Name))
+            {
+                continue;
+            }
+
+            validTables.Add((tableId, table.Id, floorId, table));
+        }
+
+        if (tables.Tables.Count > 0 && validTables.Count == 0)
+        {
+            return CacheReplaceResult.Kept(
+                "Layout snapshot had tables but none were valid to commit — kept last good layout.");
+        }
+
+        if (validTables.Count == 0 && existingTables > 0)
+        {
+            return CacheReplaceResult.Kept("Mother returned no tables — kept the last good restaurant layout.");
+        }
+
+        if (tables.Tables.Count >= 3 && validTables.Count < tables.Tables.Count / 2)
+        {
+            return CacheReplaceResult.Kept(
+                $"Layout replace rejected — {validTables.Count}/{tables.Tables.Count} tables valid (too many orphans).");
+        }
+
         await _database.RunInTransactionAsync(connection =>
         {
             var now = DateTimeOffset.UtcNow.ToString("O");
@@ -479,43 +614,29 @@ public sealed class ClientCacheService
             connection.Execute("DELETE FROM tables");
             connection.Execute("DELETE FROM floors");
 
-            var floorIds = new HashSet<int>();
-            foreach (var floor in floors.Floors)
+            foreach (var floor in validFloors)
             {
-                if (!int.TryParse(floor.Id, out var floorId) || floorId <= 0)
-                {
-                    continue;
-                }
-
-                floorIds.Add(floorId);
                 connection.Execute(
                     "INSERT OR REPLACE INTO floors (id, mother_id, name, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, 1, ?)",
-                    floorId,
                     floor.Id,
+                    floor.MotherId,
                     floor.Name,
                     floor.SortOrder,
                     now);
             }
 
-            foreach (var table in tables.Tables)
+            foreach (var entry in validTables)
             {
-                if (!int.TryParse(table.Id, out var tableId) ||
-                    !int.TryParse(table.FloorId, out var floorId) ||
-                    tableId <= 0 ||
-                    !floorIds.Contains(floorId))
-                {
-                    continue;
-                }
-
+                var table = entry.Table;
                 connection.Execute(
                     """
                     INSERT OR REPLACE INTO tables
                         (id, mother_id, floor_id, table_number, seats, status, current_total, current_order_id, covers, server_name, session_status, minutes_occupied, version, position_x, position_y, design_icon, updated_utc)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?)
                     """,
-                    tableId,
-                    table.Id,
-                    floorId,
+                    entry.Id,
+                    entry.MotherId,
+                    entry.FloorId,
                     table.Name,
                     table.Capacity,
                     table.Status,
@@ -532,7 +653,14 @@ public sealed class ClientCacheService
 
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('table_version', ?, ?)", tables.Version, now);
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('last_sync_time', ?, ?)", now, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_layout_ok', 'true', ?)", now);
+            connection.Execute(
+                "INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_layout_detail', ?, ?)",
+                $"{validFloors.Count} floors, {validTables.Count} tables",
+                now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_layout_utc', ?, ?)", now, now);
         });
+        return CacheReplaceResult.Ok($"{validFloors.Count} floors, {validTables.Count} tables");
     }
 
     public async Task ReplaceReservationsAsync(IReadOnlyList<CachedReservation> reservations)
@@ -560,9 +688,26 @@ public sealed class ClientCacheService
         });
     }
 
-    public async Task ReplaceMenuAsync(MenuSnapshotDto snapshot)
+    /// <summary>
+    /// Replaces cached menu only after stabilize + validate. Empty/invalid snapshots keep last-good cache.
+    /// Local int ids are derived from MotherId so they stay stable across refreshes.
+    /// </summary>
+    public async Task<CacheReplaceResult> ReplaceMenuAsync(MenuSnapshotDto snapshot)
     {
         await InitializeAsync();
+        var existingCategories = await ExecuteScalarAsync<int>("SELECT COUNT(*) FROM categories");
+        var stabilized = MenuSnapshotStabilizer.Stabilize(snapshot);
+        var validationError = MenuSnapshotStabilizer.ValidateForCommit(snapshot, stabilized);
+        if (validationError is not null)
+        {
+            return CacheReplaceResult.Kept(validationError);
+        }
+
+        if (stabilized.Categories.Count == 0 && existingCategories > 0)
+        {
+            return CacheReplaceResult.Kept("Mother returned an empty menu — kept the last good menu cache.");
+        }
+
         await _database.RunInTransactionAsync(connection =>
         {
             var now = DateTimeOffset.UtcNow.ToString("O");
@@ -573,14 +718,11 @@ public sealed class ClientCacheService
             connection.Execute("DELETE FROM modifier_groups");
             connection.Execute("DELETE FROM categories");
 
-            var categoryIds = snapshot.Categories.Select(category => category.Id).ToHashSet();
-            var productIds = snapshot.Products
-                .Where(product => categoryIds.Contains(product.CategoryId))
-                .Select(product => product.Id)
-                .ToHashSet();
-            var modifierGroupIds = snapshot.ModifierGroups.Select(group => group.Id).ToHashSet();
+            var categoryIds = stabilized.Categories.Select(category => category.Id).ToHashSet();
+            var productIds = stabilized.Products.Select(product => product.Id).ToHashSet();
+            var modifierGroupIds = stabilized.ModifierGroups.Select(group => group.Id).ToHashSet();
 
-            foreach (var category in snapshot.Categories)
+            foreach (var category in stabilized.Categories)
             {
                 connection.Execute(
                     "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -593,7 +735,7 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var product in snapshot.Products)
+            foreach (var product in stabilized.Products)
             {
                 if (!categoryIds.Contains(product.CategoryId))
                 {
@@ -612,7 +754,7 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var price in snapshot.Prices)
+            foreach (var price in stabilized.Prices)
             {
                 if (!productIds.Contains(price.ProductId))
                 {
@@ -630,7 +772,7 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var group in snapshot.ModifierGroups)
+            foreach (var group in stabilized.ModifierGroups)
             {
                 connection.Execute(
                     "INSERT OR REPLACE INTO modifier_groups (id, mother_id, name, min_select, max_select, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -643,7 +785,7 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var modifier in snapshot.Modifiers)
+            foreach (var modifier in stabilized.Modifiers)
             {
                 if (!modifierGroupIds.Contains(modifier.ModifierGroupId))
                 {
@@ -661,7 +803,7 @@ public sealed class ClientCacheService
                     now);
             }
 
-            foreach (var productModifier in snapshot.ProductModifiers)
+            foreach (var productModifier in stabilized.ProductModifiers)
             {
                 if (!productIds.Contains(productModifier.ProductId) || !modifierGroupIds.Contains(productModifier.ModifierGroupId))
                 {
@@ -678,7 +820,51 @@ public sealed class ClientCacheService
 
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('menu_version', ?, ?)", snapshot.Version, now);
             connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('last_sync_time', ?, ?)", now, now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_menu_ok', 'true', ?)", now);
+            connection.Execute(
+                "INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_menu_detail', ?, ?)",
+                $"{stabilized.Categories.Count} categories, {stabilized.Products.Count} products",
+                now);
+            connection.Execute("INSERT OR REPLACE INTO sync_state (key, value, updated_utc) VALUES ('section_menu_utc', ?, ?)", now, now);
         });
+        return CacheReplaceResult.Ok($"{stabilized.Categories.Count} categories, {stabilized.Products.Count} products");
+    }
+
+    public async Task RecordOperationalSectionAsync(string section, bool ok, string detail)
+    {
+        await InitializeAsync();
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        var key = section.Trim().ToLowerInvariant();
+        await UpsertSyncStateAsync($"section_{key}_ok", ok ? "true" : "false");
+        await UpsertSyncStateAsync($"section_{key}_detail", detail ?? string.Empty);
+        await UpsertSyncStateAsync($"section_{key}_utc", now);
+        await UpsertSyncStateAsync("last_operational_sync_utc", now);
+    }
+
+    public async Task<OperationalSectionSyncStatus> GetOperationalSectionSyncStatusAsync()
+    {
+        await InitializeAsync();
+        return new OperationalSectionSyncStatus(
+            ParseSectionOk(await GetSyncValueAsync("section_menu_ok")),
+            await GetSyncValueAsync("section_menu_detail"),
+            await GetSyncValueAsync("section_menu_utc"),
+            ParseSectionOk(await GetSyncValueAsync("section_layout_ok")),
+            await GetSyncValueAsync("section_layout_detail"),
+            await GetSyncValueAsync("section_layout_utc"),
+            ParseSectionOk(await GetSyncValueAsync("section_orders_ok")),
+            await GetSyncValueAsync("section_orders_detail"),
+            await GetSyncValueAsync("section_orders_utc"),
+            await GetSyncValueAsync("last_operational_sync_utc"));
+    }
+
+    private static bool? ParseSectionOk(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task ReplaceOperationalOrdersAsync(IReadOnlyList<MotherOrderState> orders)
@@ -1846,3 +2032,17 @@ public sealed record CacheStatus(
     string? LastSyncTime,
     string? LastEventId,
     string? LastFullRefreshTime);
+
+/// <summary>Last known honesty for menu / layout / orders sync sections.</summary>
+public sealed record OperationalSectionSyncStatus(
+    bool? MenuOk,
+    string? MenuDetail,
+    string? MenuUtc,
+    bool? LayoutOk,
+    string? LayoutDetail,
+    string? LayoutUtc,
+    bool? OrdersOk,
+    string? OrdersDetail,
+    string? OrdersUtc,
+    string? LastOperationalSyncUtc);
+

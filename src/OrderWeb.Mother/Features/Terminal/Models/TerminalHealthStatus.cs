@@ -58,21 +58,42 @@ public sealed class TerminalHealthStatus
         ? "Mother"
         : "Client";
     public string LastSeenDisplay => IsPendingPairing || IsExpiredPairing
-        ? PairingExpiresAt.HasValue ? $"Expires {PairingExpiresAt.Value:HH:mm}" : "Not paired"
+        ? "Waiting to pair"
         : LastSeenAt <= DateTime.MinValue.AddDays(1)
             ? "Never"
             : LastSeenAt.ToString("dd MMM yyyy HH:mm:ss");
     public string PairingDisplay => IsPendingPairing || IsExpiredPairing
-        ? string.IsNullOrWhiteSpace(PairingCode) ? "No active code" : $"{PairingCode} expires {PairingExpiresAt:HH:mm}"
+        ? string.IsNullOrWhiteSpace(PairingCode) ? "No active code" : PairingCode
         : PairedAt.HasValue ? $"Paired {PairedAt.Value:dd MMM HH:mm}" : "Not paired";
+    public string PairingCodeHint => IsPendingPairing || IsExpiredPairing
+        ? "Active until deleted"
+        : string.Empty;
+    public bool HasPairingCodeHighlight =>
+        (IsPendingPairing || IsExpiredPairing) && !string.IsNullOrWhiteSpace(PairingCode);
     public string DeviceDisplay => string.Join(" / ", new[] { DeviceType, Platform, AppVersion }
         .Where(value => !string.IsNullOrWhiteSpace(value)));
     public string DetailDisplay => IsPendingPairing || IsExpiredPairing
-        ? $"Pairing code: {PairingCode} - Connect Client to API {DatabaseHost}:5055"
+        ? $"{ModeDisplay} · waiting to pair"
         : string.IsNullOrWhiteSpace(LastError)
-            ? $"{ModeDisplay} terminal on {EffectiveIpDisplay}"
+            ? string.IsNullOrWhiteSpace(DeviceDisplay)
+                ? $"{ModeDisplay} terminal"
+                : $"{ModeDisplay} · {DeviceDisplay}"
             : LastError;
     public string EffectiveIpDisplay => string.IsNullOrWhiteSpace(LastIpAddress) ? DatabaseHost : LastIpAddress;
+    public string MotherApiEndpointDisplay
+    {
+        get
+        {
+            var host = string.IsNullOrWhiteSpace(DatabaseHost) ? "—" : DatabaseHost.Trim();
+            return $"{host}:5055";
+        }
+    }
+    public string IpColumnTitle => IsPendingPairing || IsExpiredPairing || IsMother
+        ? "Mother API IP"
+        : "Client IP";
+    public string IpColumnValue => IsPendingPairing || IsExpiredPairing || IsMother
+        ? MotherApiEndpointDisplay
+        : string.IsNullOrWhiteSpace(LastIpAddress) ? "-" : LastIpAddress;
     public string DeviceDisplayOrDash => string.IsNullOrWhiteSpace(DeviceDisplay) ? "-" : DeviceDisplay;
     public string LastSyncDisplay => LastSyncEventId <= 0 ? "-" : LastSyncEventId.ToString();
     public bool IsWebSocketConnected => string.Equals(WebSocketStatus, "connected", StringComparison.OrdinalIgnoreCase);

@@ -54,6 +54,11 @@ public partial class LoyaltyPointsPage : ContentPage
     {
         base.OnAppearing();
 
+        if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+        {
+            return;
+        }
+
         if (!_roleAccessService.IsManagerOrAdmin(_authService.CurrentUser?.Role))
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Manager and Admin can access Loyalty Points.");

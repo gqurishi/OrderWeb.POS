@@ -52,6 +52,11 @@ namespace POS_in_NET.Pages
             base.OnAppearing();
             System.Diagnostics.Debug.WriteLine(" Dashboard appearing - starting initialization");
 
+            if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+            {
+                return;
+            }
+
             if (!_roleAccessService.CanViewZReport(_authService.CurrentUser?.Role))
             {
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Dashboard.");

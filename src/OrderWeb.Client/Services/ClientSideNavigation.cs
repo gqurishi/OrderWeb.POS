@@ -8,6 +8,8 @@ public static class ClientSideNavigation
 {
     public static async Task PushFromSideAsync(INavigation navigation, Page page)
     {
+        ClientPageChrome.HideSystemBackChrome(page);
+
         if (page is Pages.Orders.CollectionOrderPage or Pages.Orders.DeliveryOrderPage)
         {
             if (page is Pages.Orders.CollectionOrderPage &&

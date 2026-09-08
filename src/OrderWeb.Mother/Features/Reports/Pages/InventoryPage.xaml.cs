@@ -25,6 +25,11 @@ public partial class InventoryPage : ContentPage
 
         try
         {
+            if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+            {
+                return;
+            }
+
             if (!await _permissionService.HasPermissionAsync(PermissionKeys.InventoryView))
             {
                 await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Inventory.");

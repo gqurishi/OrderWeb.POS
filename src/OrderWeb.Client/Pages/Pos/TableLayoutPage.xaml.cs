@@ -38,7 +38,6 @@ public partial class TableLayoutPage : ContentPage
         await _cache.InitializeAsync();
         _floors = await _cache.GetFloorsWithTablesAsync();
         _usingFallbackLayout = !_floors.Any(floor => floor.Tables.Count > 0);
-        _floors = RestaurantLayoutFallback(_floors);
         _selectedFloor = floorId.HasValue
             ? _floors.FirstOrDefault(floor => floor.Id == floorId.Value) ?? _floors.FirstOrDefault()
             : _selectedFloor == null
@@ -117,7 +116,9 @@ public partial class TableLayoutPage : ContentPage
                     new Image { Source = "table_1.png", WidthRequest = 60, HeightRequest = 60, Opacity = 0.35, HorizontalOptions = LayoutOptions.Center },
                     new Label
                     {
-                        Text = "No Tables on This Floor",
+                        Text = _usingFallbackLayout
+                            ? "No tables from Mother POS. Use Update All after login."
+                            : "No Tables on This Floor",
                         FontSize = 18,
                         FontFamily = "OpenSansSemibold",
                         TextColor = Color.FromArgb("#9CA3AF"),
@@ -256,33 +257,6 @@ public partial class TableLayoutPage : ContentPage
         };
         button.Clicked += async (_, _) => await LoadAsync(floor.Id);
         return button;
-    }
-
-    private static IReadOnlyList<CachedFloor> RestaurantLayoutFallback(IReadOnlyList<CachedFloor> floors)
-    {
-        if (floors.Any(floor => floor.Tables.Count > 0))
-        {
-            return floors;
-        }
-
-        return new[]
-        {
-            new CachedFloor(1, "1st Floor", 1, new[]
-            {
-                new CachedTable(10, 1, "10", 4, "Available", 0m, null, 0, null, null, 0, 1, 52, 64),
-                new CachedTable(11, 1, "11", 4, "Available", 0m, null, 0, null, null, 0, 1, 264, 64),
-                new CachedTable(12, 1, "12", 4, "Occupied", 0m, "demo-order-12", 4, null, "Ordering", 0, 1, 476, 64),
-                new CachedTable(13, 1, "13", 4, "Available", 0m, null, 0, null, null, 0, 1, 52, 308),
-                new CachedTable(14, 1, "14", 4, "Available", 0m, null, 0, null, null, 0, 1, 264, 308)
-            }),
-            new CachedFloor(2, "2nd Floor", 2, new[]
-            {
-                new CachedTable(20, 2, "20", 4, "Available", 0m, null, 0, null, null, 0, 1, 52, 64),
-                new CachedTable(21, 2, "21", 4, "Available", 0m, null, 0, null, null, 0, 1, 264, 64),
-                new CachedTable(22, 2, "22", 4, "Available", 0m, null, 0, null, null, 0, 1, 476, 64),
-                new CachedTable(23, 2, "23", 4, "Available", 0m, null, 0, null, null, 0, 1, 688, 64)
-            })
-        };
     }
 
     private View TableCard(CachedTable table)

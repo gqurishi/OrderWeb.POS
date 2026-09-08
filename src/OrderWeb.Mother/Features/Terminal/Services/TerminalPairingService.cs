@@ -26,7 +26,7 @@ public static class TerminalPairingService
         }
 
         var code = GeneratePairingCode();
-        var expiresAt = DateTime.Now.AddMinutes(Math.Max(5, expiryMinutes));
+        _ = expiryMinutes; // Pairing codes stay active until admin deletes the terminal.
 
         await using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
         await connection.OpenAsync();
@@ -40,10 +40,10 @@ public static class TerminalPairingService
             INSERT INTO terminal_pairings
                 (terminal_name, terminal_mode, pairing_code, pairing_expires_at, paired_at, disabled_at, created_at, updated_at)
             VALUES
-                (@terminalName, 'Child', @pairingCode, @expiresAt, NULL, NULL, NOW(), NOW())
+                (@terminalName, 'Child', @pairingCode, NULL, NULL, NULL, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 pairing_code = VALUES(pairing_code),
-                pairing_expires_at = VALUES(pairing_expires_at),
+                pairing_expires_at = NULL,
                 paired_at = NULL,
                 disabled_at = NULL,
                 enabled = TRUE,
@@ -54,7 +54,6 @@ public static class TerminalPairingService
             {
                 command.Parameters.AddWithValue("@terminalName", cleanName);
                 command.Parameters.AddWithValue("@pairingCode", code);
-                command.Parameters.AddWithValue("@expiresAt", expiresAt);
                 await command.ExecuteNonQueryAsync();
             }
 
@@ -67,7 +66,7 @@ public static class TerminalPairingService
             throw;
         }
 
-        return new TerminalPairingResult(true, $"Client POS pairing code created for {cleanName}.", code, expiresAt);
+        return new TerminalPairingResult(true, $"Client POS pairing code created for {cleanName}.", code, null);
     }
 
     public static async Task<TerminalPairingResult> ValidateAndActivateChildAsync(
@@ -135,15 +134,6 @@ public static class TerminalPairingService
                 {
                     failureReason = "wrong_code";
                     failureMessage = "Pairing code is incorrect.";
-                }
-
-                var expiresAt = reader.IsDBNull(reader.GetOrdinal("pairing_expires_at"))
-                    ? DateTime.MinValue
-                    : reader.GetDateTime("pairing_expires_at");
-                if (failureReason == null && expiresAt <= DateTime.Now)
-                {
-                    failureReason = "expired_code";
-                    failureMessage = "Pairing code has expired. Create a new code on the mother terminal.";
                 }
             }
         }
@@ -295,6 +285,12 @@ public static class TerminalPairingService
 
         await using var command = new MySqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
+
+        // Legacy rows may still have an expiry; codes are permanent until Delete.
+        await using var clearExpiry = new MySqlCommand(
+            "UPDATE terminal_pairings SET pairing_expires_at = NULL WHERE paired_at IS NULL AND pairing_expires_at IS NOT NULL",
+            connection);
+        await clearExpiry.ExecuteNonQueryAsync();
     }
 
     public static async Task ClearPairingAttemptsAsync(MySqlConnection connection, MySqlTransaction? transaction, string terminalName)

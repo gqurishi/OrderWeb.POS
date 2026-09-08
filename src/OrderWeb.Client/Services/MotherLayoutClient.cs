@@ -21,6 +21,13 @@ public sealed class MotherLayoutClient
 
     public async Task<RestaurantLayoutSnapshotDto?> GetLayoutAsync(CancellationToken cancellationToken = default)
     {
+        var (layout, _) = await TryGetLayoutAsync(cancellationToken);
+        return layout;
+    }
+
+    public async Task<(RestaurantLayoutSnapshotDto? Layout, string? Error)> TryGetLayoutAsync(
+        CancellationToken cancellationToken = default)
+    {
         var settings = await _cache.GetMotherConnectionAsync();
         var session = await _cache.GetCurrentLoginSessionAsync();
         if (settings is null ||
@@ -29,7 +36,7 @@ public sealed class MotherLayoutClient
             string.IsNullOrWhiteSpace(settings.TerminalToken) ||
             string.IsNullOrWhiteSpace(session?.SessionToken))
         {
-            return null;
+            return (null, "Client is not logged in to Mother POS.");
         }
 
         try
@@ -42,26 +49,28 @@ public sealed class MotherLayoutClient
             client.DefaultRequestHeaders.TryAddWithoutValidation("X-App-Version", AppInfo.VersionString);
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            using var response = await client.GetAsync($"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/layout", cancellationToken);
+            using var response = await client.GetAsync(
+                $"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/layout",
+                cancellationToken);
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var envelope = JsonSerializer.Deserialize<LayoutEnvelope>(json, JsonOptions);
             if (!response.IsSuccessStatusCode)
             {
-                return null;
+                return (null, envelope?.Message ?? $"Mother layout pull failed ({(int)response.StatusCode}).");
             }
 
-            var envelope = JsonSerializer.Deserialize<LayoutEnvelope>(json, JsonOptions);
             if (envelope is null || !envelope.Success)
             {
-                return null;
+                return (null, envelope?.Message ?? "Mother POS returned an empty layout response.");
             }
 
             var floors = envelope.Floors ?? [];
             var tables = envelope.Tables ?? [];
-            return new RestaurantLayoutSnapshotDto(envelope.Version ?? "1", floors, tables);
+            return (new RestaurantLayoutSnapshotDto(envelope.Version ?? "1", floors, tables), null);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 

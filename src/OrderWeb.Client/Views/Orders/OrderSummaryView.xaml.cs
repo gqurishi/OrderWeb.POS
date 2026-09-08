@@ -7,6 +7,8 @@ public partial class OrderSummaryView : ContentView
     public OrderSummaryView()
     {
         InitializeComponent();
+        // Mother order page never shows a SERVICE quick-action button.
+        SetShowServiceButton(false);
     }
 
     public event EventHandler? SendClicked;
@@ -18,28 +20,67 @@ public partial class OrderSummaryView : ContentView
     public event EventHandler? PrintClicked;
     public event EventHandler<OrderSummaryLine>? LineClicked;
 
-    public void SetOrder(string title, string detail, IEnumerable<OrderSummaryLine> lines)
+    /// <summary>Mother uses NOTES / VOID / MORE only for all order types.</summary>
+    public void SetShowServiceButton(bool show)
+    {
+        ServiceButton.IsVisible = show;
+        if (show)
+        {
+            QuickActionsGrid.ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star)
+            };
+            Grid.SetColumn(ServiceButton, 0);
+            Grid.SetColumn(NotesButton, 1);
+            Grid.SetColumn(VoidButton, 2);
+            Grid.SetColumn(MoreButton, 3);
+            return;
+        }
+
+        QuickActionsGrid.ColumnDefinitions = new ColumnDefinitionCollection
+        {
+            new(GridLength.Star),
+            new(GridLength.Star),
+            new(GridLength.Star)
+        };
+        Grid.SetColumn(NotesButton, 0);
+        Grid.SetColumn(VoidButton, 1);
+        Grid.SetColumn(MoreButton, 2);
+    }
+
+    public void SetOrder(
+        string title,
+        string detail,
+        IEnumerable<OrderSummaryLine> lines,
+        decimal? subtotal = null,
+        decimal? total = null,
+        bool showServiceChargeRow = false,
+        string serviceChargeDescription = "Service charge",
+        string serviceChargeValue = "Not included")
     {
         var lineList = lines.ToList();
-        var subtotal = lineList.Sum(line => line.Quantity * line.UnitPrice);
-        var vat = subtotal * 0.2m;
-        var total = subtotal + vat;
+        var computedSubtotal = subtotal ?? lineList.Sum(line => line.Quantity * line.UnitPrice);
+        var computedTotal = total ?? computedSubtotal;
 
         TitleLabel.Text = title;
         DetailLabel.Text = detail;
-        TotalLabel.Text = $"£{total:F2}";
+        SubtotalLabel.Text = $"£{computedSubtotal:F2}";
+        TotalLabel.Text = $"£{computedTotal:F2}";
+
+        ServiceChargeRow.IsVisible = showServiceChargeRow;
+        ServiceChargeDescriptionLabel.Text = serviceChargeDescription;
+        ServiceChargeLabel.Text = serviceChargeValue;
 
         LinesStack.Children.Clear();
         if (lineList.Count == 0)
         {
             LinesStack.Children.Add(new Label
             {
-                Text = "No items added yet.",
-                FontFamily = "OpenSansRegular",
-                FontSize = 14,
-                TextColor = Color.FromArgb("#64748B"),
-                HorizontalTextAlignment = TextAlignment.Center,
-                Margin = new Thickness(0, 70, 0, 0)
+                Text = string.Empty,
+                HeightRequest = 1
             });
             return;
         }

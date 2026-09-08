@@ -69,12 +69,25 @@ namespace POS_in_NET.Pages
                         OR
                         " + WebCashDueSourceFilter + @"
                       )";
+        // Live Order is kitchen board only: drafts/open tills stay off until Send to Kitchen.
         private const string ActiveLifecycleFilter = @"
                       AND COALESCE(o.is_open, 1) = 1
-                      AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) NOT IN ('paid', 'voided')";
+                      AND COALESCE(o.draft_abandoned_flag, 0) = 0
+                      AND (
+                            LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
+                            OR o.first_sent_at IS NOT NULL
+                            OR COALESCE(o.send_attempt_count, 0) > 0
+                            OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready')
+                          )";
         private const string ActiveLinkedOrderLifecycleFilter = @"
                           AND COALESCE(o2.is_open, 1) = 1
-                          AND LOWER(COALESCE(NULLIF(o2.local_lifecycle_state, ''), 'active')) NOT IN ('paid', 'voided')";
+                          AND COALESCE(o2.draft_abandoned_flag, 0) = 0
+                          AND (
+                                LOWER(COALESCE(NULLIF(o2.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
+                                OR o2.first_sent_at IS NOT NULL
+                                OR COALESCE(o2.send_attempt_count, 0) > 0
+                                OR LOWER(COALESCE(o2.status, '')) IN ('kitchen', 'preparing', 'ready')
+                              )";
 
         public LiveOrderPage()
         {
@@ -1060,7 +1073,9 @@ namespace POS_in_NET.Pages
                 }
 
                 await AddOpenTableOrdersWithoutActiveSessionAsync(connection, sessions);
-                _tableSessions = sessions;
+                _tableSessions = sessions
+                    .Where(session => session.HasLinkedOpenOrder)
+                    .ToList();
             }
             catch (Exception ex)
             {

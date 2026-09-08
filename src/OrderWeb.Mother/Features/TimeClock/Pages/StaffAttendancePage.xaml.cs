@@ -28,6 +28,11 @@ public partial class StaffAttendancePage : ContentPage
     {
         base.OnAppearing();
 
+        if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+        {
+            return;
+        }
+
         if (!_roleAccessService.IsAdmin(_authService.CurrentUser?.Role))
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can view Staff Clock.");

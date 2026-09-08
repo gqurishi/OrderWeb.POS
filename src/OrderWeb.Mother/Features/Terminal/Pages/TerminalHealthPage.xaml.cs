@@ -111,6 +111,11 @@ public partial class TerminalHealthPage : ContentPage
     public bool CanRunBackup => TerminalRoleService.CanRunMotherJobs;
     public bool CanAddChildTerminal => TerminalRoleService.CanRunMotherJobs;
 
+    public string MotherIpText => TerminalNetworkInfoService.GetBestLocalIpAddress();
+
+    public string MotherPortText =>
+        (_clientApiService?.Port > 0 ? _clientApiService.Port : ClientWebSocketBroadcastService.DefaultPort).ToString();
+
     public string ApiStatusText
     {
         get
@@ -155,8 +160,7 @@ public partial class TerminalHealthPage : ContentPage
     {
         get
         {
-            var ipAddress = TerminalNetworkInfoService.GetBestLocalIpAddress();
-            return $"Use this on each Client POS:\nMother IP: {ipAddress}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing code: create one per Client POS.";
+            return $"Mother IP: {MotherIpText}   Port: {MotherPortText}";
         }
     }
 
@@ -210,7 +214,7 @@ public partial class TerminalHealthPage : ContentPage
             var pairedClients = statuses.Count(status => !status.IsMother && status.PairedAt.HasValue);
             var offlineCount = statuses.Count - onlineCount;
             var lastCheck = DateTime.Now.ToString("HH:mm:ss");
-            var summary = $"{pairedClients} paired Client POS terminal(s). Mother API port {ClientWebSocketBroadcastService.DefaultPort}.";
+            var summary = $"Mother API {MotherIpText}:{MotherPortText} · {pairedClients} paired Client POS.";
             var backupStatus = BuildBackupStatus();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -227,6 +231,9 @@ public partial class TerminalHealthPage : ContentPage
                 LastCheckText = lastCheck;
                 SummaryText = summary;
                 BackupStatusText = backupStatus;
+                OnPropertyChanged(nameof(MotherIpText));
+                OnPropertyChanged(nameof(MotherPortText));
+                OnPropertyChanged(nameof(MotherConnectionText));
                 OnPropertyChanged(nameof(ApiStatusText));
                 OnPropertyChanged(nameof(WebSocketStatusText));
             });
@@ -317,7 +324,7 @@ public partial class TerminalHealthPage : ContentPage
             await LoadAsync();
             await AppAlertService.ShowAlertAsync(
                 "Client POS Pairing Code",
-                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\nExpires: {result.ExpiresAt:HH:mm}\n\nUse this on each Client POS:\nMother IP: {motherIp}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing Code: {result.PairingCode}");
+                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\n\nThis code stays active until you delete the terminal.\n\nUse this on each Client POS:\nMother IP: {motherIp}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing Code: {result.PairingCode}");
         }
         catch (Exception ex)
         {

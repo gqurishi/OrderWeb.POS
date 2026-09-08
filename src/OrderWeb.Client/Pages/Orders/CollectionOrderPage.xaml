@@ -8,6 +8,9 @@
              Shell.FlyoutBehavior="Disabled"
              NavigationPage.HasNavigationBar="False"
              NavigationPage.HasBackButton="False">
+    <Shell.BackButtonBehavior>
+        <BackButtonBehavior IsVisible="False" IsEnabled="False" />
+    </Shell.BackButtonBehavior>
 
     <!-- Exact Mother CollectionCustomerModal layout (px, spacing, colors). No top bar. -->
     <Grid Padding="44" RowDefinitions="Auto,*,Auto">

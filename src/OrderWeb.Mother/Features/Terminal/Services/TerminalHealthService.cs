@@ -125,6 +125,14 @@ public sealed class TerminalHealthService : IDisposable
         await TerminalPairingService.EnsureTableAsync(connection);
         await EnsureClientPairingColumnsAsync(connection);
 
+        // Existing pending codes keep working; expiry is no longer used.
+        await using (var clearExpiry = new MySqlCommand(
+            "UPDATE terminal_pairings SET pairing_expires_at = NULL WHERE paired_at IS NULL AND pairing_expires_at IS NOT NULL",
+            connection))
+        {
+            await clearExpiry.ExecuteNonQueryAsync();
+        }
+
         const string sql = @"
             SELECT terminal_name, terminal_mode, database_host, app_version, last_seen_at, last_status, last_error
             FROM terminal_health
@@ -170,9 +178,6 @@ public sealed class TerminalHealthService : IDisposable
             var pairedAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("paired_at"))
                 ? (DateTime?)null
                 : pairingsReader.GetDateTime("paired_at");
-            var expiresAt = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("pairing_expires_at"))
-                ? (DateTime?)null
-                : pairingsReader.GetDateTime("pairing_expires_at");
             var pairingCode = pairingsReader.IsDBNull(pairingsReader.GetOrdinal("pairing_code"))
                 ? string.Empty
                 : pairingsReader.GetString("pairing_code");
@@ -192,9 +197,7 @@ public sealed class TerminalHealthService : IDisposable
                     ? "Revoked"
                 : pairedAt.HasValue
                     ? isFreshHeartbeat ? "Online" : "Offline"
-                    : expiresAt.HasValue && expiresAt.Value <= DateTime.Now
-                        ? "Expired"
-                        : "Pending";
+                    : "Pending";
 
             var target = existing ?? new TerminalHealthStatus
             {
@@ -206,7 +209,7 @@ public sealed class TerminalHealthService : IDisposable
 
             target.PairingStatus = pairingStatus;
             target.PairingCode = pairingCode;
-            target.PairingExpiresAt = expiresAt;
+            target.PairingExpiresAt = null;
             target.PairedAt = pairedAt;
             target.IsDisabled = disabledAt.HasValue || !enabled;
             target.RevokedAt = revokedAt;
@@ -255,6 +258,21 @@ public sealed class TerminalHealthService : IDisposable
             .OrderByDescending(status => string.Equals(status.Mode, "Mother", StringComparison.OrdinalIgnoreCase))
             .ThenBy(status => status.TerminalName)
             .ToList();
+
+        // Always show the live Mother LAN IP so Client reconnect works after DHCP / IP change.
+        var motherLanIp = TerminalNetworkInfoService.GetBestLocalIpAddress();
+        foreach (var row in rows)
+        {
+            if (row.IsMother ||
+                row.IsPendingPairing ||
+                row.IsExpiredPairing ||
+                string.IsNullOrWhiteSpace(row.DatabaseHost) ||
+                string.Equals(row.DatabaseHost, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(row.DatabaseHost, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            {
+                row.DatabaseHost = motherLanIp;
+            }
+        }
 
         return rows;
     }

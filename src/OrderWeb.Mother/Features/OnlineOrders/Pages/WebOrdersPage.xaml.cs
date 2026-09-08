@@ -84,6 +84,11 @@ namespace POS_in_NET.Pages
         protected override async void OnAppearing()
         {
             base.OnAppearing();
+            if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+            {
+                return;
+            }
+
             if (!_roleAccessService.IsManagerOrAdmin(_authService?.CurrentUser?.Role))
             {
                 MainThread.BeginInvokeOnMainThread(async () =>

@@ -34,7 +34,7 @@ public class ApplicationHeader : ContentView
     public static readonly BindableProperty UserNameProperty = BindableProperty.Create(nameof(UserName), typeof(string), typeof(ApplicationHeader), "No user", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.UserName = v?.ToString() ?? "No user");
     public static readonly BindableProperty TerminalNameProperty = BindableProperty.Create(nameof(TerminalName), typeof(string), typeof(ApplicationHeader), "Terminal", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.TerminalName = v?.ToString() ?? "Terminal");
     public static readonly BindableProperty ConnectionStatusProperty = BindableProperty.Create(nameof(ConnectionStatus), typeof(string), typeof(ApplicationHeader), "Connected", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._connection.Status = v?.ToString() ?? "Connected");
-    public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationHeader), true, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.IsVisible = (bool)v);
+    public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.IsVisible = (bool)v);
     public static readonly BindableProperty ShowConnectionProperty = BindableProperty.Create(nameof(ShowConnection), typeof(bool), typeof(ApplicationHeader), true, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._connection.IsVisible = (bool)v);
     public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, _) => ((ApplicationHeader)b).ApplyWelcomeBrand());
     public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationHeader), false, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._minimize.IsVisible = (bool)v);
@@ -105,8 +105,13 @@ public class ApplicationHeader : ContentView
             HorizontalTextAlignment = TextAlignment.End,
             TextColor = Color.FromArgb("#3B82F6")
         };
-        _identity = new UserTerminalInfo { VerticalOptions = LayoutOptions.Center };
-        _connection = new ConnectionIndicator { VerticalOptions = LayoutOptions.Center };
+        _identity = new UserTerminalInfo { VerticalOptions = LayoutOptions.Center, IsVisible = false };
+        _connection = new ConnectionIndicator
+        {
+            VerticalOptions = LayoutOptions.Center,
+            Compact = true,
+            Margin = new Thickness(0, 0, 12, 0)
+        };
 
         _clock = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Margin = new Thickness(0, 0, 14, 0), Children = { _date, _time } };
         _contextActions = new HorizontalStackLayout { Spacing = 8, VerticalOptions = LayoutOptions.Center };

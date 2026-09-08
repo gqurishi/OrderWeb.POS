@@ -23,6 +23,7 @@
 
         <shared:PosHeader x:Name="SharedHeader"
                                   Grid.Row="1"
+                                  ShowIdentity="False"
                                   ShowMinimize="True"
                                   MenuClicked="OnMenuClicked"
                                   MinimizeClicked="OnMinimizeClicked"

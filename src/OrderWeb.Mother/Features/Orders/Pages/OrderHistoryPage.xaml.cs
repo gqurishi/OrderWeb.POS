@@ -746,6 +746,7 @@ namespace POS_in_NET.Pages
             searchPage.SearchSubmitted += query =>
             {
                 _searchQuery = query?.Trim() ?? string.Empty;
+                UpdateSearchPlaceholder();
                 ResetPageAndLoad();
             };
             
@@ -755,7 +756,27 @@ namespace POS_in_NET.Pages
         private void OnClearSearchClicked(object sender, EventArgs e)
         {
             _searchQuery = string.Empty;
+            UpdateSearchPlaceholder();
             ResetPageAndLoad();
+        }
+
+        private void UpdateSearchPlaceholder()
+        {
+            if (SearchOrdersPlaceholder == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                SearchOrdersPlaceholder.Text = "Search orders...";
+                SearchOrdersPlaceholder.TextColor = Color.FromArgb("#94A3B8");
+            }
+            else
+            {
+                SearchOrdersPlaceholder.Text = _searchQuery;
+                SearchOrdersPlaceholder.TextColor = Color.FromArgb("#1F2937");
+            }
         }
 
         private void OnPreviousPageClicked(object sender, EventArgs e)

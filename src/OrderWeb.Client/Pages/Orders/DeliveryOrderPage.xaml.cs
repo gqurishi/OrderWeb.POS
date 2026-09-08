@@ -22,10 +22,7 @@ public partial class DeliveryOrderPage : ContentPage
     public DeliveryOrderPage()
     {
         InitializeComponent();
-        Shell.SetNavBarIsVisible(this, false);
-        Shell.SetFlyoutBehavior(this, FlyoutBehavior.Disabled);
-        NavigationPage.SetHasNavigationBar(this, false);
-        NavigationPage.SetHasBackButton(this, false);
+        ClientPageChrome.HideSystemBackChrome(this);
         // Start off-screen so Delivery slides in from the right like Mother.
         Opacity = 0;
         TranslationX = 420;
@@ -34,6 +31,7 @@ public partial class DeliveryOrderPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        ClientPageChrome.HideSystemBackChrome(this);
         if (_enterAnimationStarted)
         {
             return;
@@ -45,6 +43,8 @@ public partial class DeliveryOrderPage : ContentPage
         Opacity = 1;
         await this.TranslateToAsync(0, 0, 280, Easing.CubicOut);
     }
+
+    protected override bool OnBackButtonPressed() => true;
 
     private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e) =>
         await OpenKeyboardForEntryAsync(CustomerNameEntry);
@@ -433,7 +433,9 @@ public partial class DeliveryOrderPage : ContentPage
                 ShowStatus(orderResult.Message, "#D97706");
             }
 
-            await Navigation.PushAsync(new OrderPage(orderResult.State), false);
+            await Navigation.PushAsync(
+                new OrderPage(orderResult.State, savedCustomer.Name, savedCustomer.Phone),
+                false);
         }
         catch (Exception ex)
         {

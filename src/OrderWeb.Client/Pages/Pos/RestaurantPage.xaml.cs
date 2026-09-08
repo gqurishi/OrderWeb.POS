@@ -60,12 +60,10 @@ public partial class RestaurantPage : ContentPage
         await _cache.InitializeAsync();
         try
         {
-            var layout = await _layoutClient.GetLayoutAsync();
-            if (layout is not null)
+            var result = await new MotherOperationalSyncClient(_cache).PullAllAsync();
+            if (!result.LayoutOk)
             {
-                await _cache.ReplaceLayoutAsync(
-                    new FloorSnapshotDto(layout.Version, layout.Floors),
-                    new TableSnapshotDto(layout.Version, layout.Tables));
+                System.Diagnostics.Debug.WriteLine($"Restaurant layout sync: {result.LayoutError}");
             }
         }
         catch
@@ -76,15 +74,7 @@ public partial class RestaurantPage : ContentPage
         var floors = await _cache.GetFloorsWithTablesAsync();
         if (floors.Count == 0)
         {
-            floors =
-            [
-                new CachedFloor(1, "Main Floor", 1,
-                [
-                    new CachedTable(10, 1, "10", 4, "Available", 0m, null, 0, null, null, 0, 1, 52, 64),
-                    new CachedTable(11, 1, "11", 4, "Available", 0m, null, 0, null, null, 0, 1, 264, 64),
-                    new CachedTable(12, 1, "12", 4, "Occupied", 0m, "demo-12", 4, null, "Ordering", 0, 1, 476, 64)
-                ])
-            ];
+            floors = Array.Empty<CachedFloor>();
         }
 
         var floorVersion = floors.SelectMany(f => f.Tables).Select(t => t.Version).DefaultIfEmpty(1).Max().ToString();

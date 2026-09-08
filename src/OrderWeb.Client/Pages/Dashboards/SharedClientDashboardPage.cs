@@ -99,6 +99,8 @@ public class SharedClientDashboardPage : ContentPage
             return;
         }
 
+        ClientPageChrome.HideSystemBackChrome(page);
+
         if (page is CollectionOrderPage or DeliveryOrderPage)
         {
             await ClientSideNavigation.PushFromSideAsync(Navigation, page);

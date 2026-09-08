@@ -21,6 +21,10 @@ public class ApplicationShellFrame : ContentView
     private readonly Grid _toastLayer;
     private readonly ContentView _dialogHost;
     private readonly Grid _dialogLayer;
+    private readonly Border _banner;
+    private readonly Label _bannerMessage;
+    private CancellationTokenSource? _toastAutoHideCts;
+    private const int ToastAutoHideMs = 2000;
 
     public static readonly BindableProperty MainContentProperty = BindableProperty.Create(nameof(MainContent), typeof(View), typeof(ApplicationShellFrame), propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._contentHost.Content = (View?)v);
     public static readonly BindableProperty PageTitleProperty = BindableProperty.Create(nameof(PageTitle), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.Title = v?.ToString() ?? string.Empty);
@@ -33,7 +37,7 @@ public class ApplicationShellFrame : ContentView
     public static readonly BindableProperty IsNavigationOpenProperty = BindableProperty.Create(nameof(IsNavigationOpen), typeof(bool), typeof(ApplicationShellFrame), false, BindingMode.TwoWay, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyNavigation((bool)v));
     public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._loadingLayer.IsVisible = (bool)v);
     public static readonly BindableProperty LoadingMessageProperty = BindableProperty.Create(nameof(LoadingMessage), typeof(string), typeof(ApplicationShellFrame), "Loading…", propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._loadingMessage.Text = v?.ToString() ?? "Loading…");
-    public static readonly BindableProperty ErrorTitleProperty = BindableProperty.Create(nameof(ErrorTitle), typeof(string), typeof(ApplicationShellFrame), "Something went wrong", propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._errorTitle.Text = v?.ToString() ?? "Something went wrong");
+    public static readonly BindableProperty ErrorTitleProperty = BindableProperty.Create(nameof(ErrorTitle), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._errorTitle.Text = string.IsNullOrWhiteSpace(v?.ToString()) ? "Something went wrong" : v!.ToString()!);
     public static readonly BindableProperty ErrorMessageProperty = BindableProperty.Create(nameof(ErrorMessage), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyError(v?.ToString()));
     public static readonly BindableProperty ShowUpdateButtonProperty = BindableProperty.Create(nameof(ShowUpdateButton), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._sidebar.ShowUpdateButton = (bool)v);
     public static readonly BindableProperty AvailableCapabilitiesProperty = BindableProperty.Create(nameof(AvailableCapabilities), typeof(IReadOnlySet<string>), typeof(ApplicationShellFrame), propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._sidebar.AvailableCapabilities = (IReadOnlySet<string>?)v);
@@ -42,15 +46,17 @@ public class ApplicationShellFrame : ContentView
     public static readonly BindableProperty ToastTitleProperty = BindableProperty.Create(nameof(ToastTitle), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._toast.Title = v?.ToString() ?? string.Empty);
     public static readonly BindableProperty ToastMessageProperty = BindableProperty.Create(nameof(ToastMessage), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._toast.Message = v?.ToString() ?? string.Empty);
     public static readonly BindableProperty ToastKindProperty = BindableProperty.Create(nameof(ToastKind), typeof(StatusKind), typeof(ApplicationShellFrame), StatusKind.Info, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._toast.Kind = (StatusKind)v);
-    public static readonly BindableProperty IsToastVisibleProperty = BindableProperty.Create(nameof(IsToastVisible), typeof(bool), typeof(ApplicationShellFrame), false, BindingMode.TwoWay, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._toastLayer.IsVisible = (bool)v);
+    public static readonly BindableProperty IsToastVisibleProperty = BindableProperty.Create(nameof(IsToastVisible), typeof(bool), typeof(ApplicationShellFrame), false, BindingMode.TwoWay, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyToastVisible((bool)v));
     public static readonly BindableProperty IsToastRetryVisibleProperty = BindableProperty.Create(nameof(IsToastRetryVisible), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._toast.IsRetryVisible = (bool)v);
     public static readonly BindableProperty DialogContentProperty = BindableProperty.Create(nameof(DialogContent), typeof(View), typeof(ApplicationShellFrame), propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyDialog((View?)v));
     public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationShellFrame), "Order Web", propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyIdentity());
     public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationShellFrame), propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyIdentity());
-    public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowIdentity = (bool)v);
+    public static readonly BindableProperty ShowIdentityProperty = BindableProperty.Create(nameof(ShowIdentity), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowIdentity = (bool)v);
     public static readonly BindableProperty ShowConnectionProperty = BindableProperty.Create(nameof(ShowConnection), typeof(bool), typeof(ApplicationShellFrame), true, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowConnection = (bool)v);
     public static readonly BindableProperty ShowWelcomeBrandProperty = BindableProperty.Create(nameof(ShowWelcomeBrand), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, _) => ((ApplicationShellFrame)b).ApplyWelcomeBrandLayout());
     public static readonly BindableProperty ShowMinimizeProperty = BindableProperty.Create(nameof(ShowMinimize), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._header.ShowMinimize = (bool)v);
+    public static readonly BindableProperty BannerMessageProperty = BindableProperty.Create(nameof(BannerMessage), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyBanner(v?.ToString()));
+    public static readonly BindableProperty IsBannerVisibleProperty = BindableProperty.Create(nameof(IsBannerVisible), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyBannerVisible((bool)v));
 
     public ApplicationShellFrame()
     {
@@ -102,13 +108,58 @@ public class ApplicationShellFrame : ContentView
         _dialogHost = new ContentView { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
         _dialogLayer = new Grid { IsVisible = false, ZIndex = 46, Padding = 20, BackgroundColor = Color.FromArgb("#66000000"), Children = { _dialogHost } };
 
+        _bannerMessage = new Label
+        {
+            FontSize = 14,
+            VerticalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Fill,
+            LineBreakMode = LineBreakMode.WordWrap
+        };
+        _bannerMessage.Use(Label.TextColorProperty, "OwTextStrong");
+        var bannerDetails = new SharedButton { Text = "Details", Variant = ButtonVariant.Secondary };
+        bannerDetails.Clicked += (_, _) => BannerDetailsRequested?.Invoke(this, EventArgs.Empty);
+        var bannerRetry = new SharedButton { Text = "Retry" };
+        bannerRetry.Clicked += (_, _) => BannerRetryRequested?.Invoke(this, EventArgs.Empty);
+        var bannerDismiss = new SharedButton { Text = "Dismiss", Variant = ButtonVariant.Secondary };
+        bannerDismiss.Clicked += (_, _) =>
+        {
+            IsBannerVisible = false;
+            BannerDismissRequested?.Invoke(this, EventArgs.Empty);
+        };
+        var bannerActions = new HorizontalStackLayout
+        {
+            Spacing = 8,
+            VerticalOptions = LayoutOptions.Center,
+            Children = { bannerDetails, bannerRetry, bannerDismiss }
+        };
+        _banner = new Border
+        {
+            IsVisible = false,
+            Padding = new Thickness(16, 10),
+            StrokeThickness = 0,
+            BackgroundColor = Color.FromArgb("#FEF3C7"),
+            Content = new Grid
+            {
+                ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+                ColumnSpacing = 12,
+                Children = { _bannerMessage, bannerActions }
+            }
+        };
+        Grid.SetColumn(bannerActions, 1);
+
         _appGrid = new Grid
         {
             BackgroundColor = Colors.White,
-            RowDefinitions = { new RowDefinition(64), new RowDefinition(GridLength.Star) }
+            RowDefinitions =
+            {
+                new RowDefinition(64),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star)
+            }
         };
         _appGrid.Add(_header);
-        _appGrid.Add(_contentHost, 0, 1);
+        _appGrid.Add(_banner, 0, 1);
+        _appGrid.Add(_contentHost, 0, 2);
         _root = new Grid { BackgroundColor = Colors.White, Children = { _appGrid, _navigationLayer, _loadingLayer, _errorLayer, _toastLayer, _dialogLayer, _sessionExpiredLayer } };
         Content = _root;
         ApplyIdentity();
@@ -122,6 +173,9 @@ public class ApplicationShellFrame : ContentView
     public event EventHandler? RetryRequested;
     public event EventHandler? SessionExpiredLoginRequested;
     public event EventHandler? ToastRetryRequested;
+    public event EventHandler? BannerDetailsRequested;
+    public event EventHandler? BannerRetryRequested;
+    public event EventHandler? BannerDismissRequested;
     public View? MainContent { get => (View?)GetValue(MainContentProperty); set => SetValue(MainContentProperty, value); }
     public string PageTitle { get => (string)GetValue(PageTitleProperty); set => SetValue(PageTitleProperty, value); }
     public string UserName { get => (string)GetValue(UserNameProperty); set => SetValue(UserNameProperty, value); }
@@ -151,6 +205,8 @@ public class ApplicationShellFrame : ContentView
     public bool ShowConnection { get => (bool)GetValue(ShowConnectionProperty); set => SetValue(ShowConnectionProperty, value); }
     public bool ShowWelcomeBrand { get => (bool)GetValue(ShowWelcomeBrandProperty); set => SetValue(ShowWelcomeBrandProperty, value); }
     public bool ShowMinimize { get => (bool)GetValue(ShowMinimizeProperty); set => SetValue(ShowMinimizeProperty, value); }
+    public string BannerMessage { get => (string)GetValue(BannerMessageProperty); set => SetValue(BannerMessageProperty, value); }
+    public bool IsBannerVisible { get => (bool)GetValue(IsBannerVisibleProperty); set => SetValue(IsBannerVisibleProperty, value); }
     public bool IsUpdating { get => _sidebar.IsUpdating; set => _sidebar.IsUpdating = value; }
     public void RefreshMenu() => _sidebar.Refresh();
     public void SetSidebarVisible(bool visible)
@@ -163,7 +219,6 @@ public class ApplicationShellFrame : ContentView
     {
         if (_header == null || _sidebar == null) return;
         _header.UserName = UserName; _header.TerminalName = TerminalName; _header.ConnectionStatus = ConnectionStatus; _header.RestaurantName = RestaurantName; _header.RestaurantLogo = RestaurantLogo;
-        // Sidebar keeps the Order Web product brand; the header shows the restaurant name.
         _sidebar.UserName = UserName; _sidebar.TerminalName = TerminalName; _sidebar.ConnectionStatus = ConnectionStatus; _sidebar.CurrentRole = UserRole; _sidebar.RestaurantName = "Order Web"; _sidebar.RestaurantLogo = RestaurantLogo;
     }
 
@@ -177,18 +232,104 @@ public class ApplicationShellFrame : ContentView
             _appGrid.RowDefinitions[0].Height = height;
         }
 
-        // Mother User dashboard is white end-to-end; non-dashboard pages keep the muted shell.
         _appGrid.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
         _contentHost.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
         _root.BackgroundColor = ShowWelcomeBrand ? Colors.White : Color.FromArgb("#F8FAFC");
     }
+
     private async void ApplyNavigation(bool open)
     {
         if (_navigationLayer == null) return;
         if (open) { _navigationLayer.IsVisible = true; await _sidebar.TranslateToAsync(0, 0, 220, Easing.CubicOut); }
         else if (_navigationLayer.IsVisible) { await _sidebar.TranslateToAsync(-280, 0, 180, Easing.CubicIn); _navigationLayer.IsVisible = false; }
     }
+
     private void ApplyError(string? message) { if (_errorLayer == null) return; _errorMessage.Text = message ?? string.Empty; _errorLayer.IsVisible = !string.IsNullOrWhiteSpace(message); }
     private void ApplySessionExpired(bool expired) { if (_sessionExpiredLayer == null) return; _sessionExpiredLayer.IsVisible = expired; }
     private void ApplyDialog(View? content) { if (_dialogHost == null || _dialogLayer == null) return; _dialogHost.Content = content; _dialogLayer.IsVisible = content is not null; }
+
+    private void ApplyBanner(string? message)
+    {
+        if (_bannerMessage == null)
+        {
+            return;
+        }
+
+        _bannerMessage.Text = message ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            IsBannerVisible = true;
+        }
+    }
+
+    private void ApplyBannerVisible(bool visible)
+    {
+        if (_banner == null)
+        {
+            return;
+        }
+
+        _banner.IsVisible = visible;
+    }
+
+    private void ApplyToastVisible(bool visible)
+    {
+        if (_toastLayer == null)
+        {
+            return;
+        }
+
+        _toastLayer.IsVisible = visible;
+        CancelToastAutoHide();
+        if (!visible)
+        {
+            return;
+        }
+
+        _toastAutoHideCts = new CancellationTokenSource();
+        var token = _toastAutoHideCts.Token;
+        _ = AutoHideToastAsync(token);
+    }
+
+    private async Task AutoHideToastAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ToastAutoHideMs, token);
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (!token.IsCancellationRequested)
+                {
+                    IsToastVisible = false;
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void CancelToastAutoHide()
+    {
+        if (_toastAutoHideCts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _toastAutoHideCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _toastAutoHideCts.Dispose();
+        _toastAutoHideCts = null;
+    }
 }

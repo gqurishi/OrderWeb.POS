@@ -7,7 +7,7 @@ public sealed class InactivityService
 {
     private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan StaffLogoutTimeout = TimeSpan.FromMinutes(3);
-    private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(2);
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
     private readonly ConditionalWeakTable<VisualElement, object> _trackedElements = new();

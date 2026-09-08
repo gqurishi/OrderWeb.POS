@@ -27,6 +27,21 @@ public static class ClientWindowService
 #endif
     }
 
+#if WINDOWS
+    /// <summary>
+    /// MAUI/WinUI can still paint a title-bar back arrow after navigation even when
+    /// the Shell nav bar is hidden. Force the locked borderless presenter again.
+    /// </summary>
+    public static void SuppressWindowsTitleBackArrow()
+    {
+        var mauiWindow = Application.Current?.Windows.FirstOrDefault();
+        if (mauiWindow?.Handler?.PlatformView is Microsoft.UI.Xaml.Window window)
+        {
+            ApplyLockedFullscreen(window);
+        }
+    }
+#endif
+
     public static void MinimizeMainWindow()
     {
 #if WINDOWS

@@ -5,8 +5,13 @@
              xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Manager.ReservationPage"
              Shell.NavBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             NavigationPage.HasBackButton="False"
              BackgroundColor="#F8FAFC"
              Title="Reservation">
+    <Shell.BackButtonBehavior>
+        <BackButtonBehavior IsVisible="False" IsEnabled="False" />
+    </Shell.BackButtonBehavior>
     <Grid x:Name="RootGrid" RowDefinitions="90,*" BackgroundColor="#F8FAFC">
         <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
 

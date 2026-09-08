@@ -1211,6 +1211,11 @@ public partial class ReportPage : ContentPage
         base.OnAppearing();
         SubscribeToRefreshEvents();
 
+        if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+        {
+            return;
+        }
+
         if (!await CanAccessReportsAsync())
         {
             await AppAlertService.ShowAlertAsync("Access Denied", "Only Admin can access Reports.");

@@ -18,9 +18,10 @@ public partial class OrderPage : ContentPage
         private readonly List<CachedMenuCategory> _categories = new();
         private readonly List<CachedProduct> _products = new();
         private readonly List<OrderSummaryLine> _basket = new();
-        private readonly IDispatcherTimer _clockTimer;
         private readonly CachedTable? _table;
         private readonly int _covers;
+        private string? _customerName;
+        private string? _customerPhone;
         private CachedMenuCategory? _selectedCategory;
         private MotherOrderState? _currentOrder;
         private bool _loaded;
@@ -31,11 +32,7 @@ public partial class OrderPage : ContentPage
         public OrderPage()
         {
             InitializeComponent();
-
-        _clockTimer = Dispatcher.CreateTimer();
-        _clockTimer.Interval = TimeSpan.FromSeconds(1);
-        _clockTimer.Tick += (_, _) => UpdateClock();
-        _clockTimer.Start();
+            ClientPageChrome.HideSystemBackChrome(this);
 
         MenuGrid.ItemTapped += async (_, item) => await AddItemAsync(item);
         Summary.SendClicked += async (_, _) => await SendToKitchenAsync();
@@ -68,8 +65,10 @@ public partial class OrderPage : ContentPage
         Summary.PrintClicked += async (_, _) => await PrintOrderAsync();
         Summary.LineClicked += async (_, line) => await EditMotherLineAsync(line);
 
+        TopBar.MenuClicked += async (_, _) => await OnMenuClickedAsync();
+        TopBar.LogoutClicked += async (_, _) => await OnLogoutClickedAsync();
+
         SizeChanged += (_, _) => ApplyResponsiveLayout();
-        UpdateClock();
             ApplyResponsiveLayout();
             Refresh();
         }
@@ -82,25 +81,40 @@ public partial class OrderPage : ContentPage
             Refresh();
         }
 
-        public OrderPage(MotherOrderState order)
+        public OrderPage(MotherOrderState order, string? customerName = null, string? customerPhone = null)
             : this()
         {
             _currentOrder = order;
+            _customerName = FirstNonEmpty(customerName, order.CustomerName);
+            _customerPhone = FirstNonEmpty(customerPhone, order.CustomerPhone);
+            if (string.IsNullOrWhiteSpace(_customerName) &&
+                string.IsNullOrWhiteSpace(_customerPhone) &&
+                !string.IsNullOrWhiteSpace(order.ConflictMessage) &&
+                order.ConflictMessage.Contains('·'))
+            {
+                var parts = order.ConflictMessage.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                _customerName = parts.ElementAtOrDefault(0);
+                _customerPhone = parts.ElementAtOrDefault(1);
+            }
+
             Refresh();
         }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        ClientPageChrome.HideSystemBackChrome(this);
         _isVisible = true;
         MotherEventClient.SharedAuthoritativeDataChanged += OnMotherOrderUpdated;
-        _clockTimer.Start();
-            UpdateClock();
             if (!_loaded)
             {
                 _loaded = true;
                 await EnsureOrderContextAsync();
                 await LoadMenuAsync();
+            }
+            else
+            {
+                Refresh();
             }
         }
 
@@ -109,8 +123,9 @@ public partial class OrderPage : ContentPage
         base.OnDisappearing();
         _isVisible = false;
         MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherOrderUpdated;
-        _clockTimer.Stop();
     }
+
+    protected override bool OnBackButtonPressed() => true;
 
     private async void OnMotherOrderUpdated(object? sender, MotherDataChangedEventArgs e)
     {
@@ -162,6 +177,15 @@ public partial class OrderPage : ContentPage
             {
                 ConflictMessage = changedElsewhere ? null : _currentOrder.ConflictMessage
             };
+            // Keep collection/delivery customer header across Mother refresh.
+            if (string.IsNullOrWhiteSpace(_customerName) &&
+                !string.IsNullOrWhiteSpace(_currentOrder.ConflictMessage) &&
+                _currentOrder.ConflictMessage.Contains('·'))
+            {
+                var parts = _currentOrder.ConflictMessage.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                _customerName = parts.ElementAtOrDefault(0);
+                _customerPhone = parts.ElementAtOrDefault(1);
+            }
             await _cache.SaveOrderStateAsync(_currentOrder);
             _basket.Clear();
             Refresh();
@@ -178,7 +202,19 @@ public partial class OrderPage : ContentPage
 
     private async Task LoadMenuAsync()
     {
-        await _menuClient.RefreshCacheAsync();
+        var refreshed = await _menuClient.RefreshCacheAsync();
+        if (!refreshed)
+        {
+            // Refresh failed — still try last-good cache, then a full operational menu pull.
+            try
+            {
+                await new MotherOperationalSyncClient(_cache).PullAllAsync();
+            }
+            catch
+            {
+                // Fall through to whatever is already in SQLite.
+            }
+        }
 
         _categories.Clear();
         _categories.AddRange(await _cache.GetMenuCategoriesAsync());
@@ -186,6 +222,14 @@ public partial class OrderPage : ContentPage
         _selectedCategory = _categories.FirstOrDefault();
         await LoadProductsForSelectedCategoryAsync();
         Refresh();
+
+        if (_categories.Count == 0)
+        {
+            await DisplayAlert(
+                "No menu on this Client",
+                "Mother POS menu is not in the local cache, so Collection/Delivery order place has no products.\n\nUse Update All from the sidebar, confirm Terminal Access includes ordering, then open the order again.",
+                "OK");
+        }
     }
 
     private async Task LoadProductsForSelectedCategoryAsync()
@@ -201,32 +245,42 @@ public partial class OrderPage : ContentPage
 
     private void ApplyResponsiveLayout()
     {
-        const double summaryColumnWidth = 560;
-        var compact = Width > 0 && Width < 1250;
+        var pageWidth = Width > 0 ? Width : (Window?.Width ?? 0);
+        // Stack panels earlier so the order column never overflows the window edge.
+        var compact = pageWidth > 0 && pageWidth < 1280;
         OrderLayout.RowDefinitions.Clear();
         OrderLayout.ColumnDefinitions.Clear();
 
+        // Never force a fixed summary width — that clipped PAYMENT / MORE / PRINT on Client.
+        Summary.WidthRequest = -1;
+        Summary.MinimumWidthRequest = -1;
+        Summary.MaximumWidthRequest = -1;
+        Summary.HorizontalOptions = LayoutOptions.Fill;
+
         if (compact)
         {
-            OrderLayout.Padding = 16;
+            OrderLayout.Padding = 12;
             OrderLayout.ColumnSpacing = 0;
-            OrderLayout.RowSpacing = 18;
+            OrderLayout.RowSpacing = 12;
             OrderLayout.RowDefinitions.Add(new RowDefinition(GridLength.Star));
-            OrderLayout.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            OrderLayout.RowDefinitions.Add(new RowDefinition(new GridLength(0.95, GridUnitType.Star)));
             OrderLayout.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            Summary.WidthRequest = -1;
+            Grid.SetRow(MenuPanel, 0);
+            Grid.SetColumn(MenuPanel, 0);
             Grid.SetRow(Summary, 1);
             Grid.SetColumn(Summary, 0);
             return;
         }
 
-        OrderLayout.Padding = 24;
-        OrderLayout.ColumnSpacing = 24;
+        // Mother OrderPlacementPageSimple: ColumnDefinitions="2*,*" ColumnSpacing=15 Padding=15
+        OrderLayout.Padding = 15;
+        OrderLayout.ColumnSpacing = 15;
         OrderLayout.RowSpacing = 0;
         OrderLayout.RowDefinitions.Add(new RowDefinition(GridLength.Star));
+        OrderLayout.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(2, GridUnitType.Star)));
         OrderLayout.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-        OrderLayout.ColumnDefinitions.Add(new ColumnDefinition(summaryColumnWidth));
-        Summary.WidthRequest = summaryColumnWidth;
+        Grid.SetRow(MenuPanel, 0);
+        Grid.SetColumn(MenuPanel, 0);
         Grid.SetRow(Summary, 0);
         Grid.SetColumn(Summary, 1);
     }
@@ -235,8 +289,174 @@ public partial class OrderPage : ContentPage
         {
             BuildCategoryTabs();
             MenuGrid.SetItems(FilteredProducts());
-            Summary.SetOrder(OrderTitle(), OrderDetail(), SummaryLines());
+            ApplyOrderChrome();
+            // Mother never shows a SERVICE quick button — service is a totals row / MORE action.
+            Summary.SetShowServiceButton(false);
+            Summary.SetOrder(
+                OrderTitle(),
+                OrderDetail(),
+                SummaryLines(),
+                CurrentSubtotal(),
+                CurrentTotal(),
+                showServiceChargeRow: IsTableOrder(),
+                serviceChargeDescription: "Service charge",
+                serviceChargeValue: "Not included");
+
+            if (_categories.Count == 0)
+            {
+                CategoryTabsHost.IsVisible = true;
+                CategoryTabs.Children.Clear();
+                CategoryTabs.Children.Add(new Label
+                {
+                    Text = "No menu synced — use Update All",
+                    FontSize = 14,
+                    FontFamily = "OpenSansSemibold",
+                    TextColor = Color.FromArgb("#B45309"),
+                    VerticalTextAlignment = TextAlignment.Center,
+                    Margin = new Thickness(8, 0)
+                });
+            }
         }
+
+        private void ApplyOrderChrome()
+        {
+            var title = OrderScreenTitle();
+            // Paint Mother title immediately (Collection Order / Delivery Order / Table Order).
+            TopBar.SetPageTitle(title);
+            _ = ApplyOrderChromeAsync(title);
+        }
+
+        private async Task ApplyOrderChromeAsync(string title)
+        {
+            try
+            {
+                var session = await _cache.GetCurrentLoginSessionAsync();
+                var online = await _offlinePolicy.IsMotherOnlineAsync();
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    TopBar.ConfigurePosChrome(
+                        title,
+                        session?.UserName,
+                        session?.Role ?? "Client",
+                        online ? "Connected" : "Mother Offline");
+                });
+            }
+            catch
+            {
+                await MainThread.InvokeOnMainThreadAsync(() => TopBar.SetPageTitle(title));
+            }
+        }
+
+        private string OrderScreenTitle()
+        {
+            if (IsDeliveryOrder())
+            {
+                return "Delivery Order";
+            }
+
+            if (IsCollectionOrder())
+            {
+                return "Collection Order";
+            }
+
+            return "Table Order";
+        }
+
+        private bool IsCollectionOrder() =>
+            CustomerOrderHubRules.IsCollectionOrderType(_currentOrder?.OrderType);
+
+        private bool IsDeliveryOrder() =>
+            CustomerOrderHubRules.IsDeliveryOrderType(_currentOrder?.OrderType);
+
+        private bool IsTableOrder() => !IsCollectionOrder() && !IsDeliveryOrder();
+
+        private string OrderTitle()
+        {
+            // Mother shows "Order # Table {n}" for new table tickets (no order number yet).
+            var number = string.IsNullOrWhiteSpace(_currentOrder?.OrderNumber)
+                ? string.Empty
+                : _currentOrder.OrderNumber.Trim();
+            if (IsTableOrder() &&
+                (string.Equals(number, _currentOrder?.OrderId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(number, "Table", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(number, "table", StringComparison.OrdinalIgnoreCase)))
+            {
+                number = string.Empty;
+            }
+
+            var orderPart = string.IsNullOrWhiteSpace(number) ? "Order #" : $"Order #{number}";
+
+            if (IsDeliveryOrder())
+            {
+                return $"{orderPart} Delivery";
+            }
+
+            if (IsCollectionOrder())
+            {
+                return $"{orderPart} Collection";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentOrder?.TableNumber))
+            {
+                return $"{orderPart} Table {_currentOrder.TableNumber}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_table?.TableNumber))
+            {
+                return $"{orderPart} Table {_table.TableNumber}";
+            }
+
+            return string.IsNullOrWhiteSpace(number) ? "Order # New" : orderPart;
+        }
+
+        private string OrderDetail()
+        {
+            if (IsCollectionOrder() || IsDeliveryOrder())
+            {
+                return FormatCustomerDetail(
+                    FirstNonEmpty(_customerName, _currentOrder?.CustomerName),
+                    FirstNonEmpty(_customerPhone, _currentOrder?.CustomerPhone),
+                    IsDeliveryOrder() ? "Delivery order" : "Collection order");
+            }
+
+            if (_currentOrder?.OrderType.Equals("Table", StringComparison.OrdinalIgnoreCase) == true || _table != null)
+            {
+                return $"Guests = {Math.Max(_currentOrder?.Guests ?? _covers, 1)}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentOrder?.ConflictMessage) &&
+                _currentOrder.ConflictMessage.Contains('·'))
+            {
+                return _currentOrder.ConflictMessage;
+            }
+
+            return string.IsNullOrWhiteSpace(_currentOrder?.OrderType) ? "Order" : $"{_currentOrder.OrderType} order";
+        }
+
+        private static string FormatCustomerDetail(string? name, string? phone, string fallback)
+        {
+            var cleanName = name?.Trim();
+            var cleanPhone = phone?.Trim();
+            if (!string.IsNullOrWhiteSpace(cleanName) && !string.IsNullOrWhiteSpace(cleanPhone))
+            {
+                return $"{cleanName} · {cleanPhone}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(cleanName))
+            {
+                return cleanName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(cleanPhone))
+            {
+                return cleanPhone;
+            }
+
+            return fallback;
+        }
+
+        private static string? FirstNonEmpty(params string?[] values) =>
+            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
         private async Task EnsureOrderContextAsync()
         {
@@ -286,41 +506,6 @@ public partial class OrderPage : ContentPage
             {
                 await DisplayAlert("Table Order", $"Could not open this table order from Mother POS.\n\n{ex.Message}", "OK");
             }
-        }
-
-        private string OrderTitle()
-        {
-            if (!string.IsNullOrWhiteSpace(_currentOrder?.TableNumber))
-            {
-                return $"Order # Table {_currentOrder.TableNumber}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(_table?.TableNumber))
-            {
-                return $"Order # Table {_table.TableNumber}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(_currentOrder?.OrderNumber))
-            {
-                return $"Order # {_currentOrder.OrderNumber}";
-            }
-
-            return "Order # New";
-        }
-
-        private string OrderDetail()
-        {
-            if (_currentOrder?.OrderType.Equals("Table", StringComparison.OrdinalIgnoreCase) == true || _table != null)
-            {
-                return $"Guests = {Math.Max(_currentOrder?.Guests ?? _covers, 1)}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(_currentOrder?.ConflictMessage))
-            {
-                return _currentOrder.ConflictMessage;
-            }
-
-            return string.IsNullOrWhiteSpace(_currentOrder?.OrderType) ? "Order" : $"{_currentOrder.OrderType} order";
         }
 
         private IReadOnlyList<OrderSummaryLine> SummaryLines()
@@ -430,6 +615,7 @@ public partial class OrderPage : ContentPage
     private void BuildCategoryTabs()
     {
         CategoryTabs.Children.Clear();
+        CategoryTabsHost.IsVisible = _categories.Count > 0;
         foreach (var category in _categories)
         {
             var selected = category == _selectedCategory;
@@ -452,19 +638,6 @@ public partial class OrderPage : ContentPage
                 Refresh();
             };
             CategoryTabs.Children.Add(button);
-        }
-
-        if (_categories.Count == 0)
-        {
-            CategoryTabs.Children.Add(new Label
-            {
-                Text = "No menu categories in local SQLite cache.",
-                FontFamily = "OpenSansRegular",
-                FontSize = 15,
-                TextColor = Color.FromArgb("#64748B"),
-                VerticalTextAlignment = TextAlignment.Center,
-                Margin = new Thickness(12, 0)
-            });
         }
     }
 
@@ -743,6 +916,16 @@ public partial class OrderPage : ContentPage
         await DisplayAlert("Print", request.Message, "OK");
     }
 
+        private decimal CurrentSubtotal()
+        {
+            if (_currentOrder != null && _basket.Count == 0)
+            {
+                return _currentOrder.Subtotal;
+            }
+
+            return _basket.Sum(line => line.Quantity * line.UnitPrice);
+        }
+
         private decimal CurrentTotal()
         {
             if (_currentOrder != null && _basket.Count == 0)
@@ -750,7 +933,7 @@ public partial class OrderPage : ContentPage
                 return _currentOrder.Total;
             }
 
-            var subtotal = _basket.Sum(line => line.Quantity * line.UnitPrice);
+            var subtotal = CurrentSubtotal();
             return subtotal + Math.Round(subtotal * 0.2m, 2);
         }
 
@@ -759,20 +942,14 @@ public partial class OrderPage : ContentPage
         MenuGrid.SetItems(FilteredProducts());
     }
 
-    private async void OnMenuClicked(object sender, EventArgs e)
+    private async Task OnMenuClickedAsync()
     {
-        await DisplayAlert("Restaurant POS", "Open the dashboard menu from the POS shell.", "OK");
-    }
-
-    private async void OnLogoutClicked(object sender, EventArgs e)
-    {
+        // Mother order page opens Shell flyout; Client returns to the POS shell dashboard.
         await Navigation.PopToRootAsync(false);
     }
 
-    private void UpdateClock()
+    private async Task OnLogoutClickedAsync()
     {
-        var now = DateTime.Now;
-        DateLabel.Text = now.ToString("dddd, MMMM d, yyyy", CultureInfo.InvariantCulture);
-        TimeLabel.Text = now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        await Navigation.PopToRootAsync(false);
     }
 }

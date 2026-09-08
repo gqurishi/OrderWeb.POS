@@ -1,4 +1,4 @@
-﻿using POS_in_NET.Services;
+using POS_in_NET.Services;
 using POS_in_NET.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -109,6 +109,11 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     {
         base.OnAppearing();
         AttachReservationSyncHandler();
+
+        if (!await SessionAccessGuard.RequireSignedInAsync(_authService))
+        {
+            return;
+        }
 
         if (!_roleAccessService.CanAccessFeature(_authService.CurrentUser?.Role, "reservation"))
         {

@@ -317,17 +317,73 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             var floorService = new FloorService();
             var tableSessionService = new TableSessionService();
-            var floors = await floorService.GetAllFloorsAsync();
-            var tables = await tableSessionService.GetTablesWithSessionsAsync();
-            if (tables.Count == 0)
+            List<RestaurantTable> tables;
+            List<Floor> floors;
+            try
             {
-                tables = await new RestaurantTableService().GetAllTablesAsync();
+                floors = await floorService.GetAllFloorsAsync();
+            }
+            catch (Exception floorEx)
+            {
+                AppDiagnostics.Log($"Client layout floors failed: {floorEx.GetType().Name}: {floorEx.Message}");
+                floors = new List<Floor>();
             }
 
-            var versions = await GetConfigurationVersionsAsync();
-            var version = versions.TryGetValue(SyncSectionKeys.Tables, out var tableVersion)
-                ? tableVersion
-                : "1";
+            try
+            {
+                tables = await tableSessionService.GetTablesWithSessionsAsync();
+            }
+            catch (Exception sessionEx)
+            {
+                AppDiagnostics.Log($"Client layout sessions failed: {sessionEx.GetType().Name}: {sessionEx.Message}");
+                tables = new List<RestaurantTable>();
+            }
+
+            if (tables.Count == 0)
+            {
+                try
+                {
+                    tables = await new RestaurantTableService().GetAllTablesAsync();
+                }
+                catch (Exception tableEx)
+                {
+                    AppDiagnostics.Log($"Client layout tables failed: {tableEx.GetType().Name}: {tableEx.Message}");
+                    tables = new List<RestaurantTable>();
+                }
+            }
+
+            // Version stamp must never block layout delivery to Client.
+            string version = "1";
+            try
+            {
+                var versions = await GetConfigurationVersionsAsync();
+                if (versions.TryGetValue(SyncSectionKeys.Tables, out var tableVersion) &&
+                    !string.IsNullOrWhiteSpace(tableVersion))
+                {
+                    version = tableVersion;
+                }
+            }
+            catch (Exception versionEx)
+            {
+                AppDiagnostics.Log($"Client layout version lookup failed: {versionEx.GetType().Name}: {versionEx.Message}");
+            }
+
+            // If floors list is empty but tables exist, synthesize floor rows from table FloorIds.
+            if (floors.Count == 0 && tables.Count > 0)
+            {
+                floors = tables
+                    .GroupBy(table => table.FloorId)
+                    .OrderBy(group => group.Key)
+                    .Select(group => new Floor
+                    {
+                        Id = group.Key,
+                        Name = string.IsNullOrWhiteSpace(group.First().FloorName)
+                            ? $"Floor {group.Key}"
+                            : group.First().FloorName!,
+                        IsActive = true
+                    })
+                    .ToList();
+            }
 
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
@@ -337,7 +393,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 floors = floors.Select((floor, index) => new
                 {
                     id = floor.Id.ToString(),
-                    name = floor.Name,
+                    name = string.IsNullOrWhiteSpace(floor.Name) ? $"Floor {floor.Id}" : floor.Name,
                     sortOrder = index,
                     backgroundImageId = (string?)null
                 }),
@@ -361,11 +417,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
         catch (Exception ex)
         {
-            AppDiagnostics.Log($"Client layout snapshot failed: {ex.GetType().Name}");
+            AppDiagnostics.Log($"Client layout snapshot failed: {ex.GetType().Name}: {ex.Message}");
             await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
             {
                 success = false,
-                message = "Mother POS could not load the restaurant layout."
+                message = $"Mother POS could not load the restaurant layout. ({ex.GetType().Name}: {ex.Message})"
             });
         }
     }
@@ -387,8 +443,22 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         try
         {
-            var versions = await GetConfigurationVersionsAsync();
-            var version = versions.TryGetValue(SyncSectionKeys.Menu, out var menuVersion) ? menuVersion : "1";
+            // Version stamp must never block menu delivery to Client.
+            string version = "1";
+            try
+            {
+                var versions = await GetConfigurationVersionsAsync();
+                if (versions.TryGetValue(SyncSectionKeys.Menu, out var menuVersion) &&
+                    !string.IsNullOrWhiteSpace(menuVersion))
+                {
+                    version = menuVersion;
+                }
+            }
+            catch (Exception versionEx)
+            {
+                AppDiagnostics.Log($"Client menu version lookup failed: {versionEx.GetType().Name}: {versionEx.Message}");
+            }
+
             var snapshot = await _operational.BuildMenuSnapshotAsync(version);
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
@@ -405,11 +475,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
         catch (Exception ex)
         {
-            AppDiagnostics.Log($"Client menu snapshot failed: {ex.GetType().Name}");
+            AppDiagnostics.Log($"Client menu snapshot failed: {ex.GetType().Name}: {ex.Message}");
             await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
             {
                 success = false,
-                message = "Mother POS could not load the food menu."
+                message = $"Mother POS could not load the food menu. ({ex.GetType().Name}: {ex.Message})"
             });
         }
     }
@@ -2051,15 +2121,6 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     failureReason = "wrong_code";
                     failureMessage = "Pairing code is incorrect.";
                 }
-
-                var expiresAt = reader.IsDBNull(reader.GetOrdinal("pairing_expires_at"))
-                    ? DateTime.MinValue
-                    : reader.GetDateTime("pairing_expires_at");
-                if (failureReason == null && expiresAt <= DateTime.Now)
-                {
-                    failureReason = "expired_code";
-                    failureMessage = "Pairing code has expired. Create a new code on the Mother terminal.";
-                }
             }
         }
 
@@ -2839,17 +2900,38 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
     private async Task<Dictionary<string, string>> GetConfigurationVersionsAsync()
     {
-        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
-        await connection.OpenAsync();
-        await EnsureClientConnectionTablesAsync(connection);
         var versions = SyncSectionKeys.All.ToDictionary(section => section, _ => "0", StringComparer.OrdinalIgnoreCase);
-        await using var command = new MySqlCommand("SELECT section_key, version FROM configuration_versions", connection);
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        try
         {
-            versions[reader.GetString(0)] = reader.GetString(1);
+            await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+            await connection.OpenAsync();
+            await EnsureClientConnectionTablesAsync(connection);
+            await EnsureConfigurationVersionsTableAsync(connection);
+            await using var command = new MySqlCommand("SELECT section_key, version FROM configuration_versions", connection);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                versions[reader.GetString(0)] = reader.GetString(1);
+            }
         }
+        catch (Exception ex)
+        {
+            // Layout/menu must still work when version tracking is unavailable.
+            AppDiagnostics.Log($"configuration_versions read failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
         return versions;
+    }
+
+    private static async Task EnsureConfigurationVersionsTableAsync(MySqlConnection connection)
+    {
+        await using var command = new MySqlCommand(@"
+            CREATE TABLE IF NOT EXISTS configuration_versions (
+                section_key VARCHAR(64) NOT NULL PRIMARY KEY,
+                version BIGINT NOT NULL DEFAULT 0,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB", connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task<string> IncrementConfigurationVersionAsync(string section)

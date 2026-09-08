@@ -21,17 +21,24 @@ public sealed class MotherMenuClient
 
     public async Task<bool> RefreshCacheAsync(CancellationToken cancellationToken = default)
     {
-        var snapshot = await GetMenuAsync(cancellationToken);
+        var (snapshot, _) = await TryGetMenuAsync(cancellationToken);
         if (snapshot == null)
         {
             return false;
         }
 
-        await _cache.ReplaceMenuAsync(snapshot);
-        return snapshot.Categories.Count > 0;
+        var replace = await _cache.ReplaceMenuAsync(snapshot);
+        return replace.Applied && snapshot.Categories.Count > 0;
     }
 
     public async Task<MenuSnapshotDto?> GetMenuAsync(CancellationToken cancellationToken = default)
+    {
+        var (snapshot, _) = await TryGetMenuAsync(cancellationToken);
+        return snapshot;
+    }
+
+    public async Task<(MenuSnapshotDto? Snapshot, string? Error)> TryGetMenuAsync(
+        CancellationToken cancellationToken = default)
     {
         var settings = await _cache.GetMotherConnectionAsync();
         var session = await _cache.GetCurrentLoginSessionAsync();
@@ -41,7 +48,7 @@ public sealed class MotherMenuClient
             string.IsNullOrWhiteSpace(settings.TerminalToken) ||
             string.IsNullOrWhiteSpace(session?.SessionToken))
         {
-            return null;
+            return (null, "Client is not logged in to Mother POS.");
         }
 
         try
@@ -56,29 +63,29 @@ public sealed class MotherMenuClient
 
             using var response = await client.GetAsync($"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/menu", cancellationToken);
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var envelope = JsonSerializer.Deserialize<MenuEnvelope>(json, JsonOptions);
             if (!response.IsSuccessStatusCode)
             {
-                return null;
+                return (null, envelope?.Message ?? $"Mother menu pull failed ({(int)response.StatusCode}).");
             }
 
-            var envelope = JsonSerializer.Deserialize<MenuEnvelope>(json, JsonOptions);
             if (envelope is null || !envelope.Success)
             {
-                return null;
+                return (null, envelope?.Message ?? "Mother POS returned an empty menu response.");
             }
 
-            return new MenuSnapshotDto(
+            return (new MenuSnapshotDto(
                 envelope.Version ?? "1",
                 envelope.Categories ?? [],
                 envelope.Products ?? [],
                 envelope.Prices ?? [],
                 envelope.ModifierGroups ?? [],
                 envelope.Modifiers ?? [],
-                envelope.ProductModifiers ?? []);
+                envelope.ProductModifiers ?? []), null);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 
