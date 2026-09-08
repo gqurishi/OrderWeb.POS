@@ -15,9 +15,9 @@ public partial class LoyaltyPage : ContentPage
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
     }
 
-    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Customer loyalty lookup complete.", "OK");
-    private async void OnAddPointsClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Add points request queued.", "OK");
-    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Redeem points request queued.", "OK");
+    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Loyalty data is available only through Mother POS.", "OK");
+    private async void OnAddPointsClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Connect to Mother POS before adding points.", "OK");
+    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Connect to Mother POS before redeeming points.", "OK");
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()

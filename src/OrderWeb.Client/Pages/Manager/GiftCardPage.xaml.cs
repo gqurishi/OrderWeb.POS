@@ -15,9 +15,9 @@ public partial class GiftCardPage : ContentPage
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
     }
 
-    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Gift card lookup complete.", "OK");
-    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Redeem request queued.", "OK");
-    private async void OnAddBalanceClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Add balance request queued.", "OK");
+    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Gift-card data is available only through Mother POS.", "OK");
+    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Connect to Mother POS before redeeming a gift card.", "OK");
+    private async void OnAddBalanceClicked(object sender, EventArgs e) => await DisplayAlert("Gift Cards", "Gift-card top-up must be completed by Mother POS.", "OK");
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()
