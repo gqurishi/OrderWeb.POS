@@ -56,11 +56,7 @@ public sealed class LoyaltyView : ContentView
         _searchButton.Clicked += (_, _) => SearchRequested?.Invoke(this, EventArgs.Empty);
 
         var newCustomerButton = new SharedButton { Text = "New Customer", Variant = ButtonVariant.Secondary, HeightRequest = 52, FontSize = 16 };
-        newCustomerButton.Clicked += (_, _) =>
-        {
-            ShowNewCustomer(true, _phoneSearch.Text);
-            NewCustomerRequested?.Invoke(this, EventArgs.Empty);
-        };
+        newCustomerButton.Clicked += (_, _) => NewCustomerRequested?.Invoke(this, EventArgs.Empty);
 
         var actions = new Grid
         {

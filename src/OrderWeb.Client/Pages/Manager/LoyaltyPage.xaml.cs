@@ -3,21 +3,29 @@ namespace OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.SharedUI.Views;
 
 public partial class LoyaltyPage : ContentPage
 {
     public LoyaltyPage()
     {
         InitializeComponent();
-        LoadEmptyState();
+
+        Loyalty.ShowDiagnostics = false;
+        Loyalty.SetCustomer(null);
+        Loyalty.SearchRequested += async (_, _) => await DisplayAlert("Loyalty", "Loyalty data is available only through Mother POS.", "OK");
+        Loyalty.NewCustomerRequested += async (_, _) => await DisplayAlert("Loyalty", "Create customers from Mother POS.", "OK");
+        Loyalty.CreateCustomerRequested += async (_, _) => await DisplayAlert("Loyalty", "Create customers from Mother POS.", "OK");
+        Loyalty.AddPointsRequested += async (_, _) => await DisplayAlert("Loyalty", "Connect to Mother POS before adding points.", "OK");
+        Loyalty.RedeemPointsRequested += async (_, _) => await DisplayAlert("Loyalty", "Connect to Mother POS before redeeming points.", "OK");
+        Loyalty.ViewHistoryRequested += async (_, _) => await DisplayAlert("Loyalty", "Points history is available on Mother POS.", "OK");
+        Loyalty.SendStatementRequested += async (_, _) => await DisplayAlert("Loyalty", "Statements are sent from Mother POS.", "OK");
+
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
     }
 
-    private async void OnLookupClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Loyalty data is available only through Mother POS.", "OK");
-    private async void OnAddPointsClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Connect to Mother POS before adding points.", "OK");
-    private async void OnRedeemClicked(object sender, EventArgs e) => await DisplayAlert("Loyalty", "Connect to Mother POS before redeeming points.", "OK");
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()
@@ -53,12 +61,5 @@ public partial class LoyaltyPage : ContentPage
             "Order History" => new OrderHistoryPage(),
             _ => new LoyaltyPage()
         }, false);
-    }
-
-    private void LoadEmptyState()
-    {
-        CustomerNameLabel.Text = "No customer selected";
-        CustomerPhoneLabel.Text = "Connect to Mother POS";
-        PointsBalanceLabel.Text = "0";
     }
 }
