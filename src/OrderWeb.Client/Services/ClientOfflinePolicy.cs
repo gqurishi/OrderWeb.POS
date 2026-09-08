@@ -8,7 +8,8 @@ namespace OrderWeb.Client.Services;
 public enum ClientOperation
 {
     ViewCachedMenu, ViewCachedFloor, CreateUnsentDraft, SubmitFinalOrder,
-    CardPayment, Refund, ChangePermissions, UpdateMenu, ViewCachedOpenOrders
+    CardPayment, GiftCard, Loyalty, PrintAsSuccess, ConfirmReservation,
+    Refund, ChangePermissions, UpdateMenu, ViewCachedOpenOrders
 }
 
 public enum MotherProbeStatus
@@ -38,6 +39,10 @@ public sealed class ClientOfflinePolicy
         ClientOperation.ViewCachedOpenOrders => new(true, false, !motherOnline, motherOnline ? "Open orders current" : "Mother offline — open orders may be outdated."),
         ClientOperation.SubmitFinalOrder => OnlineOnly(motherOnline, "Final orders require Mother confirmation. No order was submitted."),
         ClientOperation.CardPayment => OnlineOnly(motherOnline, "Card payment requires Mother and the payment provider. No payment was taken."),
+        ClientOperation.GiftCard => OnlineOnly(motherOnline, "Gift-card operations require Mother POS. No gift-card balance was changed."),
+        ClientOperation.Loyalty => OnlineOnly(motherOnline, "Loyalty operations require Mother POS. No points were changed."),
+        ClientOperation.PrintAsSuccess => OnlineOnly(motherOnline, "Printing is confirmed only by Mother POS. No print was recorded."),
+        ClientOperation.ConfirmReservation => OnlineOnly(motherOnline, "Reservation confirmation requires Mother POS. No reservation was confirmed."),
         ClientOperation.Refund => OnlineOnly(motherOnline, "Refunds require Mother approval. No refund was created."),
         ClientOperation.ChangePermissions => OnlineOnly(motherOnline, "Permission changes require Mother POS."),
         ClientOperation.UpdateMenu => OnlineOnly(motherOnline, "Menu updates require Mother POS."),

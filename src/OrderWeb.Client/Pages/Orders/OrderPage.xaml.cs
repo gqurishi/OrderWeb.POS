@@ -431,6 +431,12 @@ public partial class OrderPage : ContentPage
 
     private async Task QueueOrderActionAsync(string actionType, string message)
     {
+        if (!string.Equals(actionType, "unsent_draft", StringComparison.OrdinalIgnoreCase))
+        {
+            await DisplayAlert("Mother POS", "This action requires Mother POS confirmation and was not queued locally.", "OK");
+            return;
+        }
+
         await _cache.QueuePendingActionAsync(actionType, new
         {
             orderType = "Table",

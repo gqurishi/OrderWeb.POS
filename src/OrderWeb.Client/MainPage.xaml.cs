@@ -426,10 +426,9 @@ public partial class MainPage : ContentPage
 
     private async void OnMotherAuthoritativeDataChanged(object? sender, MotherDataChangedEventArgs e)
     {
-        // The event is only a notification. The cache has recorded its version
-        // and requested a Mother comparison/full refresh; repaint from the
-        // currently consistent SQLite snapshot rather than consuming event data.
-        await _configurationVersions.CompareAsync();
+        // Events carry no business data. Fetch fresh authoritative snapshots
+        // from Mother instead of merging event payloads into the Client cache.
+        await RefreshAuthoritativeClientCacheAsync();
         _cacheStatus = await _cache.GetStatusAsync();
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
@@ -442,9 +441,9 @@ public partial class MainPage : ContentPage
     {
         if (e.Connected)
         {
-            // Reconnect never proves that no notification was missed. Compare
-            // Mother versions before treating cached configuration as current.
-            _ = _configurationVersions.CompareAsync();
+            // Reconnect never proves that no notification was missed, so fetch
+            // authoritative snapshots before using cached data as current.
+            _ = RefreshAuthoritativeClientCacheAsync();
         }
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -455,6 +454,32 @@ public partial class MainPage : ContentPage
                     : "Mother offline";
             RefreshCurrentPosPage();
         });
+    }
+
+    private async Task RefreshAuthoritativeClientCacheAsync()
+    {
+        if (_currentSession is null || !await _offlinePolicy.IsMotherOnlineAsync())
+        {
+            return;
+        }
+
+        await _configurationVersions.CompareAsync();
+        await _menuClient.RefreshCacheAsync();
+        var layout = await _layoutClient.GetLayoutAsync();
+        if (layout is not null)
+        {
+            await _cache.ReplaceLayoutAsync(
+                new FloorSnapshotDto(layout.Version, layout.Floors),
+                new TableSnapshotDto(layout.Version, layout.Tables));
+        }
+
+        var orders = await _orderClient.GetOpenOrdersAsync();
+        if (orders is not null)
+        {
+            await _cache.ReplaceOperationalOrdersAsync(orders);
+        }
+
+        _cacheStatus = await _cache.GetStatusAsync();
     }
 
     private async Task StartBootstrapAsync(BootstrapRequest? retryRequest = null)
@@ -4551,6 +4576,12 @@ public partial class MainPage : ContentPage
 
     private async Task QueueClientActionAsync(string actionType, string message)
     {
+        if (!string.Equals(actionType, "unsent_draft", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowToast("This action requires Mother POS confirmation and was not queued locally.");
+            return;
+        }
+
         await _cache.QueuePendingActionAsync(actionType, new
         {
             selectedTable = _currentOrder?.TableNumber ?? _selectedCachedTable?.TableNumber,
