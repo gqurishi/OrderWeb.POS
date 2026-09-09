@@ -37,6 +37,8 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     private string? _statusMessage;
     private string _printActionLabel = "PRINT";
     private string _paymentActionLabel = "PAYMENT";
+    private string _sendActionLabel = "SEND TO KITCHEN";
+    private bool _actionsBusy;
 
     public ObservableCollection<OrderPlaceCategoryItem> Categories { get; } = [];
     public ObservableCollection<OrderPlaceCategoryItem> Subcategories { get; } = [];
@@ -121,6 +123,15 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
         set => Set(ref _isBusy, value);
     }
 
+    /// <summary>
+    /// True while Send/Print/Pay is in flight. Does not block product taps (busy-dinner speed).
+    /// </summary>
+    public bool ActionsBusy
+    {
+        get => _actionsBusy;
+        set => Set(ref _actionsBusy, value);
+    }
+
     public string? StatusMessage
     {
         get => _statusMessage;
@@ -138,6 +149,12 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     {
         get => _paymentActionLabel;
         set => Set(ref _paymentActionLabel, value);
+    }
+
+    public string SendActionLabel
+    {
+        get => _sendActionLabel;
+        set => Set(ref _sendActionLabel, value);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

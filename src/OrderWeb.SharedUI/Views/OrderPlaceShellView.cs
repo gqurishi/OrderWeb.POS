@@ -29,6 +29,10 @@ public sealed class OrderPlaceShellView : ContentView
     private readonly PosActionButton _pay;
     private readonly Grid _root;
     private IOrderPlaceHost? _host;
+    private string? _categoriesFingerprint;
+    private string? _subcategoriesFingerprint;
+    private string? _productsFingerprint;
+    private string? _linesFingerprint;
 
     public OrderPlaceShellView()
     {
@@ -244,15 +248,59 @@ public sealed class OrderPlaceShellView : ContentView
 
         _print.Text = session.PrintActionLabel;
         _pay.Text = session.PaymentActionLabel;
-        _pay.IsActionEnabled = !session.IsBusy;
-        _send.IsActionEnabled = !session.IsBusy;
-        _print.IsActionEnabled = !session.IsBusy;
+        _send.Text = string.IsNullOrWhiteSpace(session.SendActionLabel)
+            ? "SEND TO KITCHEN"
+            : session.SendActionLabel;
 
-        RenderCategories(session);
-        RenderSubcategories(session);
-        RenderProducts(session);
-        RenderLines(session);
+        var actionsEnabled = !session.ActionsBusy && !session.IsBusy;
+        _pay.IsActionEnabled = actionsEnabled;
+        _send.IsActionEnabled = actionsEnabled;
+        _print.IsActionEnabled = actionsEnabled;
+        _void.IsActionEnabled = actionsEnabled;
+
+        var categoriesKey = BuildCategoriesFingerprint(session);
+        if (!string.Equals(categoriesKey, _categoriesFingerprint, StringComparison.Ordinal))
+        {
+            _categoriesFingerprint = categoriesKey;
+            RenderCategories(session);
+        }
+
+        var subKey = BuildSubcategoriesFingerprint(session);
+        if (!string.Equals(subKey, _subcategoriesFingerprint, StringComparison.Ordinal))
+        {
+            _subcategoriesFingerprint = subKey;
+            RenderSubcategories(session);
+        }
+
+        var productsKey = BuildProductsFingerprint(session);
+        if (!string.Equals(productsKey, _productsFingerprint, StringComparison.Ordinal))
+        {
+            _productsFingerprint = productsKey;
+            RenderProducts(session);
+        }
+
+        var linesKey = BuildLinesFingerprint(session);
+        if (!string.Equals(linesKey, _linesFingerprint, StringComparison.Ordinal))
+        {
+            _linesFingerprint = linesKey;
+            RenderLines(session);
+        }
     }
+
+    private static string BuildCategoriesFingerprint(OrderPlaceSessionState session) =>
+        string.Join('|', session.Categories.Select(c => $"{c.Id}:{c.Name}")) +
+        $"#{session.SelectedCategoryId}";
+
+    private static string BuildSubcategoriesFingerprint(OrderPlaceSessionState session) =>
+        string.Join('|', session.Subcategories.Select(c => $"{c.Id}:{c.Name}")) +
+        $"#{session.SelectedSubcategoryId}";
+
+    private static string BuildProductsFingerprint(OrderPlaceSessionState session) =>
+        string.Join('|', session.Products.Select(p => $"{p.Id}:{p.Name}:{p.Price:0.00}"));
+
+    private static string BuildLinesFingerprint(OrderPlaceSessionState session) =>
+        string.Join('|', session.Lines.Select(l =>
+            $"{l.Id}:{l.Quantity}:{l.LineTotal:0.00}:{l.Details}:{l.IsSent}"));
 
     private void RenderCategories(OrderPlaceSessionState session)
     {
