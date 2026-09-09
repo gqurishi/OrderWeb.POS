@@ -100,6 +100,7 @@ public partial class LoginPage : ContentPage
                 ? parsed
                 : _authService.CurrentUser?.Role ?? UserRole.User;
             var navigationRoute = GetNavigationRouteForRole(role);
+            PosStartupPrefetch.WarmOperationalCaches();
             if (!await NavigateAfterLoginAsync(navigationRoute))
             {
                 var recoveryShell = new AppShell();

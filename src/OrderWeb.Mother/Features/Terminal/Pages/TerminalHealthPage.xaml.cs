@@ -207,8 +207,12 @@ public partial class TerminalHealthPage : ContentPage
         _isLoading = true;
         try
         {
-            await _terminalHealthService.UpdateCurrentTerminalAsync();
-            var statuses = await _terminalHealthService.GetTerminalStatusesAsync();
+            var healthService = _terminalHealthService;
+            var statuses = await Task.Run(async () =>
+            {
+                await healthService.UpdateCurrentTerminalAsync();
+                return await healthService.GetTerminalStatusesAsync();
+            }).ConfigureAwait(true);
 
             var onlineCount = statuses.Count(status => status.IsOnline);
             var pairedClients = statuses.Count(status => !status.IsMother && status.PairedAt.HasValue);

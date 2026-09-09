@@ -41,7 +41,12 @@ public class ApplicationShellFrame : ContentView
         var frame = (ApplicationShellFrame)b;
         var loading = (bool)v;
         frame._loadingLayer.IsVisible = loading;
+        frame._loadingLayer.InputTransparent = !loading;
         frame._chefLoader.IsLoading = loading;
+        if (!loading)
+        {
+            frame._chefLoader.InputTransparent = true;
+        }
     });
     public static readonly BindableProperty LoadingMessageProperty = BindableProperty.Create(nameof(LoadingMessage), typeof(string), typeof(ApplicationShellFrame), "Cooking up your data…", propertyChanged: (b, _, v) =>
     {
@@ -90,9 +95,25 @@ public class ApplicationShellFrame : ContentView
         _sidebar.NavigationRequested += (_, e) => { SelectedRoute = e.Route; IsNavigationOpen = false; NavigationRequested?.Invoke(this, e); };
         _sidebar.LogoutRequested += (_, _) => LogoutRequested?.Invoke(this, EventArgs.Empty);
         _sidebar.UpdateRequested += (_, _) => UpdateRequested?.Invoke(this, EventArgs.Empty);
-        var dismiss = new BoxView { BackgroundColor = Color.FromArgb("#01000000"), Margin = new Thickness(280, 0, 0, 0) };
-        var dismissTap = new TapGestureRecognizer(); dismissTap.Tapped += (_, _) => IsNavigationOpen = false; dismiss.GestureRecognizers.Add(dismissTap);
-        _navigationLayer = new Grid { IsVisible = false, ZIndex = 20, Children = { dismiss, _sidebar } };
+        var dismiss = new BoxView
+        {
+            BackgroundColor = Color.FromArgb("#660F172A"),
+            Margin = new Thickness(280, 0, 0, 0),
+            InputTransparent = false
+        };
+        var dismissTap = new TapGestureRecognizer();
+        dismissTap.Tapped += (_, _) => IsNavigationOpen = false;
+        dismiss.GestureRecognizers.Add(dismissTap);
+        _sidebar.InputTransparent = false;
+        // Layer itself stays InputTransparent so empty chrome does not steal taps;
+        // only the dismiss scrim + sidebar receive input while open.
+        _navigationLayer = new Grid
+        {
+            IsVisible = false,
+            ZIndex = 20,
+            InputTransparent = true,
+            Children = { dismiss, _sidebar }
+        };
 
         _loadingMessage = new Label { Text = "Cooking up your data…", FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
         _loadingMessage.Use(Label.TextColorProperty, "OwTextStrong");
@@ -104,7 +125,7 @@ public class ApplicationShellFrame : ContentView
             DelayMilliseconds = 0,
             IsLoading = false
         };
-        _loadingLayer = new Grid { IsVisible = false, ZIndex = 30, Children = { _chefLoader } };
+        _loadingLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 30, Children = { _chefLoader } };
 
         _errorTitle = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _errorTitle.Use(Label.TextColorProperty, "OwTextStrong");
         _errorMessage = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center }; _errorMessage.Use(Label.TextColorProperty, "OwTextMuted");
@@ -258,9 +279,28 @@ public class ApplicationShellFrame : ContentView
 
     private async void ApplyNavigation(bool open)
     {
-        if (_navigationLayer == null) return;
-        if (open) { _navigationLayer.IsVisible = true; await _sidebar.TranslateToAsync(0, 0, 220, Easing.CubicOut); }
-        else if (_navigationLayer.IsVisible) { await _sidebar.TranslateToAsync(-280, 0, 180, Easing.CubicIn); _navigationLayer.IsVisible = false; }
+        if (_navigationLayer == null)
+        {
+            return;
+        }
+
+        if (open)
+        {
+            _navigationLayer.InputTransparent = false;
+            _navigationLayer.IsVisible = true;
+            await _sidebar.TranslateToAsync(0, 0, 180, Easing.CubicOut);
+            return;
+        }
+
+        if (!_navigationLayer.IsVisible)
+        {
+            return;
+        }
+
+        // Drop hit-testing immediately so the first content tap is never eaten by the closing scrim.
+        _navigationLayer.InputTransparent = true;
+        await _sidebar.TranslateToAsync(-280, 0, 120, Easing.CubicIn);
+        _navigationLayer.IsVisible = false;
     }
 
     private void ApplyError(string? message) { if (_errorLayer == null) return; _errorMessage.Text = message ?? string.Empty; _errorLayer.IsVisible = !string.IsNullOrWhiteSpace(message); }

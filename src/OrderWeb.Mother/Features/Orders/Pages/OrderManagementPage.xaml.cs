@@ -17,6 +17,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
     private bool _isSubscribedToSyncEvents;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private CancellationTokenSource? _loadCts;
+    private CancellationTokenSource? _liveReloadDebounceCts;
     
     private ObservableCollection<OrderDisplayModel> _orders = new();
     private List<Order> _allOrders = new();
@@ -100,8 +101,19 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
             await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
         });
 
-        await LoadOrders();
-        UpdateLastSyncTime();
+        _liveReloadDebounceCts?.Cancel();
+        _liveReloadDebounceCts?.Dispose();
+        _liveReloadDebounceCts = new CancellationTokenSource();
+        var token = _liveReloadDebounceCts.Token;
+        try
+        {
+            await Task.Delay(150, token);
+            await LoadOrders();
+            UpdateLastSyncTime();
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void SubscribeToSyncEvents()

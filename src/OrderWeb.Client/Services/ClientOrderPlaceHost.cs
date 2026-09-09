@@ -3,6 +3,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
 
 namespace OrderWeb.Client.Services;
@@ -29,7 +30,6 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private CachedMenuCategory? _selectedTopCategory;
     private CachedMenuCategory? _selectedCategory;
     private MotherOrderState? _currentOrder;
-    private string? _searchQuery;
     private bool _initialized;
 
     public ClientOrderPlaceHost(IClientOrderPlaceUi ui)
@@ -117,13 +117,6 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         PublishSession();
     }
 
-    public Task SearchAsync(string? query, CancellationToken cancellationToken = default)
-    {
-        _searchQuery = query?.Trim();
-        PublishSession();
-        return Task.CompletedTask;
-    }
-
     public async Task AddProductAsync(string productId, CancellationToken cancellationToken = default)
     {
         if (!int.TryParse(productId, out var id))
@@ -154,16 +147,102 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        var selectedModifiers = item.ModifierGroups
-            .SelectMany(group => group.Modifiers.Take(Math.Min(group.MaxSelect, 1)))
-            .Select(modifier => modifier.Name)
-            .ToArray();
+        // Mother parity: variant → quick note → addons → add (cancel at any step aborts).
+        var takeaway = IsCollectionOrder() || IsDeliveryOrder();
+        var variants = item.ActiveVariants
+            .OrderBy(v => v.SortOrder)
+            .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(v => new OrderPlaceVariantChoice(
+                v.MotherId,
+                v.Name,
+                v.Description,
+                v.PriceFor(takeaway)))
+            .ToList();
+
+        CachedProductVariant? selectedVariant = null;
+        if (variants.Count > 0)
+        {
+            var picked = await _ui.PickVariantAsync(item.Name, variants);
+            if (picked is null)
+            {
+                return;
+            }
+
+            selectedVariant = item.ActiveVariants.FirstOrDefault(v =>
+                string.Equals(v.MotherId, picked.Id, StringComparison.OrdinalIgnoreCase))
+                ?? new CachedProductVariant(
+                    picked.Id,
+                    picked.Name,
+                    picked.Description,
+                    picked.Price,
+                    picked.Price,
+                    0);
+        }
+
+        string? selectedNote = null;
+        var quickNotes = item.ActiveQuickNotes.ToList();
+        if (quickNotes.Count > 0)
+        {
+            var noteResult = await _ui.PickQuickNoteAsync(item.Name, quickNotes);
+            if (noteResult.Kind == OrderPlaceQuickNoteKind.Cancelled)
+            {
+                return;
+            }
+
+            if (noteResult.Kind == OrderPlaceQuickNoteKind.SavedNote)
+            {
+                selectedNote = NormalizeNote(noteResult.NoteText);
+            }
+            else if (noteResult.Kind == OrderPlaceQuickNoteKind.CustomNote)
+            {
+                var custom = await _ui.PromptAsync(
+                    "Custom Note",
+                    $"Enter note for {item.Name}:",
+                    "Save",
+                    "Cancel",
+                    "e.g., No onions, extra spicy");
+                if (custom is null)
+                {
+                    return;
+                }
+
+                selectedNote = NormalizeNote(custom);
+            }
+        }
+
+        var addonChoices = item.ModifierGroups
+            .SelectMany(group => group.Modifiers)
+            .Where(modifier => !string.IsNullOrWhiteSpace(modifier.Name))
+            .GroupBy(modifier => modifier.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Select(modifier => new OrderPlaceAddonChoice(
+                modifier.Name.Trim(),
+                modifier.Name.Trim(),
+                modifier.PriceDelta))
+            .ToList();
+
+        IReadOnlyList<string> selectedModifiers = Array.Empty<string>();
+        if (addonChoices.Count > 0)
+        {
+            var pickedAddons = await _ui.PickAddonsAsync(item.Name, addonChoices);
+            if (pickedAddons is null)
+            {
+                return;
+            }
+
+            selectedModifiers = pickedAddons.Select(addon => addon.Name).ToList();
+        }
 
         try
         {
             Session.IsBusy = true;
             RaiseChanged();
-            var result = await _orderClient.AddItemAsync(_currentOrder, item, selectedModifiers);
+            var result = await _orderClient.AddItemAsync(
+                _currentOrder,
+                item,
+                selectedModifiers,
+                selectedNote,
+                selectedVariant);
             _currentOrder = result.State;
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
@@ -182,6 +261,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             RaiseChanged();
         }
     }
+
+    private static string? NormalizeNote(string? note) =>
+        string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
     public async Task SetLineQuantityAsync(string lineId, int quantity, CancellationToken cancellationToken = default)
     {
@@ -627,7 +709,6 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         Session.HeaderTitle = BuildHeaderTitle();
         Session.HeaderDetail = BuildHeaderDetail();
-        Session.SearchQuery = _searchQuery;
         Session.SelectedCategoryId = _selectedTopCategory?.Id.ToString(CultureInfo.InvariantCulture);
         Session.SelectedSubcategoryId = _selectedCategory?.Id.ToString(CultureInfo.InvariantCulture);
 
@@ -729,10 +810,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         RaiseChanged();
     }
 
-    private IEnumerable<CachedProduct> FilteredProducts() =>
-        _products.Where(product =>
-            string.IsNullOrWhiteSpace(_searchQuery)
-            || product.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<CachedProduct> FilteredProducts() => _products;
 
     private IEnumerable<CachedMenuCategory> TopLevelCategories()
     {
@@ -819,6 +897,9 @@ public interface IClientOrderPlaceUi
     Task<bool> ConfirmAsync(string title, string message, string accept, string cancel);
     Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder);
     Task<string?> PickActionAsync(string title, params string[] options);
+    Task<OrderPlaceVariantChoice?> PickVariantAsync(string itemName, IReadOnlyList<OrderPlaceVariantChoice> variants);
+    Task<OrderPlaceQuickNoteResult> PickQuickNoteAsync(string itemName, IReadOnlyList<string> notes);
+    Task<IReadOnlyList<OrderPlaceAddonChoice>?> PickAddonsAsync(string itemName, IReadOnlyList<OrderPlaceAddonChoice> addons);
     Task NavigateToPaymentAsync(decimal total, string orderId, int version);
     Task CloseOrderPageAsync();
 }

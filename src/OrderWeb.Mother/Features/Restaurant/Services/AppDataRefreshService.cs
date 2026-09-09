@@ -108,7 +108,7 @@ namespace POS_in_NET.Services
 
     public static class AppDataRefreshService
     {
-        private static readonly TimeSpan RefreshBatchDelay = TimeSpan.FromMilliseconds(400);
+        private static readonly TimeSpan RefreshBatchDelay = TimeSpan.FromMilliseconds(150);
         private static readonly object SyncRoot = new();
         private static readonly List<AppDataChangedEventArgs> PendingChanges = new();
         private static CancellationTokenSource? _batchCts;

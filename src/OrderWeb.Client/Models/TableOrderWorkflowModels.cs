@@ -26,7 +26,34 @@ public sealed record CachedTable(
 
 public sealed record CachedMenuCategory(int Id, string Name, string Color, int SortOrder, int? ParentId = null);
 
-public sealed record CachedProduct(int Id, int CategoryId, string Name, decimal Price, string Currency, IReadOnlyList<CachedModifierGroup> ModifierGroups, string? MotherId = null);
+public sealed record CachedProduct(
+    int Id,
+    int CategoryId,
+    string Name,
+    decimal Price,
+    string Currency,
+    IReadOnlyList<CachedModifierGroup> ModifierGroups,
+    string? MotherId = null,
+    IReadOnlyList<CachedProductVariant>? Variants = null,
+    IReadOnlyList<string>? QuickNotes = null)
+{
+    public IReadOnlyList<CachedProductVariant> ActiveVariants =>
+        Variants ?? Array.Empty<CachedProductVariant>();
+
+    public IReadOnlyList<string> ActiveQuickNotes =>
+        QuickNotes ?? Array.Empty<string>();
+}
+
+public sealed record CachedProductVariant(
+    string MotherId,
+    string Name,
+    string? Description,
+    decimal TakeawayPrice,
+    decimal DineInPrice,
+    int SortOrder)
+{
+    public decimal PriceFor(bool takeaway) => takeaway ? TakeawayPrice : DineInPrice;
+}
 
 public sealed record CachedModifierGroup(int Id, string Name, int MinSelect, int MaxSelect, IReadOnlyList<CachedModifier> Modifiers);
 

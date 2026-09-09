@@ -11,12 +11,26 @@
     <Shell.BackButtonBehavior>
         <BackButtonBehavior IsVisible="False" IsEnabled="False" />
     </Shell.BackButtonBehavior>
-    <Grid RowDefinitions="Auto,*"
-          BackgroundColor="#F1F5F9">
+    <Grid BackgroundColor="#F1F5F9">
         <layout:ClientTopBar x:Name="TopBar"
+                             IsVisible="False"
+                             HeightRequest="0"
+                             InputTransparent="True"
                              ShowConnectionStatus="True" />
-        <!-- SharedUI Order Place shell (Phase 8) -->
-        <ContentView x:Name="ShellHost"
-                     Grid.Row="1" />
+        <Grid ColumnDefinitions="Auto,*"
+              ColumnSpacing="6"
+              Padding="8">
+            <ImageButton x:Name="OrderPlaceMenuButton"
+                         Source="mian.png"
+                         WidthRequest="40"
+                         HeightRequest="40"
+                         BackgroundColor="Transparent"
+                         VerticalOptions="Start"
+                         Margin="0,4,0,0"
+                         Clicked="OnOrderPlaceMenuClicked"/>
+            <!-- SharedUI Order Place shell (Phase 8) -->
+            <ContentView x:Name="ShellHost"
+                         Grid.Column="1" />
+        </Grid>
     </Grid>
 </ContentPage>

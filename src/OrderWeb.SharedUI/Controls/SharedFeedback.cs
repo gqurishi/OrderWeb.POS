@@ -123,7 +123,14 @@ public sealed class PosLoadingOverlay : ContentView
 
     public static readonly BindableProperty IsLoadingProperty =
         BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(PosLoadingOverlay), true,
-            propertyChanged: (b, _, v) => ((PosLoadingOverlay)b)._loader.IsLoading = (bool)v);
+            propertyChanged: (b, _, v) =>
+            {
+                var overlay = (PosLoadingOverlay)b;
+                var loading = (bool)v;
+                overlay._loader.IsLoading = loading;
+                overlay.IsVisible = loading;
+                overlay.InputTransparent = !loading;
+            });
 
     public PosLoadingOverlay()
     {
@@ -136,6 +143,7 @@ public sealed class PosLoadingOverlay : ContentView
             IsLoading = true
         };
         Content = _loader;
+        InputTransparent = false;
     }
 
     public string Message

@@ -62,6 +62,14 @@ public sealed record BootstrapVariant(
     int SortOrder,
     bool IsActive);
 
+public sealed record BootstrapQuickNote(
+    int Id,
+    string MotherId,
+    int ProductId,
+    string NoteText,
+    int SortOrder,
+    bool IsActive);
+
 public sealed record BootstrapMealDeal(
     int Id,
     string MotherId,

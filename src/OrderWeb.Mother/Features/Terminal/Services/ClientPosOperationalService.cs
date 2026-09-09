@@ -87,6 +87,7 @@ public sealed class ClientPosOperationalService
         var modifiers = new List<ClientMenuModifierDto>();
         var productModifiers = new List<ClientMenuProductModifierDto>();
         var variants = new List<ClientMenuVariantDto>();
+        var quickNotes = new List<ClientMenuQuickNoteDto>();
 
         foreach (var item in items
                      .Where(item => !string.IsNullOrWhiteSpace(item.CategoryId) && categoryIds.ContainsKey(item.CategoryId))
@@ -357,6 +358,46 @@ public sealed class ClientPosOperationalService
             $"{mealDeals.Count} meal deals, {tastingMenus.Count} tasting menus " +
             $"(source: {allCategories.Count} categories / {items.Count} items).");
 
+        var productMotherToId = products.ToDictionary(
+            product => product.MotherId,
+            product => product.Id,
+            StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var notesByProduct = new Dictionary<int, int>();
+            foreach (var note in await _menuItemService.GetAllActiveQuickNotesAsync())
+            {
+                if (string.IsNullOrWhiteSpace(note.MenuItemId) ||
+                    string.IsNullOrWhiteSpace(note.NoteText) ||
+                    !productMotherToId.TryGetValue(note.MenuItemId.Trim(), out var productId))
+                {
+                    continue;
+                }
+
+                notesByProduct.TryGetValue(productId, out var count);
+                if (count >= 6)
+                {
+                    continue;
+                }
+
+                notesByProduct[productId] = count + 1;
+                var noteMotherId = string.IsNullOrWhiteSpace(note.Id)
+                    ? $"{note.MenuItemId}:{note.DisplayOrder}:{note.NoteText}"
+                    : note.Id.Trim();
+                quickNotes.Add(new ClientMenuQuickNoteDto(
+                    StableEntityId.FromKey($"qnote:{noteMotherId}", usedIds),
+                    noteMotherId,
+                    productId,
+                    note.NoteText.Trim(),
+                    note.DisplayOrder,
+                    true));
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client menu quick notes skipped: {ex.Message}");
+        }
+
         return new ClientMenuSnapshot(
             version,
             snapshotCategories,
@@ -372,7 +413,8 @@ public sealed class ClientPosOperationalService
             tastingMenus,
             tastingOptions,
             tastingCourses,
-            tastingChoices);
+            tastingChoices,
+            quickNotes);
     }
 
     public async Task<ClientDeliveryQuote> QuoteDeliveryZoneAsync(string? postcode)
@@ -1198,7 +1240,8 @@ public sealed record ClientMenuSnapshot(
     IReadOnlyList<ClientTastingMenuDto> TastingMenus,
     IReadOnlyList<ClientTastingMenuOptionDto> TastingMenuOptions,
     IReadOnlyList<ClientTastingMenuCourseDto> TastingMenuCourses,
-    IReadOnlyList<ClientTastingMenuChoiceDto> TastingMenuChoices);
+    IReadOnlyList<ClientTastingMenuChoiceDto> TastingMenuChoices,
+    IReadOnlyList<ClientMenuQuickNoteDto> QuickNotes);
 
 public sealed record ClientMenuCategoryDto(int Id, string MotherId, string Name, string Color, int SortOrder, bool IsActive, string? ParentMotherId = null);
 
@@ -1220,6 +1263,14 @@ public sealed record ClientMenuVariantDto(
     string? Description,
     decimal TakeawayPrice,
     decimal DineInPrice,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record ClientMenuQuickNoteDto(
+    int Id,
+    string MotherId,
+    int ProductId,
+    string NoteText,
     int SortOrder,
     bool IsActive);
 

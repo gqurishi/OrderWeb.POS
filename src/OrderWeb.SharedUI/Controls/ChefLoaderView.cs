@@ -197,9 +197,10 @@ public sealed class ChefLoaderView : ContentView
             return;
         }
 
+        // Visible but transparent during delay must never steal taps.
         IsVisible = true;
         Opacity = 0;
-        InputTransparent = Mode == ChefLoaderMode.Inline;
+        InputTransparent = true;
         _delayTimer = Dispatcher.CreateTimer();
         _delayTimer.Interval = TimeSpan.FromMilliseconds(delay);
         _delayTimer.IsRepeating = false;
@@ -210,15 +211,26 @@ public sealed class ChefLoaderView : ContentView
             {
                 RevealNow();
             }
+            else
+            {
+                HideNow();
+            }
         };
         _delayTimer.Start();
     }
 
     private void RevealNow()
     {
+        if (!IsLoading)
+        {
+            HideNow();
+            return;
+        }
+
         _isRevealed = true;
         IsVisible = true;
         Opacity = 1;
+        // Inline never blocks surrounding content; overlay/fullscreen block only once revealed.
         InputTransparent = Mode == ChefLoaderMode.Inline;
         StartAnimation();
     }
@@ -248,7 +260,7 @@ public sealed class ChefLoaderView : ContentView
         StopAnimationOnly();
         _animStartedUtc = DateTime.UtcNow;
         _animTimer = Dispatcher.CreateTimer();
-        _animTimer.Interval = TimeSpan.FromMilliseconds(33);
+        _animTimer.Interval = TimeSpan.FromMilliseconds(50);
         _animTimer.IsRepeating = true;
         _animTimer.Tick += (_, _) => TickAnimation();
         _animTimer.Start();
@@ -274,8 +286,13 @@ public sealed class ChefLoaderView : ContentView
 
     private void TickAnimation()
     {
-        if (!_isRevealed || !IsLoading)
+        if (!_isRevealed || !IsLoading || !IsVisible || Opacity <= 0 || Window is null)
         {
+            if (!_isRevealed || !IsLoading)
+            {
+                StopAnimationOnly();
+            }
+
             return;
         }
 

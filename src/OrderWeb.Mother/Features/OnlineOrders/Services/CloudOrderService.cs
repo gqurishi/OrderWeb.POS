@@ -37,6 +37,9 @@ public class CloudOrderService
     
     // Live update event - Used by WebSocket and backup polling for UI refresh.
     public event Action? OnOrdersUpdated;
+    private readonly object _ordersUpdatedLock = new();
+    private CancellationTokenSource? _ordersUpdatedCts;
+    private static readonly TimeSpan OrdersUpdatedBatchDelay = TimeSpan.FromMilliseconds(150);
     
     // Public properties for status monitoring
     public bool IsPolling => _isBackupPollingEnabled;
@@ -76,6 +79,37 @@ public class CloudOrderService
     {
         _autoPrintService = autoPrintService;
         System.Diagnostics.Debug.WriteLine("CloudOrderService linked to OnlineOrderAutoPrintService");
+    }
+
+    /// <summary>
+    /// Coalesce rapid cloud/WS order events so UI refreshes once (~150ms), not per message.
+    /// Also fans into AppDataRefreshService for Live Order / Visual Table subscribers.
+    /// </summary>
+    private void RaiseOrdersUpdatedDebounced()
+    {
+        AppDataRefreshService.RequestRefresh(AppDataChangeKind.Orders);
+
+        CancellationToken token;
+        lock (_ordersUpdatedLock)
+        {
+            _ordersUpdatedCts?.Cancel();
+            _ordersUpdatedCts?.Dispose();
+            _ordersUpdatedCts = new CancellationTokenSource();
+            token = _ordersUpdatedCts.Token;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(OrdersUpdatedBatchDelay, token).ConfigureAwait(false);
+                OnOrdersUpdated?.Invoke();
+            }
+            catch (OperationCanceledException)
+            {
+                // Merged into a later batch.
+            }
+        });
     }
     
     /// <summary>
@@ -185,7 +219,7 @@ public class CloudOrderService
             
             // MANUAL SYNC ALWAYS REFRESHES UI
             System.Diagnostics.Debug.WriteLine($" Manual sync complete - Found {syncResult.OrdersFound} orders from OrderWeb.net");
-            OnOrdersUpdated?.Invoke();
+            RaiseOrdersUpdatedDebounced();
             
             return (syncResult.OrdersFound, todayCount, syncResult.Message);
         }
@@ -310,7 +344,7 @@ public class CloudOrderService
                     if (newOrdersCount > 0)
                     {
                         System.Diagnostics.Debug.WriteLine($" {newOrdersCount} NEW orders detected - triggering UI refresh!");
-                        OnOrdersUpdated?.Invoke();
+                        RaiseOrdersUpdatedDebounced();
                     }
                     else
                     {
@@ -453,7 +487,7 @@ public class CloudOrderService
 
             if (notifyUi)
             {
-                OnOrdersUpdated?.Invoke();
+                RaiseOrdersUpdatedDebounced();
             }
 
             return true;
@@ -1560,7 +1594,7 @@ public class CloudOrderService
 
                 System.Diagnostics.Debug.WriteLine($" SYNC COMPLETE: Processed {ordersToProcess.Count} orders, {newOrdersCount} were new");
 
-                OnOrdersUpdated?.Invoke();
+                RaiseOrdersUpdatedDebounced();
 
                 var fallbackNote = usedFallback ? " using fallback" : string.Empty;
                 return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from {syncRange}{fallbackNote} ({newOrdersCount} new)");
@@ -1651,7 +1685,7 @@ public class CloudOrderService
                     System.Diagnostics.Debug.WriteLine($" CATCH-UP SYNC COMPLETE: Processed {ordersToProcess.Count} orders");
                     
                     // Trigger UI refresh for catch-up sync
-                    OnOrdersUpdated?.Invoke();
+                    RaiseOrdersUpdatedDebounced();
                     
                     return (true, ordersToProcess.Count, $"Synced {ordersToProcess.Count} orders from today");
                 }
@@ -2632,7 +2666,7 @@ public class CloudOrderService
                 await _orderService.SaveOrderAsync(order);
                 
                 // Trigger UI update
-                OnOrdersUpdated?.Invoke();
+                RaiseOrdersUpdatedDebounced();
                 
                 // Auto-print if enabled
                 var config = await _databaseService.GetCloudConfigAsync();

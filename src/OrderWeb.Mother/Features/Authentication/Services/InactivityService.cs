@@ -34,7 +34,7 @@ public sealed class InactivityService
             return;
         }
 
-        _timer = new System.Timers.Timer(1000)
+        _timer = new System.Timers.Timer(5000)
         {
             AutoReset = true,
             Enabled = true
@@ -259,7 +259,14 @@ public sealed class InactivityService
 
         lock (_sync)
         {
-            if (HasActiveModalOrPopup())
+            role = _authService.CurrentUser.Role;
+            elapsed = DateTime.Now - _lastActivityAt;
+
+            // Only walk the visual tree when idle is near a threshold — not every tick.
+            var nearIdle = elapsed >= DashboardReturnTimeout - TimeSpan.FromSeconds(10)
+                || elapsed >= StaffLogoutTimeout - TimeSpan.FromSeconds(10)
+                || (role == UserRole.Admin && elapsed >= AdminLogoutTimeout - TimeSpan.FromSeconds(10));
+            if (nearIdle && HasActiveModalOrPopup())
             {
                 _lastActivityAt = DateTime.Now;
                 return;
@@ -270,9 +277,6 @@ public sealed class InactivityService
                 _lastActivityAt = DateTime.Now;
                 return;
             }
-
-            role = _authService.CurrentUser.Role;
-            elapsed = DateTime.Now - _lastActivityAt;
 
             idleAction = ResolveIdleAction(role, elapsed);
             if (idleAction == IdleAction.None)

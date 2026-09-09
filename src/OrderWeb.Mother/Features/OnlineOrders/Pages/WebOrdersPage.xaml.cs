@@ -33,7 +33,7 @@ namespace POS_in_NET.Pages
         private CancellationTokenSource? _searchDebounceCts;
         private DateTime _lastWebOrdersRefreshAt = DateTime.MinValue;
         private DateTime _lastBackgroundRecentSyncAt = DateTime.MinValue;
-        private static readonly TimeSpan MinRefreshGap = TimeSpan.FromMilliseconds(400);
+        private static readonly TimeSpan MinRefreshGap = TimeSpan.FromMilliseconds(150);
         private static readonly TimeSpan SearchDebounceDelay = TimeSpan.FromMilliseconds(250);
         private static readonly bool EnableVerboseOrderDump = false;
         private static readonly TimeSpan BackgroundRecentSyncCooldown = TimeSpan.FromMinutes(1);
@@ -105,7 +105,8 @@ namespace POS_in_NET.Pages
 
             if (_hasLoadedInitialData)
             {
-                await LoadWebOrdersAsync(forceLocalReload: false);
+                // Avoid double full reload on reopen — one background refresh is enough.
+                UpdateConnectionStatus();
                 _ = LoadWebOrdersAsync(forceLocalReload: true);
                 StartBackgroundRecentSync("page-reopen");
             }
@@ -268,8 +269,8 @@ namespace POS_in_NET.Pages
             _refreshTimer = new Timer(
                 _ => MainThread.BeginInvokeOnMainThread(UpdateConnectionStatus),
                 null,
-                TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(10));
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30));
         }
 
         private void StopStatusRefreshTimer()
@@ -482,15 +483,14 @@ namespace POS_in_NET.Pages
                             SelectedDateLabel.Text = $"Showing: {_selectedDate:MMM dd, yyyy}";
                         }
 
-                        // Update Orders collection for UI binding - PAGINATED.
-                        // Replace the collection in one reset so MAUI's CollectionView does not process
-                        // multiple insert notifications while measuring virtualized rows.
-                        Orders = new ObservableCollection<WebOrderRow>(
-                            ordersToDisplay.Select(order =>
+                        // Prefer in-place sync so quiet refreshes don't wipe the CollectionView.
+                        SyncWebOrderRows(ordersToDisplay
+                            .Select(order =>
                             {
                                 printStatuses.TryGetValue(order.Id, out var printStatus);
                                 return new WebOrderRow(order, printStatus ?? WebOrderPrintStatus.NotQueued());
-                            }));
+                            })
+                            .ToList());
                         
                         System.Diagnostics.Debug.WriteLine($" Orders collection updated with {Orders.Count} items");
                         
@@ -770,13 +770,13 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            // Refresh web orders data on main thread with live performance monitoring
+            // Quiet live refresh: reuse cache when possible; never flash fullscreen overlay.
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 try
                 {
                     var refreshStart = DateTime.Now;
-                    await LoadWebOrdersAsync(forceLocalReload: true);
+                    await LoadWebOrdersAsync(forceLocalReload: false);
                     var refreshDuration = (DateTime.Now - refreshStart).TotalMilliseconds;
                     System.Diagnostics.Debug.WriteLine($" UI SPEED: Orders refreshed in {refreshDuration:F0}ms");
                 }
@@ -785,6 +785,48 @@ namespace POS_in_NET.Pages
                     System.Diagnostics.Debug.WriteLine($" Error refreshing web orders: {ex.Message}");
                 }
             });
+        }
+
+        private void SyncWebOrderRows(List<WebOrderRow> next)
+        {
+            if (Orders.Count == 0 || next.Count == 0 || Math.Abs(Orders.Count - next.Count) > 4)
+            {
+                Orders = new ObservableCollection<WebOrderRow>(next);
+                return;
+            }
+
+            var sameOrder = Orders.Count == next.Count;
+            if (sameOrder)
+            {
+                for (var i = 0; i < Orders.Count; i++)
+                {
+                    if (Orders[i].Order.Id != next[i].Order.Id)
+                    {
+                        sameOrder = false;
+                        break;
+                    }
+                }
+            }
+
+            if (sameOrder)
+            {
+                for (var i = 0; i < next.Count; i++)
+                {
+                    var current = Orders[i];
+                    var updated = next[i];
+                    if (current.Order.Status != updated.Order.Status
+                        || current.PrintStatus.Code != updated.PrintStatus.Code
+                        || current.Order.UpdatedAt != updated.Order.UpdatedAt
+                        || current.TotalAmount != updated.TotalAmount)
+                    {
+                        Orders[i] = updated;
+                    }
+                }
+
+                return;
+            }
+
+            Orders = new ObservableCollection<WebOrderRow>(next);
         }
 
         // Date Filter Handler

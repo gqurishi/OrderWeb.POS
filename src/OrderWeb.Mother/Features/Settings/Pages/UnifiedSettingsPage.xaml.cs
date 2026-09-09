@@ -1525,24 +1525,28 @@ namespace POS_in_NET.Pages
 
                 // Show loading indicator
                 LoadingIndicator.IsLoading = true;
-
-                await _orderNumberService.UpdatePrefixAsync(orderPrefix);
-
                 bool success;
-                if (_currentBusinessInfo.Id > 0)
+                try
                 {
-                    success = await _businessService.UpdateBusinessInfoAsync(_currentBusinessInfo, "Current User");
-                }
-                else
-                {
-                    success = await _businessService.CreateBusinessInfoAsync(_currentBusinessInfo, "Current User");
-                    if (success)
+                    await _orderNumberService.UpdatePrefixAsync(orderPrefix);
+
+                    if (_currentBusinessInfo.Id > 0)
                     {
-                        _currentBusinessInfo = await _businessService.GetBusinessInfoAsync() ?? _currentBusinessInfo;
+                        success = await _businessService.UpdateBusinessInfoAsync(_currentBusinessInfo, "Current User");
+                    }
+                    else
+                    {
+                        success = await _businessService.CreateBusinessInfoAsync(_currentBusinessInfo, "Current User");
+                        if (success)
+                        {
+                            _currentBusinessInfo = await _businessService.GetBusinessInfoAsync() ?? _currentBusinessInfo;
+                        }
                     }
                 }
-
-                LoadingIndicator.IsLoading = false;
+                finally
+                {
+                    LoadingIndicator.IsLoading = false;
+                }
 
                 if (success)
                 {

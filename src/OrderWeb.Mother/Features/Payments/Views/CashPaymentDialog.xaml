@@ -115,26 +115,28 @@
                             Clicked="OnQuickAmountClicked"/>
                 </Grid>
                 
-                <!-- Custom Amount Entry -->
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
+                <!-- Amount received — tap field to open numeric keyboard -->
+                <Border BackgroundColor="#F3F4F6"
+                        Stroke="#CBD5E1"
+                        StrokeThickness="1"
+                        Padding="14,0"
+                        HeightRequest="55">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10"/>
+                    </Border.StrokeShape>
                     <Entry x:Name="AmountReceivedEntry"
                            Placeholder="Enter amount received"
-                           Keyboard="Numeric"
                            FontSize="18"
-                           HeightRequest="55"
-                           BackgroundColor="#F3F4F6"
-                           TextChanged="OnAmountChanged"/>
-                    <Button Grid.Column="1"
-                            Text="APPLY"
-                            BackgroundColor="#7C3AED"
-                            TextColor="White"
-                            FontSize="14"
-                            FontAttributes="Bold"
-                            CornerRadius="14"
-                            WidthRequest="90"
-                            HeightRequest="55"
-                            IsVisible="False"/>
-                </Grid>
+                           BackgroundColor="Transparent"
+                           IsReadOnly="True"
+                           VerticalOptions="Center"
+                           Focused="OnAmountEntryFocused"
+                           TextChanged="OnAmountChanged">
+                        <Entry.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAmountEntryTapped"/>
+                        </Entry.GestureRecognizers>
+                    </Entry>
+                </Border>
                 
                 <!-- Change Display -->
                 <Border x:Name="ChangeFrame" 

@@ -10,9 +10,9 @@ namespace OrderWeb.SharedUI.Views;
 /// </summary>
 public sealed class OrderPlaceShellView : ContentView
 {
-    private readonly Entry _search;
     private readonly HorizontalChipScroller _categories;
     private readonly HorizontalChipScroller _subcategories;
+    private readonly Border _subcategoryBand;
     private readonly OrderPlaceProductGrid _products;
     private readonly VerticalStackLayout _lines;
     private readonly Label _identity;
@@ -29,35 +29,28 @@ public sealed class OrderPlaceShellView : ContentView
     private readonly PosActionButton _pay;
     private readonly Grid _root;
     private IOrderPlaceHost? _host;
-    private bool _suppressSearch;
 
     public OrderPlaceShellView()
     {
-        _search = new Entry
-        {
-            Placeholder = "Search menu items...",
-            BackgroundColor = Colors.Transparent,
-            FontSize = 15,
-            ClearButtonVisibility = ClearButtonVisibility.WhileEditing
-        };
-        _search.Use(Entry.TextColorProperty, "OwTextStrong");
-        _search.Use(Entry.PlaceholderColorProperty, "OwTextPlaceholder");
-        _search.TextChanged += OnSearchChanged;
+        _categories = new HorizontalChipScroller { HeightRequest = 56 };
+        _subcategories = new HorizontalChipScroller { HeightRequest = 56 };
+        _products = new OrderPlaceProductGrid();
 
-        var searchBorder = new Border
+        var subBandPadding = OrderPlaceLayout.Token("OpSubcategoryBandPadding", 10);
+        _subcategoryBand = new Border
         {
             StrokeThickness = 1,
-            HeightRequest = 48,
-            Padding = new Thickness(14, 0),
-            Content = _search,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 }
+            Padding = new Thickness(subBandPadding, 8),
+            Margin = new Thickness(0, 6, 0, 2),
+            IsVisible = false,
+            Content = _subcategories,
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle
+            {
+                CornerRadius = ControlResources.Value("OpSubcategoryBandCornerRadius", 8)
+            }
         };
-        searchBorder.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
-        searchBorder.Use(Border.StrokeProperty, "OwBorder");
-
-        _categories = new HorizontalChipScroller { HeightRequest = 52 };
-        _subcategories = new HorizontalChipScroller { HeightRequest = 42, IsVisible = false };
-        _products = new OrderPlaceProductGrid();
+        _subcategoryBand.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
+        _subcategoryBand.Use(Border.StrokeProperty, "OwBorder");
 
         var left = new Grid
         {
@@ -65,16 +58,14 @@ public sealed class OrderPlaceShellView : ContentView
             {
                 new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Star)
             },
             RowSpacing = OrderPlaceLayout.Token("OpSectionGap", 14),
             Padding = new Thickness(12)
         };
-        left.Add(searchBorder);
-        left.Add(_categories, 0, 1);
-        left.Add(_subcategories, 0, 2);
-        left.Add(new ScrollView { Content = _products }, 0, 3);
+        left.Add(_categories);
+        left.Add(_subcategoryBand, 0, 1);
+        left.Add(new ScrollView { Content = _products }, 0, 2);
         left.Use(Grid.BackgroundColorProperty, "OwSurface");
 
         var leftBorder = WrapPanel(left);
@@ -86,17 +77,51 @@ public sealed class OrderPlaceShellView : ContentView
         _status = new Label { FontSize = 12, IsVisible = false, LineBreakMode = LineBreakMode.WordWrap };
         _status.Use(Label.TextColorProperty, "OwWarningText");
 
+        _notes = new PosActionButton { Text = "NOTES", Role = PosActionRole.Secondary };
+        _void = new PosActionButton { Text = "VOID", Role = PosActionRole.Destructive };
+        _more = new PosActionButton { Text = "MORE ▼", Role = PosActionRole.Utility };
+        _send = new PosActionButton { Text = "SEND TO KITCHEN", Role = PosActionRole.Primary };
+        _print = new PosActionButton { Text = "PRINT BILL", Role = PosActionRole.Secondary };
+        _pay = new PosActionButton
+        {
+            Text = "PAYMENT",
+            Role = PosActionRole.Payment,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalOptions = LayoutOptions.End,
+            MinimumWidthRequest = 130
+        };
+
+        _notes.Tapped += async (_, _) => { if (_host != null) await _host.OrderNotesAsync(); };
+        _void.Tapped += async (_, _) => { if (_host != null) await _host.VoidAsync(); };
+        _more.Tapped += async (_, _) => { if (_host != null) await _host.MoreAsync(); };
+        _send.Tapped += async (_, _) => { if (_host != null) await _host.SendAsync(); };
+        _print.Tapped += async (_, _) => { if (_host != null) await _host.PrintAsync(); };
+        _pay.Tapped += async (_, _) => { if (_host != null) await _host.PayAsync(); };
+
+        var headerText = new VerticalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { _identity, _detail, _status } };
+        var headerGrid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 10
+        };
+        headerGrid.Add(headerText);
+        headerGrid.Add(_pay, 1);
+
         var header = new Border
         {
             StrokeThickness = 1,
             Padding = new Thickness(12, 10),
-            Content = new VerticalStackLayout { Spacing = 4, Children = { _identity, _detail, _status } },
+            Content = headerGrid,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 }
         };
         header.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
         header.Use(Border.StrokeProperty, "OwBorder");
 
-        _lines = new VerticalStackLayout { Spacing = 8 };
+        _lines = new VerticalStackLayout { Spacing = 4 };
         _totals = new OrderTotalsBlock();
 
         _discountLabel = new Label { FontAttributes = FontAttributes.Bold, FontSize = 13, HorizontalTextAlignment = TextAlignment.End };
@@ -110,20 +135,6 @@ public sealed class OrderPlaceShellView : ContentView
             Children = { discountName }
         };
         _discountRow.Add(_discountLabel, 1);
-
-        _notes = new PosActionButton { Text = "NOTES", Role = PosActionRole.Secondary };
-        _void = new PosActionButton { Text = "VOID", Role = PosActionRole.Destructive };
-        _more = new PosActionButton { Text = "MORE ▼", Role = PosActionRole.Utility };
-        _send = new PosActionButton { Text = "SEND TO KITCHEN", Role = PosActionRole.Primary };
-        _print = new PosActionButton { Text = "PRINT BILL", Role = PosActionRole.Secondary };
-        _pay = new PosActionButton { Text = "PAYMENT", Role = PosActionRole.Payment, HorizontalOptions = LayoutOptions.Fill };
-
-        _notes.Tapped += async (_, _) => { if (_host != null) await _host.OrderNotesAsync(); };
-        _void.Tapped += async (_, _) => { if (_host != null) await _host.VoidAsync(); };
-        _more.Tapped += async (_, _) => { if (_host != null) await _host.MoreAsync(); };
-        _send.Tapped += async (_, _) => { if (_host != null) await _host.SendAsync(); };
-        _print.Tapped += async (_, _) => { if (_host != null) await _host.PrintAsync(); };
-        _pay.Tapped += async (_, _) => { if (_host != null) await _host.PayAsync(); };
 
         var quick = new Grid
         {
@@ -153,8 +164,8 @@ public sealed class OrderPlaceShellView : ContentView
 
         var bottom = new VerticalStackLayout
         {
-            Spacing = 10,
-            Children = { _discountRow, _totals, quick, main, _pay }
+            Spacing = 8,
+            Children = { _discountRow, _totals, quick, main }
         };
 
         var right = new Grid
@@ -206,16 +217,6 @@ public sealed class OrderPlaceShellView : ContentView
     private void OnHostStateChanged(object? sender, EventArgs e) =>
         MainThread.BeginInvokeOnMainThread(Render);
 
-    private async void OnSearchChanged(object? sender, TextChangedEventArgs e)
-    {
-        if (_suppressSearch || _host is null)
-        {
-            return;
-        }
-
-        await _host.SearchAsync(e.NewTextValue);
-    }
-
     private void Render()
     {
         if (_host is null)
@@ -224,16 +225,10 @@ public sealed class OrderPlaceShellView : ContentView
         }
 
         var session = _host.Session;
-        _suppressSearch = true;
-        if (!string.Equals(_search.Text, session.SearchQuery ?? string.Empty, StringComparison.Ordinal))
-        {
-            _search.Text = session.SearchQuery ?? string.Empty;
-        }
-
-        _suppressSearch = false;
 
         _identity.Text = session.HeaderTitle;
         _detail.Text = session.HeaderDetail;
+        _detail.IsVisible = !string.IsNullOrWhiteSpace(session.HeaderDetail);
         _status.Text = session.StatusMessage ?? string.Empty;
         _status.IsVisible = !string.IsNullOrWhiteSpace(session.StatusMessage);
 
@@ -288,12 +283,12 @@ public sealed class OrderPlaceShellView : ContentView
     {
         if (session.Subcategories.Count == 0)
         {
-            _subcategories.IsVisible = false;
+            _subcategoryBand.IsVisible = false;
             _subcategories.Clear();
             return;
         }
 
-        _subcategories.IsVisible = true;
+        _subcategoryBand.IsVisible = true;
         var chips = new List<View>();
         foreach (var category in session.Subcategories)
         {

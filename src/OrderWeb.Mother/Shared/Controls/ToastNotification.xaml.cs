@@ -34,6 +34,66 @@ namespace POS_in_NET.Controls
         }
 
         /// <summary>
+        /// Show a toast on the current page without blocking the till.
+        /// Falls back silently when the page has no toast host.
+        /// </summary>
+        public static Task ShowGlobalAsync(string title, string message, NotificationType type, int durationMs = 2200)
+        {
+            return MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                try
+                {
+                    var page = Shell.Current?.CurrentPage;
+                    if (page != null)
+                    {
+                        var toast = FindToast(page);
+                        if (toast != null)
+                        {
+                            await toast.ShowAsync(title, message, type, durationMs);
+                            return;
+                        }
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[Toast] {title}: {message}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Toast] ShowGlobalAsync failed: {ex.Message}");
+                }
+            });
+        }
+
+        private static ToastNotification? FindToast(Element root, int depth = 0)
+        {
+            if (depth > 8)
+            {
+                return null;
+            }
+
+            if (root is ToastNotification toast)
+            {
+                return toast;
+            }
+
+            if (root is IVisualTreeElement tree)
+            {
+                foreach (var child in tree.GetVisualChildren())
+                {
+                    if (child is Element element)
+                    {
+                        var found = FindToast(element, depth + 1);
+                        if (found != null)
+                        {
+                            return found;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Show toast notification with automatic styling and dismiss
         /// </summary>
         public async Task ShowAsync(string title, string message, NotificationType type, int durationMs = 2000)

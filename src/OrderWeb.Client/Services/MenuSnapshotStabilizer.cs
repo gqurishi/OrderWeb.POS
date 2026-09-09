@@ -148,6 +148,20 @@ public static class MenuSnapshotStabilizer
             variants.Add(variant with { Id = stableId, ProductId = productId });
         }
 
+        var quickNotes = new List<BootstrapQuickNote>();
+        foreach (var note in snapshot.QuickNotes ?? Array.Empty<BootstrapQuickNote>())
+        {
+            if (string.IsNullOrWhiteSpace(note.MotherId) ||
+                string.IsNullOrWhiteSpace(note.NoteText) ||
+                !productMap.TryGetValue(note.ProductId, out var productId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"qnote:{note.MotherId}", used);
+            quickNotes.Add(note with { Id = stableId, ProductId = productId, NoteText = note.NoteText.Trim() });
+        }
+
         var mealDealMap = new Dictionary<int, int>();
         var mealDeals = new List<BootstrapMealDeal>();
         foreach (var deal in snapshot.MealDeals)
@@ -267,7 +281,8 @@ public static class MenuSnapshotStabilizer
             tastingMenus,
             tastingOptions,
             tastingCourses,
-            tastingChoices);
+            tastingChoices,
+            quickNotes);
     }
 
     public static string? ValidateForCommit(MenuSnapshotDto original, MenuSnapshotDto stabilized)

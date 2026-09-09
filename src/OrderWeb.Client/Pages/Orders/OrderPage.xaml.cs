@@ -2,6 +2,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
 using OrderWeb.SharedUI.Views;
 
@@ -33,6 +34,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
 
         TopBar.MenuClicked += async (_, _) => await OnMenuClickedAsync();
         TopBar.LogoutClicked += async (_, _) => await OnLogoutClickedAsync();
+        TopBar.IsVisible = false;
         _ = ApplyChromeAsync("Order");
     }
 
@@ -93,6 +95,21 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         var result = await DisplayActionSheet(title, "Cancel", null, options);
         return string.IsNullOrWhiteSpace(result) || result == "Cancel" ? null : result;
     }
+
+    public Task<OrderPlaceVariantChoice?> PickVariantAsync(
+        string itemName,
+        IReadOnlyList<OrderPlaceVariantChoice> variants) =>
+        new OrderPlaceVariantDialog().ShowAsync(this, itemName, variants);
+
+    public Task<OrderPlaceQuickNoteResult> PickQuickNoteAsync(
+        string itemName,
+        IReadOnlyList<string> notes) =>
+        new OrderPlaceQuickNoteDialog().ShowAsync(this, itemName, notes);
+
+    public Task<IReadOnlyList<OrderPlaceAddonChoice>?> PickAddonsAsync(
+        string itemName,
+        IReadOnlyList<OrderPlaceAddonChoice> addons) =>
+        new OrderPlaceAddonDialog().ShowAsync(this, itemName, addons);
 
     public Task NavigateToPaymentAsync(decimal total, string orderId, int version) =>
         Navigation.PushAsync(new PaymentPage(total, orderId, version), false);
@@ -174,8 +191,10 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             var online = await _offlinePolicy.IsMotherOnlineAsync();
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
+                TopBar.IsVisible = false;
+                TopBar.HeightRequest = 0;
                 TopBar.ConfigurePosChrome(
-                    title,
+                    string.Empty,
                     session?.UserName,
                     session?.Role ?? "Client",
                     online ? "Connected" : "Mother Offline");
@@ -183,9 +202,16 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         }
         catch
         {
-            await MainThread.InvokeOnMainThreadAsync(() => TopBar.SetPageTitle(title));
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                TopBar.IsVisible = false;
+                TopBar.SetPageTitle(string.Empty);
+            });
         }
     }
+
+    private void OnOrderPlaceMenuClicked(object? sender, EventArgs e) =>
+        _ = OnMenuClickedAsync();
 
     private async Task OnMenuClickedAsync()
     {

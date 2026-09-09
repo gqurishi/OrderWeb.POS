@@ -24,7 +24,6 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     private OrderPlaceOrderKind _kind = OrderPlaceOrderKind.Table;
     private string _headerTitle = string.Empty;
     private string _headerDetail = string.Empty;
-    private string? _searchQuery;
     private string? _selectedCategoryId;
     private string? _selectedSubcategoryId;
     private decimal _subtotal;
@@ -60,12 +59,6 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     {
         get => _headerDetail;
         set => Set(ref _headerDetail, value);
-    }
-
-    public string? SearchQuery
-    {
-        get => _searchQuery;
-        set => Set(ref _searchQuery, value);
     }
 
     public string? SelectedCategoryId
@@ -191,9 +184,9 @@ public sealed record OrderPlaceBasketLine(
 /// No database, HTTP, printer, or PIN logic belongs in SharedUI — only the host.
 /// </summary>
 /// <remarks>
-/// Phase 7 contract. Mother today still hosts logic inside
-/// <c>OrderPlacementPageSimple</c> while reusing SharedUI controls.
-/// Phase 8 Client should implement this (or a thin adapter) over Mother HTTP.
+/// Mother: <c>MotherOrderPlaceHost</c> + <c>OrderPlacementPageSimple</c>.
+/// Client: <c>ClientOrderPlaceHost</c> + <c>OrderPage</c>.
+/// Both bind the same SharedUI <c>OrderPlaceShellView</c>.
 /// See <c>docs/ORDER_PLACE_CLIENT_READINESS.md</c>.
 /// </remarks>
 public interface IOrderPlaceHost
@@ -208,8 +201,6 @@ public interface IOrderPlaceHost
     Task SelectCategoryAsync(string categoryId, CancellationToken cancellationToken = default);
 
     Task SelectSubcategoryAsync(string? subcategoryId, CancellationToken cancellationToken = default);
-
-    Task SearchAsync(string? query, CancellationToken cancellationToken = default);
 
     /// <summary>Opens host add pipeline (variant → note → addon → add) for the product.</summary>
     Task AddProductAsync(string productId, CancellationToken cancellationToken = default);

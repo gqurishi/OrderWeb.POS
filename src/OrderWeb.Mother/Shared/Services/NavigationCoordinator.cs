@@ -78,20 +78,28 @@ public sealed class NavigationCoordinator
         Func<Task> navigation,
         VisualElement? source = null)
     {
-        if (!await _navigationGate.WaitAsync(0))
+        // Prefer a short wait over an immediate silent drop so a tap right after
+        // a finishing navigation still lands (or the source stays visibly busy).
+        if (!await _navigationGate.WaitAsync(0) && !await _navigationGate.WaitAsync(200))
         {
             PosPerformanceMonitor.RecordDuplicateNavigationAttempt();
+            if (source != null)
+            {
+                var flashOpacity = source.Opacity;
+                source.Opacity = 0.72;
+                _ = RestoreSourceOpacityAsync(source, flashOpacity);
+            }
+
             return false;
         }
 
         var timing = PosPerformanceMonitor.BeginNavigation(target);
         var originalOpacity = source?.Opacity ?? 1d;
-        var originalEnabled = source?.IsEnabled ?? true;
 
         try
         {
             if (string.Equals(_lastTarget, target, StringComparison.OrdinalIgnoreCase)
-                && DateTime.UtcNow - _lastNavigationCompletedAt < TimeSpan.FromMilliseconds(500))
+                && DateTime.UtcNow - _lastNavigationCompletedAt < TimeSpan.FromMilliseconds(200))
             {
                 PosPerformanceMonitor.RecordDuplicateNavigationAttempt();
                 PosPerformanceMonitor.CancelNavigation(timing);
@@ -100,16 +108,13 @@ public sealed class NavigationCoordinator
 
             if (source != null)
             {
-                source.IsEnabled = false;
+                // Brief busy flash only — do not disable source for the whole navigation.
                 source.Opacity = 0.72;
-            }
-
-            // Yield once so the pressed/disabled state is painted before navigation work starts.
-            await Task.Yield();
-            if (source != null)
-            {
+                _ = RestoreSourceOpacityAsync(source, originalOpacity);
                 PosPerformanceMonitor.RecordTapFeedback(timing);
             }
+
+            await Task.Yield();
             if (ResolveVisiblePage() is INavigationCommitParticipant commitParticipant)
             {
                 if (!await commitParticipant.CommitBeforeNavigationAsync())
@@ -128,17 +133,29 @@ public sealed class NavigationCoordinator
         {
             PosPerformanceMonitor.CancelNavigation(timing);
             Debug.WriteLine($"[Navigation] Failed to navigate to '{target}': {ex}");
+            if (Shell.Current is AppShell shell)
+            {
+                shell.ClearShellNavigationGuard();
+            }
+
             throw;
         }
         finally
         {
-            if (source != null)
-            {
-                source.Opacity = originalOpacity;
-                source.IsEnabled = originalEnabled;
-            }
-
             _navigationGate.Release();
+        }
+    }
+
+    private static async Task RestoreSourceOpacityAsync(VisualElement source, double opacity)
+    {
+        try
+        {
+            await Task.Delay(180);
+            await MainThread.InvokeOnMainThreadAsync(() => source.Opacity = opacity);
+        }
+        catch
+        {
+            // Best-effort busy flash only.
         }
     }
 

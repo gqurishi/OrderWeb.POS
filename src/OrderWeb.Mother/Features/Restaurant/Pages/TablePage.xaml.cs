@@ -98,18 +98,26 @@ namespace POS_in_NET.Pages
                 return;
             }
 
+            var showSpinner = _tables.Count == 0;
             try
             {
                 _isLoadingTables = true;
                 System.Diagnostics.Debug.WriteLine(" LoadTablesAsync START");
-                SetLoading(true);
+                if (showSpinner)
+                {
+                    SetLoading(true);
+                }
 
-                System.Diagnostics.Debug.WriteLine("� Loading floors...");
-                // Check if floors exist
-                var floorsTask = _floorService.GetAllFloorsAsync();
-                var tablesTask = _tableService.GetAllTablesAsync();
-                await Task.WhenAll(floorsTask, tablesTask);
-                var floors = floorsTask.Result;
+                System.Diagnostics.Debug.WriteLine(" Loading floors...");
+                var floorService = _floorService;
+                var tableService = _tableService;
+                var (floors, tables) = await Task.Run(async () =>
+                {
+                    var floorsTask = floorService.GetAllFloorsAsync();
+                    var tablesTask = tableService.GetAllTablesAsync();
+                    await Task.WhenAll(floorsTask, tablesTask);
+                    return (await floorsTask, await tablesTask);
+                }).ConfigureAwait(true);
                 System.Diagnostics.Debug.WriteLine($" Loaded {floors.Count} floors");
                 
                 bool hasFloors = floors.Count > 0;
@@ -120,16 +128,9 @@ namespace POS_in_NET.Pages
                     AddTableButton.IsEnabled = hasFloors;
                 });
 
-                System.Diagnostics.Debug.WriteLine(" Loading tables...");
-                // Load tables
-                var tables = tablesTask.Result;
                 System.Diagnostics.Debug.WriteLine($" Loaded {tables.Count} tables from database");
                 
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _tables = new ObservableCollection<RestaurantTable>(tables);
-                    TablesCollectionView.ItemsSource = _tables;
-                });
+                await MainThread.InvokeOnMainThreadAsync(() => MergeTablesIntoList(tables));
 
                 System.Diagnostics.Debug.WriteLine($" LoadTablesAsync COMPLETE - {_tables.Count} tables displayed in UI");
                 _lastSuccessfulLoadAt = DateTime.UtcNow;
@@ -148,7 +149,27 @@ namespace POS_in_NET.Pages
             {
                 System.Diagnostics.Debug.WriteLine(" LoadTablesAsync FINALLY block");
                 _isLoadingTables = false;
-                SetLoading(false);
+                if (showSpinner)
+                {
+                    SetLoading(false);
+                }
+            }
+        }
+
+        private void MergeTablesIntoList(List<RestaurantTable> tables)
+        {
+            var incomingIds = tables.Select(table => table.Id).ToHashSet();
+            for (var i = _tables.Count - 1; i >= 0; i--)
+            {
+                if (!incomingIds.Contains(_tables[i].Id))
+                {
+                    _tables.RemoveAt(i);
+                }
+            }
+
+            foreach (var table in tables)
+            {
+                UpsertTableInList(table);
             }
         }
 

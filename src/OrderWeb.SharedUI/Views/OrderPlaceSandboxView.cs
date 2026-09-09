@@ -36,24 +36,16 @@ public sealed class OrderPlaceSandboxView : ContentView
             ShowDeliveryFee = false
         };
 
-        var searchPlaceholder = new Label
-        {
-            Text = "Search menu items...",
-            VerticalTextAlignment = TextAlignment.Center,
-            FontSize = 15
-        };
-        searchPlaceholder.Use(Label.TextColorProperty, "OwTextPlaceholder");
-
-        var search = new Border
+        var subBand = new Border
         {
             StrokeThickness = 1,
-            HeightRequest = 48,
-            Padding = new Thickness(14, 0),
-            Content = searchPlaceholder,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 10 }
+            Padding = new Thickness(10, 8),
+            Margin = new Thickness(0, 6, 0, 2),
+            Content = _subcategories,
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 }
         };
-        search.Use(Border.BackgroundColorProperty, "OwSurface");
-        search.Use(Border.StrokeProperty, "OwBorder");
+        subBand.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
+        subBand.Use(Border.StrokeProperty, "OwBorder");
 
         var left = new Grid
         {
@@ -69,10 +61,9 @@ public sealed class OrderPlaceSandboxView : ContentView
             Padding = new Thickness(16, 12, 10, 12)
         };
         left.Add(_densityLabel);
-        left.Add(search, 0, 1);
-        left.Add(_categories, 0, 2);
-        left.Add(_subcategories, 0, 3);
-        left.Add(new ScrollView { Content = _products }, 0, 4);
+        left.Add(_categories, 0, 1);
+        left.Add(subBand, 0, 2);
+        left.Add(new ScrollView { Content = _products }, 0, 3);
         left.Use(Grid.BackgroundColorProperty, "OwBackground");
 
         var header = new Label

@@ -97,25 +97,25 @@ namespace POS_in_NET.Pages
             }
 
             System.Diagnostics.Debug.WriteLine(" LoadFloorsAsync START");
+            var showSpinner = _floors.Count == 0;
             
             try
             {
                 _isLoadingFloors = true;
-                await MainThread.InvokeOnMainThreadAsync(() =>
+                if (showSpinner)
                 {
-                    LoadingIndicator.IsLoading = true;
-                    AddFloorButton.IsEnabled = false;
-                });
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        LoadingIndicator.IsLoading = true;
+                        AddFloorButton.IsEnabled = false;
+                    });
+                }
                 
                 System.Diagnostics.Debug.WriteLine(" Calling FloorService.GetAllFloorsAsync()...");
-                var floors = await _floorService.GetAllFloorsAsync();
+                var floors = await Task.Run(async () => await _floorService.GetAllFloorsAsync()).ConfigureAwait(true);
                 System.Diagnostics.Debug.WriteLine($" Received {floors.Count} floors from service");
                 
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _floors = new ObservableCollection<Floor>(floors);
-                    FloorsCollectionView.ItemsSource = _floors;
-                });
+                await MainThread.InvokeOnMainThreadAsync(() => MergeFloorsIntoList(floors));
                 
                 System.Diagnostics.Debug.WriteLine($" LoadFloorsAsync COMPLETE");
                 _lastSuccessfulLoadAt = DateTime.UtcNow;
@@ -133,12 +133,32 @@ namespace POS_in_NET.Pages
             finally
             {
                 System.Diagnostics.Debug.WriteLine(" LoadFloorsAsync FINALLY - Stopping loading indicator");
-                await MainThread.InvokeOnMainThreadAsync(() =>
+                if (showSpinner)
                 {
-                    LoadingIndicator.IsLoading = false;
-                    AddFloorButton.IsEnabled = true;
-                });
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        LoadingIndicator.IsLoading = false;
+                        AddFloorButton.IsEnabled = true;
+                    });
+                }
                 _isLoadingFloors = false;
+            }
+        }
+
+        private void MergeFloorsIntoList(List<Floor> floors)
+        {
+            var incomingIds = floors.Select(floor => floor.Id).ToHashSet();
+            for (var i = _floors.Count - 1; i >= 0; i--)
+            {
+                if (!incomingIds.Contains(_floors[i].Id))
+                {
+                    _floors.RemoveAt(i);
+                }
+            }
+
+            foreach (var floor in floors)
+            {
+                UpsertFloorInList(floor);
             }
         }
 

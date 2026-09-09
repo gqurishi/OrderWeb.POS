@@ -92,7 +92,8 @@ public sealed class MotherMenuClient
                 envelope.TastingMenus ?? [],
                 envelope.TastingMenuOptions ?? [],
                 envelope.TastingMenuCourses ?? [],
-                envelope.TastingMenuChoices ?? []);
+                envelope.TastingMenuChoices ?? [],
+                envelope.QuickNotes ?? []);
 
             // Empty menu is still a successful HTTP payload; surface Mother's guidance as Error hint.
             if (snapshot.Categories.Count == 0)
@@ -126,7 +127,8 @@ public sealed class MotherMenuClient
         IReadOnlyList<BootstrapTastingMenu>? TastingMenus,
         IReadOnlyList<BootstrapTastingMenuOption>? TastingMenuOptions,
         IReadOnlyList<BootstrapTastingMenuCourse>? TastingMenuCourses,
-        IReadOnlyList<BootstrapTastingMenuChoice>? TastingMenuChoices);
+        IReadOnlyList<BootstrapTastingMenuChoice>? TastingMenuChoices,
+        IReadOnlyList<BootstrapQuickNote>? QuickNotes);
 }
 
 public sealed record MenuSnapshotDto(
@@ -144,4 +146,5 @@ public sealed record MenuSnapshotDto(
     IReadOnlyList<BootstrapTastingMenu> TastingMenus,
     IReadOnlyList<BootstrapTastingMenuOption> TastingMenuOptions,
     IReadOnlyList<BootstrapTastingMenuCourse> TastingMenuCourses,
-    IReadOnlyList<BootstrapTastingMenuChoice> TastingMenuChoices);
+    IReadOnlyList<BootstrapTastingMenuChoice> TastingMenuChoices,
+    IReadOnlyList<BootstrapQuickNote> QuickNotes);

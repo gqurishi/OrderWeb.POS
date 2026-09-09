@@ -139,7 +139,7 @@ namespace POS_in_NET.Pages
             }
 
             _basicUserIdleTimer = Dispatcher.CreateTimer();
-            _basicUserIdleTimer.Interval = TimeSpan.FromSeconds(1);
+            _basicUserIdleTimer.Interval = TimeSpan.FromSeconds(5);
             _basicUserIdleTimer.Tick += OnBasicUserIdleTick;
             _basicUserIdleTimer.Start();
         }
@@ -329,7 +329,8 @@ namespace POS_in_NET.Pages
                 var previousFloorId = _currentFloor?.Id;
                 var persistedFloorId = Preferences.Get(SelectedFloorPreferenceKey, -1);
                 
-                _floors = await _floorService.GetAllFloorsAsync();
+                var floorService = _floorService;
+                _floors = await Task.Run(async () => await floorService.GetAllFloorsAsync()).ConfigureAwait(true);
                 
                 System.Diagnostics.Debug.WriteLine($"Floors returned: {_floors.Count}");
                 
@@ -427,7 +428,9 @@ namespace POS_in_NET.Pages
                 Preferences.Set(SelectedFloorPreferenceKey, floor.Id);
                 UpdateFloorTabAppearance();
                 
-                var backgroundPath = await _floorService.ResolveFloorBackgroundImageAsync(floor);
+                var floorService = _floorService;
+                var backgroundPath = await Task.Run(async () => await floorService.ResolveFloorBackgroundImageAsync(floor))
+                    .ConfigureAwait(true);
                 SetCanvasBackground(backgroundPath);
                 
                 // Update remove button visibility based on current floor's background
@@ -435,7 +438,17 @@ namespace POS_in_NET.Pages
                 
                 // Load tables for this floor
                 System.Diagnostics.Debug.WriteLine($"Loading tables for floor {floor.Id}...");
-                var (tables, usedFallback) = await LoadTablesForFloorWithFallbackAsync(floor.Id, showWarnings);
+                var floorId = floor.Id;
+                var (tables, usedFallback) = await Task.Run(async () =>
+                        await LoadTablesForFloorWithFallbackAsync(floorId, showWarnings: false))
+                    .ConfigureAwait(true);
+                if (usedFallback && showWarnings)
+                {
+                    await ToastNotification.ShowAsync(
+                        "Warning",
+                        "Using fallback table load. Session data is temporarily unavailable.",
+                        NotificationType.Warning);
+                }
                 System.Diagnostics.Debug.WriteLine($"Tables loaded: {tables.Count}");
                 
                 ClearTableViews();
@@ -508,7 +521,7 @@ namespace POS_in_NET.Pages
 
         private async Task RefreshCurrentFloorTableStatesAsync()
         {
-            if (_currentFloor == null || _isLoadingFloorsAndTables)
+            if (_currentFloor == null || _isLoadingFloorsAndTables || _isTableSelectionInProgress)
             {
                 return;
             }
@@ -520,29 +533,24 @@ namespace POS_in_NET.Pages
 
             try
             {
-                var (tables, usedFallback) = await LoadTablesForFloorWithFallbackAsync(_currentFloor.Id, showWarnings: false);
-                var incomingIds = tables.Select(table => table.Id).ToHashSet();
-                var canPatchInPlace = _tableViews.Count == tables.Count
-                    && _tableViews.Keys.All(incomingIds.Contains);
+                var floorId = _currentFloor.Id;
+                var (tables, usedFallback) = await Task.Run(async () =>
+                        await LoadTablesForFloorWithFallbackAsync(floorId, showWarnings: false))
+                    .ConfigureAwait(true);
 
-                if (!canPatchInPlace)
+                if (_isTableSelectionInProgress || _currentFloor?.Id != floorId)
                 {
-                    await SelectFloor(_currentFloor, showLoading: false, showWarnings: false);
-                    _lastSuccessfulTableStateRefreshAt = DateTime.UtcNow;
                     return;
                 }
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    foreach (var table in tables)
+                    if (_isTableSelectionInProgress)
                     {
-                        if (_tableViews.TryGetValue(table.Id, out var tableView))
-                        {
-                            UpdateTableViewState(tableView, table);
-                            _currentTablesById[table.Id] = table;
-                        }
+                        return;
                     }
 
+                    SyncTableViews(tables);
                     _lastSyncAt = DateTime.Now;
                     UpdateLastSyncLabel(usedFallback);
                 });
@@ -555,9 +563,64 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private void SyncTableViews(List<RestaurantTable> tables)
+        {
+            var incomingIds = tables.Select(table => table.Id).ToHashSet();
+
+            foreach (var orphanId in _tableViews.Keys.Where(id => !incomingIds.Contains(id)).ToList())
+            {
+                if (_tableViews.Remove(orphanId, out var orphanView))
+                {
+                    TableCanvas.Children.Remove(orphanView);
+                }
+
+                _currentTablesById.Remove(orphanId);
+            }
+
+            var index = 0;
+            foreach (var table in tables)
+            {
+                var posX = table.PositionX > 0 ? table.PositionX : 40 + (index % 6) * 140;
+                var posY = table.PositionY > 0 ? table.PositionY : 40 + (index / 6) * 140;
+                var bounds = new Rect(posX, posY, 120, 120);
+
+                if (_tableViews.TryGetValue(table.Id, out var existing))
+                {
+                    UpdateTableViewState(existing, table);
+                    AbsoluteLayout.SetLayoutBounds(existing, bounds);
+                }
+                else
+                {
+                    var tableView = CreateTableView(table);
+                    AbsoluteLayout.SetLayoutBounds(tableView, bounds);
+                    AbsoluteLayout.SetLayoutFlags(tableView, AbsoluteLayoutFlags.None);
+                    TableCanvas.Children.Add(tableView);
+                    _tableViews[table.Id] = tableView;
+                }
+
+                _currentTablesById[table.Id] = table;
+                index++;
+            }
+        }
+
         private void UpdateTableViewState(Border tableView, RestaurantTable table)
         {
             var (bgColor, borderColor, textColor) = GetTableColors(table);
+            var previous = tableView.BindingContext as RestaurantTable;
+            var colorsUnchanged = Equals(tableView.BackgroundColor, bgColor)
+                && Equals(tableView.Stroke, borderColor);
+            var statusUnchanged = previous != null
+                && previous.Id == table.Id
+                && string.Equals(previous.TableNumber, table.TableNumber, StringComparison.Ordinal)
+                && previous.Status == table.Status
+                && previous.CurrentSessionId == table.CurrentSessionId;
+
+            if (colorsUnchanged && statusUnchanged)
+            {
+                tableView.BindingContext = table;
+                return;
+            }
+
             tableView.BindingContext = table;
             tableView.BackgroundColor = bgColor;
             tableView.Stroke = borderColor;
@@ -577,6 +640,12 @@ namespace POS_in_NET.Pages
                 else if (child is Ellipse statusDot)
                 {
                     statusDot.Fill = borderColor;
+                }
+                else if (child is Image image
+                         && !string.IsNullOrWhiteSpace(table.TableDesignIcon)
+                         && !string.Equals(image.Source?.ToString(), table.TableDesignIcon, StringComparison.Ordinal))
+                {
+                    image.Source = table.TableDesignIcon;
                 }
             }
         }
@@ -981,6 +1050,7 @@ namespace POS_in_NET.Pages
             _customCoverValue = 0;
             CustomCoverLabel.Text = "Other number...";
             CustomCoverLabel.TextColor = Color.FromArgb("#9CA3AF");
+            CoverPopupOverlay.InputTransparent = false;
             CoverPopupOverlay.IsVisible = true;
         }
 
@@ -1089,7 +1159,9 @@ namespace POS_in_NET.Pages
         private void CloseCoverPopup()
         {
             CoverPopupOverlay.IsVisible = false;
-            
+            CoverPopupOverlay.InputTransparent = true;
+            NumericKeyboard.Hide();
+
             // Reset table appearance
             if (_popupTable != null && _popupTableView != null)
             {

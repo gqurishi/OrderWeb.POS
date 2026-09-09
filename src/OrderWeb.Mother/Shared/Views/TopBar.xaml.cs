@@ -5,10 +5,6 @@ namespace POS_in_NET.Views;
 
 public partial class TopBar : ContentView
 {
-    private static readonly object ActiveTopBarsLock = new();
-    private static readonly List<WeakReference<TopBar>> ActiveTopBars = new();
-    private static System.Timers.Timer? _sharedTimer;
-    private bool _isRegisteredForSharedUpdates;
     private bool _isSubscribedToConnectionState;
 
     public TopBar()
@@ -18,10 +14,8 @@ public partial class TopBar : ContentView
         SizeChanged += OnTopBarSizeChanged;
         ApplyResponsiveLayout(Width);
 
-        RegisterForSharedUpdates();
-        UpdateDateTime();
-
         SubscribeToTerminalConnectionState();
+        RefreshHeaderIdentity();
         UpdateMotherDisconnectedBanner();
     }
 
@@ -47,80 +41,7 @@ public partial class TopBar : ContentView
         _isSubscribedToConnectionState = false;
     }
 
-    private void RegisterForSharedUpdates()
-    {
-        if (_isRegisteredForSharedUpdates)
-        {
-            return;
-        }
-
-        lock (ActiveTopBarsLock)
-        {
-            ActiveTopBars.Add(new WeakReference<TopBar>(this));
-            _isRegisteredForSharedUpdates = true;
-
-            if (_sharedTimer == null)
-            {
-                _sharedTimer = new System.Timers.Timer(1000);
-                _sharedTimer.Elapsed += (_, _) => UpdateAllTopBars();
-                _sharedTimer.Start();
-            }
-        }
-    }
-
-    private void UnregisterFromSharedUpdates()
-    {
-        if (!_isRegisteredForSharedUpdates)
-        {
-            return;
-        }
-
-        lock (ActiveTopBarsLock)
-        {
-            ActiveTopBars.RemoveAll(reference =>
-                !reference.TryGetTarget(out var topBar) || ReferenceEquals(topBar, this));
-            _isRegisteredForSharedUpdates = false;
-
-            if (ActiveTopBars.Count == 0)
-            {
-                _sharedTimer?.Stop();
-                _sharedTimer?.Dispose();
-                _sharedTimer = null;
-            }
-        }
-    }
-
-    private static void UpdateAllTopBars()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            List<TopBar> topBars;
-            lock (ActiveTopBarsLock)
-            {
-                ActiveTopBars.RemoveAll(reference => !reference.TryGetTarget(out _));
-                topBars = ActiveTopBars
-                    .Select(reference => reference.TryGetTarget(out var topBar) ? topBar : null)
-                    .Where(topBar => topBar?.Handler != null)
-                    .Cast<TopBar>()
-                    .ToList();
-            }
-
-            foreach (var topBar in topBars)
-            {
-                topBar.UpdateDateTimeOnMainThread();
-            }
-        });
-    }
-
-    private void UpdateDateTime()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            UpdateDateTimeOnMainThread();
-        });
-    }
-
-    private void UpdateDateTimeOnMainThread()
+    private void RefreshHeaderIdentity()
     {
         SharedHeader.UserName = ServiceHelper.GetService<AuthenticationService>()?.CurrentUser?.Name ?? "No user";
         SharedHeader.TerminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
@@ -210,17 +131,14 @@ public partial class TopBar : ContentView
     {
         base.OnHandlerChanged();
         
-        // Stop timer when control is removed
         if (Handler == null)
         {
             UnsubscribeFromTerminalConnectionState();
-            UnregisterFromSharedUpdates();
             return;
         }
 
         SubscribeToTerminalConnectionState();
-        RegisterForSharedUpdates();
-        UpdateDateTime();
+        RefreshHeaderIdentity();
     }
 
     public void SetPageTitle(string title)

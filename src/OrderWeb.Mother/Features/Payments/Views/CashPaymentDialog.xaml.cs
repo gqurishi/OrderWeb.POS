@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using POS_in_NET.Services;
 using POS_in_NET.Helpers;
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 
 namespace POS_in_NET.Views
@@ -22,6 +23,7 @@ namespace POS_in_NET.Views
         private decimal _amountDue;
         private decimal _amountReceived;
         private bool _isUpdatingEntry;
+        private bool _keyboardOpen;
 
         public CashPaymentDialog()
         {
@@ -143,6 +145,44 @@ namespace POS_in_NET.Views
         }
 
         private void OnExactAmountClicked(object sender, EventArgs e) => SetAmount(_amountDue);
+
+        private void OnAmountEntryFocused(object? sender, FocusEventArgs e)
+        {
+            if (e.IsFocused)
+            {
+                AmountReceivedEntry.Unfocus();
+                _ = OpenAmountKeyboardAsync();
+            }
+        }
+
+        private async void OnAmountEntryTapped(object? sender, EventArgs e) =>
+            await OpenAmountKeyboardAsync();
+
+        private async Task OpenAmountKeyboardAsync()
+        {
+            if (_keyboardOpen)
+            {
+                return;
+            }
+
+            _keyboardOpen = true;
+            try
+            {
+                AmountReceivedEntry.Unfocus();
+                var keyboard = new NumericKeyboardDialog();
+                var value = await keyboard.ShowCurrencyAsync(
+                    _amountReceived > 0 ? _amountReceived : null,
+                    "Amount received");
+                if (value.HasValue)
+                {
+                    SetAmount(value.Value);
+                }
+            }
+            finally
+            {
+                _keyboardOpen = false;
+            }
+        }
 
         private void OnAmountChanged(object sender, TextChangedEventArgs e)
         {

@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
@@ -30,6 +31,7 @@ namespace POS_in_NET.Views
         private GiftCard? _giftCard;
         private readonly OrderWebGiftCardApiService? _giftCardApiService;
         private bool _isUpdatingApplyAmount;
+        private bool _keyboardOpen;
 
         public GiftCardPaymentDialog()
         {
@@ -82,6 +84,86 @@ namespace POS_in_NET.Views
                 return contentPage.Content;
             }
             return null;
+        }
+
+        private void OnGiftCardNumberFocused(object? sender, FocusEventArgs e)
+        {
+            if (e.IsFocused)
+            {
+                GiftCardNumberEntry.Unfocus();
+                _ = OpenGiftCardNumberKeyboardAsync();
+            }
+        }
+
+        private async void OnGiftCardNumberTapped(object? sender, EventArgs e) =>
+            await OpenGiftCardNumberKeyboardAsync();
+
+        private async Task OpenGiftCardNumberKeyboardAsync()
+        {
+            if (_keyboardOpen)
+            {
+                return;
+            }
+
+            _keyboardOpen = true;
+            try
+            {
+                GiftCardNumberEntry.Unfocus();
+                var keyboard = new NumericKeyboardDialog();
+                var value = await keyboard.ShowDigitsAsync(
+                    GiftCardNumberEntry.Text,
+                    "Gift card number",
+                    maxDigits: 24);
+                if (value != null)
+                {
+                    GiftCardNumberEntry.Text = value;
+                }
+            }
+            finally
+            {
+                _keyboardOpen = false;
+            }
+        }
+
+        private void OnApplyAmountFocused(object? sender, FocusEventArgs e)
+        {
+            if (e.IsFocused)
+            {
+                ApplyAmountEntry.Unfocus();
+                _ = OpenApplyAmountKeyboardAsync();
+            }
+        }
+
+        private async void OnApplyAmountTapped(object? sender, EventArgs e) =>
+            await OpenApplyAmountKeyboardAsync();
+
+        private async Task OpenApplyAmountKeyboardAsync()
+        {
+            if (_keyboardOpen || !ApplyAmountSection.IsVisible)
+            {
+                return;
+            }
+
+            _keyboardOpen = true;
+            try
+            {
+                ApplyAmountEntry.Unfocus();
+                decimal? initial = TryParseGiftCardAmount(ApplyAmountEntry.Text, out var parsed) ? parsed : null;
+                var keyboard = new NumericKeyboardDialog();
+                var value = await keyboard.ShowCurrencyAsync(initial, "Amount to apply");
+                if (value.HasValue)
+                {
+                    _isUpdatingApplyAmount = true;
+                    ApplyAmountEntry.Text = value.Value.ToString("F2", CultureInfo.InvariantCulture);
+                    _isUpdatingApplyAmount = false;
+                    UpdateRemainingDisplay();
+                    UpdateApplyButtonState();
+                }
+            }
+            finally
+            {
+                _keyboardOpen = false;
+            }
         }
 
         private async void OnCheckBalanceClicked(object sender, EventArgs e)

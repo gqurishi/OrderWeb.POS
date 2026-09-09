@@ -147,6 +147,7 @@ public partial class UserDashboardPage : ContentPage
         _inactivityService.TrackPage(this);
         StartTimeUpdates();
         await Task.WhenAll(LoadBusinessNameAsync(), RefreshOrderServiceButtonsAsync());
+        PosStartupPrefetch.WarmOperationalCaches();
     }
 
     private async Task RefreshOrderServiceButtonsAsync()
@@ -329,7 +330,7 @@ public partial class UserDashboardPage : ContentPage
         _inactivityService.ResetActivity();
 
         var route = _roleAccessService.ResolveRouteForRole(_authService.CurrentUser?.Role, requestedRoute);
-        await _orderServiceAvailabilityService.GetAsync();
+        // Use cached availability from dashboard OnAppearing — do not block navigation on GetAsync.
         if (!_orderServiceAvailabilityService.IsRouteEnabled(route))
         {
             await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled by the Administrator.");

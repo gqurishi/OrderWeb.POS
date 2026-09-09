@@ -3,6 +3,8 @@ using Microsoft.Maui.Controls.Shapes;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using OrderWeb.SharedUI.Controls.OrderPlace;
+using OrderWeb.SharedUI.Hosting;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
@@ -43,6 +45,16 @@ namespace POS_in_NET.Pages
         private NavigationCoordinator _navigationCoordinator = NavigationCoordinator.Shared;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
 
+        // SharedUI Order Place shell (same as Client)
+        private readonly OrderPlaceShellView _orderPlaceShell = new();
+        private readonly OrderPlaceSessionState _orderPlaceSession = new();
+        private MotherOrderPlaceHost? _orderPlaceHost;
+        private List<OrderPlaceProductItem> _visibleProducts = new();
+        private List<MenuCategory> _visibleSubcategories = new();
+        private readonly List<MenuCategory> _shellTopCategories = new();
+        private string? _shellSelectedCategoryId;
+        private string? _shellSelectedSubcategoryId;
+
         // Model State
         private TableOrder _currentOrder = new();
         private List<MenuCategory> _allCategories = new();
@@ -56,7 +68,6 @@ namespace POS_in_NET.Pages
         private MenuCategory? _selectedCategory;
         private MenuCategory? _selectedSubCategory;
         private FoodMenuItem? _modifierPopupItem;
-        private string _searchQuery = string.Empty;
         private bool _isCourseFireInProgress;
 
         // Session/Order State  
@@ -105,6 +116,7 @@ namespace POS_in_NET.Pages
         private static DateTime _menuCacheUpdatedAt = DateTime.MinValue;
         private static readonly TimeSpan MenuCacheTtl = TimeSpan.FromMinutes(30);
         private readonly Dictionary<string, List<MenuItemQuickNote>> _quickNotesCache = new();
+        private readonly Dictionary<string, OrderPlaceLineRow> _orderLineRows = new(StringComparer.Ordinal);
 
         // Feature Flags (Runtime)
         private bool EnableInstantSendMode = true;
@@ -114,11 +126,188 @@ namespace POS_in_NET.Pages
         private DateTime _lastReadinessCheckAt = DateTime.MinValue;
         private (List<string> Critical, List<string> Info)? _cachedReadinessIssues;
 
+        /// <summary>SharedUI session used by <see cref="MotherOrderPlaceHost"/>.</summary>
+        internal OrderPlaceSessionState OrderPlaceSession => _orderPlaceSession;
+
+        /// <summary>Raised when shell should rebind (same as Client host).</summary>
+        internal event EventHandler? OrderPlaceStateChanged;
+
+        /// <summary>SharedUI shell entry — OnAppearing already loads; republish session.</summary>
+        internal async Task OrderPlaceInitializeAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_initialLoadTask != null)
+            {
+                await _initialLoadTask;
+            }
+
+            PublishOrderPlaceSession();
+        }
+
+        internal Task OrderPlaceSelectCategoryAsync(string categoryId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var category = _shellTopCategories.FirstOrDefault(c =>
+                string.Equals(c.Id, categoryId, StringComparison.Ordinal));
+            if (category != null)
+            {
+                SelectCategory(category);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlaceSelectSubcategoryAsync(string? subcategoryId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(subcategoryId))
+            {
+                return Task.CompletedTask;
+            }
+
+            var subcategory = _visibleSubcategories.FirstOrDefault(c =>
+                string.Equals(c.Id, subcategoryId, StringComparison.Ordinal))
+                ?? _allCategories.FirstOrDefault(c =>
+                    string.Equals(c.Id, subcategoryId, StringComparison.Ordinal));
+            if (subcategory != null)
+            {
+                SelectSubCategory(subcategory);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        internal async Task OrderPlaceAddProductAsync(string productId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(productId))
+            {
+                return;
+            }
+
+            if (productId.StartsWith("md:", StringComparison.OrdinalIgnoreCase))
+            {
+                var dealId = productId["md:".Length..];
+                var deal = _activeMealDeals.FirstOrDefault(d =>
+                    string.Equals(d.Id, dealId, StringComparison.OrdinalIgnoreCase));
+                if (deal != null)
+                {
+                    await OnMealDealTappedAsync(deal);
+                }
+
+                return;
+            }
+
+            if (productId.StartsWith("tm:", StringComparison.OrdinalIgnoreCase))
+            {
+                var menuId = productId["tm:".Length..];
+                var menu = _activeTastingMenus.FirstOrDefault(m =>
+                    string.Equals(m.Id, menuId, StringComparison.OrdinalIgnoreCase));
+                if (menu != null)
+                {
+                    await OnTastingMenuTappedAsync(menu);
+                }
+
+                return;
+            }
+
+            var item = _allMenuItems.FirstOrDefault(i =>
+                string.Equals(i.Id, productId, StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+            {
+                await OnMenuItemTappedAsync(item);
+            }
+        }
+
+        internal async Task OrderPlaceSetLineQuantityAsync(string lineId, int quantity, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var item = _currentOrder.Items.FirstOrDefault(i =>
+                string.Equals(i.Id, lineId, StringComparison.OrdinalIgnoreCase));
+            if (item == null)
+            {
+                return;
+            }
+
+            await ApplyOrderLineQuantityAsync(item, IsTastingMenuOrderItem(item), quantity);
+        }
+
+        internal async Task OrderPlaceEditLineNoteAsync(string lineId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var item = _currentOrder.Items.FirstOrDefault(i =>
+                string.Equals(i.Id, lineId, StringComparison.OrdinalIgnoreCase));
+            if (item == null || IsMealDealOrderItem(item))
+            {
+                return;
+            }
+
+            await ShowNoteDialog(item);
+        }
+
+        internal async Task OrderPlaceTrailingLineActionAsync(string lineId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var item = _currentOrder.Items.FirstOrDefault(i =>
+                string.Equals(i.Id, lineId, StringComparison.OrdinalIgnoreCase));
+            if (item == null || !IsTastingMenuOrderItem(item))
+            {
+                return;
+            }
+
+            await ShowTastingCourseProgressAsync(item);
+        }
+
+        internal Task OrderPlaceOrderNotesAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnNotesClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlaceVoidAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnVoidClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlaceMoreAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnMoreClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlaceSendAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnSendClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlacePrintAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnPrintReceiptClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
+        internal Task OrderPlacePayAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            OnPayClicked(null, EventArgs.Empty);
+            return Task.CompletedTask;
+        }
+
         public OrderPlacementPageSimple()
         {
             InitializeComponent();
             SizeChanged += OnOrderPageSizeChanged;
             InitializeServices();
+            _orderPlaceHost = new MotherOrderPlaceHost(this);
+            ShellHost.Content = _orderPlaceShell;
+            _orderPlaceShell.BindHost(_orderPlaceHost);
         }
 
         private void OnOrderPageSizeChanged(object? sender, EventArgs e)
@@ -132,29 +321,8 @@ namespace POS_in_NET.Pages
             var compactDesktop = !tablet && (Width < 1450 || Height < 850);
             var compact = tablet || compactDesktop;
 
-            // ~70/30 on desktop; slightly more order-panel room on smaller tablets.
-            MainContentGrid.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(12);
-            MainContentGrid.ColumnSpacing = tablet ? 8 : compact ? 10 : 12;
-            MainContentGrid.ColumnDefinitions[0].Width = tablet
-                ? new GridLength(6.4, GridUnitType.Star)
-                : new GridLength(7, GridUnitType.Star);
-            MainContentGrid.ColumnDefinitions[1].Width = tablet
-                ? new GridLength(3.6, GridUnitType.Star)
-                : new GridLength(3, GridUnitType.Star);
-
-            MenuPanel.Padding = tablet ? new Thickness(8) : new Thickness(12);
-            OrderPanel.Padding = tablet ? new Thickness(8) : new Thickness(12);
-            CategoryChipScroller.HeightRequest = tablet ? 48 : 52;
-            SubCategorySection.HeightRequest = tablet ? 38 : 42;
-
-            // Payment sits full-width in the bottom action station.
-            PaymentButton.HorizontalOptions = LayoutOptions.Fill;
-
-            OrderActionsCard.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(12);
-            OrderActionsCard.Margin = Thickness.Zero;
-            OrderActionsLayout.Spacing = tablet ? 7 : compact ? 8 : 10;
-            QuickActionsGrid.ColumnSpacing = tablet ? 6 : 8;
-            MainActionsGrid.ColumnSpacing = tablet ? 6 : 8;
+            MainContentGrid.Padding = tablet ? new Thickness(6) : compact ? new Thickness(8) : new Thickness(8);
+            MainContentGrid.ColumnSpacing = tablet ? 4 : 6;
         }
 
         public OrderPlacementPageSimple(string tableNumber, int coverCount, string staffName, int staffId)
@@ -232,6 +400,11 @@ namespace POS_in_NET.Pages
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Init error: {ex}");
+                _ = ToastNotification.ShowAsync(
+                    "Load failed",
+                    "Order screen could not finish loading. Try again.",
+                    NotificationType.Error,
+                    2200);
             }
             finally
             {
@@ -527,11 +700,10 @@ namespace POS_in_NET.Pages
             public MenuCategory Category { get; set; } = null!;
         }
 
-        private readonly List<OrderPlaceCategoryButton> _categoryChips = new();
-        private readonly List<OrderPlaceSubcategoryButton> _subCategoryChips = new();
         protected override void OnDisappearing()
         {
             base.OnDisappearing();
+            LoadingOverlay.IsLoading = false;
             UnsubscribeFromLiveUpdates();
             _ = SaveAndPublishOnDisappearingAsync();
 
@@ -641,17 +813,30 @@ namespace POS_in_NET.Pages
                 }
                 else
                 {
-                    var categoriesTask = _categoryService.GetAllCategoriesAsync();
-                    var itemsTask = _menuItemService.GetAllItemsAsync();
-                    var dealsTask = _mealDealService.GetActiveDealsAsync();
-                    var tastingMenusTask = _tastingMenuService.GetActiveAsync();
+                    // Keep DB/menu IO off the UI thread; only BuildCategories runs on main.
+                    var categoryService = _categoryService;
+                    var menuItemService = _menuItemService;
+                    var mealDealService = _mealDealService;
+                    var tastingMenuService = _tastingMenuService;
 
-                    await Task.WhenAll(categoriesTask, itemsTask, dealsTask, tastingMenusTask);
+                    var snapshot = await Task.Run(async () =>
+                    {
+                        var categoriesTask = categoryService.GetAllCategoriesAsync();
+                        var itemsTask = menuItemService.GetAllItemsAsync();
+                        var dealsTask = mealDealService.GetActiveDealsAsync();
+                        var tastingMenusTask = tastingMenuService.GetActiveAsync();
+                        await Task.WhenAll(categoriesTask, itemsTask, dealsTask, tastingMenusTask);
+                        return (
+                            Categories: await categoriesTask,
+                            Items: await itemsTask,
+                            Deals: await dealsTask,
+                            TastingMenus: await tastingMenusTask);
+                    }).ConfigureAwait(true);
 
-                    _allCategories = await categoriesTask;
-                    _allMenuItems = await itemsTask;
-                    _activeMealDeals = await dealsTask;
-                    _activeTastingMenus = await tastingMenusTask;
+                    _allCategories = snapshot.Categories;
+                    _allMenuItems = snapshot.Items;
+                    _activeMealDeals = snapshot.Deals;
+                    _activeTastingMenus = snapshot.TastingMenus;
 
                     _cachedCategories = _allCategories;
                     _cachedMenuItems = _allMenuItems;
@@ -661,6 +846,13 @@ namespace POS_in_NET.Pages
                 }
                 
                 System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Loaded {_allCategories.Count} categories, {_allMenuItems.Count} items, {_activeMealDeals.Count} meal deals");
+
+                // Warm cache + categories already published → skip full rebuild.
+                if (useCache && _shellTopCategories.Count > 0 && _selectedCategory != null)
+                {
+                    PublishOrderPlaceSession();
+                    return;
+                }
                 
                 BuildCategories();
             }
@@ -671,6 +863,13 @@ namespace POS_in_NET.Pages
             }
         }
 
+        public static bool IsMenuCacheWarm =>
+            _cachedCategories != null
+            && _cachedMenuItems != null
+            && _cachedMealDeals != null
+            && _cachedTastingMenus != null
+            && (DateTime.Now - _menuCacheUpdatedAt) < MenuCacheTtl;
+
         public static void InvalidateMenuCache()
         {
             _cachedCategories = null;
@@ -678,6 +877,49 @@ namespace POS_in_NET.Pages
             _cachedMealDeals = null;
             _cachedTastingMenus = null;
             _menuCacheUpdatedAt = DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// Warms the static menu cache off the UI thread so the first table open is fast.
+        /// </summary>
+        public static async Task WarmMenuCacheAsync()
+        {
+            if (IsMenuCacheWarm)
+            {
+                return;
+            }
+
+            try
+            {
+                var categoryService = ServiceHelper.GetService<MenuCategoryService>() ?? new MenuCategoryService();
+                var menuItemService = ServiceHelper.GetService<MenuItemService>() ?? new MenuItemService();
+                var mealDealService = ServiceHelper.GetService<MealDealService>() ?? new MealDealService();
+                var tastingMenuService = ServiceHelper.GetService<TastingMenuService>() ?? new TastingMenuService();
+
+                var snapshot = await Task.Run(async () =>
+                {
+                    var categoriesTask = categoryService.GetAllCategoriesAsync();
+                    var itemsTask = menuItemService.GetAllItemsAsync();
+                    var dealsTask = mealDealService.GetActiveDealsAsync();
+                    var tastingMenusTask = tastingMenuService.GetActiveAsync();
+                    await Task.WhenAll(categoriesTask, itemsTask, dealsTask, tastingMenusTask);
+                    return (
+                        Categories: await categoriesTask,
+                        Items: await itemsTask,
+                        Deals: await dealsTask,
+                        TastingMenus: await tastingMenusTask);
+                }).ConfigureAwait(false);
+
+                _cachedCategories = snapshot.Categories;
+                _cachedMenuItems = snapshot.Items;
+                _cachedMealDeals = snapshot.Deals;
+                _cachedTastingMenus = snapshot.TastingMenus;
+                _menuCacheUpdatedAt = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[OrderPlacement] WarmMenuCacheAsync failed: {ex.Message}");
+            }
         }
 
         private void BuildCategories()
@@ -698,37 +940,29 @@ namespace POS_in_NET.Pages
             }
 
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {topCategories.Count} category chips");
-
-            _categoryChips.Clear();
-            var chips = new List<View>(topCategories.Count);
-            foreach (var category in topCategories)
-            {
-                var chip = new OrderPlaceCategoryButton
-                {
-                    Text = category.Name,
-                    CommandParameter = category
-                };
-                chip.Tapped += (_, _) => SelectCategory(category);
-                _categoryChips.Add(chip);
-                chips.Add(chip);
-            }
-
-            CategoryChipScroller.SetChips(chips);
+            _shellTopCategories.Clear();
+            _shellTopCategories.AddRange(topCategories);
 
             if (topCategories.Count > 0)
             {
                 SelectCategory(topCategories.First());
             }
+            else
+            {
+                _selectedCategory = null;
+                _selectedSubCategory = null;
+                _shellSelectedCategoryId = null;
+                _shellSelectedSubcategoryId = null;
+                _visibleSubcategories.Clear();
+                _visibleProducts.Clear();
+                PublishOrderPlaceSession();
+            }
         }
 
         private void SyncCategoryChipSelection()
         {
-            var selectedId = _selectedCategory?.Id;
-            foreach (var chip in _categoryChips)
-            {
-                chip.IsSelected = chip.CommandParameter is MenuCategory category
-                    && string.Equals(category.Id, selectedId, StringComparison.Ordinal);
-            }
+            _shellSelectedCategoryId = _selectedCategory?.Id;
+            PublishOrderPlaceSession();
         }
 
         private static MenuCategory CreateMealDealsCategory() => new()
@@ -755,23 +989,18 @@ namespace POS_in_NET.Pages
 
             _selectedCategory = category;
             _selectedSubCategory = null;
-            _searchQuery = string.Empty;
-
-            UpdateSearchDisplay();
-            SyncCategoryChipSelection();
+            _shellSelectedCategoryId = category.Id;
+            _shellSelectedSubcategoryId = null;
+            _visibleSubcategories.Clear();
 
             if (string.Equals(category.Id, MealDeal.PosCategoryId, StringComparison.Ordinal))
             {
-                SubCategorySection.IsVisible = false;
-                SubCategorySection.Clear();
                 LoadMealDealsForOrder();
                 return;
             }
 
             if (string.Equals(category.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal))
             {
-                SubCategorySection.IsVisible = false;
-                SubCategorySection.Clear();
                 LoadTastingMenusForOrder();
                 return;
             }
@@ -784,7 +1013,6 @@ namespace POS_in_NET.Pages
             if (subCategories.Any())
             {
                 BuildSubCategories(subCategories);
-                SubCategorySection.IsVisible = true;
 
                 if (CategoryHasVisibleItems(category.Id))
                 {
@@ -797,8 +1025,6 @@ namespace POS_in_NET.Pages
             }
             else
             {
-                SubCategorySection.IsVisible = false;
-                SubCategorySection.Clear();
                 LoadItemsForCategory(category.Id);
             }
         }
@@ -807,51 +1033,21 @@ namespace POS_in_NET.Pages
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {subCategories.Count} sub-category chips");
 
-            var categoryButtons = subCategories
-                .Select(subCat => new CategoryButtonModel
-                {
-                    Id = subCat.Id,
-                    Name = subCat.Name,
-                    Category = subCat
-                })
-                .ToList();
-
+            _visibleSubcategories.Clear();
             if (_selectedCategory != null && CategoryHasVisibleItems(_selectedCategory.Id))
             {
-                categoryButtons.Insert(0, new CategoryButtonModel
-                {
-                    Id = _selectedCategory.Id,
-                    Name = "Main",
-                    Category = _selectedCategory
-                });
+                _visibleSubcategories.Add(_selectedCategory);
             }
 
-            _subCategoryChips.Clear();
-            var chips = new List<View>(categoryButtons.Count);
-            foreach (var model in categoryButtons)
-            {
-                var chip = new OrderPlaceSubcategoryButton
-                {
-                    Text = model.Name,
-                    CommandParameter = model.Category
-                };
-                chip.Tapped += (_, _) => SelectSubCategory(model.Category);
-                _subCategoryChips.Add(chip);
-                chips.Add(chip);
-            }
-
-            SubCategorySection.SetChips(chips);
-            SyncSubCategoryChipSelection();
+            _visibleSubcategories.AddRange(subCategories);
+            _shellSelectedSubcategoryId = _selectedSubCategory?.Id ?? _selectedCategory?.Id;
+            PublishOrderPlaceSession();
         }
 
         private void SyncSubCategoryChipSelection()
         {
-            var activeId = _selectedSubCategory?.Id ?? _selectedCategory?.Id;
-            foreach (var chip in _subCategoryChips)
-            {
-                chip.IsSelected = chip.CommandParameter is MenuCategory category
-                    && string.Equals(category.Id, activeId, StringComparison.Ordinal);
-            }
+            _shellSelectedSubcategoryId = _selectedSubCategory?.Id ?? _selectedCategory?.Id;
+            PublishOrderPlaceSession();
         }
 
         private void SelectSubCategory(MenuCategory subCategory)
@@ -861,7 +1057,7 @@ namespace POS_in_NET.Pages
             _selectedSubCategory = string.Equals(subCategory.Id, _selectedCategory?.Id, StringComparison.Ordinal)
                 ? null
                 : subCategory;
-            SyncSubCategoryChipSelection();
+            _shellSelectedSubcategoryId = subCategory.Id;
             LoadItemsForCategory(subCategory.Id);
         }
 
@@ -876,7 +1072,14 @@ namespace POS_in_NET.Pages
                 .ToList();
 
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Found {items.Count} items");
-            ProductGrid.SetItems(items.Select(CreateItemCard));
+            _visibleProducts = items
+                .Select(item => new OrderPlaceProductItem(
+                    item.Id,
+                    item.Name,
+                    GetSafeEffectivePrice(item),
+                    IsAvailable: true))
+                .ToList();
+            PublishOrderPlaceSession();
         }
 
         private void LoadMealDealsForOrder()
@@ -886,7 +1089,17 @@ namespace POS_in_NET.Pages
                 .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            ProductGrid.SetItems(deals.Select(CreateMealDealCard));
+            _visibleSubcategories.Clear();
+            _visibleProducts = deals
+                .Select(deal => new OrderPlaceProductItem(
+                    $"md:{deal.Id}",
+                    deal.Name,
+                    deal.Price,
+                    Badge: "DEAL",
+                    PriceText: $"£{deal.Price:F2}",
+                    IsAvailable: true))
+                .ToList();
+            PublishOrderPlaceSession();
         }
 
         private OrderPlaceProductCard CreateMealDealCard(MealDeal deal)
@@ -909,7 +1122,17 @@ namespace POS_in_NET.Pages
                 .ThenBy(menu => menu.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            ProductGrid.SetItems(menus.Select(CreateTastingMenuCard));
+            _visibleSubcategories.Clear();
+            _visibleProducts = menus
+                .Select(menu => new OrderPlaceProductItem(
+                    $"tm:{menu.Id}",
+                    menu.Name,
+                    0m,
+                    Badge: "TASTING",
+                    PriceText: menu.Options.Count == 0 ? "No prices" : menu.OptionsDisplay,
+                    IsAvailable: true))
+                .ToList();
+            PublishOrderPlaceSession();
         }
 
         private OrderPlaceProductCard CreateTastingMenuCard(TastingMenu menu)
@@ -1048,10 +1271,9 @@ namespace POS_in_NET.Pages
             _currentOrder.RecalculateAll();
             RefreshOrderItems();
             await MarkCurrentOrderChangedAsync();
-
             if (wasEmpty && _currentOrder.Items.Count > 0)
             {
-                await PersistDraftAsync(force: true);
+                ScheduleDraftAutosave(immediate: true);
             }
         }
 
@@ -1118,10 +1340,9 @@ namespace POS_in_NET.Pages
             _currentOrder.RecalculateAll();
             RefreshOrderItems();
             await MarkCurrentOrderChangedAsync();
-
             if (wasEmpty && _currentOrder.Items.Count > 0)
             {
-                await PersistDraftAsync(force: true);
+                ScheduleDraftAutosave(immediate: true);
             }
         }
 
@@ -1696,7 +1917,8 @@ namespace POS_in_NET.Pages
             {
                 if (!immediate)
                 {
-                    await Task.Delay(250, _draftSaveDelayCts.Token);
+                    // Coalesce rapid adds — one save after the burst, not per tap.
+                    await Task.Delay(200, _draftSaveDelayCts.Token);
                 }
             }
             catch (OperationCanceledException)
@@ -1709,7 +1931,20 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            await PersistDraftAsync(force: true);
+            var saved = await PersistDraftAsync(force: true);
+            if (!saved && _draftDirty && !IsUncommittedLocalTableOrder())
+            {
+                _ = ToastNotification.ShowAsync(
+                    "Save delayed",
+                    "Order line is on screen; draft save will retry.",
+                    NotificationType.Warning,
+                    1600);
+            }
+        }
+
+        private void ScheduleDraftAutosave(bool immediate = false)
+        {
+            _ = QueueDraftAutosaveAsync(immediate);
         }
 
         private async Task<bool> PersistDraftAsync(bool force = false, LocalLifecycleState? lifecycleOverride = null, string? voidReason = null, string? voidedBy = null, DateTime? paidAt = null, DateTime? voidedAt = null)
@@ -1814,6 +2049,11 @@ namespace POS_in_NET.Pages
                         else
                         {
                             UpdateSavedStatusLabel("Save failed", false, true);
+                            _ = ToastNotification.ShowAsync(
+                                "Save failed",
+                                "Line is still on the till — tap again later or Send to retry.",
+                                NotificationType.Error,
+                                1800);
                         }
 
                         System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Draft save failed: {result.Message}");
@@ -2063,15 +2303,16 @@ namespace POS_in_NET.Pages
             return anySent ? LocalLifecycleState.SentPartial : LocalLifecycleState.Active;
         }
 
-        private async Task MarkCurrentOrderChangedAsync()
+        private Task MarkCurrentOrderChangedAsync()
         {
             _inactivityService.ResetActivity();
             _currentOrder.UpdatedAt = DateTime.Now;
-            UpdateDisplay();
-            await QueueDraftAutosaveAsync();
+            UpdateTotalsDisplay();
+            ScheduleDraftAutosave();
+            return Task.CompletedTask;
         }
 
-        private async Task AddItemToOrderAsync(FoodMenuItem item, string? selectedNote = null, List<SelectedAddon>? selectedAddons = null, MenuItemVariant? selectedVariant = null)
+        private Task AddItemToOrderAsync(FoodMenuItem item, string? selectedNote = null, List<SelectedAddon>? selectedAddons = null, MenuItemVariant? selectedVariant = null)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Adding item: {item.Name}");
 
@@ -2131,15 +2372,14 @@ namespace POS_in_NET.Pages
                 _currentOrder.Items.Add(orderItem);
             }
             
+            // Optimistic UI: line + totals paint immediately; draft save is background.
             _currentOrder.RecalculateAll();
-            
             RefreshOrderItems();
-            await MarkCurrentOrderChangedAsync();
-
-            if (wasEmpty && _currentOrder.Items.Count > 0)
-            {
-                await PersistDraftAsync(force: true);
-            }
+            _inactivityService.ResetActivity();
+            _currentOrder.UpdatedAt = DateTime.Now;
+            UpdateTotalsDisplay();
+            ScheduleDraftAutosave(immediate: wasEmpty);
+            return Task.CompletedTask;
         }
 
         private static string BuildOrderItemDisplayName(string itemName, string? variantName)
@@ -2257,71 +2497,64 @@ namespace POS_in_NET.Pages
 
         private void RefreshOrderItems()
         {
-            OrderItemsContainer.Children.Clear();
+            PublishOrderPlaceSession();
+        }
 
-            foreach (var item in _currentOrder.Items.Where(item => !IsTastingMenuCourseItem(item)))
+        private OrderPlaceLineRow CreateOrderLineRow(TableOrderItem item)
+        {
+            var row = new OrderPlaceLineRow();
+            ApplyOrderLineRow(row, item);
+            return row;
+        }
+
+        private void ApplyOrderLineRow(OrderPlaceLineRow row, TableOrderItem item)
+        {
+            row.BindingContext = item;
+            var isMealDeal = IsMealDealOrderItem(item);
+            var isTastingMenu = IsTastingMenuOrderItem(item);
+            var visibleItemNote = isTastingMenu
+                ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
+                : item.Notes;
+            var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
+            var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
+            var isSent = HasReachedKitchen(item);
+
+            string? detailText = null;
+            if (isTastingMenu)
             {
-                var isMealDeal = IsMealDealOrderItem(item);
-                var isTastingMenu = IsTastingMenuOrderItem(item);
-                var visibleItemNote = isTastingMenu
-                    ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
-                    : item.Notes;
-                var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
-                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
-                var isSent = HasReachedKitchen(item);
-
-                string? detailText = null;
-                if (isTastingMenu)
-                {
-                    detailText = string.Join(
-                        Environment.NewLine,
-                        new[]
-                        {
-                            BuildTastingCourseStatusText(item),
-                            hasNotes ? $"Note: {visibleItemNote}" : null,
-                            item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
-                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
-                }
-                else if (hasModifiers || hasNotes)
-                {
-                    detailText = string.Join(
-                        Environment.NewLine,
-                        new[]
-                        {
-                            hasModifiers ? item.ModifiersDisplay : null,
-                            hasNotes ? item.Notes : null
-                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
-                }
-
-                var row = new OrderPlaceLineRow
-                {
-                    ItemName = item.DisplayName,
-                    LineTotal = item.TotalPrice,
-                    Quantity = item.Quantity,
-                    Details = detailText ?? string.Empty,
-                    IsSent = isSent,
-                    ShowNoteAction = !isMealDeal,
-                    NoteActionText = hasNotes ? "Note Added" : "+ Note",
-                    TrailingActionText = isTastingMenu ? "Fire" : string.Empty
-                };
-
-                row.QuantityChanged += async (_, quantity) =>
-                {
-                    await ApplyOrderLineQuantityAsync(item, isTastingMenu, quantity);
-                };
-
-                if (!isMealDeal)
-                {
-                    row.NoteTapped += async (_, _) => await ShowNoteDialog(item);
-                }
-
-                if (isTastingMenu)
-                {
-                    row.TrailingActionTapped += async (_, _) => await ShowTastingCourseProgressAsync(item);
-                }
-
-                OrderItemsContainer.Children.Add(row);
+                detailText = string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        BuildTastingCourseStatusText(item),
+                        hasNotes ? $"Note: {visibleItemNote}" : null,
+                        item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
+                    }.Where(text => !string.IsNullOrWhiteSpace(text)));
             }
+            else if (hasModifiers || hasNotes)
+            {
+                detailText = string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        hasModifiers ? item.ModifiersDisplay : null,
+                        hasNotes ? item.Notes : null
+                    }.Where(text => !string.IsNullOrWhiteSpace(text)));
+            }
+
+            row.ItemName = item.DisplayName;
+            row.LineTotal = item.TotalPrice;
+            row.Quantity = item.Quantity;
+            row.Details = detailText ?? string.Empty;
+            row.IsSent = isSent;
+            row.ShowNoteAction = !isMealDeal;
+            row.NoteActionText = hasNotes ? "Note Added" : "+ Note";
+            row.TrailingActionText = isTastingMenu ? "Fire" : string.Empty;
+        }
+
+        private void EnsureOrderLineRowAtIndex(OrderPlaceLineRow row, int index)
+        {
+            // Shell rebinds full line list; incremental container moves are unused.
         }
 
         private async Task ApplyOrderLineQuantityAsync(TableOrderItem item, bool isTastingMenu, int quantity)
@@ -2636,93 +2869,17 @@ namespace POS_in_NET.Pages
         private void UpdateDisplay()
         {
             UpdateTopBarOrderTitle();
-            ApplyOrderTypeChrome();
+            PublishOrderPlaceSession();
+        }
 
-            var orderPart = !string.IsNullOrEmpty(_currentOrder.OrderNumber) ? $"Order #{_currentOrder.OrderNumber}" : "Order #";
-            var orderNote = string.IsNullOrWhiteSpace(_currentOrder.Notes)
-                ? null
-                : TruncateHeaderNote(_currentOrder.Notes.Trim(), 15);
+        private void UpdateOrderIdentityDisplay()
+        {
+            PublishOrderPlaceSession();
+        }
 
-            if (_isCollectionOrder)
-            {
-                OrderIdentityLabel.Text = $"{orderPart} · COLLECTION";
-                GuestsLabel.IsVisible = true;
-                GuestsLabel.Text = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
-            }
-            else if (_isDeliveryOrder)
-            {
-                OrderIdentityLabel.Text = $"{orderPart} · DELIVERY";
-                GuestsLabel.IsVisible = true;
-                GuestsLabel.Text = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
-            }
-            else
-            {
-                var baseText = $"{orderPart} · TABLE {_currentOrder.TableNumber}";
-                OrderIdentityLabel.Text = string.IsNullOrEmpty(orderNote)
-                    ? baseText
-                    : $"{baseText} | Note: {orderNote}";
-                GuestsLabel.IsVisible = true;
-                GuestsLabel.Text = $"{_currentOrder.CoverCount} guests";
-            }
-
-            SubtotalLabel.Text = $"£{_currentOrder.Subtotal:F2}";
-            VATLabel.Text = $"£{_currentOrder.VAT:F2}";
-
-            var isTable = !_isCollectionOrder && !_isDeliveryOrder;
-            if (isTable && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied && _currentOrder.ServiceCharge > 0)
-            {
-                ServiceChargeRow.IsVisible = true;
-                ServiceChargeLabel.Text = $"£{_currentOrder.ServiceCharge:F2}";
-                ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
-            }
-            else if (isTable && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Removed)
-            {
-                ServiceChargeRow.IsVisible = true;
-                ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
-                ServiceChargeLabel.Text = "Removed";
-            }
-            else if (isTable)
-            {
-                ServiceChargeRow.IsVisible = true;
-                ServiceChargeDescriptionLabel.Text = "Service charge";
-                ServiceChargeLabel.Text = "Not included";
-            }
-            else
-            {
-                // COL / DEL takeaway: never show service charge.
-                ServiceChargeRow.IsVisible = false;
-            }
-
-            if (_currentOrder.Discount > 0)
-            {
-                DiscountRow.IsVisible = true;
-                DiscountLabel.Text = $"-£{_currentOrder.Discount:F2}";
-                if (!string.IsNullOrEmpty(_currentOrder.DiscountReason))
-                {
-                    DiscountReasonLabel.Text = $"Discount ({_currentOrder.DiscountReason})";
-                }
-                else
-                {
-                    DiscountReasonLabel.Text = "Discount";
-                }
-            }
-            else
-            {
-                DiscountRow.IsVisible = false;
-            }
-
-            if (_isDeliveryOrder)
-            {
-                DeliveryFeeRow.IsVisible = true;
-                DeliveryFeeLabel.Text = $"£{_currentOrder.DeliveryFee:F2}";
-            }
-            else
-            {
-                DeliveryFeeRow.IsVisible = false;
-            }
-
-            TotalLabel.Text = $"£{_currentOrder.Total:F2}";
-            PaymentButton.Text = $"PAYMENT £{_currentOrder.Total:F2}";
+        private void UpdateTotalsDisplay()
+        {
+            PublishOrderPlaceSession();
         }
 
         /// <summary>
@@ -2731,45 +2888,149 @@ namespace POS_in_NET.Pages
         /// </summary>
         private void ApplyOrderTypeChrome()
         {
-            if (_isDeliveryOrder || _isCollectionOrder)
+            PublishOrderPlaceSession();
+        }
+
+        private void PublishOrderPlaceSession()
+        {
+            var session = _orderPlaceSession;
+            var takeaway = _isCollectionOrder || _isDeliveryOrder;
+
+            session.Kind = _isDeliveryOrder
+                ? OrderPlaceOrderKind.Delivery
+                : _isCollectionOrder
+                    ? OrderPlaceOrderKind.Collection
+                    : OrderPlaceOrderKind.Table;
+
+            var orderPart = !string.IsNullOrEmpty(_currentOrder.OrderNumber)
+                ? $"Order #{_currentOrder.OrderNumber}"
+                : "Order #";
+            var orderNote = string.IsNullOrWhiteSpace(_currentOrder.Notes)
+                ? null
+                : TruncateHeaderNote(_currentOrder.Notes.Trim(), 15);
+
+            if (_isCollectionOrder)
             {
-                PrintButton.Text = "PRINT RECEIPT";
-                SemanticProperties.SetDescription(
-                    PrintButton,
-                    "Print customer receipt and kitchen tickets for this takeaway order");
+                session.HeaderTitle = $"{orderPart} · COLLECTION";
+                session.HeaderDetail = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
+            }
+            else if (_isDeliveryOrder)
+            {
+                session.HeaderTitle = $"{orderPart} · DELIVERY";
+                session.HeaderDetail = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
             }
             else
             {
-                PrintButton.Text = "PRINT BILL";
-                SemanticProperties.SetDescription(
-                    PrintButton,
-                    "Print the customer bill for this table (does not send to kitchen)");
+                var baseText = $"{orderPart} · TABLE {_currentOrder.TableNumber}";
+                session.HeaderTitle = string.IsNullOrEmpty(orderNote) ? baseText : $"{baseText} | Note: {orderNote}";
+                session.HeaderDetail = $"{Math.Max(_currentOrder.CoverCount, 1)} guests";
             }
+
+            session.SelectedCategoryId = _shellSelectedCategoryId ?? _selectedCategory?.Id;
+            session.SelectedSubcategoryId = _shellSelectedSubcategoryId
+                ?? _selectedSubCategory?.Id
+                ?? _selectedCategory?.Id;
+
+            session.Categories.Clear();
+            foreach (var category in _shellTopCategories)
+            {
+                session.Categories.Add(new OrderPlaceCategoryItem(
+                    category.Id,
+                    category.Name,
+                    IsSpecial: string.Equals(category.Id, MealDeal.PosCategoryId, StringComparison.Ordinal)
+                        || string.Equals(category.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal)));
+            }
+
+            session.Subcategories.Clear();
+            foreach (var category in _visibleSubcategories)
+            {
+                var label = _selectedCategory != null
+                    && string.Equals(category.Id, _selectedCategory.Id, StringComparison.Ordinal)
+                    && _visibleSubcategories.Count > 1
+                        ? "Main"
+                        : category.Name;
+                session.Subcategories.Add(new OrderPlaceCategoryItem(
+                    category.Id,
+                    label,
+                    _selectedCategory?.Id));
+            }
+
+            session.Products.Clear();
+            foreach (var product in _visibleProducts)
+            {
+                session.Products.Add(product);
+            }
+
+            session.Lines.Clear();
+            foreach (var item in _currentOrder.Items.Where(i => !IsTastingMenuCourseItem(i)))
+            {
+                var isMealDeal = IsMealDealOrderItem(item);
+                var isTastingMenu = IsTastingMenuOrderItem(item);
+                var visibleItemNote = isTastingMenu
+                    ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
+                    : item.Notes;
+                var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
+                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
+
+                string? detailText = null;
+                if (isTastingMenu)
+                {
+                    detailText = string.Join(
+                        Environment.NewLine,
+                        new[]
+                        {
+                            BuildTastingCourseStatusText(item),
+                            hasNotes ? $"Note: {visibleItemNote}" : null,
+                            item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
+                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
+                }
+                else if (hasModifiers || hasNotes)
+                {
+                    detailText = string.Join(
+                        Environment.NewLine,
+                        new[]
+                        {
+                            hasModifiers ? item.ModifiersDisplay : null,
+                            hasNotes ? item.Notes : null
+                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
+                }
+
+                session.Lines.Add(new OrderPlaceBasketLine(
+                    item.Id,
+                    item.DisplayName,
+                    item.TotalPrice,
+                    item.Quantity,
+                    detailText,
+                    IsSent: HasReachedKitchen(item),
+                    ShowNoteAction: !isMealDeal,
+                    TrailingActionText: isTastingMenu ? "Fire" : null));
+            }
+
+            session.Subtotal = _currentOrder.Subtotal;
+            session.Discount = _currentOrder.Discount;
+            session.ServiceCharge = _currentOrder.ServiceCharge;
+            session.DeliveryFee = _currentOrder.DeliveryFee;
+            session.Total = _currentOrder.Total;
+            session.ShowServiceCharge = !takeaway;
+            session.ShowDeliveryFee = _isDeliveryOrder;
+            session.PrintActionLabel = takeaway ? "PRINT RECEIPT" : "PRINT BILL";
+            session.PaymentActionLabel = $"PAYMENT £{_currentOrder.Total:F2}";
+
+            OrderPlaceStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void UpdateTopBarOrderTitle()
         {
+            // Order Place no longer shows TABLE/GUESTS in the top bar —
+            // identity lives in SharedUI shell header next to PAYMENT.
             if (TopBar == null)
             {
                 return;
             }
 
-            if (_isDeliveryOrder)
-            {
-                var detail = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, string.Empty);
-                TopBar.SetPageTitle(string.IsNullOrWhiteSpace(detail) ? "DELIVERY" : $"DELIVERY • {detail}");
-                return;
-            }
-
-            if (_isCollectionOrder)
-            {
-                var detail = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, string.Empty);
-                TopBar.SetPageTitle(string.IsNullOrWhiteSpace(detail) ? "COLLECTION" : $"COLLECTION • {detail}");
-                return;
-            }
-
-            var table = _currentOrder.TableNumber > 0 ? _currentOrder.TableNumber.ToString(CultureInfo.InvariantCulture) : "?";
-            TopBar.SetPageTitle($"TABLE {table} • {_currentOrder.CoverCount} GUESTS");
+            TopBar.IsVisible = false;
+            TopBar.HeightRequest = 0;
+            TopBar.SetPageTitle(string.Empty);
         }
 
         private static string FormatOrderHeaderDetail(string? customerName, string? customerPhone, string fallback)
@@ -3029,108 +3290,6 @@ namespace POS_in_NET.Pages
             AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
         }
 
-        private async void OnSearchBarTapped(object? sender, TappedEventArgs e)
-        {
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetInitialText(_searchQuery);
-            
-            var result = await keyboard.ShowAsync();
-            
-            if (result != null)
-            {
-                _searchQuery = result.Trim();
-                UpdateSearchDisplay();
-                FilterAndDisplayItems();
-            }
-        }
-
-        private void UpdateSearchDisplay()
-        {
-            if (string.IsNullOrEmpty(_searchQuery))
-            {
-                SearchDisplayLabel.Text = "Search menu items...";
-                SearchDisplayLabel.TextColor = Color.FromArgb("#94A3B8");
-                ClearSearchButton.IsVisible = false;
-            }
-            else
-            {
-                SearchDisplayLabel.Text = _searchQuery;
-                SearchDisplayLabel.TextColor = Color.FromArgb("#1E293B");
-                ClearSearchButton.IsVisible = true;
-            }
-        }
-
-        private void OnClearSearchClicked(object? sender, EventArgs e)
-        {
-            _searchQuery = string.Empty;
-            UpdateSearchDisplay();
-            FilterAndDisplayItems();
-        }
-
-        private void FilterAndDisplayItems()
-        {
-            if (string.IsNullOrEmpty(_searchQuery))
-            {
-                if (_selectedCategory == null)
-                {
-                    ProductGrid.Clear();
-                    return;
-                }
-
-                if (string.Equals(_selectedCategory.Id, MealDeal.PosCategoryId, StringComparison.Ordinal))
-                {
-                    LoadMealDealsForOrder();
-                    return;
-                }
-
-                if (string.Equals(_selectedCategory.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal))
-                {
-                    LoadTastingMenusForOrder();
-                    return;
-                }
-
-                var activeCategoryId = _selectedSubCategory?.Id ?? _selectedCategory.Id;
-                LoadItemsForCategory(activeCategoryId);
-                return;
-            }
-
-            var results = new List<View>();
-
-            var matchingDeals = _activeMealDeals
-                .Where(d =>
-                    d.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
-                    d.Choices.Any(c => c.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)))
-                .OrderBy(d => d.DisplayOrder)
-                .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var deal in matchingDeals)
-            {
-                results.Add(CreateMealDealCard(deal));
-            }
-
-            var matchingTasting = _activeTastingMenus
-                .Where(menu => menu.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(menu => menu.DisplayOrder)
-                .ThenBy(menu => menu.Name, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var menu in matchingTasting)
-            {
-                results.Add(CreateTastingMenuCard(menu));
-            }
-
-            var matchingItems = _allMenuItems
-                .Where(i => i.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
-                .Where(IsItemVisibleForCurrentOrderMode)
-                .OrderBy(i => i.Name);
-
-            foreach (var item in matchingItems)
-            {
-                results.Add(CreateItemCard(item));
-            }
-
-            ProductGrid.SetItems(results);
-        }
-
         private async void OnSendClicked(object? sender, EventArgs e)
         {
             _inactivityService.ResetActivity();
@@ -3197,6 +3356,10 @@ namespace POS_in_NET.Pages
 
                 _currentOrder.Status = TableOrderStatus.Sent;
                 _currentOrder.UpdatedAt = DateTime.Now;
+                RefreshOrderItems();
+                UpdateTotalsDisplay();
+                // Let SENT cues paint before kitchen/print work.
+                await Task.Yield();
 
                 System.Diagnostics.Debug.WriteLine($"⏱ [SEND] Firing background ProcessUltraFastSendPipelineAsync (don't wait)");
                 var sent = await ProcessUltraFastSendPipelineAsync(printSnapshot);
@@ -3887,7 +4050,7 @@ namespace POS_in_NET.Pages
             }
 
             _isPrintInProgress = true;
-            PrintButton.IsActionEnabled = false;
+            SetOrderPlaceBusy(true);
             try
             {
 
@@ -3968,8 +4131,14 @@ namespace POS_in_NET.Pages
             finally
             {
                 _isPrintInProgress = false;
-                PrintButton.IsActionEnabled = true;
+                SetOrderPlaceBusy(false);
             }
+        }
+
+        private void SetOrderPlaceBusy(bool isBusy)
+        {
+            _orderPlaceSession.IsBusy = isBusy;
+            OrderPlaceStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private static async Task ShowPrintCopiesFailureAsync(bool receiptPrinted, bool kitchenPrinted)
@@ -4257,6 +4426,15 @@ namespace POS_in_NET.Pages
 
         private static string GetUserDisplayName(User user) =>
             !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
+
+        private void OnOrderPlaceMenuClicked(object? sender, EventArgs e)
+        {
+            _inactivityService?.ResetActivity();
+            if (Shell.Current != null)
+            {
+                Shell.Current.FlyoutIsPresented = true;
+            }
+        }
 
         private async void OnPayClicked(object? sender, EventArgs e)
         {
@@ -4720,24 +4898,15 @@ namespace POS_in_NET.Pages
 
         private async Task<PaymentSplitPlan?> ShowCustomPaymentAmountDialog(decimal totalDue, decimal remainingBalance)
         {
-            var prompt = new StyledPromptDialog();
-            prompt.SetDialog(
-                "Custom Amount",
-                $"Enter the amount to take now. Remaining balance: £{remainingBalance:F2}",
-                $"Max £{remainingBalance:F2}",
-                Keyboard.Numeric,
-                string.Empty,
-                true
-            );
-            prompt.SetCancelText("Back");
-
-            var value = await prompt.ShowAsync();
-            if (string.IsNullOrWhiteSpace(value))
+            var keyboard = new NumericKeyboardDialog();
+            var value = await keyboard.ShowCurrencyAsync(null, "Custom Amount");
+            if (!value.HasValue)
             {
                 return null;
             }
 
-            if (!TryParsePaymentAmount(value, out var customAmount) || customAmount <= 0 || customAmount > remainingBalance + 0.009m)
+            var customAmount = value.Value;
+            if (customAmount <= 0 || customAmount > remainingBalance + 0.009m)
             {
                 var alert = new ModernAlertDialog();
                 alert.SetAlert("Invalid Amount", $"Enter an amount between £0.01 and £{remainingBalance:F2}.", "!", "#EF4444", "White");

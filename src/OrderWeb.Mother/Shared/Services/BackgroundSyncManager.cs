@@ -97,7 +97,7 @@ public sealed class BackgroundSyncManager : IDisposable
         public int ConsecutiveFailures;
     }
 
-    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan UserActiveWindow = TimeSpan.FromSeconds(20);
 
     private readonly ConcurrentDictionary<string, ManagedJob> _jobs = new(StringComparer.OrdinalIgnoreCase);

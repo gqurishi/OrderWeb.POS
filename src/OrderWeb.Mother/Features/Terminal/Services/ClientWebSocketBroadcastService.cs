@@ -505,7 +505,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 tastingMenus = snapshot.TastingMenus,
                 tastingMenuOptions = snapshot.TastingMenuOptions,
                 tastingMenuCourses = snapshot.TastingMenuCourses,
-                tastingMenuChoices = snapshot.TastingMenuChoices
+                tastingMenuChoices = snapshot.TastingMenuChoices,
+                quickNotes = snapshot.QuickNotes
             });
         }
         catch (Exception ex)

@@ -15,6 +15,7 @@ public partial class RiderPage : ContentPage
     private IDispatcherTimer? _refreshTimer;
     private string _filter = "all";
     private bool _subscribed;
+    private bool _pendingReload;
 
     public RiderPage()
     {
@@ -37,7 +38,7 @@ public partial class RiderPage : ContentPage
         }
         ConfigureBusinessDayLabel();
         StartTimer();
-        _ = LoadAsync(showSpinner: true);
+        _ = LoadAsync(showSpinner: _visibleOrders.Count == 0);
     }
 
     protected override void OnDisappearing()
@@ -57,7 +58,7 @@ public partial class RiderPage : ContentPage
     private void StartTimer()
     {
         _refreshTimer ??= Dispatcher.CreateTimer();
-        _refreshTimer.Interval = TimeSpan.FromSeconds(20);
+        _refreshTimer.Interval = TimeSpan.FromSeconds(30);
         _refreshTimer.Tick -= OnRefreshTimerTick;
         _refreshTimer.Tick += OnRefreshTimerTick;
         _refreshTimer.Start();
@@ -80,7 +81,12 @@ public partial class RiderPage : ContentPage
     private async Task LoadAsync(bool showSpinner)
     {
         var token = _pageCts?.Token ?? CancellationToken.None;
-        if (!await _loadGate.WaitAsync(0, token)) return;
+        if (!await _loadGate.WaitAsync(0, token))
+        {
+            _pendingReload = true;
+            return;
+        }
+
         try
         {
             if (showSpinner)
@@ -103,6 +109,11 @@ public partial class RiderPage : ContentPage
         {
             LoadingIndicator.IsLoading = false;
             _loadGate.Release();
+            if (_pendingReload)
+            {
+                _pendingReload = false;
+                _ = LoadAsync(showSpinner: false);
+            }
         }
     }
 
@@ -119,9 +130,56 @@ public partial class RiderPage : ContentPage
             _ => _allOrders
         };
 
-        _visibleOrders.Clear();
-        foreach (var row in rows) _visibleOrders.Add(row);
+        SyncVisibleOrders(rows.ToList());
         UpdateFilterButtons();
+    }
+
+    private void SyncVisibleOrders(List<RiderOperation> next)
+    {
+        var nextIds = next.Select(row => row.OrderDbId).ToHashSet();
+        for (var i = _visibleOrders.Count - 1; i >= 0; i--)
+        {
+            if (!nextIds.Contains(_visibleOrders[i].OrderDbId))
+            {
+                _visibleOrders.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < next.Count; i++)
+        {
+            var row = next[i];
+            var existingIndex = -1;
+            for (var j = 0; j < _visibleOrders.Count; j++)
+            {
+                if (_visibleOrders[j].OrderDbId == row.OrderDbId)
+                {
+                    existingIndex = j;
+                    break;
+                }
+            }
+
+            if (existingIndex < 0)
+            {
+                _visibleOrders.Insert(Math.Min(i, _visibleOrders.Count), row);
+                continue;
+            }
+
+            if (existingIndex != i)
+            {
+                _visibleOrders.RemoveAt(existingIndex);
+                _visibleOrders.Insert(Math.Min(i, _visibleOrders.Count), row);
+                continue;
+            }
+
+            var current = _visibleOrders[i];
+            if (!string.Equals(current.OperationStatusDisplay, row.OperationStatusDisplay, StringComparison.Ordinal)
+                || current.IsBusy != row.IsBusy
+                || current.QuoteAmount != row.QuoteAmount
+                || !string.Equals(current.RiderName, row.RiderName, StringComparison.Ordinal))
+            {
+                _visibleOrders[i] = row;
+            }
+        }
     }
 
     private void UpdateFilterButtons()

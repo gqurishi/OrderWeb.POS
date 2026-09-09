@@ -27,6 +27,7 @@ namespace POS_in_NET.Pages
         private bool _isNavigatingAway;
         private int _pageGeneration;
         private CancellationTokenSource? _pageRefreshCts;
+        private CancellationTokenSource? _ordersReloadDebounceCts;
         private OrderLifecycleRolloutConfig _rolloutConfig = OrderLifecycleRolloutConfig.CreateDefault();
 
         private List<Order> _allOrders = new();
@@ -177,7 +178,26 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            _ = LoadAllOrdersAsync(_pageGeneration, refreshCts.Token);
+            _ordersReloadDebounceCts?.Cancel();
+            _ordersReloadDebounceCts?.Dispose();
+            _ordersReloadDebounceCts = CancellationTokenSource.CreateLinkedTokenSource(refreshCts.Token);
+            var token = _ordersReloadDebounceCts.Token;
+            _ = DebouncedOrdersReloadAsync(_pageGeneration, token);
+        }
+
+        private async Task DebouncedOrdersReloadAsync(int generation, CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(150, token);
+                if (!token.IsCancellationRequested)
+                {
+                    await LoadAllOrdersAsync(generation, token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
         private bool CanRenderOrders(int generation, CancellationToken cancellationToken) =>

@@ -18,7 +18,7 @@ Primary Mother page today: `src/OrderWeb.Mother/Features/Orders/Pages/OrderPlace
 | Entry | Keep separate: Visual Layout covers / Collection modal / Delivery modal |
 | Pricing | Table = dine-in price; COL/DEL = takeaway price; DEL adds zone fee |
 | Behaviour | **Freeze** send/void/pay/print/lifecycle/multi-terminal; redesign chrome only first |
-| Payment button | Move from top-right → **fixed bottom action station** |
+| Payment button | Top-right of order header (next to Order # / table) |
 | Components | Build/extend in **OrderWeb.SharedUI** first |
 
 ---
@@ -35,14 +35,15 @@ Target hardware: **14″ / 15″ / 15.5″ landscape** touchscreens. Test at Win
 | `TouchMin` | 44×44 | Absolute minimum hit target |
 | `TouchComfort` | 48–56 | Preferred for primary actions |
 | `ActionGap` | 8–12 | Between adjacent controls |
-| `SectionGap` | 12–16 | Between search / cats / grid |
+| `SectionGap` | 12–16 | Between cats / sub-band / grid |
+| `CategorySubGap` / band | **18** + muted band | Keeps main cats vs filters distinct |
 | `CategoryHeight` | 44–48 | Strong main-category chips |
 | `SubcategoryHeight` | 36–40 | Lighter subcategory pills |
-| `ProductCardMinWidth` | 140–160 | Drives column count |
-| `ProductCardMinHeight` | 72–88 | Name + price; full card tappable |
+| `ProductCardMinWidth` | **100** | Drives column count (~30% denser) |
+| `ProductCardMinHeight` | **60** | Name + price; full card tappable |
 | `ProductColumns` | Adaptive | Fit as many as `minWidth` allows; aim **4** on 14″, **5** when width allows |
 | `OrderLineMinHeight` | 56–64 | Qty +/− must remain finger-safe |
-| `BottomActionStack` | Fixed | Totals + NOTES/VOID/MORE + SEND/PRINT + PAYMENT |
+| `BottomActionStack` | Fixed | Totals + NOTES/VOID/MORE + SEND/PRINT |
 
 ### Scroll rules
 - **Page must not scroll** as a whole.
@@ -182,8 +183,8 @@ Dashboard / sidebar
 | Existing seeds | `Controls/SharedCards.cs` (`CategoryButton`, `ProductButton`, `OrderLineView`), `Controls/SharedButton.cs`, `Views/OrderEntryView.cs`, `ViewModels/OrderEntryViewModel.cs` |
 | New / evolved controls | Prefer `Controls/OrderPlace/` **or** evolve existing types in place — **do not** invent a second parallel set |
 | Host-neutral state | Grow `OrderEntryViewModel` (menu, basket, totals, actions); hosts supply data/commands |
-| Mother host | `OrderPlacementPageSimple` becomes thin host over SharedUI shell **or** new XAML that embeds SharedUI view |
-| Client later | Same SharedUI view; Client wires Mother HTTP |
+| Mother host | `OrderPlacementPageSimple` + `MotherOrderPlaceHost` → SharedUI `OrderPlaceShellView` ✅ |
+| Client later | Same SharedUI view; Client wires Mother HTTP ✅ |
 
 ### Required control set (Phase 1+)
 
@@ -211,8 +212,8 @@ Host must provide: categories, subcategories, products (priced for type), basket
 
 Waiter path: **Category → Subcategory → Item → Item → check total → Send / Payment** with minimal scroll.
 
-Left (~70%): Search → main cats → subs → product grid  
-Right (~30%): Table/guests (or customer) → scrolling lines → fixed totals + actions (Payment bottom)
+Left (~70%): main cats → subs → product grid  
+Right (~30%): Table/guests (or customer) + PAYMENT top-right → scrolling lines → fixed totals + NOTES/VOID/MORE + SEND/PRINT
 
 ---
 
@@ -262,9 +263,9 @@ Right (~30%): Table/guests (or customer) → scrolling lines → fixed totals + 
 
 - [x] Header | Left ~70% | Right ~30% on `OrderPlacementPageSimple`
 - [x] Slim header title: `TABLE N • G GUESTS` / COL / DEL
-- [x] Left: Search → categories → subs → product scroll host
+- [x] Left: categories → subs → product scroll host
 - [x] Right: fixed identity → scroll lines → fixed totals + actions
-- [x] PAYMENT moved to bottom stack (full width, shows total)
+- [x] PAYMENT in order header top-right (shows total)
 - [x] Page does not scroll; only product grid + order list scroll
 - [x] Existing handlers / `x:Name`s preserved; Mother build succeeded
 
@@ -275,7 +276,7 @@ Right (~30%): Table/guests (or customer) → scrolling lines → fixed totals + 
 - [x] Subcategories: one lighter `HorizontalChipScroller` + `OrderPlaceSubcategoryButton`
 - [x] Products: `OrderPlaceProductGrid` adaptive columns from `OpProductCardMinWidth`
 - [x] Full-card tap → existing add-item pipeline (variant → note → addon → add)
-- [x] Search behaviour preserved; Meal Deals / Tasting as category chips + special product cards
+- [x] Meal Deals / Tasting as category chips + special product cards
 - [x] Mother windows build succeeded
 
 ### Phase 4 — Order panel + actions ✅
@@ -283,7 +284,7 @@ Right (~30%): Table/guests (or customer) → scrolling lines → fixed totals + 
 - [x] Order lines via `OrderPlaceLineRow` (name, price, qty, modifiers/notes, optional Fire/Note)
 - [x] Light SENT cue on kitchen-reached lines
 - [x] Totals: Subtotal / Discount / Service charge / Delivery fee (room) / TOTAL
-- [x] Bottom station: NOTES | VOID | MORE → SEND | PRINT → PAYMENT £xx.xx
+- [x] Bottom station: NOTES | VOID | MORE → SEND | PRINT; PAYMENT in header
 - [x] Visual weight via `PosActionButton` roles (Payment amber, Send green, Print/Notes secondary, Void red, More grey)
 - [x] Existing click handlers preserved; Mother windows build succeeded
 
@@ -322,3 +323,10 @@ Right (~30%): Table/guests (or customer) → scrolling lines → fixed totals + 
 - [x] Client windows build succeeded
 
 **Done when:** Client waiters get Mother-like Order Place muscle memory on SharedUI chrome.
+
+### Package 1 — shared shell (Mother + Client) ✅
+
+- [x] Mother `OrderPlacementPageSimple` XAML matches Client chrome (menu + `ShellHost`)
+- [x] `MotherOrderPlaceHost` implements `IOrderPlaceHost` over existing page logic
+- [x] Mother builds `OrderPlaceSessionState` and rebinds via `OrderPlaceStateChanged`
+- [x] Mother windows build succeeded

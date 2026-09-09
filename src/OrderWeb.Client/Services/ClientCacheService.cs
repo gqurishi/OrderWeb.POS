@@ -714,6 +714,7 @@ public sealed class ClientCacheService
             connection.Execute("DELETE FROM meal_deal_category_rules");
             connection.Execute("DELETE FROM meal_deal_choices");
             connection.Execute("DELETE FROM meal_deals");
+            connection.Execute("DELETE FROM product_quick_notes");
             connection.Execute("DELETE FROM product_variants");
             connection.Execute("DELETE FROM product_modifiers");
             connection.Execute("DELETE FROM modifiers");
@@ -844,6 +845,24 @@ public sealed class ClientCacheService
                     variant.DineInPrice,
                     variant.SortOrder,
                     variant.IsActive ? 1 : 0,
+                    now);
+            }
+
+            foreach (var note in stabilized.QuickNotes)
+            {
+                if (!productIds.Contains(note.ProductId) || string.IsNullOrWhiteSpace(note.NoteText))
+                {
+                    continue;
+                }
+
+                connection.Execute(
+                    "INSERT OR REPLACE INTO product_quick_notes (id, mother_id, product_id, note_text, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    note.Id,
+                    note.MotherId,
+                    note.ProductId,
+                    note.NoteText.Trim(),
+                    note.SortOrder,
+                    note.IsActive ? 1 : 0,
                     now);
             }
 
@@ -1088,10 +1107,53 @@ public sealed class ClientCacheService
         var result = new List<CachedProduct>();
         foreach (var row in rows)
         {
-            result.Add(new CachedProduct(row.Id, row.CategoryId, row.Name, row.Price, row.Currency, await GetModifierGroupsForProductAsync(row.Id), row.MotherId));
+            result.Add(new CachedProduct(
+                row.Id,
+                row.CategoryId,
+                row.Name,
+                row.Price,
+                row.Currency,
+                await GetModifierGroupsForProductAsync(row.Id),
+                row.MotherId,
+                await GetVariantsForProductAsync(row.Id),
+                await GetQuickNotesForProductAsync(row.Id)));
         }
 
         return result;
+    }
+
+    private async Task<IReadOnlyList<CachedProductVariant>> GetVariantsForProductAsync(int productId)
+    {
+        var rows = await _database.QueryAsync<CachedVariantRow>(@"
+            SELECT mother_id, name, description, takeaway_price, dine_in_price, sort_order
+            FROM product_variants
+            WHERE product_id = ? AND is_active = 1
+            ORDER BY sort_order, name", productId);
+
+        return rows
+            .Select(row => new CachedProductVariant(
+                row.MotherId ?? string.Empty,
+                row.Name,
+                row.Description,
+                row.TakeawayPrice,
+                row.DineInPrice,
+                row.SortOrder))
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<string>> GetQuickNotesForProductAsync(int productId)
+    {
+        var rows = await _database.QueryAsync<CachedQuickNoteRow>(@"
+            SELECT note_text
+            FROM product_quick_notes
+            WHERE product_id = ? AND is_active = 1
+            ORDER BY sort_order
+            LIMIT 6", productId);
+
+        return rows
+            .Select(row => row.NoteText?.Trim() ?? string.Empty)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .ToList();
     }
 
     public async Task<MotherOrderState?> GetOrderStateAsync(string? orderId)
@@ -2098,6 +2160,33 @@ public sealed class ClientCacheService
 
         [Column("mother_id")]
         public string? MotherId { get; set; }
+    }
+
+    private sealed class CachedVariantRow
+    {
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("description")]
+        public string? Description { get; set; }
+
+        [Column("takeaway_price")]
+        public decimal TakeawayPrice { get; set; }
+
+        [Column("dine_in_price")]
+        public decimal DineInPrice { get; set; }
+
+        [Column("sort_order")]
+        public int SortOrder { get; set; }
+    }
+
+    private sealed class CachedQuickNoteRow
+    {
+        [Column("note_text")]
+        public string? NoteText { get; set; }
     }
 
     private sealed class CachedModifierGroupRow

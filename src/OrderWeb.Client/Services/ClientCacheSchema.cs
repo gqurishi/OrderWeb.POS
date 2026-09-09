@@ -182,6 +182,18 @@ public static class ClientCacheSchema
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS product_quick_notes (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            product_id INTEGER NOT NULL,
+            note_text TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS meal_deals (
             id INTEGER PRIMARY KEY,
             mother_id TEXT UNIQUE,

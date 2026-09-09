@@ -153,7 +153,7 @@ public class ApplicationHeader : ContentView
         Content = _shell;
 
         _timer = Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromSeconds(1);
+        ConfigureClockInterval();
         _timer.Tick += (_, _) => UpdateClock();
         _timer.Start();
         UpdateClock();
@@ -184,6 +184,12 @@ public class ApplicationHeader : ContentView
 
     protected override void OnParentSet() { base.OnParentSet(); if (Parent == null) _timer.Stop(); else if (!_timer.IsRunning) _timer.Start(); }
 
+    private void ConfigureClockInterval()
+    {
+        // Welcome brand shows seconds → 1s. Other pages show minutes → 30s is enough.
+        _timer.Interval = TimeSpan.FromSeconds(ShowWelcomeBrand ? 1 : 30);
+    }
+
     private void UpdateClock()
     {
         var now = DateTime.Now;
@@ -201,6 +207,8 @@ public class ApplicationHeader : ContentView
 
     private void ApplyWelcomeBrand()
     {
+        ConfigureClockInterval();
+        UpdateClock();
         var welcome = ShowWelcomeBrand;
         _welcome.IsVisible = welcome;
         _title.IsVisible = !welcome;

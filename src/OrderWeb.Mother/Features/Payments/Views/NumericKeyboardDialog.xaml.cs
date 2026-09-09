@@ -11,7 +11,9 @@ namespace POS_in_NET.Views
         private int _maxDigits = 3; // Maximum 999 guests
         private bool _isUpdatingInput;
         private bool _isCurrencyMode;
+        private bool _isDigitMode;
         private TaskCompletionSource<decimal?>? _currencyCompletionSource;
+        private TaskCompletionSource<string?>? _digitCompletionSource;
         private Grid? _dynamicParentGrid;
         
         public event EventHandler<int>? NumberConfirmed;
@@ -54,12 +56,34 @@ namespace POS_in_NET.Views
             return _currencyCompletionSource.Task;
         }
 
+        /// <summary>
+        /// Shows the keypad for long digit strings (gift card numbers, etc.).
+        /// </summary>
+        public Task<string?> ShowDigitsAsync(string? initialValue = null, string? title = null, int maxDigits = 20)
+        {
+            ConfigureDigitMode(title, maxDigits);
+            _digitCompletionSource = new TaskCompletionSource<string?>();
+
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _dynamicParentGrid))
+            {
+                _digitCompletionSource.TrySetResult(null);
+                return _digitCompletionSource.Task;
+            }
+
+            ZIndex = 20000;
+            ShowCore(initialValue?.Trim() ?? string.Empty);
+            return _digitCompletionSource.Task;
+        }
+
         private void ShowCore(string initialValue)
         {
             _currentValue = initialValue;
             UpdateDisplay();
-            this.InputTransparent = false; // Allow input when visible
+            ZIndex = Math.Max(ZIndex, 20000);
+            InputTransparent = false;
+            DialogOverlay.InputTransparent = false;
             DialogOverlay.IsVisible = true;
+            IsVisible = true;
             FocusInput();
         }
 
@@ -68,24 +92,30 @@ namespace POS_in_NET.Views
         /// </summary>
         public void Hide()
         {
+            // Drop hit-testing before detach so no dismiss path leaves a full-screen blocker.
             DialogOverlay.IsVisible = false;
+            DialogOverlay.InputTransparent = true;
+            InputTransparent = true;
             NumericInputEntry.Unfocus();
-            this.InputTransparent = true; // Pass through input when hidden
-            DialogClosed?.Invoke(this, EventArgs.Empty);
 
             if (_dynamicParentGrid != null)
             {
                 DialogOverlayHelper.DetachOverlay(this, _dynamicParentGrid);
                 _dynamicParentGrid = null;
+                ZIndex = 0;
             }
+
+            DialogClosed?.Invoke(this, EventArgs.Empty);
         }
 
         private void ConfigureIntegerMode()
         {
             _isCurrencyMode = false;
+            _isDigitMode = false;
             _maxDigits = 3;
             KeyboardTitleLabel.Text = "Enter Number of Guests";
-            CurrencyPrefixLabel.IsVisible = false;
+            CurrencyDisplayRow.IsVisible = false;
+            NumericInputEntry.IsVisible = true;
             UtilityButton.Text = "C";
             ConfirmButton.Text = "CONFIRM";
             NumericInputEntry.MaxLength = 3;
@@ -93,18 +123,32 @@ namespace POS_in_NET.Views
             NumericInputEntry.IsReadOnly = false;
         }
 
+        private void ConfigureDigitMode(string? title, int maxDigits)
+        {
+            _isCurrencyMode = false;
+            _isDigitMode = true;
+            _maxDigits = Math.Clamp(maxDigits, 1, 32);
+            KeyboardTitleLabel.Text = string.IsNullOrWhiteSpace(title) ? "Enter number" : title.Trim();
+            CurrencyDisplayRow.IsVisible = false;
+            NumericInputEntry.IsVisible = true;
+            UtilityButton.Text = "C";
+            ConfirmButton.Text = "DONE";
+            NumericInputEntry.MaxLength = _maxDigits;
+            NumericInputEntry.HorizontalTextAlignment = TextAlignment.Center;
+            NumericInputEntry.IsReadOnly = true;
+        }
+
         private void ConfigureCurrencyMode(string? title = null)
         {
             _isCurrencyMode = true;
+            _isDigitMode = false;
             _maxDigits = 8;
             KeyboardTitleLabel.Text = string.IsNullOrWhiteSpace(title) ? "Enter amount" : title.Trim();
-            CurrencyPrefixLabel.IsVisible = true;
+            CurrencyDisplayRow.IsVisible = true;
+            NumericInputEntry.IsVisible = false;
             UtilityButton.Text = ".";
             ConfirmButton.Text = "DONE";
             NumericInputEntry.MaxLength = 9;
-            NumericInputEntry.HorizontalTextAlignment = TextAlignment.End;
-            // Currency input is touch-first: use the keypad below rather than
-            // opening the operating-system keyboard over the drawer dialog.
             NumericInputEntry.IsReadOnly = true;
         }
 
@@ -121,6 +165,12 @@ namespace POS_in_NET.Views
 
         private void UpdateDisplay()
         {
+            if (_isCurrencyMode)
+            {
+                CurrencyAmountLabel.Text = string.IsNullOrEmpty(_currentValue) ? "0" : _currentValue;
+                return;
+            }
+
             if (!string.Equals(NumericInputEntry.Text, _currentValue, StringComparison.Ordinal))
             {
                 _isUpdatingInput = true;
@@ -131,6 +181,11 @@ namespace POS_in_NET.Views
 
         private void FocusInput()
         {
+            if (_isCurrencyMode || _isDigitMode)
+            {
+                return;
+            }
+
             Dispatcher.Dispatch(() =>
             {
                 if (!DialogOverlay.IsVisible)
@@ -243,6 +298,19 @@ namespace POS_in_NET.Views
                 return;
             }
 
+            if (_isDigitMode)
+            {
+                if (string.IsNullOrWhiteSpace(_currentValue))
+                {
+                    ShowInvalidInput();
+                    return;
+                }
+
+                _digitCompletionSource?.TrySetResult(_currentValue);
+                Hide();
+                return;
+            }
+
             if (int.TryParse(_currentValue, out int number) && number > 0)
             {
                 NumberConfirmed?.Invoke(this, number);
@@ -256,11 +324,27 @@ namespace POS_in_NET.Views
 
         private void ShowInvalidInput()
         {
-            NumericInputEntry.TextColor = Color.FromArgb("#DC2626");
+            if (_isCurrencyMode)
+            {
+                CurrencyAmountLabel.TextColor = Color.FromArgb("#DC2626");
+            }
+            else
+            {
+                NumericInputEntry.TextColor = Color.FromArgb("#DC2626");
+            }
+
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 await Task.Delay(300);
-                NumericInputEntry.TextColor = Color.FromArgb("#1E293B");
+                if (_isCurrencyMode)
+                {
+                    CurrencyAmountLabel.TextColor = Color.FromArgb("#1E293B");
+                }
+                else
+                {
+                    NumericInputEntry.TextColor = Color.FromArgb("#1E293B");
+                }
+
                 FocusInput();
             });
         }
@@ -270,6 +354,10 @@ namespace POS_in_NET.Views
             if (_isCurrencyMode)
             {
                 _currencyCompletionSource?.TrySetResult(null);
+            }
+            else if (_isDigitMode)
+            {
+                _digitCompletionSource?.TrySetResult(null);
             }
 
             Hide();

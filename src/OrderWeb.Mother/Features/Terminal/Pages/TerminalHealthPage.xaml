@@ -54,142 +54,76 @@
                     </Grid>
                 </Border>
 
-                <Border IsVisible="{Binding CanAddChildTerminal}"
-                        Stroke="#99F6E4"
-                        StrokeThickness="1"
-                        BackgroundColor="#F0FDFA"
-                        StrokeShape="RoundRectangle 14"
-                        Padding="16">
-                    <VerticalStackLayout Spacing="12">
-                        <VerticalStackLayout Spacing="2">
-                            <Label Text="Client connection details"
-                                   FontFamily="OpenSansSemibold"
-                                   FontSize="16"
-                                   TextColor="#0F766E" />
-                            <Label Text="Use these values on Client POS when pairing fails or the Mother IP changes."
-                                   FontFamily="OpenSansRegular"
-                                   FontSize="12"
-                                   TextColor="#64748B" />
-                        </VerticalStackLayout>
-
-                        <Grid ColumnDefinitions="*,Auto,*,Auto,*"
-                              ColumnSpacing="14">
-                            <Border Stroke="#99F6E4"
-                                    BackgroundColor="White"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="14,10">
-                                <VerticalStackLayout Spacing="2">
-                                    <Label Text="Mother IP"
-                                           FontFamily="OpenSansSemibold"
-                                           FontSize="11"
-                                           TextColor="#0F766E" />
-                                    <Label Text="{Binding MotherIpText}"
-                                           FontFamily="OpenSansSemibold"
-                                           FontSize="22"
-                                           TextColor="#0F172A"
-                                           LineBreakMode="NoWrap" />
-                                </VerticalStackLayout>
-                            </Border>
-
-                            <Label Grid.Column="1"
-                                   Text=":"
-                                   FontFamily="OpenSansSemibold"
-                                   FontSize="22"
-                                   TextColor="#94A3B8"
-                                   VerticalTextAlignment="Center" />
-
-                            <Border Grid.Column="2"
-                                    Stroke="#99F6E4"
-                                    BackgroundColor="White"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="14,10">
-                                <VerticalStackLayout Spacing="2">
-                                    <Label Text="API Port"
-                                           FontFamily="OpenSansSemibold"
-                                           FontSize="11"
-                                           TextColor="#0F766E" />
-                                    <Label Text="{Binding MotherPortText}"
-                                           FontFamily="OpenSansSemibold"
-                                           FontSize="22"
-                                           TextColor="#0F172A" />
-                                </VerticalStackLayout>
-                            </Border>
-
-                            <Border Grid.Column="4"
-                                    Stroke="#99F6E4"
-                                    BackgroundColor="White"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="14,10">
-                                <VerticalStackLayout Spacing="2">
-                                    <Label Text="API / WebSocket"
-                                           FontFamily="OpenSansSemibold"
-                                           FontSize="11"
-                                           TextColor="#0F766E" />
-                                    <Label Text="{Binding ApiStatusText}"
-                                           FontFamily="OpenSansRegular"
-                                           FontSize="13"
-                                           TextColor="#334155"
-                                           LineBreakMode="WordWrap" />
-                                    <Label Text="{Binding WebSocketStatusText}"
-                                           FontFamily="OpenSansRegular"
-                                           FontSize="12"
-                                           TextColor="#64748B"
-                                           LineBreakMode="WordWrap" />
-                                </VerticalStackLayout>
-                            </Border>
-                        </Grid>
-                    </VerticalStackLayout>
-                </Border>
-
-                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
-                    <Border Stroke="#BBF7D0" StrokeThickness="1" BackgroundColor="#F0FDF4" StrokeShape="RoundRectangle 14" Padding="14">
-                        <VerticalStackLayout Spacing="4">
+                <Grid ColumnDefinitions="*,*,*,*"
+                      ColumnSpacing="10"
+                      HeightRequest="72">
+                    <Border Stroke="#BBF7D0"
+                            StrokeThickness="1"
+                            BackgroundColor="#F0FDF4"
+                            StrokeShape="RoundRectangle 10"
+                            Padding="10,8">
+                        <VerticalStackLayout Spacing="0" VerticalOptions="Center">
                             <Label Text="Online"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="12"
+                                   FontSize="11"
                                    TextColor="#166534" />
                             <Label Text="{Binding OnlineCountText}"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="28"
+                                   FontSize="20"
                                    TextColor="#059669" />
                         </VerticalStackLayout>
                     </Border>
 
-                    <Border Grid.Column="1" Stroke="#FECACA" StrokeThickness="1" BackgroundColor="#FEF2F2" StrokeShape="RoundRectangle 14" Padding="14">
-                        <VerticalStackLayout Spacing="4">
+                    <Border Grid.Column="1"
+                            Stroke="#FECACA"
+                            StrokeThickness="1"
+                            BackgroundColor="#FEF2F2"
+                            StrokeShape="RoundRectangle 10"
+                            Padding="10,8">
+                        <VerticalStackLayout Spacing="0" VerticalOptions="Center">
                             <Label Text="Offline"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="12"
+                                   FontSize="11"
                                    TextColor="#991B1B" />
                             <Label Text="{Binding OfflineCountText}"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="28"
+                                   FontSize="20"
                                    TextColor="#DC2626" />
                         </VerticalStackLayout>
                     </Border>
 
-                    <Border Grid.Column="2" Stroke="#BFDBFE" StrokeThickness="1" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="14">
-                        <VerticalStackLayout Spacing="4">
+                    <Border Grid.Column="2"
+                            Stroke="#BFDBFE"
+                            StrokeThickness="1"
+                            BackgroundColor="#EFF6FF"
+                            StrokeShape="RoundRectangle 10"
+                            Padding="10,8">
+                        <VerticalStackLayout Spacing="0" VerticalOptions="Center">
                             <Label Text="Paired Clients"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="12"
+                                   FontSize="11"
                                    TextColor="#1E40AF" />
                             <Label Text="{Binding PairedClientsText}"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="28"
+                                   FontSize="20"
                                    TextColor="#1D4ED8" />
                         </VerticalStackLayout>
                     </Border>
 
-                    <Border Grid.Column="3" Stroke="#E9D5FF" StrokeThickness="1" BackgroundColor="#FAF5FF" StrokeShape="RoundRectangle 14" Padding="14">
-                        <VerticalStackLayout Spacing="4">
+                    <Border Grid.Column="3"
+                            Stroke="#E9D5FF"
+                            StrokeThickness="1"
+                            BackgroundColor="#FAF5FF"
+                            StrokeShape="RoundRectangle 10"
+                            Padding="10,8">
+                        <VerticalStackLayout Spacing="0" VerticalOptions="Center">
                             <Label Text="Last Check"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="12"
+                                   FontSize="11"
                                    TextColor="#6B21A8" />
                             <Label Text="{Binding LastCheckText}"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="22"
+                                   FontSize="16"
                                    TextColor="#7E22CE" />
                         </VerticalStackLayout>
                     </Border>

@@ -1106,5 +1106,48 @@ namespace MyFirstMauiApp.Services
 
             return notes;
         }
+
+        /// <summary>All active quick notes for Client menu snapshot (Mother → Client add pipeline).</summary>
+        public async Task<List<MenuItemQuickNote>> GetAllActiveQuickNotesAsync()
+        {
+            var notes = new List<MenuItemQuickNote>();
+
+            try
+            {
+                using var connection = new MySqlConnection(_connectionString);
+                await connection.OpenAsync();
+                await EnsureQuickNotesSchemaAsync(connection);
+
+                const string query = @"
+                    SELECT Id, MenuItemId, NoteText, DisplayOrder, Active, CreatedAt, UpdatedAt
+                    FROM MenuItemQuickNotes
+                    WHERE Active = TRUE
+                      AND NoteText IS NOT NULL
+                      AND TRIM(NoteText) <> ''
+                    ORDER BY MenuItemId ASC, DisplayOrder ASC";
+
+                using var command = new MySqlCommand(query, connection);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    notes.Add(new MenuItemQuickNote
+                    {
+                        Id = reader.GetString("Id"),
+                        MenuItemId = reader.GetString("MenuItemId"),
+                        NoteText = reader.IsDBNull(reader.GetOrdinal("NoteText")) ? string.Empty : reader.GetString("NoteText"),
+                        DisplayOrder = reader.GetInt32("DisplayOrder"),
+                        Active = reader.GetBoolean("Active"),
+                        CreatedAt = reader.GetDateTime("CreatedAt"),
+                        UpdatedAt = reader.GetDateTime("UpdatedAt")
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading all quick notes: {ex.Message}");
+            }
+
+            return notes;
+        }
     }
 }

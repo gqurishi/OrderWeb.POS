@@ -7,7 +7,9 @@
 **Shell:** `OrderWeb.SharedUI/Views/OrderPlaceShellView.cs`  
 **Host contract:** `OrderWeb.SharedUI/Hosting/OrderPlaceHost.cs` (`IOrderPlaceHost`)  
 **Client host:** `OrderWeb.Client/Services/ClientOrderPlaceHost.cs`  
-**Client page:** `OrderWeb.Client/Pages/Orders/OrderPage` (thin host)
+**Client page:** `OrderWeb.Client/Pages/Orders/OrderPage` (thin host)  
+**Mother host:** `OrderWeb.Mother/.../MotherOrderPlaceHost.cs`  
+**Mother page:** `OrderPlacementPageSimple` (thin host — same shell as Client)
 
 ---
 
@@ -21,7 +23,7 @@
 
 SharedUI must stay host-neutral: **no DB, no HTTP, no hard-coded Mother hex colours/fonts in business logic**. Prefer `Op*` / `Ow*` resources via `ControlResources` / `.Use(...)`.
 
-Today Mother still embeds SharedUI bricks inside `OrderPlacementPageSimple` (logic stays on the page). That is acceptable for Mother-era; **do not fork a second Client component set**. Phase 8 should host the same controls (ideally behind `IOrderPlaceHost`).
+Today Mother and Client both host `OrderPlaceShellView` via `IOrderPlaceHost` (`MotherOrderPlaceHost` / `ClientOrderPlaceHost`). Logic stays in each host; **do not fork a second SharedUI component set**.
 
 ---
 
@@ -30,7 +32,7 @@ Today Mother still embeds SharedUI bricks inside `OrderPlacementPageSimple` (log
 Implement `OrderWeb.SharedUI.Hosting.IOrderPlaceHost` (or a thin adapter) that:
 
 1. Fills `OrderPlaceSessionState` (header, categories, products, lines, totals, type flags)
-2. Handles UI intents: category/sub/search/add/qty/note/void/more/send/print/pay
+2. Handles UI intents: category/sub/add/qty/note/void/more/send/print/pay
 3. Raises `StateChanged` after Mother round-trips so the view rebinds
 
 ### Session fields Client must drive
@@ -137,4 +139,5 @@ Mother page code-behind may still use legacy colours until a later shell extract
 - [x] Styling rule: SharedUI tokens only  
 - [x] Short Phase 8 checklist for Client engineers  
 - [x] Phase 8: Client `OrderPage` hosts `OrderPlaceShellView` + `ClientOrderPlaceHost`  
+- [x] Package 1: Mother `OrderPlacementPageSimple` hosts same shell via `MotherOrderPlaceHost`  
 - [x] Entry paths (Table / COL / DEL / Live) still land on same `OrderPage`

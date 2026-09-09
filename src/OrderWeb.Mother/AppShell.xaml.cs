@@ -39,7 +39,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         };
 
     private string _currentDateTime = string.Empty;
-    private System.Timers.Timer? _timer;
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
     private readonly InactivityService _inactivityService;
@@ -48,6 +47,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
     private bool _isSyncingDatabase;
     private bool _isShellNavigationChanging;
     private string? _pendingShellTarget;
+    private DateTime _lastBackgroundSyncToastUtc = DateTime.MinValue;
+    private string? _lastBackgroundSyncToastKey;
 
     public string CurrentDateTime
     {
@@ -85,13 +86,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         Routing.RegisterRoute("userdashboard", typeof(UserDashboardPage));
         Routing.RegisterRoute("managerdashboard", typeof(ManagerDashboardPage));
 
-        // Initialize date/time
+        // Initialize date/time once — clock lives in ApplicationHeader / TopBar SharedHeader.
         UpdateDateTime();
-
-        // Setup timer to update every second
-        _timer = new System.Timers.Timer(1000);
-        _timer.Elapsed += (s, e) => UpdateDateTime();
-        _timer.Start();
 
         // Subscribe to navigation events to update user info
         this.Navigated += OnShellNavigated;
@@ -101,6 +97,53 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         ApplyRoleBasedMenuVisibility();
         ConfigureSharedSidebar();
         _ = RefreshOrderServiceAvailabilityAsync();
+        SubscribeToBackgroundSyncStatus();
+    }
+
+    private void SubscribeToBackgroundSyncStatus()
+    {
+        try
+        {
+            var syncManager = ServiceHelper.GetService<BackgroundSyncManager>();
+            if (syncManager == null)
+            {
+                return;
+            }
+
+            syncManager.StatusChanged += OnBackgroundSyncStatusChanged;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AppShell] Background sync status subscribe failed: {ex.Message}");
+        }
+    }
+
+    private void OnBackgroundSyncStatusChanged(IReadOnlyList<BackgroundSyncJobSnapshot> snapshots)
+    {
+        var failed = snapshots.FirstOrDefault(job =>
+            job.Status is BackgroundSyncJobStatus.Failed or BackgroundSyncJobStatus.BackingOff
+            && job.ConsecutiveFailures >= 2);
+        if (failed == null)
+        {
+            return;
+        }
+
+        // Toast only — never fullscreen. Throttle so retries don't spam the till.
+        var key = $"{failed.Name}|{failed.Status}|{failed.ConsecutiveFailures}|{failed.LastError}";
+        var now = DateTime.UtcNow;
+        if (string.Equals(key, _lastBackgroundSyncToastKey, StringComparison.Ordinal)
+            && (now - _lastBackgroundSyncToastUtc).TotalSeconds < 45)
+        {
+            return;
+        }
+
+        _lastBackgroundSyncToastKey = key;
+        _lastBackgroundSyncToastUtc = now;
+        _ = Controls.ToastNotification.ShowGlobalAsync(
+            "Background sync",
+            $"{failed.Name}: {failed.LastError ?? "retrying"}",
+            NotificationType.Warning,
+            2400);
     }
 
     private void UpdateDateTime()
@@ -113,13 +156,18 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
     private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
-        _isShellNavigationChanging = false;
-        _pendingShellTarget = null;
+        ClearShellNavigationGuard();
         // Update user info when navigating (handled by TopBar component now)
         System.Diagnostics.Debug.WriteLine($"Navigated to: {e.Current.Location}");
         _inactivityService.ResetActivity();
         _inactivityService.TrackPage(CurrentPage);
         ApplyRoleBasedMenuVisibility();
+    }
+
+    public void ClearShellNavigationGuard()
+    {
+        _isShellNavigationChanging = false;
+        _pendingShellTarget = null;
     }
 
     private void OnShellNavigating(object? sender, ShellNavigatingEventArgs e)
@@ -129,9 +177,12 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             _inactivityService.ResetActivity();
             var target = e.Target.Location.OriginalString;
 
-            if (_isShellNavigationChanging)
+            // Only block true duplicate navigations to the same target.
+            // A stale lock must not eat the next (different) tap with no feedback.
+            if (_isShellNavigationChanging
+                && string.Equals(_pendingShellTarget, target, StringComparison.OrdinalIgnoreCase))
             {
-                System.Diagnostics.Debug.WriteLine($"Ignored duplicate navigation to {target}; {_pendingShellTarget} is still opening.");
+                System.Diagnostics.Debug.WriteLine($"Ignored duplicate navigation to {target}; still opening.");
                 e.Cancel();
                 return;
             }
@@ -141,6 +192,9 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             _ = ResetNavigationGuardAfterTimeoutAsync(target);
             if (!TryResolveRoute(target, out var route))
             {
+                // Unknown/empty route: do not leave the guard stuck until timeout.
+                _isShellNavigationChanging = false;
+                _pendingShellTarget = null;
                 return;
             }
 
@@ -188,9 +242,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
     {
         _inactivityService.ResetActivity();
 
-        // Stop the timer
-        _timer?.Stop();
-
         // Get authentication service
         var authService = ServiceHelper.GetService<AuthenticationService>();
         if (authService != null)
@@ -200,9 +251,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
         // Navigate to login page immediately
         await _navigationCoordinator.NavigateShellAsync("login", animated: false, source: sender as VisualElement);
-
-        // Restart timer
-        _timer?.Start();
     }
 
     private async void OnSyncDatabaseClicked(object sender, EventArgs e)
@@ -216,16 +264,22 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
         using var idleGuard = _inactivityService.BeginCriticalActivity();
         SetSyncingState(true);
+        _ = Controls.ToastNotification.ShowGlobalAsync(
+            "Updating",
+            "Syncing data in the background — till stays usable.",
+            NotificationType.Info,
+            1800);
 
         try
         {
-            // Close the flyout
+            // Close the flyout so staff can keep taking orders.
             Shell.Current.FlyoutIsPresented = false;
 
             var databaseService = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
             var schemaResult = await databaseService.EnsureProductionSchemaAsync();
             if (!schemaResult.Success)
             {
+                // Schema gates still need an explicit modal — staff must act.
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
                     "Database Update Required",
                     schemaResult.Message);
@@ -240,14 +294,19 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             // Push Clients so every paired terminal refreshes authoritative data.
             await NotifyPairedClientsUpdateAllAsync();
 
-            // Show success message
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
-                "Update Complete",
-                $"All active screens were asked to reload fresh data.\nPaired Client POS terminals were notified to sync.\n{cloudSyncMessage}");
+            _ = Controls.ToastNotification.ShowGlobalAsync(
+                "Update complete",
+                cloudSyncMessage,
+                NotificationType.Success,
+                2800);
         }
         catch (Exception ex)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(" Sync Error", $"Failed to sync: {ex.Message}");
+            _ = Controls.ToastNotification.ShowGlobalAsync(
+                "Sync error",
+                ex.Message,
+                NotificationType.Error,
+                3200);
         }
         finally
         {
@@ -322,6 +381,11 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         try
         {
             _inactivityService.ResetActivity();
+            // Close flyout first so the backdrop cannot eat the next content tap.
+            if (Shell.Current is not null)
+            {
+                Shell.Current.FlyoutIsPresented = false;
+            }
 
             // Clear all menu item selections first
             ClearMenuSelections();
@@ -347,7 +411,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                             return;
                         }
 
-                        Shell.Current.FlyoutIsPresented = false;
                         await OpenCashDrawerFromSidebarAsync();
                         return;
                     }
@@ -370,9 +433,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                         return;
                     }
 
-                    // Close the flyout
-                    Shell.Current.FlyoutIsPresented = false;
-
                     if (NavigationCoordinator.IsTemporaryRoute(route))
                     {
                         // Navigate to modal route without //
@@ -393,6 +453,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            _isShellNavigationChanging = false;
+            _pendingShellTarget = null;
             System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             System.Diagnostics.Debug.WriteLine(ex.StackTrace);
             await AppAlertService.ShowAlertAsync("Navigation Error", ex.Message);
@@ -414,6 +476,12 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         try
         {
             _inactivityService.ResetActivity();
+            // Close flyout immediately so the dismiss layer cannot steal the next content tap.
+            if (Shell.Current is not null)
+            {
+                Shell.Current.FlyoutIsPresented = false;
+            }
+
             route = _roleAccessService.ResolveRouteForRole(_authService.CurrentUser?.Role, route);
             if (route.Equals("cashdrawer", StringComparison.OrdinalIgnoreCase))
             {
@@ -422,7 +490,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                     await AppAlertService.ShowAlertAsync("Access Denied", "You do not have permission to open the cash drawer.");
                     return;
                 }
-                Shell.Current.FlyoutIsPresented = false;
                 await OpenCashDrawerFromSidebarAsync();
                 return;
             }
@@ -442,7 +509,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
                 await AppAlertService.ShowAlertAsync("Service Unavailable", "This order service is disabled in Business Information settings.");
                 return;
             }
-            Shell.Current.FlyoutIsPresented = false;
             if (NavigationCoordinator.IsTemporaryRoute(route))
                 await _navigationCoordinator.NavigateTemporaryRouteAsync(route, source: SharedSidebar);
             else
@@ -450,13 +516,15 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            _isShellNavigationChanging = false;
+            _pendingShellTarget = null;
             await AppAlertService.ShowAlertAsync("Navigation Error", ex.Message);
         }
     }
 
     private async Task ResetNavigationGuardAfterTimeoutAsync(string target)
     {
-        await Task.Delay(TimeSpan.FromSeconds(5));
+        await Task.Delay(TimeSpan.FromMilliseconds(1500));
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
             if (_isShellNavigationChanging
@@ -635,8 +703,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
-        _timer?.Stop();
-        _timer?.Dispose();
         _orderServiceAvailabilityService.SettingsChanged -= OnOrderServicesChanged;
         AppDataRefreshService.DataChanged -= OnAppDataChanged;
     }

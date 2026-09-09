@@ -8,7 +8,7 @@
     <Grid x:Name="DialogOverlay" 
           BackgroundColor="{StaticResource DialogOverlayColor}"
           IsVisible="False"
-          InputTransparent="False">
+          InputTransparent="True">
         
         <!-- Tap outside to close -->
         <Grid.GestureRecognizers>
@@ -66,21 +66,34 @@
                         BackgroundColor="#F1F5F9"
                         Stroke="#E2E8F0"
                         StrokeThickness="2"
-                        Padding="15,12"
+                        Padding="12,8"
                         HeightRequest="60">
                     <Border.StrokeShape>
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
-                        <Label x:Name="CurrencyPrefixLabel"
-                               Text="£"
-                               IsVisible="False"
-                               FontSize="28"
-                               FontAttributes="Bold"
-                               TextColor="#1E293B"
-                               VerticalOptions="Center"/>
+                    <Grid>
+                        <!-- Currency display: £ + amount, centered (avoids WinUI Entry clip) -->
+                        <HorizontalStackLayout x:Name="CurrencyDisplayRow"
+                                               IsVisible="False"
+                                               Spacing="6"
+                                               HorizontalOptions="Center"
+                                               VerticalOptions="Center">
+                            <Label Text="£"
+                                   FontSize="28"
+                                   FontAttributes="Bold"
+                                   TextColor="#1E293B"
+                                   VerticalTextAlignment="Center"/>
+                            <Label x:Name="CurrencyAmountLabel"
+                                   Text="0"
+                                   FontSize="28"
+                                   FontAttributes="Bold"
+                                   TextColor="#1E293B"
+                                   VerticalTextAlignment="Center"
+                                   LineBreakMode="NoWrap"/>
+                        </HorizontalStackLayout>
+
+                        <!-- Guest / integer Entry (physical keyboard friendly) -->
                         <Entry x:Name="NumericInputEntry"
-                               Grid.Column="1"
                                Text=""
                                FontSize="28"
                                FontAttributes="Bold"

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OrderWeb.Client.Models;
+using OrderWeb.Contracts.Access;
 
 namespace OrderWeb.Client.Services;
 
@@ -99,13 +100,29 @@ public sealed class MotherOrderClient
         return new MotherCommandResult(ToState(envelope.Order), false, envelope.Message ?? "Order voided on Mother POS.");
     }
 
-    public Task<MotherCommandResult> AddItemAsync(MotherOrderState state, CachedProduct product, IReadOnlyList<string> modifiers)
+    public Task<MotherCommandResult> AddItemAsync(MotherOrderState state, CachedProduct product, IReadOnlyList<string> modifiers) =>
+        AddItemAsync(state, product, modifiers, notes: null, variant: null);
+
+    public Task<MotherCommandResult> AddItemAsync(
+        MotherOrderState state,
+        CachedProduct product,
+        IReadOnlyList<string> modifiers,
+        string? notes,
+        CachedProductVariant? variant)
     {
+        var takeaway = CustomerOrderHubRules.IsCollectionOrderType(state.OrderType)
+            || CustomerOrderHubRules.IsDeliveryOrderType(state.OrderType);
+        var basePrice = variant?.PriceFor(takeaway) ?? product.Price;
+        var unitPrice = basePrice + ModifierTotal(product, modifiers);
+        var displayName = variant == null || string.IsNullOrWhiteSpace(variant.Name)
+            ? product.Name
+            : $"{product.Name} ({variant.Name})";
+        var normalizedNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        var modifierList = modifiers?.ToList() ?? new List<string>();
+
         var lines = state.Lines.ToList();
         var existing = lines.FirstOrDefault(line =>
-            string.Equals(line.Name, product.Name, StringComparison.OrdinalIgnoreCase) &&
-            line.Modifiers.SequenceEqual(modifiers) &&
-            !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase));
+            LinesMatchForMerge(line, product, variant, normalizedNotes, modifierList));
         if (existing != null)
         {
             var index = lines.IndexOf(existing);
@@ -116,15 +133,61 @@ public sealed class MotherOrderClient
             lines.Add(new MotherOrderLine(
                 Guid.NewGuid().ToString("N"),
                 product.Id,
-                product.Name,
+                displayName,
                 1,
-                product.Price + ModifierTotal(product, modifiers),
-                null,
-                modifiers,
-                product.MotherId));
+                unitPrice,
+                normalizedNotes,
+                modifierList,
+                product.MotherId,
+                variant?.MotherId,
+                variant?.Name,
+                variant?.PriceFor(takeaway)));
         }
 
         return UpsertOrderAsync(state with { Lines = lines });
+    }
+
+    private static bool LinesMatchForMerge(
+        MotherOrderLine line,
+        CachedProduct product,
+        CachedProductVariant? variant,
+        string? notes,
+        IReadOnlyList<string> modifiers)
+    {
+        if (string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var sameProduct =
+            (!string.IsNullOrWhiteSpace(product.MotherId) &&
+             string.Equals(line.ProductMotherId, product.MotherId, StringComparison.OrdinalIgnoreCase))
+            || (line.ProductId == product.Id);
+
+        if (!sameProduct)
+        {
+            // Fallback: base name without variant suffix
+            var baseName = product.Name;
+            if (!string.Equals(line.Name, baseName, StringComparison.OrdinalIgnoreCase) &&
+                !line.Name.StartsWith(baseName + " (", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        var lineVariant = line.VariantId ?? string.Empty;
+        var pickVariant = variant?.MotherId ?? string.Empty;
+        if (!string.Equals(lineVariant, pickVariant, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(line.Notes?.Trim() ?? string.Empty, notes ?? string.Empty, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return line.Modifiers.SequenceEqual(modifiers, StringComparer.OrdinalIgnoreCase);
     }
 
     public Task<MotherCommandResult> UpdateQuantityAsync(MotherOrderState state, MotherOrderLine line, int quantity)

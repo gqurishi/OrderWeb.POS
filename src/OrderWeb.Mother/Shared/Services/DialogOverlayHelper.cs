@@ -30,12 +30,21 @@ public static class DialogOverlayHelper
         Grid.SetColumnSpan(overlay, hostGrid.ColumnDefinitions.Count > 0 ? hostGrid.ColumnDefinitions.Count : 1);
         Grid.SetRow(overlay, 0);
         Grid.SetColumn(overlay, 0);
-        hostGrid.Children.Add(overlay);
+        overlay.InputTransparent = false;
+        overlay.ZIndex = Math.Max(overlay.ZIndex, 20000);
+        if (!hostGrid.Children.Contains(overlay))
+        {
+            hostGrid.Children.Add(overlay);
+        }
+
         return true;
     }
 
     public static void DetachOverlay(ContentView overlay, Grid? hostGrid)
     {
+        overlay.InputTransparent = true;
+        overlay.ZIndex = 0;
+
         if (hostGrid == null)
         {
             return;

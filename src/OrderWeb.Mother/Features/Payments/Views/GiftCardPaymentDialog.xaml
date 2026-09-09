@@ -89,18 +89,33 @@
                     </Grid>
                 </Border>
                 
-                <!-- Gift Card Number Entry -->
+                <!-- Gift Card Number Entry — tap field for numeric keyboard -->
                 <VerticalStackLayout Spacing="8">
                     <Label Text="GIFT CARD NUMBER"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="#6B7280"/>
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
-                        <Entry x:Name="GiftCardNumberEntry"
-                               Placeholder="Enter or scan gift card number"
-                               FontSize="16"
-                               HeightRequest="55"
-                               BackgroundColor="#F3F4F6"/>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <Border BackgroundColor="#F3F4F6"
+                                Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                Padding="14,0"
+                                HeightRequest="55">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="10"/>
+                            </Border.StrokeShape>
+                            <Entry x:Name="GiftCardNumberEntry"
+                                   Placeholder="Enter or scan gift card number"
+                                   FontSize="16"
+                                   BackgroundColor="Transparent"
+                                   IsReadOnly="True"
+                                   VerticalOptions="Center"
+                                   Focused="OnGiftCardNumberFocused">
+                                <Entry.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnGiftCardNumberTapped"/>
+                                </Entry.GestureRecognizers>
+                            </Entry>
+                        </Border>
                         <Button x:Name="CheckBalanceButton"
                                 Grid.Column="1"
                                 Text="CHECK"
@@ -146,20 +161,36 @@
                     </Grid>
                 </Border>
                 
-                <!-- Amount to Apply -->
+                <!-- Amount to Apply — tap field for numeric keyboard -->
                 <VerticalStackLayout x:Name="ApplyAmountSection" Spacing="8" IsVisible="False">
                     <Label Text="AMOUNT TO APPLY"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="#6B7280"/>
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
-                        <Entry x:Name="ApplyAmountEntry"
-                               Placeholder="Amount to use"
-                               Keyboard="Numeric"
-                               FontSize="16"
-                               HeightRequest="55"
-                               BackgroundColor="#F3F4F6"/>
-                        <Button Text="USE FULL"
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <Border BackgroundColor="#F3F4F6"
+                                Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                Padding="14,0"
+                                HeightRequest="55">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="10"/>
+                            </Border.StrokeShape>
+                            <Entry x:Name="ApplyAmountEntry"
+                                   Placeholder="Amount to use"
+                                   FontSize="16"
+                                   BackgroundColor="Transparent"
+                                   IsReadOnly="True"
+                                   VerticalOptions="Center"
+                                   Focused="OnApplyAmountFocused"
+                                   TextChanged="OnApplyAmountChanged">
+                                <Entry.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnApplyAmountTapped"/>
+                                </Entry.GestureRecognizers>
+                            </Entry>
+                        </Border>
+                        <Button Grid.Column="1"
+                                Text="USE FULL"
                                 BackgroundColor="#D1FAE5"
                                 TextColor="#065F46"
                                 FontSize="12"

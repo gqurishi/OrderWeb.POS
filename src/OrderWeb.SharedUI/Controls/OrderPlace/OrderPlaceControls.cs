@@ -17,7 +17,7 @@ public static class OrderPlaceLayout
 
     public static int ProductColumnCount(double availableWidth)
     {
-        var minWidth = Token("OpProductCardMinWidth", 148);
+        var minWidth = Token("OpProductCardMinWidth", 100);
         var gap = Token("OpProductCardGap", 10);
         if (availableWidth <= 0)
         {
@@ -26,6 +26,20 @@ public static class OrderPlaceLayout
 
         var columns = (int)Math.Floor((availableWidth + gap) / (minWidth + gap));
         return Math.Clamp(columns, 2, 6);
+    }
+
+    public static async Task FlashPressAsync(VisualElement target, int milliseconds = 70, double pressedOpacity = 0.7)
+    {
+        var previous = target.Opacity;
+        target.Opacity = pressedOpacity;
+        try
+        {
+            await Task.Delay(milliseconds);
+        }
+        finally
+        {
+            target.Opacity = previous;
+        }
     }
 }
 
@@ -63,9 +77,10 @@ public sealed class OrderPlaceCategoryButton : ContentView
         _border = new Border
         {
             StrokeThickness = 1,
-            Padding = new Thickness(16, 0),
+            Padding = new Thickness(8, 0),
             Content = _label,
-            MinimumWidthRequest = OrderPlaceLayout.Token("OpTouchMin", 44)
+            WidthRequest = OrderPlaceLayout.Token("OpCategoryWidth", 80),
+            MinimumWidthRequest = OrderPlaceLayout.Token("OpCategoryWidth", 80)
         };
         _border.Use(Border.HeightRequestProperty, "OpCategoryHeight");
         _border.StrokeShape = new RoundRectangle
@@ -74,7 +89,11 @@ public sealed class OrderPlaceCategoryButton : ContentView
         };
 
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => Execute();
+        tap.Tapped += (_, _) =>
+        {
+            _ = OrderPlaceLayout.FlashPressAsync(this);
+            Execute();
+        };
         _border.GestureRecognizers.Add(tap);
         Content = _border;
         ApplyState();
@@ -146,9 +165,10 @@ public sealed class OrderPlaceSubcategoryButton : ContentView
         _border = new Border
         {
             StrokeThickness = 1,
-            Padding = new Thickness(14, 0),
+            Padding = new Thickness(8, 0),
             Content = _label,
-            MinimumWidthRequest = OrderPlaceLayout.Token("OpTouchMin", 44)
+            WidthRequest = OrderPlaceLayout.Token("OpSubcategoryWidth", 80),
+            MinimumWidthRequest = OrderPlaceLayout.Token("OpSubcategoryWidth", 80)
         };
         _border.Use(Border.HeightRequestProperty, "OpSubcategoryHeight");
         _border.StrokeShape = new RoundRectangle
@@ -157,7 +177,11 @@ public sealed class OrderPlaceSubcategoryButton : ContentView
         };
 
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => Execute();
+        tap.Tapped += (_, _) =>
+        {
+            _ = OrderPlaceLayout.FlashPressAsync(this);
+            Execute();
+        };
         _border.GestureRecognizers.Add(tap);
         Content = _border;
         ApplyState();
@@ -182,9 +206,9 @@ public sealed class OrderPlaceSubcategoryButton : ContentView
     {
         if (IsSelected)
         {
-            _border.Use(Border.BackgroundColorProperty, "OwPrimarySoft");
-            _border.Use(Border.StrokeProperty, "OwPrimarySoftBorder");
-            _label.Use(Label.TextColorProperty, "OwPrimaryPressed");
+            _border.Use(Border.BackgroundColorProperty, "OwPrimary");
+            _border.Use(Border.StrokeProperty, "OwPrimary");
+            _label.Use(Label.TextColorProperty, "OwTextOnPrimary");
         }
         else
         {
@@ -254,7 +278,7 @@ public sealed class OrderPlaceProductCard : ContentView
 
         _badge = new Label
         {
-            FontSize = 11,
+            FontSize = 10,
             FontAttributes = FontAttributes.Bold,
             IsVisible = false
         };
@@ -262,7 +286,7 @@ public sealed class OrderPlaceProductCard : ContentView
 
         var stack = new VerticalStackLayout
         {
-            Spacing = 4,
+            Spacing = 2,
             VerticalOptions = LayoutOptions.Center,
             Children = { _name, _price, _badge }
         };
@@ -270,20 +294,23 @@ public sealed class OrderPlaceProductCard : ContentView
         _border = new Border
         {
             StrokeThickness = 1,
-            Padding = new Thickness(12, 10),
+            Padding = new Thickness(8, 6),
             Content = stack
         };
         _border.Use(Border.BackgroundColorProperty, "OwSurface");
         _border.Use(Border.StrokeProperty, "OwBorder");
+        _border.Use(Border.HeightRequestProperty, "OpProductCardMinHeight");
         _border.Use(Border.MinimumHeightRequestProperty, "OpProductCardMinHeight");
+        _border.Use(Border.MinimumWidthRequestProperty, "OpProductCardMinWidth");
         _border.StrokeShape = new RoundRectangle
         {
-            CornerRadius = ControlResources.Value("OpProductCardCornerRadius", 12)
+            CornerRadius = ControlResources.Value("OpProductCardCornerRadius", 10)
         };
 
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) =>
         {
+            _ = OrderPlaceLayout.FlashPressAsync(this);
             Tapped?.Invoke(this, EventArgs.Empty);
             if (Command?.CanExecute(CommandParameter) == true)
             {
@@ -323,15 +350,15 @@ public sealed class OrderPlaceQuantityControl : ContentView
 
     public OrderPlaceQuantityControl()
     {
-        var size = OrderPlaceLayout.Token("OpQuantityButtonSize", 44);
+        var size = OrderPlaceLayout.Token("OpQuantityButtonSize", 28);
         _minus = QtyButton("−", size);
         _plus = QtyButton("+", size);
         _count = new Label
         {
             Text = "1",
             FontAttributes = FontAttributes.Bold,
-            FontSize = 16,
-            WidthRequest = 36,
+            FontSize = 13,
+            WidthRequest = 22,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
         };
@@ -342,7 +369,7 @@ public sealed class OrderPlaceQuantityControl : ContentView
 
         Content = new HorizontalStackLayout
         {
-            Spacing = 6,
+            Spacing = 2,
             VerticalOptions = LayoutOptions.Center,
             Children = { _minus, _count, _plus }
         };
@@ -370,7 +397,7 @@ public sealed class OrderPlaceQuantityControl : ContentView
         {
             Text = text,
             FontAttributes = FontAttributes.Bold,
-            FontSize = 20,
+            FontSize = 14,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
         };
@@ -381,7 +408,7 @@ public sealed class OrderPlaceQuantityControl : ContentView
             HeightRequest = size,
             StrokeThickness = 1,
             Content = label,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 }
+            StrokeShape = new RoundRectangle { CornerRadius = 6 }
         };
         border.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
         border.Use(Border.StrokeProperty, "OwBorder");
@@ -419,8 +446,12 @@ public sealed class OrderPlaceLineRow : ContentView
             propertyChanged: (b, _, v) =>
             {
                 var c = (OrderPlaceLineRow)b;
-                c._details.Text = v?.ToString() ?? string.Empty;
-                c._details.IsVisible = !string.IsNullOrWhiteSpace(c._details.Text);
+                var raw = v?.ToString() ?? string.Empty;
+                var text = string.Join(
+                    " · ",
+                    raw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                c._details.Text = text;
+                c._details.IsVisible = !string.IsNullOrWhiteSpace(text);
             });
 
     public static readonly BindableProperty QuantityProperty =
@@ -457,30 +488,49 @@ public sealed class OrderPlaceLineRow : ContentView
 
     public OrderPlaceLineRow()
     {
-        _name = new Label { FontAttributes = FontAttributes.Bold, LineBreakMode = LineBreakMode.TailTruncation };
+        _name = new Label
+        {
+            FontAttributes = FontAttributes.Bold,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            VerticalTextAlignment = TextAlignment.Center
+        };
         _name.Use(Label.FontSizeProperty, "OpFontLineName");
         _name.Use(Label.TextColorProperty, "OwTextStrong");
 
         _statusCue = new Label
         {
             Text = "SENT",
-            FontSize = 10,
+            FontSize = 9,
             FontAttributes = FontAttributes.Bold,
             IsVisible = false,
             VerticalTextAlignment = TextAlignment.Center,
-            Margin = new Thickness(6, 0, 0, 0)
+            Margin = new Thickness(4, 0, 0, 0)
         };
         _statusCue.Use(Label.TextColorProperty, "OwSuccessText");
 
-        _price = new Label { FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
+        _price = new Label
+        {
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.End,
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.NoWrap
+        };
         _price.Use(Label.FontSizeProperty, "OpFontLineName");
         _price.Use(Label.TextColorProperty, "OwSuccessStrong");
 
-        _details = new Label { IsVisible = false, LineBreakMode = LineBreakMode.WordWrap };
+        _details = new Label
+        {
+            IsVisible = false,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            VerticalTextAlignment = TextAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0)
+        };
         _details.Use(Label.FontSizeProperty, "OpFontLineMeta");
         _details.Use(Label.TextColorProperty, "OwTextMuted");
 
-        _qty = new OrderPlaceQuantityControl { Minimum = 0 };
+        _qty = new OrderPlaceQuantityControl { Minimum = 0, VerticalOptions = LayoutOptions.Center };
         _qty.QuantityChanged += (_, value) =>
         {
             // Ignore echoes from Quantity bindable sync (RefreshOrderItems).
@@ -497,7 +547,7 @@ public sealed class OrderPlaceLineRow : ContentView
         {
             Text = "+ Note",
             FontAttributes = FontAttributes.Bold,
-            FontSize = 12,
+            FontSize = 10,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
         };
@@ -511,7 +561,7 @@ public sealed class OrderPlaceLineRow : ContentView
         {
             Text = string.Empty,
             FontAttributes = FontAttributes.Bold,
-            FontSize = 12,
+            FontSize = 10,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center
         };
@@ -521,46 +571,57 @@ public sealed class OrderPlaceLineRow : ContentView
             Command = new Command(() => TrailingActionTapped?.Invoke(this, EventArgs.Empty))
         });
 
-        var titleRow = new HorizontalStackLayout
-        {
-            Spacing = 0,
-            VerticalOptions = LayoutOptions.Center,
-            Children = { _name, _statusCue }
-        };
-
-        var top = new Grid
-        {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Auto)
-            },
-            ColumnSpacing = 8
-        };
-        top.Add(titleRow);
-        top.Add(_price, 1);
-
         _actionsRow = new HorizontalStackLayout
         {
-            Spacing = 8,
+            Spacing = 4,
+            VerticalOptions = LayoutOptions.Center,
             IsVisible = false,
             Children = { _noteAction, _trailingAction }
         };
 
-        var body = new VerticalStackLayout
+        var title = new Grid
         {
-            Spacing = 6,
-            Children = { top, _details, _qty, _actionsRow }
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 4,
+            VerticalOptions = LayoutOptions.Center
         };
+        _name.HorizontalOptions = LayoutOptions.Fill;
+        _details.MaximumWidthRequest = 110;
+        title.Add(_name);
+        title.Add(_statusCue, 1);
+        title.Add(_details, 2);
+
+        var row = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 6,
+            VerticalOptions = LayoutOptions.Center
+        };
+        row.Add(title);
+        row.Add(_qty, 1);
+        row.Add(_actionsRow, 2);
+        row.Add(_price, 3);
 
         _border = new Border
         {
             StrokeThickness = 1,
-            Padding = new Thickness(12, 10),
-            Content = body
+            Padding = new Thickness(8, 4),
+            Content = row
         };
         _border.Use(Border.MinimumHeightRequestProperty, "OpOrderLineMinHeight");
-        _border.StrokeShape = new RoundRectangle { CornerRadius = 10 };
+        _border.Use(Border.HeightRequestProperty, "OpOrderLineMinHeight");
+        _border.StrokeShape = new RoundRectangle { CornerRadius = 8 };
         Content = _border;
         _price.Text = FormatMoney(0);
         ApplySentCue();
@@ -608,11 +669,12 @@ public sealed class OrderPlaceLineRow : ContentView
         var border = new Border
         {
             StrokeThickness = 1,
-            Padding = new Thickness(10, 0),
-            HeightRequest = 32,
+            Padding = new Thickness(6, 0),
+            HeightRequest = 26,
             Content = label,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            IsVisible = false
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            IsVisible = false,
+            VerticalOptions = LayoutOptions.Center
         };
         if (secondary)
         {
@@ -685,6 +747,7 @@ public sealed class PosActionButton : ContentView
                 return;
             }
 
+            _ = OrderPlaceLayout.FlashPressAsync(this, milliseconds: 90, pressedOpacity: 0.75);
             Tapped?.Invoke(this, EventArgs.Empty);
             if (Command?.CanExecute(CommandParameter) == true)
             {
@@ -848,7 +911,7 @@ public sealed class OrderTotalsBlock : ContentView
 
         Content = new VerticalStackLayout
         {
-            Spacing = 6,
+            Spacing = 2,
             Children =
             {
                 MoneyRow("Subtotal", _subtotal),
@@ -869,7 +932,7 @@ public sealed class OrderTotalsBlock : ContentView
 
     private static Grid MoneyRow(string label, Label value)
     {
-        var name = new Label { Text = label, FontAttributes = FontAttributes.Bold, FontSize = 13 };
+        var name = new Label { Text = label, FontAttributes = FontAttributes.Bold, FontSize = 12 };
         name.Use(Label.TextColorProperty, "OwTextMuted");
         var grid = new Grid
         {
@@ -889,7 +952,7 @@ public sealed class OrderTotalsBlock : ContentView
         var label = new Label
         {
             FontAttributes = FontAttributes.Bold,
-            FontSize = emphasize ? 20 : 14,
+            FontSize = emphasize ? 16 : 12,
             HorizontalTextAlignment = TextAlignment.End,
             Text = Money(0)
         };
@@ -907,6 +970,8 @@ public sealed class OrderPlaceProductGrid : ContentView
     private readonly Grid _grid;
     private readonly List<View> _items = [];
     private int _columns = 4;
+    private int _laidOutColumnCount = -1;
+    private int _laidOutItemCount = -1;
 
     public OrderPlaceProductGrid()
     {
@@ -916,7 +981,7 @@ public sealed class OrderPlaceProductGrid : ContentView
             RowSpacing = OrderPlaceLayout.Token("OpProductCardGap", 10)
         };
         Content = _grid;
-        SizeChanged += (_, _) => Relayout();
+        SizeChanged += (_, _) => Relayout(force: false);
     }
 
     public int ColumnCount => _columns;
@@ -926,17 +991,47 @@ public sealed class OrderPlaceProductGrid : ContentView
 
     public void SetItems(IEnumerable<View> items)
     {
-        _items.Clear();
-        _items.AddRange(items);
-        Relayout();
+        var next = items as IList<View> ?? items.ToList();
+        var sameViews = _items.Count == next.Count;
+        if (sameViews)
+        {
+            for (var i = 0; i < _items.Count; i++)
+            {
+                if (!ReferenceEquals(_items[i], next[i]))
+                {
+                    sameViews = false;
+                    break;
+                }
+            }
+        }
+
+        if (!sameViews)
+        {
+            _items.Clear();
+            _items.AddRange(next);
+        }
+
+        Relayout(force: !sameViews);
     }
 
     public void Clear() => SetItems([]);
 
-    private void Relayout()
+    private void Relayout(bool force)
     {
         var width = Width > 0 ? Width : 800;
-        _columns = OrderPlaceLayout.ProductColumnCount(width);
+        var columns = OrderPlaceLayout.ProductColumnCount(width);
+        if (!force
+            && columns == _laidOutColumnCount
+            && _items.Count == _laidOutItemCount
+            && _grid.Children.Count == _items.Count)
+        {
+            _columns = columns;
+            return;
+        }
+
+        _columns = columns;
+        _laidOutColumnCount = columns;
+        _laidOutItemCount = _items.Count;
         _grid.Children.Clear();
         _grid.ColumnDefinitions.Clear();
         _grid.RowDefinitions.Clear();

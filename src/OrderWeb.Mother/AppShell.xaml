@@ -10,7 +10,7 @@
     FlyoutBehavior="Flyout"
     FlyoutWidth="280"
     Shell.NavBarIsVisible="False"
-    Shell.FlyoutBackdrop="Transparent">
+    Shell.FlyoutBackdrop="#660F172A">
 
     <!-- CUSTOM FLYOUT - Complete Control, No Default Spacing -->
     <Shell.FlyoutContent>
