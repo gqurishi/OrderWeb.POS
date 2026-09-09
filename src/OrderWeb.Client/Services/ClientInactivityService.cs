@@ -2,6 +2,7 @@ namespace OrderWeb.Client.Services;
 
 /// <summary>
 /// Client idle auto-logout. Staff / Manager / User / Cashier → 3 minutes.
+/// Uses a one-shot timer rescheduled on activity (no heavy 1 Hz work).
 /// </summary>
 public sealed class ClientInactivityService
 {
@@ -24,15 +25,11 @@ public sealed class ClientInactivityService
         {
             _timer = Application.Current?.Dispatcher.CreateTimer()
                      ?? throw new InvalidOperationException("No dispatcher available for idle logout.");
-            _timer.Interval = TimeSpan.FromSeconds(1);
+            _timer.IsRepeating = false;
             _timer.Tick += OnTick;
         }
 
-        if (!_timer.IsRunning)
-        {
-            _timer.Start();
-        }
-
+        ScheduleNextCheck();
         TryHookWindowsInput();
     }
 
@@ -58,6 +55,8 @@ public sealed class ClientInactivityService
             _lastActivityAt = DateTime.Now;
             _isHandling = false;
         }
+
+        ScheduleNextCheck();
     }
 
     /// <summary>Call from pages so taps/typing reset the idle clock while logged in.</summary>
@@ -83,6 +82,46 @@ public sealed class ClientInactivityService
         }
     }
 
+    private void ScheduleNextCheck()
+    {
+        if (_timer is null)
+        {
+            return;
+        }
+
+        TimeSpan remaining;
+        string? role;
+        lock (_sync)
+        {
+            if (_getRole is null || _logout is null)
+            {
+                _timer.Stop();
+                return;
+            }
+
+            role = _getRole.Invoke();
+            remaining = StaffManagerUserLogoutTimeout - (DateTime.Now - _lastActivityAt);
+        }
+
+        if (!IsAutoLogoutRole(role))
+        {
+            // Rarely re-check role changes without waking every second.
+            _timer.Stop();
+            _timer.Interval = TimeSpan.FromSeconds(60);
+            _timer.Start();
+            return;
+        }
+
+        if (remaining < TimeSpan.FromMilliseconds(50))
+        {
+            remaining = TimeSpan.FromMilliseconds(50);
+        }
+
+        _timer.Stop();
+        _timer.Interval = remaining;
+        _timer.Start();
+    }
+
     private void OnTick(object? sender, EventArgs e)
     {
         string? role;
@@ -94,13 +133,20 @@ public sealed class ClientInactivityService
             role = _getRole?.Invoke();
             logout = _logout;
             elapsed = DateTime.Now - _lastActivityAt;
-            if (_isHandling || logout is null || !IsAutoLogoutRole(role))
+            if (_isHandling || logout is null)
             {
+                return;
+            }
+
+            if (!IsAutoLogoutRole(role))
+            {
+                ScheduleNextCheck();
                 return;
             }
 
             if (elapsed < StaffManagerUserLogoutTimeout)
             {
+                ScheduleNextCheck();
                 return;
             }
 

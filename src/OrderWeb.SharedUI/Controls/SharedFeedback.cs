@@ -128,8 +128,7 @@ public sealed class PosLoadingOverlay : ContentView
                 var overlay = (PosLoadingOverlay)b;
                 var loading = (bool)v;
                 overlay._loader.IsLoading = loading;
-                overlay.IsVisible = loading;
-                overlay.InputTransparent = !loading;
+                overlay.ApplyChrome();
             });
 
     public PosLoadingOverlay()
@@ -139,11 +138,20 @@ public sealed class PosLoadingOverlay : ContentView
             Mode = ChefLoaderMode.Fullscreen,
             Size = ChefLoaderSize.Md,
             Message = "Cooking up your data…",
-            DelayMilliseconds = 0,
+            DelayMilliseconds = 280,
             IsLoading = true
         };
+        _loader.LoadingChromeChanged += (_, _) => ApplyChrome();
         Content = _loader;
-        InputTransparent = false;
+        ApplyChrome();
+    }
+
+    private void ApplyChrome()
+    {
+        var loading = IsLoading || _loader.IsLoading;
+        IsVisible = loading;
+        // Pass taps until the chef actually reveals (never block at opacity 0).
+        InputTransparent = !_loader.BlocksInput;
     }
 
     public string Message

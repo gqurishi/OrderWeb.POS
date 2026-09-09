@@ -11,7 +11,7 @@ namespace POS_in_NET.Services;
 /// Mother-side operational APIs for Client POS: food menu, delivery zones,
 /// and table/collection/delivery orders. Reuses the same services Mother's own till uses.
 /// </summary>
-public sealed class ClientPosOperationalService
+public sealed partial class ClientPosOperationalService
 {
     private const string LiveOrderSourceFilter = @"
         LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'";
@@ -33,6 +33,7 @@ public sealed class ClientPosOperationalService
     private readonly MenuItemService _menuItemService = new();
     private readonly MealDealService _mealDealService = new();
     private readonly TastingMenuService _tastingMenuService = new();
+    private readonly TableServiceChargeSettingsService _tableServiceChargeSettingsService;
 
     public ClientPosOperationalService(DatabaseService databaseService, ReservationSyncService? reservationSync = null)
     {
@@ -40,6 +41,10 @@ public sealed class ClientPosOperationalService
         _reservationSync = reservationSync
             ?? ServiceHelper.GetService<ReservationSyncService>()
             ?? new ReservationSyncService(databaseService);
+        _tableServiceChargeSettingsService = ServiceHelper.GetService<TableServiceChargeSettingsService>()
+            ?? new TableServiceChargeSettingsService(
+                databaseService,
+                ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance);
     }
 
     public async Task<ClientMenuSnapshot> BuildMenuSnapshotAsync(string version)
@@ -527,17 +532,47 @@ public sealed class ClientPosOperationalService
             CreatedAt = DateTime.Now
         };
 
+        var existing = await _orderService.GetOrderByExternalIdAsync(order.OrderId);
+
         foreach (var line in incomingLines)
         {
-            order.Items.Add(BuildOrderItem(line, menuById, orderType));
+            var built = BuildOrderItem(line, menuById, orderType);
+            PreserveLineKitchenState(built, existing);
+            order.Items.Add(built);
         }
 
         var foodSubtotal = order.Items.Sum(item => item.TotalPrice);
         order.SubtotalAmount = foodSubtotal;
         order.TaxAmount = 0m;
-        order.TotalAmount = foodSubtotal + order.DeliveryFee;
 
-        var existing = await _orderService.GetOrderByExternalIdAsync(order.OrderId);
+        if (existing != null)
+        {
+            order.DiscountAmount = request.Discount is >= 0 ? request.Discount.Value : existing.DiscountAmount;
+            order.ServiceChargePercentage = existing.ServiceChargePercentage;
+            order.ServiceChargeStatus = existing.ServiceChargeStatus;
+            order.ServiceChargeClassification = existing.ServiceChargeClassification;
+            order.ServiceChargeBasis = existing.ServiceChargeBasis;
+            order.ServiceChargeAmount = existing.ServiceChargeAmount;
+            if (string.IsNullOrWhiteSpace(request.Notes))
+            {
+                // Keep Mother order notes when Client omits Notes on a line-edit upsert.
+                order.SpecialInstructions = existing.SpecialInstructions;
+            }
+        }
+        else if (orderType == "table")
+        {
+            await ApplyDefaultTableServiceChargeAsync(order);
+            if (request.Discount is > 0)
+            {
+                order.DiscountAmount = request.Discount.Value;
+            }
+        }
+        else if (request.Discount is > 0)
+        {
+            order.DiscountAmount = request.Discount.Value;
+        }
+
+        ApplyClientOrderFinancials(order, orderType);
 
         // Match Mother till: open the table (session / Occupied) and let Client show the order
         // create screen with an empty basket. Persist the Mother ledger row only once items exist.
@@ -659,20 +694,61 @@ public sealed class ClientPosOperationalService
     }
 
     /// <summary>
-    /// Voids a local Collection (or other Client) order on Mother so Live Order drops it.
-    /// Uses the same OrderService status path as Mother till cancel/void.
+    /// Voids a Client order on Mother (reason + manager PIN), or releases an uncommitted table session
+    /// when no ledger row exists yet (same as Mother till discard).
     /// </summary>
-    public async Task<ClientOrderUpsertResult> VoidOrderAsync(string? orderId)
+    public async Task<ClientOrderUpsertResult> VoidOrderAsync(
+        string? orderId,
+        string? reason = null,
+        string? approvingPin = null,
+        int? sessionUserId = null,
+        string? sessionUserName = null,
+        int? tableId = null)
     {
-        if (string.IsNullOrWhiteSpace(orderId))
+        if (string.IsNullOrWhiteSpace(orderId) && tableId is null or <= 0)
         {
             return ClientOrderUpsertResult.Fail(400, "A Mother order id is required to void.");
         }
 
-        var existing = await _orderService.GetOrderByExternalIdAsync(orderId.Trim());
+        var existing = string.IsNullOrWhiteSpace(orderId)
+            ? null
+            : await _orderService.GetOrderByExternalIdAsync(orderId.Trim());
+
+        // Uncommitted table: session open, no ledger row yet — release without a void history row.
         if (existing == null)
         {
-            return ClientOrderUpsertResult.Fail(404, "Mother POS could not find this order.");
+            var releaseTableId = tableId;
+            if (releaseTableId is null or <= 0)
+            {
+                return ClientOrderUpsertResult.Fail(404, "Mother POS could not find this order.");
+            }
+
+            var sessions = new TableSessionService();
+            var release = await sessions.ForceReleaseTableAsync(
+                releaseTableId.Value,
+                "unsent_basket_discarded",
+                string.IsNullOrWhiteSpace(sessionUserName) ? "Client POS" : sessionUserName.Trim());
+            if (!release.success)
+            {
+                return ClientOrderUpsertResult.Fail(422, release.message);
+            }
+
+            var released = new ClientOperationalOrder(
+                orderId?.Trim() ?? Guid.NewGuid().ToString("N"),
+                string.Empty,
+                "Table",
+                "Voided",
+                releaseTableId,
+                null,
+                1,
+                Array.Empty<ClientOperationalOrderLine>(),
+                0m,
+                0m,
+                0m,
+                0,
+                DateTime.UtcNow.ToString("O"),
+                null);
+            return ClientOrderUpsertResult.Ok(released, "Table released — no order was created.");
         }
 
         if (existing.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided)
@@ -680,10 +756,44 @@ public sealed class ClientPosOperationalService
             return ClientOrderUpsertResult.Fail(409, "This order is already paid or voided on Mother POS.");
         }
 
-        var voided = await _orderService.UpdateOrderStatusAsync(existing.Id, OrderStatus.Cancelled);
-        if (!voided)
+        var payments = await _orderService.GetOrderPaymentsAsync(existing.Id);
+        var approvedPaymentTotal = payments
+            .Where(payment => string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase))
+            .Sum(payment => payment.Amount);
+        if (approvedPaymentTotal > 0m)
         {
-            return ClientOrderUpsertResult.Fail(422, "Mother POS could not void this order.");
+            return ClientOrderUpsertResult.Fail(
+                409,
+                $"£{approvedPaymentTotal:F2} has already been approved for this order. Refund or void the payment before voiding the order.");
+        }
+
+        var voidReason = string.IsNullOrWhiteSpace(reason) ? "Unspecified" : reason.Trim();
+        var approval = await ResolveManagerApprovalAsync(
+            sessionUserId,
+            sessionUserName,
+            approvingPin,
+            requirePinWhenNotManager: true);
+        if (!approval.Success || approval.User is null)
+        {
+            return ClientOrderUpsertResult.Fail(403, approval.Message);
+        }
+
+        var approverName = string.IsNullOrWhiteSpace(approval.User.Name)
+            ? approval.User.Username
+            : approval.User.Name;
+
+        existing.LocalLifecycleState = LocalLifecycleState.Voided;
+        existing.Status = OrderStatus.Cancelled;
+        existing.IsOpen = false;
+        existing.VoidReason = voidReason;
+        existing.VoidedAt = DateTime.Now;
+        existing.VoidedBy = approverName;
+        existing.UpdatedAt = DateTime.Now;
+
+        var save = await _orderService.SaveOrderAsync(existing);
+        if (!save.Success)
+        {
+            return ClientOrderUpsertResult.Fail(422, save.Message ?? "Mother POS could not void this order.");
         }
 
         if (existing.TableSessionId is > 0)
@@ -691,7 +801,11 @@ public sealed class ClientPosOperationalService
             await new TableSessionService().CloseSessionForOrderAsync(
                 existing.TableSessionId.Value,
                 "voided",
-                "Client POS");
+                approverName);
+        }
+        else if (tableId is > 0)
+        {
+            await new TableSessionService().ForceReleaseTableAsync(tableId.Value, "voided", approverName);
         }
 
         var persisted = await _orderService.GetOrderByExternalIdAsync(existing.OrderId);
@@ -700,7 +814,7 @@ public sealed class ClientPosOperationalService
             return ClientOrderUpsertResult.Fail(500, "Mother POS voided the order but could not reload it.");
         }
 
-        return ClientOrderUpsertResult.Ok(ToClientOrder(persisted), "Order voided on Mother POS.");
+        return ClientOrderUpsertResult.Ok(ToClientOrder(persisted), $"Order voided on Mother POS. Reason: {voidReason}");
     }
 
     /// <summary>Fresh load of one open order for Client reopen/edit (Phase 2 Collection).</summary>
@@ -994,13 +1108,21 @@ public sealed class ClientPosOperationalService
                                  item.MenuItemId.StartsWith(MealDeal.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase)
                     ? item.MenuItemId[MealDeal.OrderMenuItemPrefix.Length..]
                     : null;
-                var mealChoices = string.IsNullOrWhiteSpace(item.SpecialInstructions)
+                var tastingMenuId = item.MenuItemId != null &&
+                                    item.MenuItemId.StartsWith(TastingMenu.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase) &&
+                                    !item.MenuItemId.StartsWith(TastingMenu.OrderCourseItemPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? ResolveTastingMenuId(item.MenuItemId)
+                    : null;
+                var mealChoices = string.IsNullOrWhiteSpace(mealDealId) || string.IsNullOrWhiteSpace(item.SpecialInstructions)
                     ? Array.Empty<string>()
                     : item.SpecialInstructions
                         .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                         .Select(part => part.TrimStart('•', '-', ' ').Trim())
                         .Where(part => !string.IsNullOrWhiteSpace(part))
                         .ToArray();
+                var lineNotes = string.IsNullOrWhiteSpace(mealDealId)
+                    ? item.SpecialInstructions
+                    : null;
 
                 return new ClientOperationalOrderLine(
                     string.IsNullOrWhiteSpace(item.ClientItemId) ? item.Id.ToString() : item.ClientItemId,
@@ -1008,12 +1130,15 @@ public sealed class ClientPosOperationalService
                     string.IsNullOrWhiteSpace(item.DisplayName) ? item.ItemName : item.DisplayName,
                     item.Quantity,
                     (item.ItemPrice ?? 0m) + item.Addons.Sum(addon => addon.AddonPrice ?? 0m),
-                    item.SpecialInstructions,
+                    lineNotes,
                     item.Addons.Select(addon => addon.AddonName).Where(name => !string.IsNullOrWhiteSpace(name)).ToList()!,
                     item.VariantId,
                     item.VariantName,
                     mealDealId,
-                    mealDealId == null ? null : mealChoices);
+                    mealDealId == null ? null : mealChoices,
+                    tastingMenuId,
+                    IsLineSent(item.SendStatus),
+                    item.SendStatus);
             })
             .ToList();
 
@@ -1046,7 +1171,93 @@ public sealed class ClientPosOperationalService
             order.TotalAmount,
             Math.Max(1, ComputeClientOrderVersion(order)),
             (order.UpdatedAt == default ? DateTime.Now : order.UpdatedAt).ToUniversalTime().ToString("O"),
-            customer);
+            customer,
+            order.SpecialInstructions,
+            order.DiscountAmount,
+            order.ServiceChargeAmount,
+            order.ServiceChargeStatus,
+            order.ServiceChargePercentage);
+    }
+
+    private static string? ResolveTastingMenuId(string menuItemId)
+    {
+        // tasting:{menuId}:{optionId}
+        var rest = menuItemId[TastingMenu.OrderMenuItemPrefix.Length..];
+        var parts = rest.Split(':', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length > 0 ? parts[0] : null;
+    }
+
+    private static bool IsLineSent(string? sendStatus)
+    {
+        var status = (sendStatus ?? string.Empty).Trim().ToLowerInvariant();
+        return status is "sent" or "printed" or "preparing" or "ready" or "served" or "partial";
+    }
+
+    private static void PreserveLineKitchenState(OrderItem built, Order? existing)
+    {
+        if (existing == null || string.IsNullOrWhiteSpace(built.ClientItemId))
+        {
+            return;
+        }
+
+        var prior = existing.Items.FirstOrDefault(item =>
+            string.Equals(item.ClientItemId, built.ClientItemId, StringComparison.OrdinalIgnoreCase));
+        if (prior == null)
+        {
+            return;
+        }
+
+        built.SendStatus = prior.SendStatus;
+        built.SentAt = prior.SentAt;
+        built.PrintedAt = prior.PrintedAt;
+        built.SendBatchId = prior.SendBatchId;
+        built.FailureReason = prior.FailureReason;
+    }
+
+    private async Task ApplyDefaultTableServiceChargeAsync(Order order)
+    {
+        try
+        {
+            var settings = await _tableServiceChargeSettingsService.GetAsync();
+            if (settings.IsEnabled && settings.Percentage > 0m)
+            {
+                order.ServiceChargeStatus = "applied";
+                order.ServiceChargePercentage = settings.Percentage;
+                order.ServiceChargeClassification = settings.Classification.ToString();
+            }
+            else
+            {
+                order.ServiceChargeStatus = "not_configured";
+                order.ServiceChargePercentage = 0m;
+            }
+        }
+        catch
+        {
+            order.ServiceChargeStatus = "not_configured";
+            order.ServiceChargePercentage = 0m;
+        }
+    }
+
+    private static void ApplyClientOrderFinancials(Order order, string orderType)
+    {
+        var foodSubtotal = order.Items.Sum(item => item.TotalPrice);
+        order.SubtotalAmount = foodSubtotal;
+        order.TaxAmount = 0m;
+        order.DiscountAmount = Math.Max(0m, order.DiscountAmount);
+
+        var isTable = string.Equals(orderType, "table", StringComparison.OrdinalIgnoreCase);
+        var status = (order.ServiceChargeStatus ?? "not_configured").Trim().ToLowerInvariant();
+        var isApplied = isTable && status == "applied";
+        var percent = isTable ? Math.Max(0m, order.ServiceChargePercentage) : 0m;
+        var calc = TableServiceChargeCalculator.Calculate(
+            isTable ? TableServiceChargeCalculator.TableOrderMode : orderType,
+            foodSubtotal,
+            order.DiscountAmount,
+            percent,
+            isApplied);
+        order.ServiceChargeBasis = calc.ChargeBasis;
+        order.ServiceChargeAmount = calc.ServiceCharge;
+        order.TotalAmount = calc.OrderTotal + Math.Max(0m, order.DeliveryFee);
     }
 
     private static bool IsDeliveryFeeLine(ClientOrderLineRequest line) =>
@@ -1414,7 +1625,8 @@ public sealed record ClientOrderUpsertRequest(
     int Guests,
     IReadOnlyList<ClientOrderLineRequest>? Lines,
     int? ExpectedVersion = null,
-    string? ExpectedUpdatedUtc = null);
+    string? ExpectedUpdatedUtc = null,
+    decimal? Discount = null);
 
 public sealed record ClientOrderLineRequest(
     string? Id,
@@ -1445,7 +1657,12 @@ public sealed record ClientOperationalOrder(
     decimal Total,
     int Version,
     string UpdatedUtc,
-    string? ConflictMessage);
+    string? ConflictMessage,
+    string? Notes = null,
+    decimal Discount = 0m,
+    decimal ServiceCharge = 0m,
+    string? ServiceChargeStatus = null,
+    decimal ServiceChargePercent = 0m);
 
 public sealed record ClientOperationalOrderLine(
     string Id,
@@ -1458,7 +1675,10 @@ public sealed record ClientOperationalOrderLine(
     string? VariantId = null,
     string? VariantName = null,
     string? MealDealId = null,
-    IReadOnlyList<string>? MealDealChoices = null);
+    IReadOnlyList<string>? MealDealChoices = null,
+    string? TastingMenuId = null,
+    bool IsSent = false,
+    string? SendStatus = null);
 
 public sealed record ClientOrderUpsertResult(bool Success, int StatusCode, string Message, ClientOperationalOrder? Order)
 {

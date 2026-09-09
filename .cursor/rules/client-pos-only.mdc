@@ -1,0 +1,13 @@
+---
+description: This agent only updates Client POS unless Mother is required and requested
+alwaysApply: true
+---
+
+# Client POS only (this agent)
+
+When aligning UI or behavior with Mother POS in this project:
+
+- **Default target:** `src/OrderWeb.Client` only.
+- Change Mother (`src/OrderWeb.Mother`) only when Client cannot work without a Mother API/grant/seed **and** the user asks for that, or it is clearly required.
+- Shared pieces (`OrderWeb.Contracts`, `OrderWeb.SharedUI`) are OK when Client needs them.
+- Do not change Mother UI for parity unless the user explicitly asks.

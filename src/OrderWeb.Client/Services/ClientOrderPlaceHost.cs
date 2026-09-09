@@ -3,6 +3,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
 
@@ -22,7 +23,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private readonly MotherPrintClient _printClient = new();
     private readonly List<CachedMenuCategory> _categories = new();
     private readonly List<CachedProduct> _products = new();
+    private readonly List<CachedMealDeal> _mealDeals = new();
+    private readonly List<CachedTastingMenu> _tastingMenus = new();
+    private readonly List<OrderPlaceProductItem> _specialProducts = new();
     private readonly HashSet<int> _categoryIdsWithProducts = new();
+    private const string MealDealsMotherId = "__meal_deals__";
+    private const string TastingMenusMotherId = "__tasting_menus__";
     private readonly IClientOrderPlaceUi _ui;
     private readonly SemaphoreSlim _motherWriteGate = new(1, 1);
     private readonly object _orderGate = new();
@@ -83,9 +89,61 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
 
         _initialized = true;
-        await EnsureOrderContextAsync();
+
+        var needsMotherOpen = _currentOrder is null && _table is not null;
+        if (needsMotherOpen)
+        {
+            Session.StatusMessage = "Opening…";
+            await _ui.SetLoadingAsync(true, "Opening order…");
+        }
+
+        try
+        {
+            // Paint categories/products from SQLite immediately (busy-dinner: no menu wait).
+            await ReloadMenuFromCacheAsync();
+            PublishSession();
+
+            var orderTask = EnsureOrderContextAsync();
+            var menuTask = EnsureMenuFreshInBackgroundAsync();
+
+            await orderTask;
+            if (string.Equals(Session.StatusMessage, "Opening…", StringComparison.Ordinal))
+            {
+                Session.StatusMessage = null;
+            }
+
+            PublishSession();
+            await menuTask;
+            PublishSession();
+        }
+        finally
+        {
+            if (needsMotherOpen)
+            {
+                await _ui.SetLoadingAsync(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// When cache is warm, refresh menu in background; when cold, pull before continuing.
+    /// </summary>
+    private async Task EnsureMenuFreshInBackgroundAsync()
+    {
+        var status = await _cache.GetStatusAsync();
+        var sections = await _cache.GetOperationalSectionSyncStatusAsync();
+        var hasWarmCache = status.Categories > 0 && status.Products > 0;
+        var menuFresh = hasWarmCache &&
+                        sections.MenuOk == true &&
+                        IsMenuSyncFresh(sections.MenuUtc);
+
+        if (menuFresh)
+        {
+            _ = BackgroundRefreshMenuAsync();
+            return;
+        }
+
         await LoadMenuAsync();
-        PublishSession();
     }
 
     public async Task SelectCategoryAsync(string categoryId, CancellationToken cancellationToken = default)
@@ -124,6 +182,23 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     public async Task AddProductAsync(string productId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(productId))
+        {
+            return;
+        }
+
+        if (productId.StartsWith("md:", StringComparison.OrdinalIgnoreCase))
+        {
+            await AddMealDealProductAsync(productId["md:".Length..]);
+            return;
+        }
+
+        if (productId.StartsWith("tm:", StringComparison.OrdinalIgnoreCase))
+        {
+            await AddTastingMenuProductAsync(productId["tm:".Length..]);
+            return;
+        }
+
         if (!int.TryParse(productId, out var id))
         {
             return;
@@ -340,26 +415,204 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     public async Task OrderNotesAsync(CancellationToken cancellationToken = default)
     {
-        var lines = _currentOrder?.Lines;
-        if (lines is null || lines.Count == 0)
+        if (_currentOrder is null)
         {
-            await _ui.ShowAlertAsync("Notes", "Add an item before adding notes.");
+            await _ui.ShowAlertAsync("Notes", "Open an order before adding notes.");
             return;
         }
 
-        await EditLineNoteAsync(lines[0].Id, cancellationToken);
+        var note = await _ui.PromptAsync(
+            "Order Notes",
+            "Enter notes for this order:",
+            "Save",
+            "Cancel",
+            _currentOrder.Notes ?? "e.g., Allergies, special requests...");
+        if (note is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Session.IsBusy = true;
+            RaiseChanged();
+            var result = await _orderClient.SetOrderNotesAsync(_currentOrder, note);
+            _currentOrder = PreserveCustomer(result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowToastAsync("Notes saved", "Order notes have been saved.", StatusKind.Success);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowToastAsync("Notes", ex.Message, StatusKind.Error);
+        }
+        finally
+        {
+            Session.IsBusy = false;
+            RaiseChanged();
+        }
     }
 
     public async Task VoidAsync(CancellationToken cancellationToken = default)
     {
+        var isTable = IsTableOrder();
+        var hasItems = _currentOrder?.Lines.Count > 0;
+        var isUncommittedTable = isTable &&
+                                 (_currentOrder is null ||
+                                  string.IsNullOrWhiteSpace(_currentOrder.OrderNumber) ||
+                                  _currentOrder.Version <= 0);
+
+        if (isUncommittedTable && !hasItems)
+        {
+            if (!await _ui.ConfirmAsync(
+                    "Close Empty Table",
+                    "No order has been created. Release this empty table?",
+                    "Release Table",
+                    "Keep Open"))
+            {
+                return;
+            }
+
+            await DiscardOrVoidOnMotherAsync(reason: "empty_table_closed", approvingPin: null, requireItems: false);
+            return;
+        }
+
+        if (isUncommittedTable && hasItems)
+        {
+            if (!await _ui.ConfirmAsync(
+                    "Discard Unsent Items",
+                    "These items have not been sent to the kitchen. Discard them and release the table?",
+                    "Discard & Close",
+                    "Keep Open"))
+            {
+                return;
+            }
+
+            await DiscardOrVoidOnMotherAsync(reason: "unsent_basket_discarded", approvingPin: null, requireItems: false);
+            return;
+        }
+
         if (_currentOrder is null || _currentOrder.Lines.Count == 0)
         {
             await _ui.ShowAlertAsync("Void", "There are no items to void.");
             return;
         }
 
-        if (!await _ui.ConfirmAsync("Void Order", "Void this order on Mother POS?", "Void", "Cancel"))
+        var reason = await _ui.PickActionAsync(
+            "Void Reason",
+            "Customer changed mind",
+            "Wrong item entered",
+            "Kitchen error",
+            "Manager override");
+        if (string.IsNullOrWhiteSpace(reason))
         {
+            return;
+        }
+
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        string? approvingPin = null;
+        if (!IsManagerOrAdmin(session?.Role))
+        {
+            approvingPin = await _ui.PromptAsync(
+                "Manager PIN Required",
+                $"Void amount £{_currentOrder.Total:F2} requires manager approval:",
+                "Continue",
+                "Cancel",
+                "4-digit PIN");
+            if (string.IsNullOrWhiteSpace(approvingPin))
+            {
+                return;
+            }
+        }
+
+        if (!await _ui.ConfirmAsync(
+                "Void Order - Danger",
+                $"This action cannot be undone and will permanently void {_currentOrder.Lines.Count} items.\n\nReason: {reason}\nAmount: £{_currentOrder.Total:F2}",
+                "Confirm Void",
+                "Cancel"))
+        {
+            return;
+        }
+
+        await DiscardOrVoidOnMotherAsync(reason, approvingPin, requireItems: true);
+    }
+
+    public async Task MoreAsync(CancellationToken cancellationToken = default)
+    {
+        var takeaway = IsCollectionOrder() || IsDeliveryOrder();
+        var options = new List<string>();
+
+        if (!takeaway && CanChangeServiceCharge())
+        {
+            var scRemoved = string.Equals(_currentOrder?.ServiceChargeStatus, "removed", StringComparison.OrdinalIgnoreCase);
+            options.Add(scRemoved ? "RESTORE SERVICE CHARGE" : "REMOVE SERVICE CHARGE");
+        }
+
+        options.Add("Discount");
+
+        if (takeaway)
+        {
+            options.Add("Previous Orders");
+        }
+        else
+        {
+            options.Add("Table Transfer");
+            options.Add("Merge Tables");
+            options.Add("Fire Course");
+        }
+
+        options.Add("Loyalty Points");
+        options.Add("Cash Drawer");
+
+        var selected = await _ui.PickActionAsync("More", options.ToArray());
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        switch (selected)
+        {
+            case "Discount":
+                await ShowDiscountAsync();
+                break;
+            case "Previous Orders":
+                await ShowPreviousOrdersAsync();
+                break;
+            case "Table Transfer":
+                await ShowTableTransferAsync();
+                break;
+            case "Merge Tables":
+                await ShowMergeTablesAsync();
+                break;
+            case "Fire Course":
+                await ShowFireCourseAsync();
+                break;
+            case "Loyalty Points":
+                await ShowLoyaltyRedeemAsync();
+                break;
+            case "Cash Drawer":
+                await OpenCashDrawerFromMoreAsync();
+                break;
+            case "REMOVE SERVICE CHARGE":
+                await ChangeServiceChargeAsync(remove: true);
+                break;
+            case "RESTORE SERVICE CHARGE":
+                await ChangeServiceChargeAsync(remove: false);
+                break;
+        }
+    }
+
+    private async Task DiscardOrVoidOnMotherAsync(string? reason, string? approvingPin, bool requireItems)
+    {
+        if (_currentOrder is null)
+        {
+            await _ui.ShowAlertAsync("Void", "No open order.");
+            return;
+        }
+
+        if (requireItems && _currentOrder.Lines.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Void", "There are no items to void.");
             return;
         }
 
@@ -374,40 +627,518 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
-            var result = await _orderClient.VoidCollectionOrderAsync(_currentOrder);
+            var result = await _orderClient.VoidCollectionOrderAsync(
+                _currentOrder,
+                reason,
+                approvingPin,
+                _table?.Id ?? _currentOrder.TableId);
             _currentOrder = result.State;
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
-            await _ui.ShowAlertAsync("Mother POS", result.Message);
+            await _ui.ShowToastAsync("Voided", result.Message, StatusKind.Success);
             await _ui.CloseOrderPageAsync();
         }
         catch (Exception ex)
         {
-            await _ui.ShowAlertAsync("Void failed", ex.Message);
+            await _ui.ShowToastAsync("Void failed", ex.Message, StatusKind.Error);
         }
     }
 
-    public async Task MoreAsync(CancellationToken cancellationToken = default)
+    private async Task ShowDiscountAsync()
     {
-        var takeaway = IsCollectionOrder() || IsDeliveryOrder();
-        var options = new List<string> { "Discount", "Loyalty Points", "Cash Drawer" };
-        if (takeaway)
+        if (_currentOrder is null)
         {
-            options.Insert(0, "Previous Orders");
+            await _ui.ShowAlertAsync("Discount", "Open an order first.");
+            return;
         }
 
-        var selected = await _ui.PickActionAsync("More", options.ToArray());
-        if (string.IsNullOrWhiteSpace(selected))
+        var type = await _ui.PickActionAsync("Discount Type", "Fixed amount", "Percentage", "Remove discount");
+        if (string.IsNullOrWhiteSpace(type))
         {
             return;
         }
 
-        await _ui.ShowAlertAsync(
-            selected,
-            takeaway && selected == "Previous Orders"
-                ? "Open Live Order / Order History for this customer phone on Mother when available."
-                : $"{selected} is handled on Mother POS for this Client release.");
+        decimal amount = 0m;
+        decimal percent = 0m;
+        var discountType = "fixed";
+        string? reason = null;
+
+        if (type == "Remove discount")
+        {
+            discountType = "fixed";
+            amount = 0m;
+            reason = "Discount removed";
+        }
+        else
+        {
+            var amountText = await _ui.PromptAsync(
+                type == "Percentage" ? "Discount %" : "Discount £",
+                type == "Percentage" ? "Enter percentage (0-100):" : "Enter fixed discount amount:",
+                "Apply",
+                "Cancel",
+                "0.00");
+            if (string.IsNullOrWhiteSpace(amountText) ||
+                !decimal.TryParse(amountText, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ||
+                parsed < 0m)
+            {
+                if (!string.IsNullOrWhiteSpace(amountText))
+                {
+                    await _ui.ShowAlertAsync("Discount", "Enter a valid amount.");
+                }
+
+                return;
+            }
+
+            if (type == "Percentage")
+            {
+                discountType = "percent";
+                percent = parsed;
+            }
+            else
+            {
+                amount = parsed;
+            }
+
+            reason = await _ui.PromptAsync("Discount Reason", "Enter a reason for this discount:", "Continue", "Cancel", "Reason");
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+        }
+
+        var appliedAmount = discountType == "percent"
+            ? Math.Round(_currentOrder.Subtotal * (Math.Clamp(percent, 0m, 100m) / 100m), 2, MidpointRounding.AwayFromZero)
+            : amount;
+        string? approvingPin = null;
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        if (appliedAmount > 20m && !IsManagerOrAdmin(session?.Role))
+        {
+            approvingPin = await _ui.PromptAsync(
+                "Manager PIN Required",
+                $"Discount of £{appliedAmount:F2} requires manager approval:",
+                "Continue",
+                "Cancel",
+                "4-digit PIN");
+            if (string.IsNullOrWhiteSpace(approvingPin))
+            {
+                return;
+            }
+        }
+
+        try
+        {
+            await FlushMotherPersistAsync();
+            var result = await _orderClient.ApplyDiscountAsync(
+                _currentOrder,
+                amount,
+                percent,
+                reason,
+                discountType,
+                approvingPin);
+            _currentOrder = MergeFinancials(_currentOrder, result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowToastAsync("Discount", result.Message, StatusKind.Success);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowToastAsync("Discount failed", ex.Message, StatusKind.Error);
+        }
     }
+
+    private async Task ChangeServiceChargeAsync(bool remove)
+    {
+        if (_currentOrder is null || !CanChangeServiceCharge())
+        {
+            await _ui.ShowAlertAsync("Service Charge", "This order can no longer change its service charge.");
+            return;
+        }
+
+        string? reason = null;
+        if (remove)
+        {
+            reason = await _ui.PickActionAsync(
+                "Removal Reason",
+                "Customer request",
+                "Service issue",
+                "Manager discretion",
+                "Custom reason");
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            if (reason == "Custom reason")
+            {
+                reason = await _ui.PromptAsync("Custom Reason", "Enter the reason for removing the service charge:", "Continue", "Cancel", "Reason");
+                if (string.IsNullOrWhiteSpace(reason))
+                {
+                    return;
+                }
+            }
+        }
+
+        var pin = await _ui.PromptAsync(
+            "Manager Approval",
+            remove ? "Enter a manager PIN to remove the service charge." : "Enter a manager PIN to restore the service charge.",
+            "Continue",
+            "Cancel",
+            "4-digit PIN");
+        if (string.IsNullOrWhiteSpace(pin))
+        {
+            return;
+        }
+
+        if (!await _ui.ConfirmAsync(
+                remove ? "Remove Service Charge" : "Restore Service Charge",
+                remove
+                    ? $"Remove £{_currentOrder.ServiceCharge:F2} service charge?\nReason: {reason}"
+                    : $"Restore service charge on this table order?",
+                remove ? "Remove" : "Restore",
+                "Cancel"))
+        {
+            return;
+        }
+
+        try
+        {
+            await FlushMotherPersistAsync();
+            var result = await _orderClient.SetServiceChargeAsync(
+                _currentOrder,
+                remove ? "remove" : "restore",
+                reason,
+                pin);
+            _currentOrder = MergeFinancials(_currentOrder, result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowToastAsync("Service charge", result.Message, StatusKind.Success);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowToastAsync("Service charge failed", ex.Message, StatusKind.Error);
+        }
+    }
+
+    private async Task ShowTableTransferAsync()
+    {
+        if (_currentOrder is null)
+        {
+            return;
+        }
+
+        var floors = await _cache.GetFloorsWithTablesAsync();
+        var available = floors
+            .SelectMany(floor => floor.Tables)
+            .Where(table => string.Equals(table.Status, "Available", StringComparison.OrdinalIgnoreCase))
+            .Where(table => table.Id != (_table?.Id ?? _currentOrder.TableId))
+            .OrderBy(table => table.TableNumber)
+            .ToList();
+        if (available.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Table Transfer", "No available tables to transfer to.");
+            return;
+        }
+
+        var labels = available.Select(table => $"Table {table.TableNumber}").ToArray();
+        var picked = await _ui.PickActionAsync("Transfer to", labels);
+        if (string.IsNullOrWhiteSpace(picked))
+        {
+            return;
+        }
+
+        var target = available.FirstOrDefault(table =>
+            string.Equals($"Table {table.TableNumber}", picked, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await FlushMotherPersistAsync();
+            var result = await _orderClient.TransferTableAsync(_currentOrder, target.Id);
+            _currentOrder = result.State;
+            _table = target;
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowAlertAsync("Transfer Complete", result.Message);
+            await _ui.CloseOrderPageAsync();
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Transfer Failed", ex.Message);
+        }
+    }
+
+    private async Task ShowMergeTablesAsync()
+    {
+        if (_currentOrder is null)
+        {
+            return;
+        }
+
+        var childNumber = await _ui.PromptAsync(
+            "Merge Tables",
+            "Enter the child table number to merge into this table:",
+            "Merge",
+            "Cancel",
+            "e.g. 12");
+        if (string.IsNullOrWhiteSpace(childNumber))
+        {
+            return;
+        }
+
+        if (!await _ui.ConfirmAsync(
+                "Confirm Merge",
+                $"Merge this table with Table {childNumber.Trim()}?\nThis keeps the current table as the parent session.",
+                "Merge",
+                "Cancel"))
+        {
+            return;
+        }
+
+        try
+        {
+            await FlushMotherPersistAsync();
+            var result = await _orderClient.MergeTablesAsync(_currentOrder, childNumber.Trim());
+            _currentOrder = MergeFinancials(_currentOrder, result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowAlertAsync("Merged", result.Message);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Merge Failed", ex.Message);
+        }
+    }
+
+    private async Task ShowFireCourseAsync()
+    {
+        if (_currentOrder is null || _currentOrder.Lines.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Fire Course", "Add items before firing a course.");
+            return;
+        }
+
+        var course = await _ui.PickActionAsync("Fire Course", "Starters", "Mains", "Desserts", "All");
+        if (string.IsNullOrWhiteSpace(course))
+        {
+            return;
+        }
+
+        try
+        {
+            await FlushMotherPersistAsync();
+            var result = await _orderClient.FireCourseAsync(_currentOrder, course);
+            _currentOrder = MergeFinancials(_currentOrder, result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowAlertAsync("Fire Course", result.Message);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Fire Course failed", ex.Message);
+        }
+    }
+
+    private async Task ShowLoyaltyRedeemAsync()
+    {
+        if (_currentOrder is null || _currentOrder.Lines.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Loyalty Points", "Add items before redeeming loyalty points.");
+            return;
+        }
+
+        if (_currentOrder.Total <= 0m)
+        {
+            await _ui.ShowAlertAsync("Loyalty Points", "There is no bill amount to offset with loyalty points.");
+            return;
+        }
+
+        var lookup = await _ui.PromptAsync(
+            "Loyalty Points",
+            "Enter customer phone number or loyalty card number:",
+            "Continue",
+            "Cancel",
+            "e.g. 07123 456 789");
+        if (string.IsNullOrWhiteSpace(lookup))
+        {
+            return;
+        }
+
+        try
+        {
+            var loyalty = new MotherLoyaltyClient(_cache, _offlinePolicy);
+            var search = await loyalty.SearchAsync(lookup.Trim());
+            if (!search.Success || search.Customer is null)
+            {
+                await _ui.ShowAlertAsync("Loyalty Lookup Failed", search.Error ?? search.Message ?? "Customer not found.");
+                return;
+            }
+
+            var available = search.Customer.PointsBalance;
+            var maxBill = (int)Math.Floor(_currentOrder.Total * 100m);
+            var maxRedeem = Math.Min(available, maxBill);
+            await _ui.ShowAlertAsync(
+                "Loyalty Balance",
+                $"Customer: {search.Customer.Name}\n" +
+                $"Available points: {available:N0}\n" +
+                $"Current bill: £{_currentOrder.Total:F2}\n" +
+                $"Max redeemable: {maxRedeem:N0} points");
+
+            if (maxRedeem <= 0)
+            {
+                await _ui.ShowAlertAsync("Nothing to Redeem", "There are no points available to apply to this bill.");
+                return;
+            }
+
+            var pointsText = await _ui.PromptAsync(
+                "Redeem Loyalty Points",
+                $"Enter points to redeem (max {maxRedeem:N0}). 100 pts = £1.",
+                "Apply",
+                "Cancel",
+                maxRedeem.ToString(CultureInfo.InvariantCulture));
+            if (string.IsNullOrWhiteSpace(pointsText) ||
+                !int.TryParse(pointsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var points) ||
+                points <= 0)
+            {
+                return;
+            }
+
+            if (points > maxRedeem)
+            {
+                await _ui.ShowAlertAsync("Points Too High", $"You can only redeem up to {maxRedeem:N0} points on this bill.");
+                return;
+            }
+
+            var discountAmount = Math.Round(points / 100m, 2, MidpointRounding.AwayFromZero);
+            if (!await _ui.ConfirmAsync(
+                    "Confirm Loyalty Redemption",
+                    $"Redeem {points:N0} points for £{discountAmount:F2}?\nNew bill total: £{Math.Max(0m, _currentOrder.Total - discountAmount):F2}",
+                    "Redeem",
+                    "Cancel"))
+            {
+                return;
+            }
+
+            await FlushMotherPersistAsync();
+            var key = $"{_currentOrder.OrderId}:loyalty-redeem:{lookup.Trim()}:{points}";
+            var result = await _orderClient.ApplyLoyaltyRedeemAsync(_currentOrder, lookup.Trim(), points, key);
+            _currentOrder = MergeFinancials(_currentOrder, result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+            await _ui.ShowAlertAsync("Loyalty Applied", result.Message);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Loyalty Error", ex.Message);
+        }
+    }
+
+    private async Task ShowPreviousOrdersAsync()
+    {
+        var phone = FirstNonEmpty(_customerPhone, _currentOrder?.CustomerPhone);
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            await _ui.ShowAlertAsync("Customer Required", "Select a saved customer before viewing previous orders.");
+            return;
+        }
+
+        try
+        {
+            var (success, message, orders) = await _orderClient.GetPreviousOrdersAsync(phone);
+            if (!success)
+            {
+                await _ui.ShowAlertAsync("Previous Orders Unavailable", message);
+                return;
+            }
+
+            if (orders.Count == 0)
+            {
+                await _ui.ShowAlertAsync("Previous Orders", "No recent Collection/Delivery orders found for this customer.");
+                return;
+            }
+
+            var labels = orders
+                .Select(order =>
+                    $"{order.OrderNumber ?? $"#{order.OrderDatabaseId}"} · {order.OrderType} · £{order.TotalAmount:F2}")
+                .ToArray();
+            var picked = await _ui.PickActionAsync("Previous Orders", labels);
+            if (string.IsNullOrWhiteSpace(picked))
+            {
+                return;
+            }
+
+            var selected = orders.FirstOrDefault(order =>
+                string.Equals(
+                    $"{order.OrderNumber ?? $"#{order.OrderDatabaseId}"} · {order.OrderType} · £{order.TotalAmount:F2}",
+                    picked,
+                    StringComparison.OrdinalIgnoreCase));
+            if (selected is null)
+            {
+                return;
+            }
+
+            await _ui.ShowAlertAsync(
+                selected.OrderNumber ?? $"Order #{selected.OrderDatabaseId}",
+                $"{selected.OrderType} · {selected.Status}\n£{selected.TotalAmount:F2}\n\n{selected.ItemsText}" +
+                (string.IsNullOrWhiteSpace(selected.OrderNotes) ? string.Empty : $"\n\nNotes: {selected.OrderNotes}"));
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Previous Orders Unavailable", ex.Message);
+        }
+    }
+
+    private async Task OpenCashDrawerFromMoreAsync()
+    {
+        try
+        {
+            var result = await _orderClient.OpenOrderPlaceCashDrawerAsync(_currentOrder, "Order place MORE");
+            await _ui.ShowAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message);
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Cash Drawer Failed", ex.Message);
+        }
+    }
+
+    private bool CanChangeServiceCharge()
+    {
+        if (!IsTableOrder() || _currentOrder is null)
+        {
+            return false;
+        }
+
+        var status = (_currentOrder.ServiceChargeStatus ?? string.Empty).Trim().ToLowerInvariant();
+        return status is "applied" or "removed";
+    }
+
+    private static bool IsManagerOrAdmin(string? role) =>
+        string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase);
+
+    private static MotherOrderState MergeFinancials(MotherOrderState current, MotherOrderState mother) =>
+        current with
+        {
+            OrderNumber = string.IsNullOrWhiteSpace(mother.OrderNumber) ? current.OrderNumber : mother.OrderNumber,
+            Status = mother.Status,
+            Subtotal = mother.Subtotal,
+            Tax = mother.Tax,
+            Total = mother.Total,
+            Version = mother.Version,
+            UpdatedUtc = mother.UpdatedUtc,
+            Discount = mother.Discount,
+            ServiceCharge = mother.ServiceCharge,
+            ServiceChargeStatus = mother.ServiceChargeStatus,
+            ServiceChargePercent = mother.ServiceChargePercent,
+            TableId = mother.TableId ?? current.TableId,
+            TableNumber = mother.TableNumber ?? current.TableNumber,
+            CustomerName = FirstNonEmpty(mother.CustomerName, current.CustomerName),
+            CustomerPhone = FirstNonEmpty(mother.CustomerPhone, current.CustomerPhone),
+            Lines = mother.Lines.Count > 0 ? mother.Lines : current.Lines
+        };
 
     public async Task SendAsync(CancellationToken cancellationToken = default)
     {
@@ -448,11 +1179,19 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
-            await _ui.ShowAlertAsync(result.ConflictDetected ? "Order conflict" : "Mother POS", result.Message);
+            if (result.ConflictDetected)
+            {
+                await _ui.ShowToastAsync("Order conflict", result.Message, StatusKind.Warning);
+            }
+            else
+            {
+                await _ui.ShowToastAsync("Sent to kitchen", result.Message, StatusKind.Success);
+                await _ui.CloseOrderPageAsync();
+            }
         }
         catch (Exception ex)
         {
-            await _ui.ShowAlertAsync("Send to Kitchen failed", ex.Message);
+            await _ui.ShowToastAsync("Send failed", ex.Message, StatusKind.Error);
         }
         finally
         {
@@ -507,19 +1246,35 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
                 await _cache.SaveOrderStateAsync(_currentOrder);
                 PublishSession();
-                await _ui.ShowAlertAsync(result.ConflictDetected ? "Order conflict" : "Print", result.Message);
+                if (result.ConflictDetected)
+                {
+                    await _ui.ShowToastAsync("Order conflict", result.Message, StatusKind.Warning);
+                }
+                else
+                {
+                    await _ui.ShowToastAsync("Printed", result.Message, StatusKind.Success);
+                    await _ui.CloseOrderPageAsync();
+                }
             }
             else
             {
                 var session = await _cache.GetCurrentLoginSessionAsync();
                 var request = await _printClient.RequestPrintAsync("bill", _currentOrder.OrderId, session);
                 await _cache.SavePrintRequestAsync(request);
-                await _ui.ShowAlertAsync("Print", request.Message);
+                if (string.Equals(request.Status, "failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _ui.ShowToastAsync("Print failed", request.Message, StatusKind.Error);
+                }
+                else
+                {
+                    await _ui.ShowToastAsync("Print bill", request.Message, StatusKind.Success);
+                    await _ui.CloseOrderPageAsync();
+                }
             }
         }
         catch (Exception ex)
         {
-            await _ui.ShowAlertAsync("Print failed", ex.Message);
+            await _ui.ShowToastAsync("Print failed", ex.Message, StatusKind.Error);
         }
         finally
         {
@@ -562,7 +1317,11 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 return;
             }
 
-            await _ui.NavigateToPaymentAsync(_currentOrder.Total, _currentOrder.OrderId, _currentOrder.Version);
+            await _ui.NavigateToPaymentAsync(
+                _currentOrder.Total,
+                _currentOrder.OrderId,
+                _currentOrder.Version,
+                allowSplit: !IsCustomerHubOrder(_currentOrder));
         }
         finally
         {
@@ -571,16 +1330,19 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
     }
 
-    public async Task ReloadFromMotherIfIdleAsync()
+    /// <summary>
+    /// Reloads Mother copy when idle. Returns true when a newer Mother version was applied.
+    /// </summary>
+    public async Task<bool> ReloadFromMotherIfIdleAsync()
     {
         if (_currentOrder is null || _persistQueued || Session.ActionsBusy)
         {
-            return;
+            return false;
         }
 
         if (!await _motherWriteGate.WaitAsync(0))
         {
-            return;
+            return false;
         }
 
         _motherWriteGate.Release();
@@ -603,10 +1365,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
+            return changedElsewhere;
         }
         catch
         {
             // Paid/voided elsewhere — Live Order will drop it.
+            return false;
         }
     }
 
@@ -621,6 +1385,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         {
             ConflictMessage = "Changed on another terminal — finish or discard local edits, then reopen."
         };
+        Session.StatusMessage = _currentOrder.ConflictMessage;
         PublishSession();
     }
 
@@ -732,10 +1497,27 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     {
         _categories.Clear();
         _categories.AddRange(await _cache.GetMenuCategoriesAsync());
+        _mealDeals.Clear();
+        _mealDeals.AddRange(await _cache.GetActiveMealDealsAsync());
+        _tastingMenus.Clear();
+        _tastingMenus.AddRange(await _cache.GetActiveTastingMenusAsync());
         _categoryIdsWithProducts.Clear();
         foreach (var id in await _cache.GetCategoryIdsWithProductsAsync())
         {
             _categoryIdsWithProducts.Add(id);
+        }
+
+        foreach (var category in _categories)
+        {
+            if (IsMealDealsCategory(category) && _mealDeals.Count > 0)
+            {
+                _categoryIdsWithProducts.Add(category.Id);
+            }
+
+            if (IsTastingMenusCategory(category) && _tastingMenus.Count > 0)
+            {
+                _categoryIdsWithProducts.Add(category.Id);
+            }
         }
 
         _selectedTopCategory = TopLevelCategories().FirstOrDefault() ?? _categories.FirstOrDefault();
@@ -788,8 +1570,44 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private async Task LoadProductsForSelectedCategoryAsync()
     {
         _products.Clear();
+        _specialProducts.Clear();
         if (_selectedCategory is null)
         {
+            return;
+        }
+
+        if (IsMealDealsCategory(_selectedCategory))
+        {
+            foreach (var deal in _mealDeals)
+            {
+                _specialProducts.Add(new OrderPlaceProductItem(
+                    $"md:{deal.MotherId}",
+                    deal.Name,
+                    deal.Price,
+                    Badge: "DEAL",
+                    PriceText: $"£{deal.Price:F2}",
+                    IsAvailable: true));
+            }
+
+            return;
+        }
+
+        if (IsTastingMenusCategory(_selectedCategory))
+        {
+            foreach (var menu in _tastingMenus)
+            {
+                var priceText = menu.Options.Count == 0
+                    ? "No prices"
+                    : string.Join(", ", menu.Options.OrderBy(o => o.SortOrder).Select(o => $"{o.Name} £{o.Price:F2}"));
+                _specialProducts.Add(new OrderPlaceProductItem(
+                    $"tm:{menu.MotherId}",
+                    menu.Name,
+                    0m,
+                    Badge: "TASTING",
+                    PriceText: priceText,
+                    IsAvailable: true));
+            }
+
             return;
         }
 
@@ -815,11 +1633,14 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         {
             Session.Categories.Add(new OrderPlaceCategoryItem(
                 category.Id.ToString(CultureInfo.InvariantCulture),
-                category.Name));
+                category.Name,
+                IsSpecial: IsMealDealsCategory(category) || IsTastingMenusCategory(category)));
         }
 
         Session.Subcategories.Clear();
-        if (_selectedTopCategory != null)
+        if (_selectedTopCategory != null &&
+            !IsMealDealsCategory(_selectedTopCategory) &&
+            !IsTastingMenusCategory(_selectedTopCategory))
         {
             var children = ChildCategories(_selectedTopCategory.Id).ToList();
             if (children.Count > 0)
@@ -843,13 +1664,23 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
 
         Session.Products.Clear();
-        foreach (var product in FilteredProducts())
+        if (_specialProducts.Count > 0)
         {
-            Session.Products.Add(new OrderPlaceProductItem(
-                product.Id.ToString(CultureInfo.InvariantCulture),
-                product.Name,
-                product.Price,
-                IsAvailable: true));
+            foreach (var product in _specialProducts)
+            {
+                Session.Products.Add(product);
+            }
+        }
+        else
+        {
+            foreach (var product in FilteredProducts())
+            {
+                Session.Products.Add(new OrderPlaceProductItem(
+                    product.Id.ToString(CultureInfo.InvariantCulture),
+                    product.Name,
+                    product.Price,
+                    IsAvailable: true));
+            }
         }
 
         Session.Lines.Clear();
@@ -865,11 +1696,21 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                     continue;
                 }
 
+                if (line.ProductMotherId?.StartsWith("tasting-course:", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    continue;
+                }
+
+                var isMealDeal = !string.IsNullOrWhiteSpace(line.MealDealId);
+                var choiceText = line.MealDealChoices is { Count: > 0 }
+                    ? string.Join(Environment.NewLine, line.MealDealChoices.Select(c => $"• {c}"))
+                    : null;
                 var details = string.Join(
                     Environment.NewLine,
                     new[]
                     {
-                        line.Modifiers.Count > 0 ? string.Join(", ", line.Modifiers) : null,
+                        choiceText,
+                        !isMealDeal && line.Modifiers.Count > 0 ? string.Join(", ", line.Modifiers) : null,
                         line.Notes
                     }.Where(text => !string.IsNullOrWhiteSpace(text)));
 
@@ -879,21 +1720,24 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                     line.UnitPrice * line.Quantity,
                     line.Quantity,
                     details,
-                    IsSent: string.Equals(_currentOrder.Status, "sent_to_kitchen", StringComparison.OrdinalIgnoreCase),
-                    ShowNoteAction: true));
+                    IsSent: line.IsSent,
+                    ShowNoteAction: !isMealDeal,
+                    TrailingActionText: !string.IsNullOrWhiteSpace(line.TastingMenuId) ? "Fire" : null));
             }
 
             Session.Subtotal = _currentOrder.Subtotal;
             Session.Total = _currentOrder.Total;
+            Session.Discount = _currentOrder.Discount;
+            Session.ServiceCharge = _currentOrder.ServiceCharge;
         }
         else
         {
             Session.Subtotal = 0m;
             Session.Total = 0m;
+            Session.Discount = 0m;
+            Session.ServiceCharge = 0m;
         }
 
-        Session.Discount = 0m;
-        Session.ServiceCharge = 0m;
         Session.DeliveryFee = deliveryFee;
         Session.ShowServiceCharge = !takeaway;
         Session.ShowDeliveryFee = IsDeliveryOrder();
@@ -960,21 +1804,29 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                     {
                         if (_currentOrder is null)
                         {
-                            _currentOrder = result.State;
+                            _currentOrder = PreserveCustomer(result.State);
                         }
                         else if (SameBasketSignature(_currentOrder.Lines, snapshot.Lines))
                         {
-                            _currentOrder = result.State;
+                            _currentOrder = PreserveCustomer(result.State);
                         }
                         else
                         {
-                            // Newer local edits exist — keep local lines, adopt Mother version for next write.
+                            // Newer local edits exist — keep local lines, adopt Mother version + financials.
                             _currentOrder = _currentOrder with
                             {
                                 Version = result.State.Version,
                                 OrderNumber = result.State.OrderNumber,
                                 UpdatedUtc = result.State.UpdatedUtc,
-                                Status = result.State.Status
+                                Status = result.State.Status,
+                                Notes = result.State.Notes ?? _currentOrder.Notes,
+                                Discount = result.State.Discount,
+                                ServiceCharge = result.State.ServiceCharge,
+                                ServiceChargeStatus = result.State.ServiceChargeStatus,
+                                ServiceChargePercent = result.State.ServiceChargePercent,
+                                Subtotal = result.State.Subtotal,
+                                Total = result.State.Total,
+                                Tax = result.State.Tax
                             };
                             _persistQueued = true;
                         }
@@ -988,6 +1840,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                     if (result.ConflictDetected)
                     {
                         Session.StatusMessage = result.Message;
+                        await _ui.ShowToastAsync("Order conflict", result.Message, StatusKind.Warning);
                     }
 
                     PublishSession();
@@ -996,7 +1849,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 {
                     Session.StatusMessage = "Could not save to Mother — tap Send to retry.";
                     RaiseChanged();
-                    await _ui.ShowAlertAsync("Mother POS", ex.Message);
+                    await _ui.ShowToastAsync("Save failed", ex.Message, StatusKind.Error);
                 }
             }
         }
@@ -1066,6 +1919,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private bool IsDeliveryOrder() =>
         CustomerOrderHubRules.IsDeliveryOrderType(_currentOrder?.OrderType);
 
+    private bool IsTableOrder() =>
+        !IsCollectionOrder() && !IsDeliveryOrder();
+
     private static bool IsCustomerHubOrder(MotherOrderState order) =>
         CustomerOrderHubRules.IsCustomerHubOrderType(order.OrderType);
 
@@ -1086,7 +1942,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
 
         var table = FirstNonEmpty(_currentOrder?.TableNumber, _table?.TableNumber) ?? "?";
-        return $"{orderPart} · TABLE {table}";
+        var baseText = $"{orderPart} · TABLE {table}";
+        var orderNote = TruncateHeaderNote(_currentOrder?.Notes, 15);
+        return string.IsNullOrEmpty(orderNote) ? baseText : $"{baseText} | Note: {orderNote}";
     }
 
     private string BuildHeaderDetail()
@@ -1110,18 +1968,157 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     private static string? FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string? TruncateHeaderNote(string? note, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(note))
+        {
+            return null;
+        }
+
+        var trimmed = note.Trim();
+        return trimmed.Length <= maxChars ? trimmed : trimmed[..maxChars] + "..";
+    }
+
+    private static bool IsMealDealsCategory(CachedMenuCategory? category) =>
+        string.Equals(category?.MotherId, MealDealsMotherId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(category?.Name, "Meal Deals", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTastingMenusCategory(CachedMenuCategory? category) =>
+        string.Equals(category?.MotherId, TastingMenusMotherId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(category?.Name, "Tasting Menus", StringComparison.OrdinalIgnoreCase);
+
+    private MotherOrderState PreserveCustomer(MotherOrderState state) =>
+        state with
+        {
+            CustomerName = FirstNonEmpty(state.CustomerName, _customerName, _currentOrder?.CustomerName),
+            CustomerPhone = FirstNonEmpty(state.CustomerPhone, _customerPhone, _currentOrder?.CustomerPhone),
+            Notes = state.Notes ?? _currentOrder?.Notes,
+            Discount = state.Discount,
+            ServiceCharge = state.ServiceCharge,
+            ServiceChargeStatus = state.ServiceChargeStatus ?? _currentOrder?.ServiceChargeStatus,
+            ServiceChargePercent = state.ServiceChargePercent
+        };
+
+    private async Task AddMealDealProductAsync(string dealMotherId)
+    {
+        var deal = _mealDeals.FirstOrDefault(d =>
+            string.Equals(d.MotherId, dealMotherId, StringComparison.OrdinalIgnoreCase));
+        if (deal is null)
+        {
+            return;
+        }
+
+        if (_currentOrder is null)
+        {
+            await _ui.ShowAlertAsync("Order", "This order has not been created on Mother POS yet.");
+            return;
+        }
+
+        if (deal.Choices.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Meal Deal", "This deal has no choices configured.");
+            return;
+        }
+
+        var selections = await _ui.PickMealDealChoicesAsync(deal.Name, deal.PickCount, deal.Choices);
+        if (selections is null || selections.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Session.IsBusy = true;
+            RaiseChanged();
+            var result = await _orderClient.AddMealDealAsync(_currentOrder, deal, selections);
+            _currentOrder = PreserveCustomer(result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Meal Deal", ex.Message);
+        }
+        finally
+        {
+            Session.IsBusy = false;
+            RaiseChanged();
+        }
+    }
+
+    private async Task AddTastingMenuProductAsync(string menuMotherId)
+    {
+        var menu = _tastingMenus.FirstOrDefault(m =>
+            string.Equals(m.MotherId, menuMotherId, StringComparison.OrdinalIgnoreCase));
+        if (menu is null)
+        {
+            return;
+        }
+
+        if (_currentOrder is null)
+        {
+            await _ui.ShowAlertAsync("Order", "This order has not been created on Mother POS yet.");
+            return;
+        }
+
+        if (menu.Options.Count == 0 || menu.Courses.Count == 0)
+        {
+            await _ui.ShowAlertAsync("Tasting Menu", "This tasting menu has no price options or courses configured.");
+            return;
+        }
+
+        var optionChoices = menu.Options
+            .OrderBy(o => o.SortOrder)
+            .Select(o => new OrderPlaceVariantChoice(o.MotherId, o.Name, o.IncludesWine ? "Includes wine" : null, o.Price))
+            .ToList();
+        var picked = await _ui.PickVariantAsync(menu.Name, optionChoices);
+        if (picked is null)
+        {
+            return;
+        }
+
+        var option = menu.Options.FirstOrDefault(o =>
+            string.Equals(o.MotherId, picked.Id, StringComparison.OrdinalIgnoreCase));
+        if (option is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Session.IsBusy = true;
+            RaiseChanged();
+            var result = await _orderClient.AddTastingMenuAsync(_currentOrder, menu, option);
+            _currentOrder = PreserveCustomer(result.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+        }
+        catch (Exception ex)
+        {
+            await _ui.ShowAlertAsync("Tasting Menu", ex.Message);
+        }
+        finally
+        {
+            Session.IsBusy = false;
+            RaiseChanged();
+        }
+    }
 }
 
 /// <summary>UI bridge so the host stays free of Page inheritance.</summary>
 public interface IClientOrderPlaceUi
 {
     Task ShowAlertAsync(string title, string message);
+    Task ShowToastAsync(string title, string message, StatusKind kind = StatusKind.Info);
+    Task SetLoadingAsync(bool isLoading, string? message = null);
     Task<bool> ConfirmAsync(string title, string message, string accept, string cancel);
     Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder);
     Task<string?> PickActionAsync(string title, params string[] options);
     Task<OrderPlaceVariantChoice?> PickVariantAsync(string itemName, IReadOnlyList<OrderPlaceVariantChoice> variants);
     Task<OrderPlaceQuickNoteResult> PickQuickNoteAsync(string itemName, IReadOnlyList<string> notes);
     Task<IReadOnlyList<OrderPlaceAddonChoice>?> PickAddonsAsync(string itemName, IReadOnlyList<OrderPlaceAddonChoice> addons);
-    Task NavigateToPaymentAsync(decimal total, string orderId, int version);
+    Task<IReadOnlyList<string>?> PickMealDealChoicesAsync(string dealName, int pickCount, IReadOnlyList<string> choices);
+    Task NavigateToPaymentAsync(decimal total, string orderId, int version, bool allowSplit = true);
     Task CloseOrderPageAsync();
 }

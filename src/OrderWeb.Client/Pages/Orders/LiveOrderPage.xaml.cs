@@ -18,6 +18,9 @@ public partial class LiveOrderPage : ContentPage
     private IReadOnlyList<LiveOrderCardModel> _allCards = Array.Empty<LiveOrderCardModel>();
     private bool _isVisible;
     private bool _refreshInFlight;
+    private bool _refreshQueued;
+    private CancellationTokenSource? _wsRefreshCts;
+    private string? _cardsFingerprint;
 
     public LiveOrderPage()
     {
@@ -60,28 +63,49 @@ public partial class LiveOrderPage : ContentPage
             return;
         }
 
-        await MainThread.InvokeOnMainThreadAsync(() => RefreshOrdersAsync());
+        _wsRefreshCts?.Cancel();
+        _wsRefreshCts = new CancellationTokenSource();
+        var token = _wsRefreshCts.Token;
+        try
+        {
+            await Task.Delay(400, token);
+            await MainThread.InvokeOnMainThreadAsync(() => RefreshOrdersAsync());
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task RefreshOrdersAsync()
     {
         if (_refreshInFlight)
         {
+            _refreshQueued = true;
             return;
         }
 
         _refreshInFlight = true;
         try
         {
-            var motherOrders = await _orderClient.GetOpenOrdersAsync();
-            if (motherOrders != null)
+            do
             {
-                await _cache.ReplaceOperationalOrdersAsync(motherOrders);
-            }
+                _refreshQueued = false;
 
-            var openOrders = await _cache.GetOpenOrderStatesAsync();
-            _allCards = BuildLiveOrderCards(openOrders);
-            RenderCards();
+                // Paint cache first so the board never freezes waiting on Mother.
+                var cached = await _cache.GetOpenOrderStatesAsync();
+                _allCards = BuildLiveOrderCards(cached);
+                RenderCards();
+
+                var motherOrders = await _orderClient.GetOpenOrdersAsync();
+                if (motherOrders != null)
+                {
+                    await _cache.ReplaceOperationalOrdersAsync(motherOrders);
+                    var openOrders = await _cache.GetOpenOrderStatesAsync();
+                    _allCards = BuildLiveOrderCards(openOrders);
+                    RenderCards();
+                }
+            }
+            while (_refreshQueued);
         }
         finally
         {
@@ -116,6 +140,14 @@ public partial class LiveOrderPage : ContentPage
             .Where(card => _selectedFilter == "All" || card.Type == _selectedFilter)
             .ToList();
 
+        var fingerprint = _selectedFilter + "#" + string.Join("|",
+            cards.Select(c => $"{c.OrderId}:{c.Subtitle}:{c.Total:F2}:{c.TimeText}"));
+        if (string.Equals(fingerprint, _cardsFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _cardsFingerprint = fingerprint;
         OrderCards.Children.Clear();
         foreach (var card in cards)
         {

@@ -302,6 +302,8 @@ public partial class NewReservationDialog : ContentView
 
     private void CloseDialog()
     {
+        InputTransparent = true;
+        IsVisible = false;
         _parentGrid?.Children.Remove(this);
     }
 

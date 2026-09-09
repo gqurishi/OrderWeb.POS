@@ -1069,9 +1069,9 @@ public sealed class ClientCacheService
     {
         await InitializeAsync();
         var rows = await _database.QueryAsync<CachedCategoryRow>(
-            "SELECT id, name, color, sort_order, parent_id FROM categories WHERE is_active = 1 ORDER BY sort_order, name");
+            "SELECT id, mother_id, name, color, sort_order, parent_id FROM categories WHERE is_active = 1 ORDER BY sort_order, name");
         return rows
-            .Select(row => new CachedMenuCategory(row.Id, row.Name, row.Color ?? "#3B82F6", row.SortOrder, row.ParentId))
+            .Select(row => new CachedMenuCategory(row.Id, row.Name, row.Color ?? "#3B82F6", row.SortOrder, row.ParentId, row.MotherId))
             .ToList();
     }
 
@@ -1154,6 +1154,77 @@ public sealed class ClientCacheService
             .Select(row => row.NoteText?.Trim() ?? string.Empty)
             .Where(text => !string.IsNullOrWhiteSpace(text))
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<CachedMealDeal>> GetActiveMealDealsAsync()
+    {
+        await InitializeAsync();
+        var deals = await _database.QueryAsync<CachedMealDealRow>(@"
+            SELECT id, mother_id, name, description, price, pick_count
+            FROM meal_deals
+            WHERE is_active = 1
+            ORDER BY sort_order, name");
+        var result = new List<CachedMealDeal>();
+        foreach (var deal in deals)
+        {
+            var choices = await _database.QueryAsync<CachedNamedRow>(@"
+                SELECT name FROM meal_deal_choices
+                WHERE meal_deal_id = ?
+                ORDER BY sort_order, name", deal.Id);
+            result.Add(new CachedMealDeal(
+                deal.Id,
+                deal.MotherId ?? string.Empty,
+                deal.Name,
+                deal.Description,
+                deal.Price,
+                Math.Max(1, deal.PickCount),
+                choices.Select(c => c.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList()));
+        }
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<CachedTastingMenu>> GetActiveTastingMenusAsync()
+    {
+        await InitializeAsync();
+        var menus = await _database.QueryAsync<CachedTastingMenuRow>(@"
+            SELECT id, mother_id, name, description
+            FROM tasting_menus
+            WHERE is_active = 1
+            ORDER BY sort_order, name");
+        var result = new List<CachedTastingMenu>();
+        foreach (var menu in menus)
+        {
+            var options = await _database.QueryAsync<CachedTastingOptionRow>(@"
+                SELECT mother_id, name, price, includes_wine, course_count, sort_order
+                FROM tasting_menu_options
+                WHERE tasting_menu_id = ?
+                ORDER BY sort_order, name", menu.Id);
+            var courses = await _database.QueryAsync<CachedTastingCourseRow>(@"
+                SELECT mother_id, name, wine_name, course_number
+                FROM tasting_menu_courses
+                WHERE tasting_menu_id = ?
+                ORDER BY course_number, name", menu.Id);
+            result.Add(new CachedTastingMenu(
+                menu.Id,
+                menu.MotherId ?? string.Empty,
+                menu.Name,
+                menu.Description,
+                options.Select(o => new CachedTastingMenuOption(
+                    o.MotherId ?? string.Empty,
+                    o.Name,
+                    o.Price,
+                    o.IncludesWine != 0,
+                    o.CourseCount,
+                    o.SortOrder)).ToList(),
+                courses.Select(c => new CachedTastingMenuCourse(
+                    c.MotherId ?? string.Empty,
+                    c.Name,
+                    c.WineName,
+                    c.CourseNumber)).ToList()));
+        }
+
+        return result;
     }
 
     public async Task<MotherOrderState?> GetOrderStateAsync(string? orderId)
@@ -2122,6 +2193,9 @@ public sealed class ClientCacheService
         [Column("id")]
         public int Id { get; set; }
 
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
         [Column("name")]
         public string Name { get; set; } = string.Empty;
 
@@ -2187,6 +2261,84 @@ public sealed class ClientCacheService
     {
         [Column("note_text")]
         public string? NoteText { get; set; }
+    }
+
+    private sealed class CachedMealDealRow
+    {
+        [Column("id")]
+        public int Id { get; set; }
+
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("description")]
+        public string? Description { get; set; }
+
+        [Column("price")]
+        public decimal Price { get; set; }
+
+        [Column("pick_count")]
+        public int PickCount { get; set; }
+    }
+
+    private sealed class CachedNamedRow
+    {
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class CachedTastingMenuRow
+    {
+        [Column("id")]
+        public int Id { get; set; }
+
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("description")]
+        public string? Description { get; set; }
+    }
+
+    private sealed class CachedTastingOptionRow
+    {
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("price")]
+        public decimal Price { get; set; }
+
+        [Column("includes_wine")]
+        public int IncludesWine { get; set; }
+
+        [Column("course_count")]
+        public int CourseCount { get; set; }
+
+        [Column("sort_order")]
+        public int SortOrder { get; set; }
+    }
+
+    private sealed class CachedTastingCourseRow
+    {
+        [Column("mother_id")]
+        public string? MotherId { get; set; }
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("wine_name")]
+        public string? WineName { get; set; }
+
+        [Column("course_number")]
+        public int CourseNumber { get; set; }
     }
 
     private sealed class CachedModifierGroupRow

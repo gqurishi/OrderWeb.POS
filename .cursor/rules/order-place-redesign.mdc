@@ -1,0 +1,33 @@
+---
+description: Mother Order Place redesign — Phase 0 spec locked; SharedUI-first
+alwaysApply: false
+---
+
+# Order Place redesign (Mother → Client)
+
+Canonical spec: `docs/ORDER_PLACE_DESIGN_SPEC.md`
+
+## Locked decisions
+- **One** Order Place shell for Table / Collection / Delivery (not 3 pages).
+- Keep separate entry: Visual Layout / Collection modal / Delivery modal.
+- Mother first; Client later via **SharedUI**.
+- Freeze send/void/pay/print/lifecycle behaviour while restyling.
+- Payment moves to **bottom** action station; ~70/30 split; dual scroll only.
+
+## SharedUI
+- Extend `OrderWeb.SharedUI` (`CategoryButton` / `ProductButton` / `OrderEntryView` seeds exist).
+- Prefer `Controls/OrderPlace/` or evolve existing controls — no parallel component set.
+- Hosts own data/commands; SharedUI stays host-neutral.
+
+## Next phase
+Phase 1 ✅ … Phase 5 ✅ (Mother Order Place redesign).
+Phase 6: hardware QA on physical Mother PCs.
+Phase 7 ✅: Client readiness — `IOrderPlaceHost` + `docs/ORDER_PLACE_CLIENT_READINESS.md`.
+Phase 8 ✅: Client Order Place — `OrderPlaceShellView` + `ClientOrderPlaceHost` on `OrderPage`.
+Package 1 ✅: Mother Order Place — same `OrderPlaceShellView` via `MotherOrderPlaceHost` (layout cannot drift).
+Package 2 ✅: Client add pipeline — variant → quick note → addons → add (SharedUI dialogs + menu quick notes).
+Package 3 ✅: Client order panel — real SC/discount, order-level NOTES, per-line SENT, meal deals/tasting.
+Package 4 ✅: Client VOID + MORE — reason/PIN void; Discount, SC, Transfer/Merge/Fire, Loyalty, Cash Drawer, Previous Orders via Mother `/api/client/orders/*` (no stubs).
+Package 5 ✅: Client payment/print rules — COL/DEL full bill only (`AllowSplit=false`); SEND/PRINT labels + leave after success; cash quick tenders + on-screen keypad on SharedUI `PaymentView`.
+Package 6 ✅: Polish — ChefLoader + PosToast on Client Order Place; conflict toast (no silent overwrite); always 70/30 side-by-side. Keep different: entry paths + Client→Mother only.
+Package 4 ✅: Client VOID + MORE — reason/PIN void; Discount/SC/Transfer/Merge/Fire/Loyalty/Drawer/Previous via Mother APIs.

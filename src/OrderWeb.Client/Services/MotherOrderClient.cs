@@ -70,9 +70,14 @@ public sealed class MotherOrderClient
         UpsertOrderAsync(state with { Lines = lines.ToList() });
 
     /// <summary>
-    /// Void/cancel a Collection, Delivery, or Table order on Mother (same OrderId).
+    /// Void/cancel a Collection, Delivery, or Table order on Mother (reason + optional manager PIN).
+    /// Pass tableId to release an uncommitted table session when no ledger row exists yet.
     /// </summary>
-    public async Task<MotherCommandResult> VoidCollectionOrderAsync(MotherOrderState state)
+    public async Task<MotherCommandResult> VoidCollectionOrderAsync(
+        MotherOrderState state,
+        string? reason = null,
+        string? approvingPin = null,
+        int? tableId = null)
     {
         var auth = await GetAuthAsync();
         if (auth is null)
@@ -80,7 +85,7 @@ public sealed class MotherOrderClient
             throw new InvalidOperationException("This Client is not connected to Mother POS.");
         }
 
-        if (string.IsNullOrWhiteSpace(state.OrderId))
+        if (string.IsNullOrWhiteSpace(state.OrderId) && tableId is null or <= 0)
         {
             throw new InvalidOperationException("A Mother order id is required to void.");
         }
@@ -88,7 +93,13 @@ public sealed class MotherOrderClient
         using var client = CreateClient(auth);
         using var response = await client.PostAsJsonAsync(
             $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/void",
-            new { orderId = state.OrderId },
+            new
+            {
+                orderId = state.OrderId,
+                reason,
+                approvingPin,
+                tableId = tableId ?? state.TableId
+            },
             JsonOptions);
         var json = await response.Content.ReadAsStringAsync();
         var envelope = JsonSerializer.Deserialize<OrderEnvelope>(json, JsonOptions);
@@ -98,6 +109,145 @@ public sealed class MotherOrderClient
         }
 
         return new MotherCommandResult(ToState(envelope.Order), false, envelope.Message ?? "Order voided on Mother POS.");
+    }
+
+    public Task<MotherCommandResult> ApplyDiscountAsync(
+        MotherOrderState state,
+        decimal amount,
+        decimal percent,
+        string? reason,
+        string discountType,
+        string? approvingPin) =>
+        PostOrderActionAsync(
+            "/api/client/orders/discount",
+            new
+            {
+                orderId = state.OrderId,
+                amount,
+                percent,
+                reason,
+                discountType,
+                approvingPin
+            });
+
+    public Task<MotherCommandResult> SetServiceChargeAsync(
+        MotherOrderState state,
+        string action,
+        string? reason,
+        string? approvingPin) =>
+        PostOrderActionAsync(
+            "/api/client/orders/service-charge",
+            new { orderId = state.OrderId, action, reason, approvingPin });
+
+    public Task<MotherCommandResult> TransferTableAsync(MotherOrderState state, int targetTableId) =>
+        PostOrderActionAsync(
+            "/api/client/orders/transfer-table",
+            new { orderId = state.OrderId, targetTableId });
+
+    public Task<MotherCommandResult> MergeTablesAsync(MotherOrderState state, string childTableNumber) =>
+        PostOrderActionAsync(
+            "/api/client/orders/merge-tables",
+            new { orderId = state.OrderId, childTableNumber });
+
+    public Task<MotherCommandResult> FireCourseAsync(MotherOrderState state, string course) =>
+        PostOrderActionAsync(
+            "/api/client/orders/fire-course",
+            new { orderId = state.OrderId, course });
+
+    public Task<MotherCommandResult> ApplyLoyaltyRedeemAsync(
+        MotherOrderState state,
+        string lookup,
+        int points,
+        string? idempotencyKey) =>
+        PostOrderActionAsync(
+            "/api/client/orders/loyalty-redeem",
+            new { orderId = state.OrderId, lookup, points, idempotencyKey });
+
+    public async Task<(bool Success, string Message, IReadOnlyList<MotherPreviousOrder> Orders)> GetPreviousOrdersAsync(string customerPhone)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            return (false, "This Client is not connected to Mother POS.", Array.Empty<MotherPreviousOrder>());
+        }
+
+        using var client = CreateClient(auth);
+        var url =
+            $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/previous?phone={Uri.EscapeDataString(customerPhone.Trim())}";
+        using var response = await client.GetAsync(url);
+        var json = await response.Content.ReadAsStringAsync();
+        var envelope = JsonSerializer.Deserialize<PreviousOrdersEnvelope>(json, JsonOptions);
+        if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success)
+        {
+            return (false, envelope?.Message ?? "Previous orders unavailable.", Array.Empty<MotherPreviousOrder>());
+        }
+
+        var orders = (envelope.Orders ?? Array.Empty<PreviousOrderDto>())
+            .Select(order => new MotherPreviousOrder(
+                order.OrderDatabaseId,
+                order.OrderNumber,
+                order.CreatedAtUtc,
+                order.OrderType,
+                order.TotalAmount,
+                order.Status,
+                order.ItemsText,
+                order.OrderNotes,
+                order.IsMostRecent))
+            .ToList();
+        return (true, string.Empty, orders);
+    }
+
+    public async Task<(bool Success, string Message)> OpenOrderPlaceCashDrawerAsync(
+        MotherOrderState? state,
+        string? reason)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            return (false, "This Client is not connected to Mother POS.");
+        }
+
+        using var client = CreateClient(auth);
+        using var response = await client.PostAsJsonAsync(
+            $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/cash-drawer/open",
+            new
+            {
+                reason,
+                orderId = state?.OrderId,
+                orderNumber = state?.OrderNumber
+            },
+            JsonOptions);
+        var json = await response.Content.ReadAsStringAsync();
+        var envelope = JsonSerializer.Deserialize<SimpleActionEnvelope>(json, JsonOptions);
+        if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success)
+        {
+            return (false, envelope?.Message ?? "Mother POS could not open the cash drawer.");
+        }
+
+        return (true, envelope.Message ?? "Cash drawer opened.");
+    }
+
+    private async Task<MotherCommandResult> PostOrderActionAsync(string path, object body)
+    {
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            throw new InvalidOperationException("This Client is not connected to Mother POS.");
+        }
+
+        using var client = CreateClient(auth);
+        using var response = await client.PostAsJsonAsync(
+            $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}{path}",
+            body,
+            JsonOptions);
+        var json = await response.Content.ReadAsStringAsync();
+        var envelope = JsonSerializer.Deserialize<OrderEnvelope>(json, JsonOptions);
+        if (!response.IsSuccessStatusCode || envelope is null || !envelope.Success || envelope.Order is null)
+        {
+            throw new InvalidOperationException(envelope?.Message ?? $"Mother POS action failed ({(int)response.StatusCode}).");
+        }
+
+        return new MotherCommandResult(ToState(envelope.Order), false, envelope.Message ?? "Updated on Mother POS.");
     }
 
     public Task<MotherCommandResult> AddItemAsync(MotherOrderState state, CachedProduct product, IReadOnlyList<string> modifiers) =>
@@ -168,14 +318,17 @@ public sealed class MotherOrderClient
     public static MotherOrderState RecalcOrderMoney(MotherOrderState state)
     {
         var productTotal = state.Lines
-            .Where(line => !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase))
+            .Where(line => !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                && !line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
             .Sum(line => line.UnitPrice * line.Quantity);
         var delivery = state.Lines
             .Where(line => string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
                 || line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
             .Sum(line => line.UnitPrice * line.Quantity);
+        var discount = Math.Max(0m, state.Discount);
+        var serviceCharge = Math.Max(0m, state.ServiceCharge);
         var subtotal = productTotal;
-        var total = productTotal + delivery + state.Tax;
+        var total = Math.Max(0m, productTotal - discount) + serviceCharge + delivery + state.Tax;
         return state with { Subtotal = subtotal, Total = total };
     }
 
@@ -423,7 +576,7 @@ public sealed class MotherOrderClient
             customer?.Email,
             customer?.Address,
             fee,
-            notes,
+            notes ?? state.Notes,
             scheduledTime,
             state.TableId,
             state.TableNumber,
@@ -448,7 +601,8 @@ public sealed class MotherOrderClient
             printKitchen,
             printReceipt,
             printDocuments,
-            printKitchen || printReceipt || (printDocuments?.Count > 0) ? Guid.NewGuid().ToString("N") : null);
+            printKitchen || printReceipt || (printDocuments?.Count > 0) ? Guid.NewGuid().ToString("N") : null,
+            state.Discount);
 
         using var client = CreateClient(auth);
         using var response = await client.PostAsJsonAsync($"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders", body, JsonOptions);
@@ -571,14 +725,85 @@ public sealed class MotherOrderClient
                 line.VariantPrice,
                 line.MealDealId,
                 line.MealDealChoices,
-                line.TastingMenuId)).ToList(),
+                line.TastingMenuId,
+                line.IsSent,
+                line.SendStatus)).ToList(),
             order.Subtotal,
             order.Tax,
             order.Total,
             Math.Max(1, order.Version),
             order.UpdatedUtc ?? DateTimeOffset.UtcNow.ToString("O"),
             null,
-            order.ConflictMessage);
+            order.ConflictMessage,
+            null,
+            null,
+            order.Notes,
+            order.Discount,
+            order.ServiceCharge,
+            order.ServiceChargeStatus,
+            order.ServiceChargePercent);
+
+    public Task<MotherCommandResult> SetOrderNotesAsync(MotherOrderState state, string? notes) =>
+        UpsertOrderAsync(state with { Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim() });
+
+    public Task<MotherCommandResult> AddMealDealAsync(
+        MotherOrderState state,
+        CachedMealDeal deal,
+        IReadOnlyList<string> choices)
+    {
+        var choiceList = choices.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).ToList();
+        var notes = choiceList.Count == 0
+            ? null
+            : string.Join("\n", choiceList.Select(c => $"• {c}"));
+        var lines = state.Lines.ToList();
+        var existing = lines.FirstOrDefault(line =>
+            string.Equals(line.MealDealId, deal.MotherId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(line.Notes?.Trim() ?? string.Empty, notes ?? string.Empty, StringComparison.Ordinal) &&
+            !line.IsSent);
+        if (existing != null)
+        {
+            var index = lines.IndexOf(existing);
+            lines[index] = existing with { Quantity = existing.Quantity + 1 };
+        }
+        else
+        {
+            lines.Add(new MotherOrderLine(
+                Guid.NewGuid().ToString("N"),
+                null,
+                deal.Name,
+                1,
+                deal.Price,
+                notes,
+                choiceList,
+                $"mealdeal:{deal.MotherId}",
+                MealDealId: deal.MotherId,
+                MealDealChoices: choiceList));
+        }
+
+        return UpsertOrderAsync(RecalcOrderMoney(state with { Lines = lines }));
+    }
+
+    public Task<MotherCommandResult> AddTastingMenuAsync(
+        MotherOrderState state,
+        CachedTastingMenu menu,
+        CachedTastingMenuOption option)
+    {
+        var lines = state.Lines.ToList();
+        lines.Add(new MotherOrderLine(
+            Guid.NewGuid().ToString("N"),
+            null,
+            $"{menu.Name} ({option.Name})",
+            1,
+            option.Price,
+            null,
+            Array.Empty<string>(),
+            $"tasting:{menu.MotherId}:{option.MotherId}",
+            VariantId: option.MotherId,
+            VariantName: option.Name,
+            VariantPrice: option.Price,
+            TastingMenuId: menu.MotherId));
+        return UpsertOrderAsync(RecalcOrderMoney(state with { Lines = lines }));
+    }
 
     private static MotherOrderState WithCustomer(MotherOrderState state, string? name, string? phone)
     {
@@ -642,7 +867,8 @@ public sealed class MotherOrderClient
         bool PrintKitchen,
         bool PrintReceipt,
         IReadOnlyList<string>? PrintDocuments,
-        string? PrintRequestId);
+        string? PrintRequestId,
+        decimal? Discount = null);
 
     private sealed record OrderLineHttpRequest(
         string? Id,
@@ -660,6 +886,21 @@ public sealed class MotherOrderClient
         string? TastingMenuId = null);
 
     private sealed record OrderEnvelope(bool Success, string? Message, OrderStateDto? Order, PrintState? Print, bool? Conflict = null);
+
+    private sealed record PreviousOrdersEnvelope(bool Success, string? Message, IReadOnlyList<PreviousOrderDto>? Orders);
+
+    private sealed record PreviousOrderDto(
+        int OrderDatabaseId,
+        string? OrderNumber,
+        string CreatedAtUtc,
+        string OrderType,
+        decimal TotalAmount,
+        string Status,
+        string ItemsText,
+        string? OrderNotes,
+        bool IsMostRecent);
+
+    private sealed record SimpleActionEnvelope(bool Success, string? Message, string? PrinterName = null);
 
     private sealed record PrintState(string? PrintJobId, string? Status, string? Message, string? DocumentType = null);
 
@@ -679,7 +920,12 @@ public sealed class MotherOrderClient
         decimal Total,
         int Version,
         string? UpdatedUtc,
-        string? ConflictMessage);
+        string? ConflictMessage,
+        string? Notes = null,
+        decimal Discount = 0m,
+        decimal ServiceCharge = 0m,
+        string? ServiceChargeStatus = null,
+        decimal ServiceChargePercent = 0m);
 
     private sealed record OrderLineDto(
         string Id,
@@ -694,5 +940,7 @@ public sealed class MotherOrderClient
         decimal? VariantPrice = null,
         string? MealDealId = null,
         IReadOnlyList<string>? MealDealChoices = null,
-        string? TastingMenuId = null);
+        string? TastingMenuId = null,
+        bool IsSent = false,
+        string? SendStatus = null);
 }

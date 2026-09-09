@@ -39,6 +39,16 @@ public sealed class ChefLoaderView : ContentView
     private DateTime _animStartedUtc;
     private bool _isRevealed;
 
+    /// <summary>Raised when reveal/hide chrome changes (for host hit-testing).</summary>
+    public event EventHandler? LoadingChromeChanged;
+
+    /// <summary>True after delay when the chef is actually shown.</summary>
+    public bool IsRevealed => _isRevealed;
+
+    /// <summary>True when this loader should block taps (overlay/fullscreen after reveal).</summary>
+    public bool BlocksInput =>
+        IsLoading && _isRevealed && Mode != ChefLoaderMode.Inline && Opacity > 0 && IsVisible;
+
     public static readonly BindableProperty IsLoadingProperty =
         BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(ChefLoaderView), false,
             propertyChanged: (b, _, _) => ((ChefLoaderView)b).OnLoadingChanged());
@@ -201,6 +211,7 @@ public sealed class ChefLoaderView : ContentView
         IsVisible = true;
         Opacity = 0;
         InputTransparent = true;
+        LoadingChromeChanged?.Invoke(this, EventArgs.Empty);
         _delayTimer = Dispatcher.CreateTimer();
         _delayTimer.Interval = TimeSpan.FromMilliseconds(delay);
         _delayTimer.IsRepeating = false;
@@ -233,6 +244,7 @@ public sealed class ChefLoaderView : ContentView
         // Inline never blocks surrounding content; overlay/fullscreen block only once revealed.
         InputTransparent = Mode == ChefLoaderMode.Inline;
         StartAnimation();
+        LoadingChromeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void HideNow()
@@ -242,6 +254,7 @@ public sealed class ChefLoaderView : ContentView
         Opacity = 0;
         IsVisible = false;
         InputTransparent = true;
+        LoadingChromeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void CancelDelay()
@@ -286,13 +299,10 @@ public sealed class ChefLoaderView : ContentView
 
     private void TickAnimation()
     {
+        // Never keep a 50ms timer alive when hidden, transparent, or detached.
         if (!_isRevealed || !IsLoading || !IsVisible || Opacity <= 0 || Window is null)
         {
-            if (!_isRevealed || !IsLoading)
-            {
-                StopAnimationOnly();
-            }
-
+            StopAnimationOnly();
             return;
         }
 
@@ -385,6 +395,7 @@ public sealed class ChefLoaderView : ContentView
         InputTransparent = inline || !_isRevealed;
         HorizontalOptions = inline ? LayoutOptions.Center : LayoutOptions.Fill;
         VerticalOptions = inline ? LayoutOptions.Center : LayoutOptions.Fill;
+        LoadingChromeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void DetachSharedChildren()

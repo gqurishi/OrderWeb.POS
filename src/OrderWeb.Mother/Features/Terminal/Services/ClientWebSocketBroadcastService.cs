@@ -97,6 +97,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/orders/{orderId}", HandleGetOrderAsync);
             app.MapPost("/api/client/orders", HandleUpsertOrderAsync);
             app.MapPost("/api/client/orders/void", HandleVoidOrderAsync);
+            app.MapPost("/api/client/orders/discount", HandleOrderDiscountAsync);
+            app.MapPost("/api/client/orders/service-charge", HandleOrderServiceChargeAsync);
+            app.MapPost("/api/client/orders/transfer-table", HandleOrderTransferTableAsync);
+            app.MapPost("/api/client/orders/merge-tables", HandleOrderMergeTablesAsync);
+            app.MapPost("/api/client/orders/fire-course", HandleOrderFireCourseAsync);
+            app.MapPost("/api/client/orders/loyalty-redeem", HandleOrderLoyaltyRedeemAsync);
+            app.MapGet("/api/client/orders/previous", HandleOrderPreviousAsync);
+            app.MapPost("/api/client/orders/cash-drawer/open", HandleOrderPlaceCashDrawerOpenAsync);
             app.MapGet("/api/client/order-history", HandleOrderHistoryAsync);
             app.MapGet("/api/client/order-history/{orderId}", HandleOrderHistoryDetailAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
@@ -767,7 +775,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     line.MealDealChoices,
                     line.TastingMenuId)).ToList(),
                 request.ExpectedVersion,
-                request.ExpectedUpdatedUtc));
+                request.ExpectedUpdatedUtc,
+                request.Discount));
             if (!result.Success)
             {
                 await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
@@ -839,26 +848,40 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
 
         var request = await ReadJsonAsync<ClientOrderVoidHttpRequest>(context);
-        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        if (request == null ||
+            (string.IsNullOrWhiteSpace(request.OrderId) && request.TableId is null or <= 0))
         {
             await WriteJsonAsync(context, HttpStatusCode.BadRequest, new
             {
                 success = false,
-                message = "A Mother order id is required to void."
+                message = "A Mother order id (or table id for an uncommitted table) is required to void."
             });
             return;
         }
 
         try
         {
-            var existing = await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
+            var existing = string.IsNullOrWhiteSpace(request.OrderId)
+                ? null
+                : await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
             var feature = FeatureForOrderType(existing?.OrderType) ?? PosFeatureKeys.Collection;
+            if (existing == null && request.TableId is > 0)
+            {
+                feature = PosFeatureKeys.DineIn;
+            }
+
             if (!await EnsureFeatureAsync(context, session, feature))
             {
                 return;
             }
 
-            var result = await _operational.VoidOrderAsync(request.OrderId);
+            var result = await _operational.VoidOrderAsync(
+                request.OrderId,
+                request.Reason,
+                request.ApprovingPin,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId),
+                request.TableId);
             if (!result.Success || result.Order == null)
             {
                 await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
@@ -885,6 +908,398 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 success = false,
                 message = "Mother POS could not void this Client order."
             });
+        }
+    }
+
+    private async Task HandleOrderDiscountAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.ApplyDiscount))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderDiscountHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A Mother order id is required." });
+            return;
+        }
+
+        try
+        {
+            var existing = await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
+            var feature = FeatureForOrderType(existing?.OrderType) ?? PosFeatureKeys.Collection;
+            if (!await EnsureFeatureAsync(context, session, feature))
+            {
+                return;
+            }
+
+            var result = await _operational.ApplyDiscountAsync(
+                request.OrderId,
+                request.Amount,
+                request.Percent,
+                request.Reason,
+                request.DiscountType,
+                request.ApprovingPin,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order discount failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not apply the discount." });
+        }
+    }
+
+    private async Task HandleOrderServiceChargeAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderServiceChargeHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A Mother order id is required." });
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.DineIn))
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.SetServiceChargeAsync(
+                request.OrderId,
+                request.Action,
+                request.Reason,
+                request.ApprovingPin,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client service charge failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not update service charge." });
+        }
+    }
+
+    private async Task HandleOrderTransferTableAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.TransferTables))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.DineIn))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderTransferHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId) || request.TargetTableId is null or <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "Order id and target table id are required." });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.TransferTableAsync(
+                request.OrderId,
+                request.TargetTableId,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client table transfer failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not transfer the table." });
+        }
+    }
+
+    private async Task HandleOrderMergeTablesAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.DineIn))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderMergeHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId) || string.IsNullOrWhiteSpace(request.ChildTableNumber))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "Order id and child table number are required." });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.MergeTablesAsync(
+                request.OrderId,
+                request.ChildTableNumber,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client table merge failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not merge the tables." });
+        }
+    }
+
+    private async Task HandleOrderFireCourseAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.PrintReceipts))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.DineIn))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderFireCourseHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId) || string.IsNullOrWhiteSpace(request.Course))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "Order id and course are required." });
+            return;
+        }
+
+        try
+        {
+            var result = await _operational.FireCourseAsync(
+                request.OrderId,
+                request.Course,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client fire course failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not fire the course." });
+        }
+    }
+
+    private async Task HandleOrderLoyaltyRedeemAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.CustomerPoints))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderLoyaltyRedeemHttpRequest>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A Mother order id is required." });
+            return;
+        }
+
+        try
+        {
+            var existing = await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
+            var feature = FeatureForOrderType(existing?.OrderType) ?? PosFeatureKeys.Collection;
+            if (!await EnsureFeatureAsync(context, session, feature))
+            {
+                return;
+            }
+
+            var result = await _operational.ApplyLoyaltyRedeemAsync(
+                request.OrderId,
+                request.Lookup,
+                request.Points,
+                request.IdempotencyKey,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId));
+            await WriteOrderActionResultAsync(context, session, result);
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order loyalty redeem failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not apply loyalty points." });
+        }
+    }
+
+    private async Task HandleOrderPreviousAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders))
+        {
+            return;
+        }
+
+        var phone = context.Request.Query["phone"].FirstOrDefault()
+                    ?? context.Request.Query["customerPhone"].FirstOrDefault();
+        var result = await _operational.GetPreviousCustomerOrdersAsync(phone);
+        if (!result.Success)
+        {
+            await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new { success = false, message = result.Message });
+            return;
+        }
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            orders = result.Orders
+        });
+    }
+
+    private async Task HandleOrderPlaceCashDrawerOpenAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.CreateOrders, PosCapabilityKeys.SubmitOrders, PosCapabilityKeys.OpenCashDrawer))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderCashDrawerHttpRequest>(context) ?? new ClientOrderCashDrawerHttpRequest(null, null, null);
+        try
+        {
+            var role = await ResolveSessionUserRoleAsync(session.UserId);
+            var result = await _operational.OpenOrderPlaceCashDrawerAsync(
+                request.Reason,
+                request.OrderId,
+                request.OrderNumber,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId),
+                role);
+            await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+            {
+                success = result.Success,
+                message = result.Message,
+                printerName = result.PrinterName
+            });
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order cash drawer failed: {ex.GetType().Name}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = "Mother POS could not open the cash drawer." });
+        }
+    }
+
+    private async Task WriteOrderActionResultAsync(HttpContext context, ClientSessionValidation session, ClientOrderUpsertResult result)
+    {
+        if (!result.Success || result.Order == null)
+        {
+            await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
+            {
+                success = false,
+                message = result.Message
+            });
+            return;
+        }
+
+        NotifyMotherUiOfClientOrderChange(result.Order.Id, result.Order.OrderNumber, session.TerminalId);
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            message = result.Message,
+            order = result.Order
+        });
+    }
+
+    private async Task<string?> ResolveSessionUserNameAsync(int userId)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                "SELECT COALESCE(NULLIF(TRIM(name), ''), username) FROM users WHERE id = @id LIMIT 1",
+                connection);
+            command.Parameters.AddWithValue("@id", userId);
+            var value = await command.ExecuteScalarAsync();
+            return value?.ToString();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> ResolveSessionUserRoleAsync(int userId)
+    {
+        try
+        {
+            await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand("SELECT role FROM users WHERE id = @id LIMIT 1", connection);
+            command.Parameters.AddWithValue("@id", userId);
+            var value = await command.ExecuteScalarAsync();
+            return value?.ToString();
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -4380,9 +4795,46 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         bool PrintKitchen = false,
         bool PrintReceipt = false,
         IReadOnlyList<string>? PrintDocuments = null,
-        string? PrintRequestId = null);
+        string? PrintRequestId = null,
+        decimal? Discount = null);
 
-    private sealed record ClientOrderVoidHttpRequest(string? OrderId);
+    private sealed record ClientOrderVoidHttpRequest(
+        string? OrderId,
+        string? Reason = null,
+        string? ApprovingPin = null,
+        int? TableId = null);
+
+    private sealed record ClientOrderDiscountHttpRequest(
+        string? OrderId,
+        decimal Amount,
+        decimal Percent = 0m,
+        string? Reason = null,
+        string? DiscountType = null,
+        string? ApprovingPin = null);
+
+    private sealed record ClientOrderServiceChargeHttpRequest(
+        string? OrderId,
+        string? Action,
+        string? Reason = null,
+        string? ApprovingPin = null);
+
+    private sealed record ClientOrderTransferHttpRequest(string? OrderId, int? TargetTableId);
+
+    private sealed record ClientOrderMergeHttpRequest(string? OrderId, string? ChildTableNumber);
+
+    private sealed record ClientOrderFireCourseHttpRequest(string? OrderId, string? Course);
+
+    private sealed record ClientOrderLoyaltyRedeemHttpRequest(
+        string? OrderId,
+        string? Lookup,
+        int Points,
+        string? IdempotencyKey = null,
+        string? SessionToken = null);
+
+    private sealed record ClientOrderCashDrawerHttpRequest(
+        string? Reason,
+        string? OrderId,
+        string? OrderNumber);
 
     private sealed record ClientOrderLineHttpRequest(
         string? Id,

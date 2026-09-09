@@ -2,6 +2,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
 using OrderWeb.SharedUI.Views;
@@ -14,10 +15,16 @@ namespace OrderWeb.Client.Pages.Orders;
 /// </summary>
 public partial class OrderPage : ContentPage, IClientOrderPlaceUi
 {
+    private const int ToastAutoHideMs = 2200;
+
     private readonly ClientOrderPlaceHost _host;
     private readonly OrderPlaceShellView _shell;
     private readonly ClientCacheService _cache = new();
     private readonly ClientOfflinePolicy _offlinePolicy = new();
+    private readonly PosLoadingOverlay _loader;
+    private readonly PosToast _toast;
+    private readonly Grid _toastLayer;
+    private CancellationTokenSource? _toastHideCts;
     private bool _loaded;
     private bool _isVisible;
     private bool _liveReloadInFlight;
@@ -31,6 +38,32 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         _shell = new OrderPlaceShellView();
         _shell.BindHost(_host);
         ShellHost.Content = _shell;
+
+        _loader = new PosLoadingOverlay
+        {
+            IsLoading = false,
+            ZIndex = 50,
+            Message = "Opening order…"
+        };
+        _toast = new PosToast();
+        _toast.DismissRequested += (_, _) => HideToast();
+        _toastLayer = new Grid
+        {
+            IsVisible = false,
+            InputTransparent = true,
+            ZIndex = 55,
+            Padding = 20,
+            VerticalOptions = LayoutOptions.Start,
+            HorizontalOptions = LayoutOptions.End,
+            MaximumWidthRequest = 460,
+            Children = { _toast }
+        };
+
+        if (Content is Grid root)
+        {
+            root.Children.Add(_loader);
+            root.Children.Add(_toastLayer);
+        }
 
         TopBar.MenuClicked += async (_, _) => await OnMenuClickedAsync();
         TopBar.LogoutClicked += async (_, _) => await OnLogoutClickedAsync();
@@ -77,12 +110,38 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         base.OnDisappearing();
         _isVisible = false;
         MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherOrderUpdated;
+        CancelToastAutoHide();
     }
 
     protected override bool OnBackButtonPressed() => true;
 
     public Task ShowAlertAsync(string title, string message) =>
         DisplayAlert(title, message, "OK");
+
+    public Task ShowToastAsync(string title, string message, StatusKind kind = StatusKind.Info) =>
+        MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            CancelToastAutoHide();
+            _toast.Title = title;
+            _toast.Message = message;
+            _toast.Kind = kind;
+            _toast.IsRetryVisible = false;
+            _toastLayer.IsVisible = true;
+            _toastLayer.InputTransparent = false;
+            _toastHideCts = new CancellationTokenSource();
+            _ = AutoHideToastAsync(_toastHideCts.Token);
+        });
+
+    public Task SetLoadingAsync(bool isLoading, string? message = null) =>
+        MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                _loader.Message = message;
+            }
+
+            _loader.IsLoading = isLoading;
+        });
 
     public Task<bool> ConfirmAsync(string title, string message, string accept, string cancel) =>
         DisplayAlert(title, message, accept, cancel);
@@ -111,8 +170,14 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         IReadOnlyList<OrderPlaceAddonChoice> addons) =>
         new OrderPlaceAddonDialog().ShowAsync(this, itemName, addons);
 
-    public Task NavigateToPaymentAsync(decimal total, string orderId, int version) =>
-        Navigation.PushAsync(new PaymentPage(total, orderId, version), false);
+    public Task<IReadOnlyList<string>?> PickMealDealChoicesAsync(
+        string dealName,
+        int pickCount,
+        IReadOnlyList<string> choices) =>
+        new OrderPlaceMealDealDialog().ShowAsync(this, dealName, pickCount, choices);
+
+    public Task NavigateToPaymentAsync(decimal total, string orderId, int version, bool allowSplit = true) =>
+        Navigation.PushAsync(new PaymentPage(total, orderId, version, allowSplit), false);
 
     public async Task CloseOrderPageAsync()
     {
@@ -148,29 +213,70 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             return;
         }
 
-        if (_host.Session.Lines.Count > 0 &&
-            !string.IsNullOrWhiteSpace(_host.Session.StatusMessage))
+        // Dirty / active edits: warn only — never silently overwrite local basket.
+        if (_host.Session.Lines.Count > 0 ||
+            !string.IsNullOrWhiteSpace(_host.Session.StatusMessage) ||
+            _host.Session.ActionsBusy)
         {
             _host.MarkRemoteConflict();
-            return;
-        }
-
-        // If basket has lines, warn; otherwise reload.
-        if (_host.Session.Lines.Count > 0)
-        {
-            _host.MarkRemoteConflict();
+            await ShowToastAsync(
+                "Changed elsewhere",
+                "This order changed on another terminal. Finish or discard local edits, then reopen.",
+                StatusKind.Warning);
             return;
         }
 
         _liveReloadInFlight = true;
         try
         {
-            await _host.ReloadFromMotherIfIdleAsync();
+            var refreshed = await _host.ReloadFromMotherIfIdleAsync();
+            if (refreshed)
+            {
+                await ShowToastAsync("Order refreshed", "Latest copy loaded from Mother POS.", StatusKind.Info);
+            }
         }
         finally
         {
             _liveReloadInFlight = false;
         }
+    }
+
+    private async Task AutoHideToastAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ToastAutoHideMs, token);
+            if (!token.IsCancellationRequested)
+            {
+                await MainThread.InvokeOnMainThreadAsync(HideToast);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Replaced by a newer toast.
+        }
+    }
+
+    private void HideToast()
+    {
+        CancelToastAutoHide();
+        _toastLayer.IsVisible = false;
+        _toastLayer.InputTransparent = true;
+    }
+
+    private void CancelToastAutoHide()
+    {
+        try
+        {
+            _toastHideCts?.Cancel();
+            _toastHideCts?.Dispose();
+        }
+        catch
+        {
+            // Ignore dispose races.
+        }
+
+        _toastHideCts = null;
     }
 
     private string TopBarTitleFromKind() =>

@@ -58,7 +58,7 @@ Implement `OrderWeb.SharedUI.Hosting.IOrderPlaceHost` (or a thin adapter) that:
 | `SendAsync` | Commit + kitchen routes via Mother |
 | `PrintAsync` | Table: bill only. Takeaway: receipt **+** kitchen (Mother print APIs) |
 | `PayAsync` | Table: split allowed. COL/DEL: **full bill only** |
-| `VoidAsync` / `MoreAsync` | PIN/role rules; MORE hides Transfer/Merge/Fire/SC on takeaway |
+| `VoidAsync` / `MoreAsync` | PIN/role rules; MORE hides Transfer/Merge/Fire/SC on takeaway; wired to Mother `/api/client/orders/*` |
 
 ---
 
@@ -70,7 +70,9 @@ These exist under Mother `/api/client/…` (session-gated). Client already wraps
 |------------|-------------------------|--------------|
 | Menu snapshot | `GET /api/client/menu` | Cached / sync paths |
 | Orders upsert / get | `POST/GET /api/client/orders` | `MotherOrderClient` |
-| Void | `POST /api/client/orders/void` | Order void flows |
+| Void | `POST /api/client/orders/void` (+ reason/PIN/tableId) | `MotherOrderClient.VoidCollectionOrderAsync` |
+| Discount / SC / transfer / merge / fire / loyalty / drawer | `POST /api/client/orders/discount\|service-charge\|transfer-table\|merge-tables\|fire-course\|loyalty-redeem\|cash-drawer/open` | Order Place MORE |
+| Previous orders | `GET /api/client/orders/previous?phone=` | Takeaway MORE |
 | Payments | `POST /api/client/payments` | Shared payment + gift/loyalty |
 | Print | `POST /api/client/prints` | Print client |
 | Customers | search / upsert | Collection/Delivery entry |
@@ -125,10 +127,12 @@ Mother page code-behind may still use legacy colours until a later shell extract
 6. **Add item:** variant → note → addon → add; meal deal / tasting if Client sells them.  
 7. **Pay:** COL/DEL full bill only; table may use existing SharedUI payment split paths via Mother.  
 8. **Print / Send:** match Mother meanings; busy/idempotency guards.  
-9. **MORE:** Discount, Loyalty, Cash Drawer; takeaway Previous Orders; no Transfer/Merge/Fire/SC.  
-10. **Conflict:** WS/order reload → toast + refresh session; no silent overwrite.  
+9. **MORE:** Discount, Loyalty, Cash Drawer; takeaway Previous Orders; table Transfer/Merge/Fire/SC via Mother APIs.  
+10. **Conflict:** toast + refresh when idle; dirty basket warns only (no silent overwrite).  
 11. **QA:** same finger/density checks as Mother Phase 6 on Client hardware.  
 12. **Done when:** waiter can place COL/DEL/Table on Client with the same SharedUI chrome without redesigning components.
+13. **Polish:** ChefLoader on open; PosToast for send/print/void/conflict; always 70/30 (no narrow stack).  
+14. **Keep different:** table/COL/DEL entry screens; Client → Mother only (no Client cloud / local order engine).
 
 ---
 
@@ -141,4 +145,8 @@ Mother page code-behind may still use legacy colours until a later shell extract
 - [x] Phase 8: Client `OrderPage` hosts `OrderPlaceShellView` + `ClientOrderPlaceHost`  
 - [x] Package 1: Mother `OrderPlacementPageSimple` hosts same shell via `MotherOrderPlaceHost`  
 - [x] Package 2: Client add pipeline = Mother (variant → quick note → addons → add) via SharedUI dialogs  
+- [x] Package 3: Client order panel — SC/discount, order NOTES, per-line SENT, meal deals/tasting  
+- [x] Package 4: Client VOID + MORE — reason/PIN; Discount, SC, Transfer/Merge/Fire, Loyalty, Cash Drawer, Previous Orders via Mother APIs  
+- [x] Package 5: COL/DEL full-bill payment; SEND/PRINT parity + leave after success; SharedUI cash keypad / quick tenders  
+- [x] Package 6: ChefLoader/PosToast; conflict toast + no silent overwrite; always 70/30 side-by-side (entry + Client→Mother stay different)  
 - [x] Entry paths (Table / COL / DEL / Live) still land on same `OrderPage`

@@ -20,13 +20,17 @@ public partial class PaymentPage : ContentPage
     {
     }
 
-    public PaymentPage(decimal totalDue, string? orderId = null, long? expectedOrderRevision = null)
+    public PaymentPage(decimal totalDue, string? orderId = null, long? expectedOrderRevision = null, bool allowSplit = true)
     {
         _totalDue = totalDue;
         _orderId = orderId;
         _expectedOrderRevision = expectedOrderRevision;
         InitializeComponent();
-        _sharedPayment = new PaymentViewModel { AmountDue = _totalDue };
+        _sharedPayment = new PaymentViewModel
+        {
+            AmountDue = _totalDue,
+            AllowSplit = allowSplit
+        };
         _sharedPayment.StatusCheckRequested += OnSharedPaymentStatusCheckRequested;
         var sharedPayment = new PaymentView { ViewModel = _sharedPayment };
         sharedPayment.SubmissionRequested += OnSharedPaymentRequested;
@@ -80,6 +84,16 @@ public partial class PaymentPage : ContentPage
             loyaltyPoints = loyalty.Points;
             amount = loyalty.AmountApplied;
             _sharedPayment.Message = "Redeeming loyalty points on Mother / OrderWeb…";
+        }
+
+        if (_sharedPayment is { AllowSplit: false } && amount + 0.009m < _totalDue &&
+            (string.Equals(NormalizeMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(NormalizeMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase)))
+        {
+            _sharedPayment.ApplyAuthoritativeResult(
+                false,
+                "Collection and Delivery require payment of the full bill. Use a method that covers the full amount, or pay on Mother.");
+            return;
         }
 
         var result = await _paymentService.TakePaymentAsync(

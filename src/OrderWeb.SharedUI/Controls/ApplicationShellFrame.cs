@@ -40,13 +40,8 @@ public class ApplicationShellFrame : ContentView
     {
         var frame = (ApplicationShellFrame)b;
         var loading = (bool)v;
-        frame._loadingLayer.IsVisible = loading;
-        frame._loadingLayer.InputTransparent = !loading;
         frame._chefLoader.IsLoading = loading;
-        if (!loading)
-        {
-            frame._chefLoader.InputTransparent = true;
-        }
+        frame.ApplyLoadingChrome();
     });
     public static readonly BindableProperty LoadingMessageProperty = BindableProperty.Create(nameof(LoadingMessage), typeof(string), typeof(ApplicationShellFrame), "Cooking up your data…", propertyChanged: (b, _, v) =>
     {
@@ -122,9 +117,11 @@ public class ApplicationShellFrame : ContentView
             Mode = ChefLoaderMode.Fullscreen,
             Size = ChefLoaderSize.Md,
             Message = "Cooking up your data…",
-            DelayMilliseconds = 0,
+            // Short waits never flash; only real long loads reveal fullscreen chef.
+            DelayMilliseconds = 280,
             IsLoading = false
         };
+        _chefLoader.LoadingChromeChanged += (_, _) => ApplyLoadingChrome();
         _loadingLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 30, Children = { _chefLoader } };
 
         _errorTitle = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _errorTitle.Use(Label.TextColorProperty, "OwTextStrong");
@@ -134,19 +131,19 @@ public class ApplicationShellFrame : ContentView
         var errorButtons = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 10 }; errorButtons.Add(close); errorButtons.Add(retry, 1);
         var errorCard = new Border { WidthRequest = 460, MaximumWidthRequest = 460, Padding = 24, StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 20 }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = new VerticalStackLayout { Spacing = 18, Children = { _errorTitle, _errorMessage, errorButtons } } };
         errorCard.Use(Border.BackgroundColorProperty, "OwSurface"); errorCard.Use(Border.StrokeProperty, "OwErrorBorder");
-        _errorLayer = new Grid { IsVisible = false, ZIndex = 40, BackgroundColor = Color.FromArgb("#80000000"), Padding = 20, Children = { errorCard } };
+        _errorLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 40, BackgroundColor = Color.FromArgb("#80000000"), Padding = 20, Children = { errorCard } };
 
         _sessionExpiredDialog = new SessionExpiredDialog();
         _sessionExpiredDialog.LoginAgainRequested += (_, _) => { IsSessionExpired = false; SessionExpiredLoginRequested?.Invoke(this, EventArgs.Empty); };
         _sessionExpiredDialog.DismissRequested += (_, _) => { IsSessionExpired = false; LogoutRequested?.Invoke(this, EventArgs.Empty); };
-        _sessionExpiredLayer = new Grid { IsVisible = false, ZIndex = 50, Children = { _sessionExpiredDialog } };
+        _sessionExpiredLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 50, Children = { _sessionExpiredDialog } };
 
         _toast = new PosToast();
         _toast.DismissRequested += (_, _) => IsToastVisible = false;
         _toast.RetryRequested += (_, _) => ToastRetryRequested?.Invoke(this, EventArgs.Empty);
-        _toastLayer = new Grid { IsVisible = false, ZIndex = 45, Padding = 20, VerticalOptions = LayoutOptions.Start, HorizontalOptions = LayoutOptions.End, MaximumWidthRequest = 460, Children = { _toast } };
+        _toastLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 45, Padding = 20, VerticalOptions = LayoutOptions.Start, HorizontalOptions = LayoutOptions.End, MaximumWidthRequest = 460, Children = { _toast } };
         _dialogHost = new ContentView { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-        _dialogLayer = new Grid { IsVisible = false, ZIndex = 46, Padding = 20, BackgroundColor = Color.FromArgb("#66000000"), Children = { _dialogHost } };
+        _dialogLayer = new Grid { IsVisible = false, InputTransparent = true, ZIndex = 46, Padding = 20, BackgroundColor = Color.FromArgb("#66000000"), Children = { _dialogHost } };
 
         _bannerMessage = new Label
         {
@@ -287,6 +284,14 @@ public class ApplicationShellFrame : ContentView
         if (open)
         {
             _navigationLayer.InputTransparent = false;
+            foreach (var child in _navigationLayer.Children)
+            {
+                if (child is VisualElement element)
+                {
+                    element.InputTransparent = false;
+                }
+            }
+
             _navigationLayer.IsVisible = true;
             await _sidebar.TranslateToAsync(0, 0, 180, Easing.CubicOut);
             return;
@@ -299,13 +304,72 @@ public class ApplicationShellFrame : ContentView
 
         // Drop hit-testing immediately so the first content tap is never eaten by the closing scrim.
         _navigationLayer.InputTransparent = true;
-        await _sidebar.TranslateToAsync(-280, 0, 120, Easing.CubicIn);
+        foreach (var child in _navigationLayer.Children)
+        {
+            if (child is VisualElement element)
+            {
+                element.InputTransparent = true;
+            }
+        }
+
+        await _sidebar.TranslateToAsync(-280, 0, 100, Easing.CubicIn);
         _navigationLayer.IsVisible = false;
     }
 
-    private void ApplyError(string? message) { if (_errorLayer == null) return; _errorMessage.Text = message ?? string.Empty; _errorLayer.IsVisible = !string.IsNullOrWhiteSpace(message); }
-    private void ApplySessionExpired(bool expired) { if (_sessionExpiredLayer == null) return; _sessionExpiredLayer.IsVisible = expired; }
-    private void ApplyDialog(View? content) { if (_dialogHost == null || _dialogLayer == null) return; _dialogHost.Content = content; _dialogLayer.IsVisible = content is not null; }
+    private void ApplyLoadingChrome()
+    {
+        if (_loadingLayer == null || _chefLoader == null)
+        {
+            return;
+        }
+
+        var loading = IsLoading || _chefLoader.IsLoading;
+        var block = _chefLoader.BlocksInput;
+        _loadingLayer.IsVisible = loading;
+        // Never block taps while opacity is 0 / delay phase; only after chef reveals.
+        _loadingLayer.InputTransparent = !block;
+        if (!loading)
+        {
+            _chefLoader.InputTransparent = true;
+        }
+    }
+
+    private void ApplyError(string? message)
+    {
+        if (_errorLayer == null)
+        {
+            return;
+        }
+
+        _errorMessage.Text = message ?? string.Empty;
+        var visible = !string.IsNullOrWhiteSpace(message);
+        _errorLayer.IsVisible = visible;
+        _errorLayer.InputTransparent = !visible;
+    }
+
+    private void ApplySessionExpired(bool expired)
+    {
+        if (_sessionExpiredLayer == null)
+        {
+            return;
+        }
+
+        _sessionExpiredLayer.IsVisible = expired;
+        _sessionExpiredLayer.InputTransparent = !expired;
+    }
+
+    private void ApplyDialog(View? content)
+    {
+        if (_dialogHost == null || _dialogLayer == null)
+        {
+            return;
+        }
+
+        _dialogHost.Content = content;
+        var visible = content is not null;
+        _dialogLayer.IsVisible = visible;
+        _dialogLayer.InputTransparent = !visible;
+    }
 
     private void ApplyBanner(string? message)
     {
@@ -339,6 +403,7 @@ public class ApplicationShellFrame : ContentView
         }
 
         _toastLayer.IsVisible = visible;
+        _toastLayer.InputTransparent = !visible;
         CancelToastAutoHide();
         if (!visible)
         {

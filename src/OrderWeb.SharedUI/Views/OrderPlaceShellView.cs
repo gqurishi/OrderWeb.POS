@@ -435,28 +435,9 @@ public sealed class OrderPlaceShellView : ContentView
 
     private void ApplyResponsiveLayout()
     {
-        var width = Width > 0 ? Width : 1200;
-        var compact = width < 1280;
+        // Mother + Client Order Place: always ~70/30 side-by-side (no vertical stack on narrow).
         _root.ColumnDefinitions.Clear();
         _root.RowDefinitions.Clear();
-        if (compact)
-        {
-            _root.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            _root.RowDefinitions.Add(new RowDefinition(GridLength.Star));
-            _root.RowDefinitions.Add(new RowDefinition(new GridLength(0.95, GridUnitType.Star)));
-            _root.ColumnSpacing = 0;
-            _root.RowSpacing = 10;
-            if (_root.Children.Count >= 2)
-            {
-                Grid.SetRow(_root.Children[0] as View, 0);
-                Grid.SetColumn(_root.Children[0] as View, 0);
-                Grid.SetRow(_root.Children[1] as View, 1);
-                Grid.SetColumn(_root.Children[1] as View, 0);
-            }
-
-            return;
-        }
-
         _root.RowDefinitions.Add(new RowDefinition(GridLength.Star));
         _root.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(7, GridUnitType.Star)));
         _root.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(3, GridUnitType.Star)));

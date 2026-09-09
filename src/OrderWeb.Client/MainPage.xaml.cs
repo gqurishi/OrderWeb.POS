@@ -91,6 +91,7 @@ public partial class MainPage : ContentPage
     private string _liveOrderFilter = "All";
     private bool _isViewingOrderScreen;
     private bool _openOrderLiveReloadInFlight;
+    private CancellationTokenSource? _liveOrdersRefreshCts;
     private VisualElement? _posSidebarView;
     private Grid? _posSidebarOverlay;
     private Entry? _motherIpEntry;
@@ -129,9 +130,9 @@ public partial class MainPage : ContentPage
         _motherEvents.AuthoritativeDataChanged += OnMotherAuthoritativeDataChanged;
         _motherEvents.ConnectionChanged += OnMotherConnectionChanged;
         _clockTimer = Dispatcher.CreateTimer();
-        _clockTimer.Interval = TimeSpan.FromSeconds(1);
+        _clockTimer.Interval = TimeSpan.FromSeconds(30);
         _clockTimer.Tick += (_, _) => UpdateClock();
-        _clockTimer.Start();
+        // Do not start until a legacy header clock is shown; SharedAppFrame uses ApplicationHeader.
         _cashierRefreshTimer = Dispatcher.CreateTimer();
         _cashierRefreshTimer.Interval = TimeSpan.FromSeconds(45);
         _cashierRefreshTimer.Tick += async (_, _) => await RefreshCashierDashboardAsync();
@@ -461,7 +462,11 @@ public partial class MainPage : ContentPage
         _cacheStatus = await _cache.GetStatusAsync();
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
-            _connectionStatus = "Updates available";
+            _connectionStatus = "Mother online";
+            if (_activeApplicationFrame is { } frame)
+            {
+                frame.ConnectionStatus = _connectionStatus;
+            }
 
             if (IsOrderUpdatedEvent(e) &&
                 _isViewingOrderScreen &&
@@ -473,8 +478,45 @@ public partial class MainPage : ContentPage
                 return;
             }
 
+            // Debounce Live Order / Restaurant UI rebuilds under WS floods.
+            if (_posSelectedMenu is "Live Order" or "Restaurant")
+            {
+                if (_posSelectedMenu == "Live Order")
+                {
+                    ScheduleLiveOrdersRefresh();
+                }
+                else
+                {
+                    ScheduleRestaurantLayoutRefresh();
+                }
+
+                return;
+            }
+
             RefreshCurrentPosPage();
         });
+    }
+
+    private CancellationTokenSource? _restaurantLayoutRefreshCts;
+
+    private void ScheduleRestaurantLayoutRefresh()
+    {
+        _restaurantLayoutRefreshCts?.Cancel();
+        _restaurantLayoutRefreshCts = new CancellationTokenSource();
+        var token = _restaurantLayoutRefreshCts.Token;
+        _ = DebouncedRestaurantLayoutRefreshAsync(token);
+    }
+
+    private async Task DebouncedRestaurantLayoutRefreshAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+            await MainThread.InvokeOnMainThreadAsync(RefreshRestaurantLayoutInPlaceAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private static bool IsFeaturesUpdatedEvent(MotherDataChangedEventArgs e) =>
@@ -535,20 +577,32 @@ public partial class MainPage : ContentPage
                     ? "Reconnect required"
                     : "Mother offline";
 
-            // The shared application frame owns the Chef preloader.  Show it
-            // for every live Mother connection/reconnection, then remove it
-            // only after the authoritative refresh has completed.
+            // Shared frame loader: only fullscreen-block when cache is cold.
+            var warmCache = (_cacheStatus?.Categories ?? 0) > 0 && (_cacheStatus?.Tables ?? 0) > 0;
             if (_activeApplicationFrame is { } frame)
             {
                 if (connecting)
                 {
                     frame.LoadingMessage = "Connecting to Mother POS…";
-                    frame.IsLoading = true;
+                    frame.IsLoading = !warmCache;
+                    if (warmCache)
+                    {
+                        frame.ConnectionStatus = "Reconnect required";
+                    }
                 }
                 else if (e.Connected)
                 {
-                    frame.LoadingMessage = "Refreshing from Mother POS…";
-                    frame.IsLoading = true;
+                    if (warmCache)
+                    {
+                        frame.IsLoading = false;
+                        frame.ConnectionStatus = "Syncing…";
+                        ShowToast("Refreshing from Mother POS…");
+                    }
+                    else
+                    {
+                        frame.LoadingMessage = "Refreshing from Mother POS…";
+                        frame.IsLoading = true;
+                    }
                 }
                 else
                 {
@@ -557,12 +611,13 @@ public partial class MainPage : ContentPage
             }
 
             RefreshCurrentPosPage();
-            ApplyMotherConnectionLoader(connecting, e.Connected);
+            if (!warmCache)
+            {
+                ApplyMotherConnectionLoader(connecting, e.Connected);
+            }
 
             if (e.Connected)
             {
-                // Start after the Chef preloader is visible, so a fast
-                // dashboard refresh cannot leave the loading layer behind.
                 _ = RefreshAfterMotherConnectionAsync();
             }
         });
@@ -1267,8 +1322,7 @@ public partial class MainPage : ContentPage
         Root.Children.Clear();
         Root.BackgroundColor = Colors.White;
         _useLoginClockFormat = false;
-        _timeLabel = null;
-        _dateLabel = null;
+        StopLegacyClock();
         _statusLabel = null;
 
         EnsureSharedLoginWired();
@@ -1343,14 +1397,22 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// Waits for the single operational sync path after login. Cashier skips.
-    /// User/Manager need menu + tables (fresh or last-good cache), else Sync Failed + Retry.
+    /// After login: open till from warm cache when possible; sync in background.
+    /// Fullscreen wait only when there is no usable menu/tables cache.
     /// </summary>
     private async Task FinishLoginWithOperationalSyncAsync(LoginSession login)
     {
         if (string.Equals(login.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
         {
             ShowCashierDashboard();
+            return;
+        }
+
+        if (await IsOperationalCacheReadyAsync(null, login.Role))
+        {
+            ShowDashboard();
+            ShowToast("Refreshing menu and tables from Mother…");
+            _ = RefreshLoginOperationalSyncInBackgroundAsync(login);
             return;
         }
 
@@ -1410,6 +1472,41 @@ public partial class MainPage : ContentPage
         }
 
         ShowOperationalSyncFailed(sync);
+    }
+
+    private async Task RefreshLoginOperationalSyncInBackgroundAsync(LoginSession login)
+    {
+        try
+        {
+            var sync = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+            if (!await IsOperationalCacheReadyAsync(sync, login.Role))
+            {
+                await MainThread.InvokeOnMainThreadAsync(() => ShowOperationalSyncFailed(sync));
+                return;
+            }
+
+            var status = await _cache.GetStatusAsync();
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (status.Categories <= 0)
+                {
+                    ShowToast("Menu sync failed: Mother Food Menu has no categories yet. Ordering is empty until you add Food Menu on Mother and Update All.");
+                }
+                else if (sync is { AllOk: false })
+                {
+                    ShowToast(sync.SummaryMessage());
+                }
+                else
+                {
+                    ShowToast(sync?.SummaryMessage() ?? "Synced from Mother.");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                ShowToast($"Background sync failed — using last good cache. ({ex.Message})"));
+        }
     }
 
     private async Task<bool> IsOperationalCacheReadyAsync(MotherOperationalSyncResult? sync, string? role = null)
@@ -2414,7 +2511,8 @@ public partial class MainPage : ContentPage
             BackgroundColor = Color.FromRgba(255, 255, 255, 0.01),
             HorizontalOptions = LayoutOptions.Fill,
             VerticalOptions = LayoutOptions.Fill,
-            Margin = new Thickness(SidebarWidth, 0, 0, 0)
+            Margin = new Thickness(SidebarWidth, 0, 0, 0),
+            InputTransparent = false
         };
         var closeTap = new TapGestureRecognizer();
         closeTap.Tapped += (_, _) => ClosePosSidebar();
@@ -2422,6 +2520,7 @@ public partial class MainPage : ContentPage
 
         var sidebar = PosSidebar();
         sidebar.TranslationX = -SidebarWidth;
+        sidebar.InputTransparent = false;
         _posSidebarView = sidebar;
         _posSidebarOverlay = overlay;
 
@@ -2429,7 +2528,7 @@ public partial class MainPage : ContentPage
         overlay.Children.Add(sidebar);
         Root.Children.Add(overlay);
 
-        await sidebar.TranslateTo(0, 0, 260, Easing.CubicOut);
+        await sidebar.TranslateTo(0, 0, 180, Easing.CubicOut);
     }
 
     private async void ClosePosSidebar()
@@ -2439,29 +2538,118 @@ public partial class MainPage : ContentPage
 
     private async Task ClosePosSidebarAsync()
     {
-        if (!_posSidebarOpen)
+        if (!_posSidebarOpen && _posSidebarOverlay is null)
         {
             return;
         }
 
-        await AnimatePosSidebarClosedAsync();
+        // Drop hit-testing immediately so the next content tap is never eaten.
+        DisablePosSidebarHitTesting();
+        var overlay = _posSidebarOverlay;
+        var sidebar = _posSidebarView;
         _posSidebarOpen = false;
-        if (_posSidebarOverlay != null)
-        {
-            Root.Children.Remove(_posSidebarOverlay);
-            _posSidebarOverlay = null;
-        }
+        _posSidebarOverlay = null;
         _posSidebarView = null;
+
+        if (sidebar != null)
+        {
+            try
+            {
+                await sidebar.TranslateTo(-SidebarWidth, 0, 100, Easing.CubicIn);
+            }
+            catch
+            {
+                // Ignore animation failures during teardown.
+            }
+        }
+
+        if (overlay != null && Root.Children.Contains(overlay))
+        {
+            Root.Children.Remove(overlay);
+        }
     }
 
-    private async Task AnimatePosSidebarClosedAsync()
+    /// <summary>
+    /// Instant sidebar teardown for navigation — no wait for animation before the action runs.
+    /// </summary>
+    private void DismissPosSidebarForNavigation()
     {
-        if (_posSidebarView == null)
+        DisablePosSidebarHitTesting();
+        var overlay = _posSidebarOverlay;
+        var sidebar = _posSidebarView;
+        _posSidebarOpen = false;
+        _posSidebarOverlay = null;
+        _posSidebarView = null;
+
+        if (overlay is null)
         {
             return;
         }
 
-        await _posSidebarView.TranslateTo(-SidebarWidth, 0, 200, Easing.CubicIn);
+        // Optional short slide in parallel; overlay already ignores taps.
+        _ = FinishPosSidebarVisualCloseAsync(sidebar, overlay);
+    }
+
+    private void DisablePosSidebarHitTesting()
+    {
+        if (_posSidebarOverlay is null)
+        {
+            return;
+        }
+
+        _posSidebarOverlay.InputTransparent = true;
+        foreach (var child in _posSidebarOverlay.Children)
+        {
+            if (child is VisualElement element)
+            {
+                element.InputTransparent = true;
+            }
+        }
+    }
+
+    private async Task FinishPosSidebarVisualCloseAsync(VisualElement? sidebar, Grid overlay)
+    {
+        try
+        {
+            if (sidebar != null)
+            {
+                await sidebar.TranslateTo(-SidebarWidth, 0, 100, Easing.CubicIn);
+            }
+        }
+        catch
+        {
+            // Ignore animation failures during teardown.
+        }
+        finally
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (Root.Children.Contains(overlay))
+                {
+                    Root.Children.Remove(overlay);
+                }
+            });
+        }
+    }
+
+    private static void DismissHitOverlay(Layout root, View overlay)
+    {
+        overlay.InputTransparent = true;
+        if (overlay is Layout layout)
+        {
+            foreach (var child in layout.Children)
+            {
+                if (child is VisualElement element)
+                {
+                    element.InputTransparent = true;
+                }
+            }
+        }
+
+        if (root.Children.Contains(overlay))
+        {
+            root.Children.Remove(overlay);
+        }
     }
 
     private async Task RetryMotherSyncAsync()
@@ -2514,7 +2702,7 @@ public partial class MainPage : ContentPage
                     break;
                 }
 
-                ShowLiveOrders(_liveOrderFilter);
+                ScheduleLiveOrdersRefresh();
                 break;
             case "Collection":
             case "Delivery":
@@ -2540,21 +2728,15 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        _posSidebarOpen = false;
+        DismissPosSidebarForNavigation();
         action();
     }
 
-    private async void RunFromPosSidebar(string selectedMenu, Action action)
+    private void RunFromPosSidebar(string selectedMenu, Action action)
     {
         _posSelectedMenu = selectedMenu;
-        await AnimatePosSidebarClosedAsync();
-        _posSidebarOpen = false;
-        if (_posSidebarOverlay != null)
-        {
-            Root.Children.Remove(_posSidebarOverlay);
-            _posSidebarOverlay = null;
-        }
-        _posSidebarView = null;
+        // First tap always works: kill dismiss hit-layer immediately, navigate now.
+        DismissPosSidebarForNavigation();
         if (_terminalDisabled)
         {
             ShowTerminalDisabled();
@@ -2630,35 +2812,60 @@ public partial class MainPage : ContentPage
     private async void OnClientSidebarUpdateAllClicked(object? sender, EventArgs e)
     {
         var frame = _activeApplicationFrame;
-        if (frame != null)
-        {
-            frame.LoadingMessage = "Updating from Mother POS…";
-            frame.IsLoading = true;
-        }
+        var status = await _cache.GetStatusAsync();
+        var warmCache = status.Categories > 0 && status.Tables > 0;
 
         try
         {
-            await AnimatePosSidebarClosedAsync();
-            _posSidebarOpen = false;
+            DismissPosSidebarForNavigation();
 
             if (!await _offlinePolicy.IsMotherOnlineAsync())
             {
                 ShowToast("Mother POS is offline. Connect to Mother to Update All.");
-                if (frame != null) frame.IsLoading = false;
                 return;
+            }
+
+            if (frame != null)
+            {
+                if (warmCache)
+                {
+                    // Keep till usable — toast + connection text, no fullscreen wall.
+                    frame.IsLoading = false;
+                    frame.ConnectionStatus = "Syncing…";
+                    ShowToast("Updating from Mother POS…");
+                }
+                else
+                {
+                    frame.LoadingMessage = "Updating from Mother POS…";
+                    frame.IsLoading = true;
+                }
+            }
+            else
+            {
+                ShowToast("Updating from Mother POS…");
             }
 
             var result = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
             if (result is null)
             {
                 ShowToast("Mother POS is offline — cannot sync menu, tables, or orders.");
-                if (frame != null) frame.IsLoading = false;
+                if (frame != null)
+                {
+                    frame.IsLoading = false;
+                    frame.ConnectionStatus = _connectionStatus;
+                }
+
                 return;
             }
 
             var access = await RefreshClientAccessFromMotherAsync(showToast: false);
             _connectionStatus = result.AnyOk ? "Mother online" : "Mother Offline";
-            if (frame != null) frame.IsLoading = false;
+            if (frame != null)
+            {
+                frame.IsLoading = false;
+                frame.ConnectionStatus = _connectionStatus;
+            }
+
             var summary = result.SummaryMessage();
             if (access.Success)
             {
@@ -2673,8 +2880,16 @@ public partial class MainPage : ContentPage
             if (frame != null)
             {
                 frame.IsLoading = false;
-                frame.ErrorTitle = "Update All failed";
-                frame.ErrorMessage = ex.Message;
+                frame.ConnectionStatus = _connectionStatus;
+                if (!warmCache)
+                {
+                    frame.ErrorTitle = "Update All failed";
+                    frame.ErrorMessage = ex.Message;
+                }
+                else
+                {
+                    ShowToast($"Update All failed: {ex.Message}");
+                }
             }
             else
             {
@@ -2996,54 +3211,83 @@ public partial class MainPage : ContentPage
     {
         _posSelectedMenu = "Restaurant";
         _isViewingOrderScreen = false;
-        await LoadSharedRestaurantLayoutAsync(null);
+        await LoadSharedRestaurantLayoutAsync(null, remount: true);
     }
 
-    private async Task LoadSharedRestaurantLayoutAsync(int? preferredFloorId)
+    private async Task RefreshRestaurantLayoutInPlaceAsync()
     {
-        var tablesView = new RestaurantTablesView
+        if (_posSelectedMenu != "Restaurant" || _isViewingOrderScreen)
         {
-            ConnectionStatus = _connectionStatus,
-            IsLoading = true
-        };
-        _restaurantTablesView = tablesView;
-        tablesView.FloorSelected += async (_, floorId) =>
-        {
-            _selectedCachedFloor = _cachedFloors.FirstOrDefault(floor => string.Equals(floor.Id.ToString(), floorId, StringComparison.OrdinalIgnoreCase));
-            await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
-        };
-        tablesView.TableSelected += (_, selected) => OnSharedRestaurantTableSelected(selected.Table);
+            return;
+        }
 
-        Root.Children.Clear();
-        Root.BackgroundColor = Color.FromArgb(PageBackground);
-        Root.Children.Add(SharedAppFrame("Restaurant", tablesView, "restaurant"));
+        if (_restaurantTablesView is null)
+        {
+            await LoadSharedRestaurantLayoutAsync(null, remount: true);
+            return;
+        }
+
+        await LoadSharedRestaurantLayoutAsync(_selectedCachedFloor?.Id, remount: false);
+    }
+
+    private async Task LoadSharedRestaurantLayoutAsync(int? preferredFloorId, bool remount = true)
+    {
+        RestaurantTablesView tablesView;
+        if (!remount && _restaurantTablesView is not null)
+        {
+            tablesView = _restaurantTablesView;
+            tablesView.ConnectionStatus = _connectionStatus;
+        }
+        else
+        {
+            tablesView = new RestaurantTablesView
+            {
+                ConnectionStatus = _connectionStatus,
+                IsLoading = false
+            };
+            _restaurantTablesView = tablesView;
+            tablesView.FloorSelected += async (_, floorId) =>
+            {
+                _selectedCachedFloor = _cachedFloors.FirstOrDefault(floor => string.Equals(floor.Id.ToString(), floorId, StringComparison.OrdinalIgnoreCase));
+                await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
+            };
+            tablesView.TableSelected += (_, selected) => OnSharedRestaurantTableSelected(selected.Table);
+
+            Root.Children.Clear();
+            Root.BackgroundColor = Color.FromArgb(PageBackground);
+            Root.Children.Add(SharedAppFrame("Restaurant", tablesView, "restaurant"));
+        }
 
         try
         {
-            var sync = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+            // Cache-first: paint last-good tables immediately.
             _cachedFloors = await _cache.GetFloorsWithTablesAsync();
-            _selectedCachedFloor = preferredFloorId.HasValue
-                ? _cachedFloors.FirstOrDefault(floor => floor.Id == preferredFloorId.Value)
-                : _cachedFloors.FirstOrDefault(floor => floor.Tables.Count > 0) ?? _cachedFloors.FirstOrDefault();
-            _cacheStatus = await _cache.GetStatusAsync();
-
-            var version = _cachedFloors.SelectMany(floor => floor.Tables).Select(table => table.Version).DefaultIfEmpty(1).Max().ToString();
-            var floors = new FloorSnapshotDto(version, _cachedFloors
-                .Select(floor => new FloorDto(floor.Id.ToString(), floor.Name, floor.SortOrder, floor.BackgroundImageId))
-                .ToList());
-            var tables = new TableSnapshotDto(version, _cachedFloors.SelectMany(floor => floor.Tables)
-                .Select(table => new RestaurantTableDto(
-                    table.Id.ToString(), table.FloorId.ToString(), table.TableNumber, table.Seats, table.Status,
-                    table.PositionX, table.PositionY, table.CurrentOrderId, table.Version, table.Covers,
-                    table.CurrentTotal, table.SessionStatus, table.DesignIcon))
-                .ToList());
-
-            tablesView.Bind(floors, tables, _selectedCachedFloor?.Id.ToString());
+            BindRestaurantTablesView(tablesView, preferredFloorId);
             await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
             tablesView.ConnectionStatus = _connectionStatus;
             tablesView.IsLoading = false;
 
-            if (tables.Tables.Count == 0)
+            if (_cachedFloors.SelectMany(f => f.Tables).Any())
+            {
+                if (remount)
+                {
+                    ShowToast("Refreshing tables from Mother…");
+                }
+            }
+            else
+            {
+                tablesView.IsLoading = true;
+            }
+
+            var sync = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+            _cachedFloors = await _cache.GetFloorsWithTablesAsync();
+            _cacheStatus = await _cache.GetStatusAsync();
+            BindRestaurantTablesView(tablesView, preferredFloorId ?? _selectedCachedFloor?.Id);
+            await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
+            tablesView.ConnectionStatus = _connectionStatus;
+            tablesView.IsLoading = false;
+
+            if (!_cachedFloors.SelectMany(f => f.Tables).Any())
             {
                 var reason = sync?.LayoutError
                     ?? (sync is { LayoutOk: true }
@@ -3063,12 +3307,38 @@ public partial class MainPage : ContentPage
         catch (Exception ex)
         {
             tablesView.IsLoading = false;
+            if (_cachedFloors.SelectMany(f => f.Tables).Any())
+            {
+                ShowToast($"Table refresh failed — showing last good floor. ({ex.Message})");
+                return;
+            }
+
             if (_activeApplicationFrame is { } frame)
             {
                 frame.ErrorTitle = "Unable to load tables";
                 frame.ErrorMessage = ex.Message;
             }
         }
+    }
+
+    private void BindRestaurantTablesView(RestaurantTablesView tablesView, int? preferredFloorId)
+    {
+        _selectedCachedFloor = preferredFloorId.HasValue
+            ? _cachedFloors.FirstOrDefault(floor => floor.Id == preferredFloorId.Value)
+            : _cachedFloors.FirstOrDefault(floor => floor.Tables.Count > 0) ?? _cachedFloors.FirstOrDefault();
+
+        var version = _cachedFloors.SelectMany(floor => floor.Tables).Select(table => table.Version).DefaultIfEmpty(1).Max().ToString();
+        var floors = new FloorSnapshotDto(version, _cachedFloors
+            .Select(floor => new FloorDto(floor.Id.ToString(), floor.Name, floor.SortOrder, floor.BackgroundImageId))
+            .ToList());
+        var tables = new TableSnapshotDto(version, _cachedFloors.SelectMany(floor => floor.Tables)
+            .Select(table => new RestaurantTableDto(
+                table.Id.ToString(), table.FloorId.ToString(), table.TableNumber, table.Seats, table.Status,
+                table.PositionX, table.PositionY, table.CurrentOrderId, table.Version, table.Covers,
+                table.CurrentTotal, table.SessionStatus, table.DesignIcon))
+            .ToList());
+
+        tablesView.Bind(floors, tables, _selectedCachedFloor?.Id.ToString());
     }
 
     private async Task ApplyFloorBackgroundAsync(RestaurantTablesView tablesView, CachedFloor? floor)
@@ -3304,7 +3574,7 @@ public partial class MainPage : ContentPage
             HorizontalTextAlignment = TextAlignment.End,
             HorizontalOptions = LayoutOptions.End
         };
-        UpdateClock();
+        EnsureLegacyClockRunning();
 
         var header = new Border
         {
@@ -3546,7 +3816,7 @@ public partial class MainPage : ContentPage
             button.Clicked += async (_, _) =>
             {
                 _guests = guests;
-                Root.Children.Remove(overlay);
+                DismissHitOverlay(Root, overlay);
                 await OpenTableOrderAsync(table, guests);
             };
             numbers.Children.Add(button);
@@ -3555,7 +3825,7 @@ public partial class MainPage : ContentPage
         }
 
         var close = new Button { Text = "X", FontSize = 16, FontFamily = "OpenSansSemibold", TextColor = Color.FromArgb(Danger), BackgroundColor = Color.FromArgb("#FEE2E2"), CornerRadius = 18, WidthRequest = 36, HeightRequest = 36, Padding = 0 };
-        close.Clicked += (_, _) => Root.Children.Remove(overlay);
+        close.Clicked += (_, _) => DismissHitOverlay(Root, overlay);
 
         var otherGuestEntry = new Entry
         {
@@ -3583,7 +3853,7 @@ public partial class MainPage : ContentPage
         goButton.Clicked += async (_, _) =>
         {
             _guests = int.TryParse(otherGuestEntry.Text, out var enteredGuests) && enteredGuests > 0 ? enteredGuests : 4;
-            Root.Children.Remove(overlay);
+            DismissHitOverlay(Root, overlay);
             await OpenTableOrderAsync(table, _guests);
         };
 
@@ -5351,8 +5621,13 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        var allowSplit = !IsCustomerHubOrderType(_currentOrder.OrderType);
         var paymentService = new ClientPaymentService(_cache);
-        var viewModel = new PaymentViewModel { AmountDue = _currentOrder.Total };
+        var viewModel = new PaymentViewModel
+        {
+            AmountDue = _currentOrder.Total,
+            AllowSplit = allowSplit
+        };
         var paymentView = new PaymentView { ViewModel = viewModel };
         paymentView.SubmissionRequested += async (_, submission) =>
         {
@@ -5399,6 +5674,17 @@ public partial class MainPage : ContentPage
                 amount = loyalty.AmountApplied;
                 method = "loyalty";
                 viewModel.Message = "Redeeming loyalty points on Mother / OrderWeb…";
+            }
+
+            if (!allowSplit && amount + 0.009m < _currentOrder.Total &&
+                (string.Equals(NormalizePaymentMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(NormalizePaymentMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase)))
+            {
+                viewModel.ApplyAuthoritativeResult(
+                    false,
+                    "Collection and Delivery require payment of the full bill. Use a method that covers the full amount, or pay on Mother.",
+                    false);
+                return;
             }
 
             var result = await paymentService.TakePaymentAsync(
@@ -5525,21 +5811,105 @@ public partial class MainPage : ContentPage
 
     private void ShowLiveOrders() => ShowLiveOrders(_liveOrderFilter);
 
+    private void ScheduleLiveOrdersRefresh()
+    {
+        _liveOrdersRefreshCts?.Cancel();
+        _liveOrdersRefreshCts = new CancellationTokenSource();
+        var token = _liveOrdersRefreshCts.Token;
+        _ = DebouncedShowLiveOrdersAsync(token);
+    }
+
+    private async Task DebouncedShowLiveOrdersAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_posSelectedMenu == "Live Order" && !_isViewingOrderScreen)
+                {
+                    _ = SoftRefreshLiveOrdersAsync();
+                }
+                else
+                {
+                    ShowLiveOrders(_liveOrderFilter);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private async void ShowLiveOrders(string selectedFilter)
     {
         _posSelectedMenu = "Live Order";
         _isViewingOrderScreen = false;
         selectedFilter = NormalizeLiveOrderType(selectedFilter);
         _liveOrderFilter = selectedFilter;
-        Root.Children.Clear();
 
-        var motherOrders = await _orderClient.GetOpenOrdersAsync();
-        if (motherOrders != null)
+        // Cache-first paint — don't wait on Mother before showing cards.
+        var openOrders = await _cache.GetOpenOrderStatesAsync();
+        RenderLiveOrdersPage(openOrders, selectedFilter, force: true);
+
+        _ = RefreshLiveOrdersFromMotherAsync(selectedFilter);
+    }
+
+    private async Task SoftRefreshLiveOrdersAsync()
+    {
+        var openOrders = await _cache.GetOpenOrderStatesAsync();
+        RenderLiveOrdersPage(openOrders, _liveOrderFilter, force: false);
+        await RefreshLiveOrdersFromMotherAsync(_liveOrderFilter);
+    }
+
+    private async Task RefreshLiveOrdersFromMotherAsync(string selectedFilter)
+    {
+        try
         {
+            var motherOrders = await _orderClient.GetOpenOrdersAsync();
+            if (motherOrders == null)
+            {
+                return;
+            }
+
             await _cache.ReplaceOperationalOrdersAsync(motherOrders);
+            var openOrders = await _cache.GetOpenOrderStatesAsync();
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_posSelectedMenu != "Live Order" || _isViewingOrderScreen)
+                {
+                    return;
+                }
+
+                if (!string.Equals(_liveOrderFilter, selectedFilter, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                RenderLiveOrdersPage(openOrders, selectedFilter, force: false);
+            });
+        }
+        catch
+        {
+            // Keep cached board.
+        }
+    }
+
+    private string? _liveOrdersFingerprint;
+
+    private void RenderLiveOrdersPage(IReadOnlyList<MotherOrderState> openOrders, string selectedFilter, bool force)
+    {
+        var fingerprint = BuildLiveOrdersFingerprint(openOrders, selectedFilter);
+        if (!force &&
+            string.Equals(fingerprint, _liveOrdersFingerprint, StringComparison.Ordinal) &&
+            _posSelectedMenu == "Live Order")
+        {
+            return;
         }
 
-        var openOrders = await _cache.GetOpenOrderStatesAsync();
+        _liveOrdersFingerprint = fingerprint;
+        Root.Children.Clear();
+
         var cards = BuildLiveOrderCards(openOrders)
             .Where(card => selectedFilter == "All" || card.Type == selectedFilter)
             .ToList();
@@ -5624,6 +5994,25 @@ public partial class MainPage : ContentPage
         page.Children.Add(scroll);
         SetRow(scroll, 2);
         Root.Children.Add(page);
+    }
+
+    private static string BuildLiveOrdersFingerprint(IReadOnlyList<MotherOrderState> openOrders, string selectedFilter)
+    {
+        var parts = openOrders
+            .Where(order => !string.Equals(order.Status, "Closed", StringComparison.OrdinalIgnoreCase))
+            .Select(order =>
+            {
+                var type = NormalizeLiveOrderType(order.OrderType);
+                if (selectedFilter != "All" && type != selectedFilter)
+                {
+                    return null;
+                }
+
+                return $"{order.OrderId}:{order.Version}:{order.Status}:{order.Total:F2}:{order.UpdatedUtc}";
+            })
+            .Where(part => part is not null)
+            .OrderBy(part => part, StringComparer.Ordinal);
+        return selectedFilter + "#" + string.Join("|", parts);
     }
 
     private Button LiveOrderFilterButton(string text, string selectedFilter)
@@ -5862,6 +6251,7 @@ public partial class MainPage : ContentPage
 
     private ApplicationShellFrame SharedAppFrame(string title, View content, string selectedRoute)
     {
+        StopLegacyClock();
         var isDashboard = title.Contains("Dashboard", StringComparison.OrdinalIgnoreCase);
         var role = _currentSession?.Role;
         var capabilities = ClientCapabilityResolver.ForRole(role, _currentSession?.Permissions);
@@ -6019,7 +6409,7 @@ public partial class MainPage : ContentPage
         _useLoginClockFormat = false;
         _dateLabel = new Label { FontSize = compact ? 17 : 14, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText), HorizontalTextAlignment = TextAlignment.End };
         _timeLabel = new Label { FontSize = compact ? 31 : 24, TextColor = Color.FromArgb(AccentBlue), HorizontalTextAlignment = TextAlignment.End };
-        UpdateClock();
+        EnsureLegacyClockRunning();
         var logout = new ImageButton
         {
             Source = "outred.png",
@@ -6052,7 +6442,7 @@ public partial class MainPage : ContentPage
         _useLoginClockFormat = false;
         _dateLabel = new Label { FontSize = 13, FontFamily = "InterMedium", TextColor = Color.FromArgb("#374151"), HorizontalTextAlignment = TextAlignment.End };
         _timeLabel = new Label { FontSize = 18, FontFamily = "InterBold", TextColor = Color.FromArgb(AccentBlue), HorizontalTextAlignment = TextAlignment.End };
-        UpdateClock();
+        EnsureLegacyClockRunning();
 
         var logoutButton = new ImageButton
         {
@@ -6103,7 +6493,7 @@ public partial class MainPage : ContentPage
         _useLoginClockFormat = true;
         _timeLabel = new Label { FontSize = 24, FontFamily = "OpenSansBold", TextColor = Color.FromArgb(PrimaryAction), HorizontalTextAlignment = TextAlignment.End };
         _dateLabel = new Label { FontSize = 13, FontFamily = "OpenSansRegular", TextColor = Color.FromArgb(SecondaryText), HorizontalTextAlignment = TextAlignment.End };
-        UpdateClock();
+        EnsureLegacyClockRunning();
 
         return new VerticalStackLayout
         {
@@ -6148,10 +6538,36 @@ public partial class MainPage : ContentPage
         };
     }
 
+    private void EnsureLegacyClockRunning()
+    {
+        if (_timeLabel is null || _dateLabel is null)
+        {
+            _clockTimer.Stop();
+            return;
+        }
+
+        // Seconds only when legacy restaurant header shows HH:mm:ss; login uses minutes.
+        _clockTimer.Interval = TimeSpan.FromSeconds(_useLoginClockFormat ? 30 : 1);
+        if (!_clockTimer.IsRunning)
+        {
+            _clockTimer.Start();
+        }
+
+        UpdateClock();
+    }
+
+    private void StopLegacyClock()
+    {
+        _clockTimer.Stop();
+        _timeLabel = null;
+        _dateLabel = null;
+    }
+
     private void UpdateClock()
     {
         if (_timeLabel == null || _dateLabel == null)
         {
+            _clockTimer.Stop();
             return;
         }
 

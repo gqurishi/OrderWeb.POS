@@ -62,12 +62,34 @@ public partial class RestaurantPage : ContentPage
             return;
         }
 
-        await MainThread.InvokeOnMainThreadAsync(LoadAsync);
+        // Debounce WS floods; refresh from cache+Mother without blocking taps.
+        await ScheduleRestaurantRefreshAsync();
+    }
+
+    private CancellationTokenSource? _restaurantWsCts;
+
+    private async Task ScheduleRestaurantRefreshAsync()
+    {
+        _restaurantWsCts?.Cancel();
+        _restaurantWsCts = new CancellationTokenSource();
+        var token = _restaurantWsCts.Token;
+        try
+        {
+            await Task.Delay(400, token);
+            await MainThread.InvokeOnMainThreadAsync(LoadAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task LoadAsync()
     {
         await _cache.InitializeAsync();
+
+        // Cache-first: show last-good floors/tables immediately.
+        await BindFromCacheAsync();
+
         try
         {
             var result = await new MotherOperationalSyncClient(_cache).PullAllAsync();
@@ -75,12 +97,26 @@ public partial class RestaurantPage : ContentPage
             {
                 System.Diagnostics.Debug.WriteLine($"Restaurant layout sync: {result.LayoutError}");
             }
-        }
-        catch
-        {
-            // Fall back to cached floor below.
-        }
 
+            await BindFromCacheAsync();
+
+            if (_cachedFloors.Count == 0 && !result.LayoutOk)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Restaurant empty after sync: {result.LayoutError ?? "Mother returned no tables."}");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_cachedFloors.Count == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"Restaurant load failed with empty cache: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task BindFromCacheAsync()
+    {
         var floors = await _cache.GetFloorsWithTablesAsync();
         if (floors.Count == 0)
         {
@@ -110,6 +146,7 @@ public partial class RestaurantPage : ContentPage
                 t.SessionStatus,
                 t.DesignIcon))).ToList());
 
+        _tablesView.IsLoading = false;
         _tablesView.Bind(floorDto, tableDto);
         var selected = floors.FirstOrDefault(f => f.Tables.Count > 0) ?? floors.FirstOrDefault();
         await ApplyFloorBackgroundAsync(selected);
@@ -150,7 +187,8 @@ public partial class RestaurantPage : ContentPage
 
         if (_guestOverlay is not null)
         {
-            Root.Children.Remove(_guestOverlay);
+            DismissHitOverlay(Root, _guestOverlay);
+            _guestOverlay = null;
         }
 
         _tablesView.SetHighlightedTable(_pendingTable.Id);
@@ -183,8 +221,28 @@ public partial class RestaurantPage : ContentPage
     {
         _tablesView.ClearHighlightedTable();
         if (_guestOverlay is null) return;
-        Root.Children.Remove(_guestOverlay);
+        DismissHitOverlay(Root, _guestOverlay);
         _guestOverlay = null;
+    }
+
+    private static void DismissHitOverlay(Layout root, View overlay)
+    {
+        overlay.InputTransparent = true;
+        if (overlay is Layout layout)
+        {
+            foreach (var child in layout.Children)
+            {
+                if (child is VisualElement element)
+                {
+                    element.InputTransparent = true;
+                }
+            }
+        }
+
+        if (root.Children.Contains(overlay))
+        {
+            root.Children.Remove(overlay);
+        }
     }
 
     private async Task OpenOrderAsync(RestaurantTableDto table, int covers)

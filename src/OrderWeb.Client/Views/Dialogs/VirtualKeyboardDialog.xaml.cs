@@ -95,6 +95,8 @@ public partial class VirtualKeyboardDialog : ContentView
         }
 
         _isClosed = true;
+        InputTransparent = true;
+        IsVisible = false;
         if (_hostPage is not null)
         {
             _hostPage.SizeChanged -= OnHostPageSizeChanged;
@@ -117,7 +119,6 @@ public partial class VirtualKeyboardDialog : ContentView
 
         _hostPage = null;
         _hostGrid = null;
-        IsVisible = false;
     }
 
     private void OnHostPageSizeChanged(object? sender, EventArgs e)

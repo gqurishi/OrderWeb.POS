@@ -38,9 +38,10 @@ public class RestaurantTablesView : ContentView
     };
     private readonly AbsoluteLayout _canvas;
     private readonly VerticalStackLayout _empty;
-    private readonly List<(Border Card, RestaurantTableDto Table)> _tableViews = [];
+    private readonly Dictionary<string, TableCardHost> _tableHosts = new(StringComparer.OrdinalIgnoreCase);
     private string? _selectedFloorId;
     private string? _highlightedTableId;
+    private string? _floorTabsFingerprint;
 
     public static readonly BindableProperty ConnectionStatusProperty = BindableProperty.Create(nameof(ConnectionStatus), typeof(string), typeof(RestaurantTablesView), "Mother online", propertyChanged: (b, _, _) => ((RestaurantTablesView)b).ApplyPresentationState());
     public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(RestaurantTablesView), false, propertyChanged: (b, _, _) => ((RestaurantTablesView)b).ApplyPresentationState());
@@ -174,21 +175,45 @@ public class RestaurantTablesView : ContentView
             ?? floors.Floors.OrderBy(f => f.SortOrder).Select(f => f.Id).FirstOrDefault();
         _lastSync.Text = $"Synced {DateTime.Now:HH:mm:ss}";
         ApplyPresentationState();
-        RebuildFloorTabs();
-        RebuildTables();
+        RebuildFloorTabsIfNeeded();
+        SyncTables();
     }
 
     /// <summary>Highlights a table in Mother blue while the guest picker is open.</summary>
     public void SetHighlightedTable(string? tableId)
     {
         _highlightedTableId = string.IsNullOrWhiteSpace(tableId) ? null : tableId.Trim();
-        foreach (var (card, table) in _tableViews)
+        foreach (var host in _tableHosts.Values)
         {
-            ApplyTableAppearance(card, table);
+            ApplyTableAppearance(host.Card, host.Table);
+            host.AppearanceKey = AppearanceKey(host.Table);
         }
     }
 
     public void ClearHighlightedTable() => SetHighlightedTable(null);
+
+    private void RebuildFloorTabsIfNeeded()
+    {
+        var fingerprint = string.Join("|",
+            (FloorSnapshot?.Floors ?? [])
+                .OrderBy(f => f.SortOrder)
+                .ThenBy(f => f.Name)
+                .Select(f =>
+                {
+                    var count = TableSnapshot?.Tables.Count(t =>
+                        string.Equals(t.FloorId, f.Id, StringComparison.OrdinalIgnoreCase)) ?? 0;
+                    var selected = string.Equals(f.Id, _selectedFloorId, StringComparison.OrdinalIgnoreCase) ? "1" : "0";
+                    return $"{f.Id}:{f.Name}:{count}:{selected}";
+                }));
+
+        if (string.Equals(fingerprint, _floorTabsFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _floorTabsFingerprint = fingerprint;
+        RebuildFloorTabs();
+    }
 
     private void RebuildFloorTabs()
     {
@@ -219,9 +244,15 @@ public class RestaurantTablesView : ContentView
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) =>
             {
+                if (string.Equals(_selectedFloorId, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
                 _selectedFloorId = id;
-                RebuildFloorTabs();
-                RebuildTables();
+                _floorTabsFingerprint = null;
+                RebuildFloorTabsIfNeeded();
+                SyncTables();
                 FloorSelected?.Invoke(this, id);
             };
             tab.GestureRecognizers.Add(tap);
@@ -229,36 +260,70 @@ public class RestaurantTablesView : ContentView
         }
     }
 
-    private void RebuildTables()
+    private void SyncTables()
     {
-        foreach (var (card, _) in _tableViews)
-        {
-            _canvas.Children.Remove(card);
-        }
-        _tableViews.Clear();
-
         var tables = TableSnapshot?.Tables
             .Where(t => string.Equals(t.FloorId, _selectedFloorId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(t => t.Name)
             .ToList() ?? [];
 
         _empty.IsVisible = tables.Count == 0;
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var index = 0;
         foreach (var table in tables)
         {
-            var card = CreateTableCard(table);
+            keep.Add(table.Id);
             var x = table.X > 0 ? table.X : 40 + (index % 6) * 140;
             var y = table.Y > 0 ? table.Y : 40 + (index / 6) * 140;
-            AbsoluteLayout.SetLayoutBounds(card, new Rect(x, y, 120, 120));
-            AbsoluteLayout.SetLayoutFlags(card, AbsoluteLayoutFlags.None);
-            _canvas.Children.Add(card);
-            _tableViews.Add((card, table));
+            if (_tableHosts.TryGetValue(table.Id, out var host))
+            {
+                UpdateTableCard(host, table, x, y);
+            }
+            else
+            {
+                host = CreateTableHost(table);
+                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, 120, 120));
+                AbsoluteLayout.SetLayoutFlags(host.Card, AbsoluteLayoutFlags.None);
+                _canvas.Children.Add(host.Card);
+                _tableHosts[table.Id] = host;
+            }
+
             index++;
+        }
+
+        foreach (var id in _tableHosts.Keys.Where(id => !keep.Contains(id)).ToList())
+        {
+            if (_tableHosts.Remove(id, out var host))
+            {
+                _canvas.Children.Remove(host.Card);
+            }
         }
     }
 
-    private Border CreateTableCard(RestaurantTableDto table)
+    private TableCardHost CreateTableHost(RestaurantTableDto table)
     {
+        var nameLabel = new Label
+        {
+            Text = table.Name,
+            FontSize = 16,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalOptions = LayoutOptions.Center
+        };
+        var icon = new Image
+        {
+            Source = string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon,
+            WidthRequest = 50,
+            HeightRequest = 50,
+            Aspect = Aspect.AspectFit,
+            HorizontalOptions = LayoutOptions.Center
+        };
+        var statusDot = new Ellipse
+        {
+            WidthRequest = 10,
+            HeightRequest = 10,
+            HorizontalOptions = LayoutOptions.Center
+        };
+
         var card = new Border
         {
             Padding = 8,
@@ -276,40 +341,63 @@ public class RestaurantTablesView : ContentView
                 Spacing = 4,
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center,
-                Children =
-                {
-                    new Image
-                    {
-                        Source = string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon,
-                        WidthRequest = 50,
-                        HeightRequest = 50,
-                        Aspect = Aspect.AspectFit,
-                        HorizontalOptions = LayoutOptions.Center
-                    },
-                    new Label
-                    {
-                        Text = table.Name,
-                        FontSize = 16,
-                        FontAttributes = FontAttributes.Bold,
-                        HorizontalOptions = LayoutOptions.Center
-                    },
-                    new Ellipse
-                    {
-                        WidthRequest = 10,
-                        HeightRequest = 10,
-                        HorizontalOptions = LayoutOptions.Center
-                    }
-                }
+                Children = { icon, nameLabel, statusDot }
             }
         };
 
-        ApplyTableAppearance(card, table);
+        var host = new TableCardHost
+        {
+            Card = card,
+            Table = table,
+            NameLabel = nameLabel,
+            Icon = icon,
+            StatusDot = statusDot,
+            AppearanceKey = string.Empty
+        };
 
-        var captured = table;
+        ApplyTableAppearance(host.Card, host.Table);
+        host.AppearanceKey = AppearanceKey(table);
+
         var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => TableSelected?.Invoke(this, new TableSelectedEventArgs(captured));
+        tap.Tapped += (_, _) => TableSelected?.Invoke(this, new TableSelectedEventArgs(host.Table));
         card.GestureRecognizers.Add(tap);
-        return card;
+        return host;
+    }
+
+    private void UpdateTableCard(TableCardHost host, RestaurantTableDto table, double x, double y)
+    {
+        host.Table = table;
+        if (!string.Equals(host.NameLabel.Text, table.Name, StringComparison.Ordinal))
+        {
+            host.NameLabel.Text = table.Name;
+        }
+
+        var icon = string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon;
+        if (host.Icon.Source is not FileImageSource file ||
+            !string.Equals(file.File, icon, StringComparison.OrdinalIgnoreCase))
+        {
+            host.Icon.Source = icon;
+        }
+
+        var appearanceKey = AppearanceKey(table);
+        if (!string.Equals(host.AppearanceKey, appearanceKey, StringComparison.Ordinal))
+        {
+            ApplyTableAppearance(host.Card, table);
+            host.AppearanceKey = appearanceKey;
+        }
+
+        var bounds = AbsoluteLayout.GetLayoutBounds(host.Card);
+        if (Math.Abs(bounds.X - x) > 0.5 || Math.Abs(bounds.Y - y) > 0.5)
+        {
+            AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, 120, 120));
+        }
+    }
+
+    private string AppearanceKey(RestaurantTableDto table)
+    {
+        var highlighted = !string.IsNullOrWhiteSpace(_highlightedTableId) &&
+                          string.Equals(table.Id, _highlightedTableId, StringComparison.OrdinalIgnoreCase);
+        return $"{TableStatusText(table)}|{table.OpenOrderId}|{table.SessionStatus}|{table.Status}|{highlighted}";
     }
 
     private void ApplyTableAppearance(Border card, RestaurantTableDto table)
@@ -380,5 +468,15 @@ public class RestaurantTablesView : ContentView
         if (string.Equals(table.SessionStatus, "Cleaning", StringComparison.OrdinalIgnoreCase)) return "Needs attention";
         if (!string.IsNullOrWhiteSpace(table.OpenOrderId) || string.Equals(table.Status, "Occupied", StringComparison.OrdinalIgnoreCase)) return "Occupied";
         return string.Equals(table.Status, "Reserved", StringComparison.OrdinalIgnoreCase) ? "Reserved" : "Available";
+    }
+
+    private sealed class TableCardHost
+    {
+        public required Border Card { get; init; }
+        public required RestaurantTableDto Table { get; set; }
+        public required Label NameLabel { get; init; }
+        public required Image Icon { get; init; }
+        public required Ellipse StatusDot { get; init; }
+        public required string AppearanceKey { get; set; }
     }
 }

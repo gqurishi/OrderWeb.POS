@@ -1,0 +1,45 @@
+---
+description: Client gift-card roadmap — Mother hub, cloud master, phased build order
+alwaysApply: true
+---
+
+# Client gift cards (remember)
+
+## Architecture
+- Flow: **Client → Mother → OrderWeb cloud** (never Client → cloud directly).
+- Cloud owns gift-card balances. Mother is the hub. Client is online-only for gift cards.
+- No offline redeem/sell on Client; refuse until Mother is online.
+
+## Build order
+1. **Mother** — Client gift-card HTTP API ✅
+2. **Contracts** — DTOs + error codes ✅
+3. **Client** — GiftCardPage + MotherGiftCardClient ✅
+4. **Client + Mother** — order payment gift-card path ✅
+5. **Both** — Reliability & UX ✅
+6. **QA** — Phase 6 checklist ← next
+
+## Phase 5 done
+- Busy / double-tap guards on Gift Cards + pay dialog.
+- Sticky idempotency keys for activate/sell/top-up/redeem/order-pay (retry same key).
+- Activate queued on Mother surfaces clear cloud-retry message.
+- Sync diagnostics includes last gift-card op (Mother vs cloud).
+- `GET /api/client/access` + Update All / `features.updated` refresh Client menus without reinstall.
+
+## Phase 1 (Mother) — endpoints
+- `POST /api/client/gift-cards/lookup` — `{ cardNumber, purpose?, sessionToken }`
+- `POST /api/client/gift-cards/sell` — `{ cardNumber?, amount, paymentMethod?, orderId?, description?, idempotencyKey?, sessionToken }`
+- `POST /api/client/gift-cards/top-up` — same mutate shape (card required)
+- `POST /api/client/gift-cards/redeem` — same mutate shape (card + amount)
+- `POST /api/client/gift-cards/activate` — same; may return `queued: true` if Mother queues cloud retry
+
+Gate: session + `pos.gift_cards`. Audit: `client_gift_card_*`. Optional WS: `giftcard.updated`.
+
+**Done when:** test tool can hit Mother `/api/client/gift-cards/*` and cloud balance changes.
+
+## Practical start sequence
+1. Prove gift cards on Mother + cloud
+2. Turn Gift cards Access on for Client
+3. Build Mother `/api/client/...` gift endpoints ← Phase 1
+4. Hook Client Gift Cards page
+5. Hook payment redeem
+6. Run test checklist

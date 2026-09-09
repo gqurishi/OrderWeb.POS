@@ -338,3 +338,11 @@ Right (~30%): Table/guests (or customer) + PAYMENT top-right → scrolling lines
 - [x] Menu snapshot includes quick notes; Client cache loads variants + notes
 - [x] Upsert sends `VariantId` / `Notes` / `Modifiers` like Mother
 - [x] Client + Mother + SharedUI windows builds succeeded
+
+### Package 3 — order panel accuracy ✅
+
+- [x] Mother Client order API returns Discount, ServiceCharge, order Notes, per-line IsSent, TastingMenuId
+- [x] Mother upsert preserves SC/discount + kitchen send state; applies table SC on create
+- [x] Client PublishSession shows real SC/discount; NOTES edits order-level notes; SENT per line
+- [x] Meal Deals / Tasting Menus categories + add pickers on Client
+- [x] Client + Mother + SharedUI windows builds succeeded

@@ -343,7 +343,7 @@ public partial class TableLayoutPage : ContentPage
             };
             button.Clicked += async (_, _) =>
             {
-                Root.Children.Remove(overlay);
+                DismissHitOverlay(Root, overlay);
                 await OpenTableOrderAsync(covers);
             };
             numbers.Children.Add(button);
@@ -363,7 +363,7 @@ public partial class TableLayoutPage : ContentPage
             HeightRequest = 36,
             Padding = 0
         };
-        close.Clicked += (_, _) => Root.Children.Remove(overlay);
+        close.Clicked += (_, _) => DismissHitOverlay(Root, overlay);
 
         var otherGuestEntry = new Entry
         {
@@ -391,7 +391,7 @@ public partial class TableLayoutPage : ContentPage
         goButton.Clicked += async (_, _) =>
         {
             var covers = int.TryParse(otherGuestEntry.Text, out var enteredGuests) && enteredGuests > 0 ? enteredGuests : 4;
-            Root.Children.Remove(overlay);
+            DismissHitOverlay(Root, overlay);
             await OpenTableOrderAsync(covers);
         };
 
@@ -463,6 +463,26 @@ public partial class TableLayoutPage : ContentPage
         SetRow(footer, 2);
         overlay.Children.Add(modal);
         Root.Children.Add(overlay);
+    }
+
+    private static void DismissHitOverlay(Layout root, View overlay)
+    {
+        overlay.InputTransparent = true;
+        if (overlay is Layout layout)
+        {
+            foreach (var child in layout.Children)
+            {
+                if (child is VisualElement element)
+                {
+                    element.InputTransparent = true;
+                }
+            }
+        }
+
+        if (root.Children.Contains(overlay))
+        {
+            root.Children.Remove(overlay);
+        }
     }
 
     private async Task OpenTableOrderAsync(int covers)

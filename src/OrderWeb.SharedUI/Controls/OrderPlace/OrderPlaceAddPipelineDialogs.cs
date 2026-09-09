@@ -528,3 +528,160 @@ public sealed class OrderPlaceAddonDialog : ContentView
         _summary.Text = $"{count} selected · +£{total:F2}";
     }
 }
+
+/// <summary>Mother-style meal deal choice picker (pick N of M).</summary>
+public sealed class OrderPlaceMealDealDialog : ContentView
+{
+    private readonly VerticalStackLayout _rows = new() { Spacing = 8 };
+    private readonly Label _title = new() { FontAttributes = FontAttributes.Bold, FontSize = 20 };
+    private readonly Label _subtitle = new() { FontSize = 14 };
+    private readonly SharedButton _done = new() { Text = "Add Deal", Variant = ButtonVariant.Primary };
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Border> _borders = new(StringComparer.OrdinalIgnoreCase);
+    private int _pickCount = 1;
+    private TaskCompletionSource<IReadOnlyList<string>?>? _tcs;
+
+    public OrderPlaceMealDealDialog()
+    {
+        BackgroundColor = Color.FromArgb("#80000000");
+        _title.Use(Label.TextColorProperty, "OwTextStrong");
+        _subtitle.Use(Label.TextColorProperty, "OwTextMuted");
+
+        _done.Clicked += (_, _) =>
+        {
+            if (_selected.Count != _pickCount)
+            {
+                return;
+            }
+
+            _tcs?.TrySetResult(_selected.ToList());
+        };
+
+        var cancel = new SharedButton { Text = "Cancel", Variant = ButtonVariant.Secondary };
+        cancel.Clicked += (_, _) => _tcs?.TrySetResult(null);
+
+        var buttons = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 10
+        };
+        buttons.Add(cancel);
+        buttons.Add(_done, 1);
+
+        var body = new VerticalStackLayout
+        {
+            Spacing = 14,
+            Children =
+            {
+                _title,
+                _subtitle,
+                new ScrollView { MaximumHeightRequest = 360, Content = _rows },
+                buttons
+            }
+        };
+
+        var panel = new Border
+        {
+            Padding = 22,
+            WidthRequest = 520,
+            MaximumWidthRequest = 620,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 22 },
+            Content = body,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        panel.Use(Border.BackgroundColorProperty, "OwSurface");
+        panel.Use(Border.StrokeProperty, "OwBorder");
+        Content = new Grid { Padding = 18, Children = { panel } };
+    }
+
+    public Task<IReadOnlyList<string>?> ShowAsync(
+        ContentPage page,
+        string dealName,
+        int pickCount,
+        IEnumerable<string> choices)
+    {
+        _tcs = new TaskCompletionSource<IReadOnlyList<string>?>();
+        _pickCount = Math.Max(1, pickCount);
+        _selected.Clear();
+        _borders.Clear();
+        _rows.Children.Clear();
+
+        _title.Text = dealName;
+        _subtitle.Text = $"Pick {_pickCount}";
+
+        foreach (var choice in choices.Where(c => !string.IsNullOrWhiteSpace(c)))
+        {
+            var name = choice.Trim();
+            _rows.Children.Add(BuildChoiceRow(name));
+        }
+
+        RefreshDone();
+        return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
+    }
+
+    private View BuildChoiceRow(string name)
+    {
+        var row = new Border
+        {
+            Padding = new Thickness(14, 12),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 }
+        };
+        row.Use(Border.BackgroundColorProperty, "OwSurface");
+        row.Use(Border.StrokeProperty, "OwBorder");
+
+        var label = new Label
+        {
+            Text = name,
+            FontSize = 16,
+            FontAttributes = FontAttributes.Bold,
+            VerticalOptions = LayoutOptions.Center
+        };
+        label.Use(Label.TextColorProperty, "OwTextStrong");
+        row.Content = label;
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) =>
+        {
+            if (_selected.Contains(name))
+            {
+                _selected.Remove(name);
+            }
+            else if (_selected.Count < _pickCount)
+            {
+                _selected.Add(name);
+            }
+
+            RefreshDone();
+        };
+        row.GestureRecognizers.Add(tap);
+        _borders[name] = row;
+        return row;
+    }
+
+    private void RefreshDone()
+    {
+        foreach (var pair in _borders)
+        {
+            var selected = _selected.Contains(pair.Key);
+            pair.Value.StrokeThickness = selected ? 2 : 1;
+            if (selected)
+            {
+                pair.Value.Use(Border.BackgroundColorProperty, "OwPrimarySoft");
+                pair.Value.Use(Border.StrokeProperty, "OwPrimary");
+            }
+            else
+            {
+                pair.Value.Use(Border.BackgroundColorProperty, "OwSurface");
+                pair.Value.Use(Border.StrokeProperty, "OwBorder");
+            }
+        }
+
+        _done.Text = _selected.Count == _pickCount
+            ? "Add Deal"
+            : $"Pick {_pickCount} ({_selected.Count}/{_pickCount})";
+        _done.IsEnabled = _selected.Count == _pickCount;
+    }
+}
