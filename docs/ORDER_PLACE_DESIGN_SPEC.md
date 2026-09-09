@@ -330,3 +330,11 @@ Right (~30%): Table/guests (or customer) + PAYMENT top-right → scrolling lines
 - [x] `MotherOrderPlaceHost` implements `IOrderPlaceHost` over existing page logic
 - [x] Mother builds `OrderPlaceSessionState` and rebinds via `OrderPlaceStateChanged`
 - [x] Mother windows build succeeded
+
+### Package 2 — add-item pipeline parity ✅
+
+- [x] SharedUI Mother-style dialogs: variant / quick note / add-ons
+- [x] Client `AddProductAsync` runs variant → note → addons → add (cancel aborts)
+- [x] Menu snapshot includes quick notes; Client cache loads variants + notes
+- [x] Upsert sends `VariantId` / `Notes` / `Modifiers` like Mother
+- [x] Client + Mother + SharedUI windows builds succeeded

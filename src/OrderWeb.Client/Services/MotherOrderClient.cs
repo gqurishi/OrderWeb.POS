@@ -103,12 +103,13 @@ public sealed class MotherOrderClient
     public Task<MotherCommandResult> AddItemAsync(MotherOrderState state, CachedProduct product, IReadOnlyList<string> modifiers) =>
         AddItemAsync(state, product, modifiers, notes: null, variant: null);
 
-    public Task<MotherCommandResult> AddItemAsync(
+    /// <summary>Local basket mutation only — no Mother HTTP (optimistic UI).</summary>
+    public MotherOrderState BuildStateWithAddItem(
         MotherOrderState state,
         CachedProduct product,
         IReadOnlyList<string> modifiers,
-        string? notes,
-        CachedProductVariant? variant)
+        string? notes = null,
+        CachedProductVariant? variant = null)
     {
         var takeaway = CustomerOrderHubRules.IsCollectionOrderType(state.OrderType)
             || CustomerOrderHubRules.IsDeliveryOrderType(state.OrderType);
@@ -144,7 +145,48 @@ public sealed class MotherOrderClient
                 variant?.PriceFor(takeaway)));
         }
 
-        return UpsertOrderAsync(state with { Lines = lines });
+        return RecalcOrderMoney(state with { Lines = lines });
+    }
+
+    public MotherOrderState BuildStateWithQuantity(MotherOrderState state, MotherOrderLine line, int quantity)
+    {
+        IReadOnlyList<MotherOrderLine> lines;
+        if (quantity <= 0)
+        {
+            lines = state.Lines.Where(existing => existing.Id != line.Id).ToList();
+        }
+        else
+        {
+            lines = state.Lines
+                .Select(existing => existing.Id == line.Id ? existing with { Quantity = Math.Max(quantity, 1) } : existing)
+                .ToList();
+        }
+
+        return RecalcOrderMoney(state with { Lines = lines });
+    }
+
+    public static MotherOrderState RecalcOrderMoney(MotherOrderState state)
+    {
+        var productTotal = state.Lines
+            .Where(line => !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase))
+            .Sum(line => line.UnitPrice * line.Quantity);
+        var delivery = state.Lines
+            .Where(line => string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                || line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
+            .Sum(line => line.UnitPrice * line.Quantity);
+        var subtotal = productTotal;
+        var total = productTotal + delivery + state.Tax;
+        return state with { Subtotal = subtotal, Total = total };
+    }
+
+    public Task<MotherCommandResult> AddItemAsync(
+        MotherOrderState state,
+        CachedProduct product,
+        IReadOnlyList<string> modifiers,
+        string? notes,
+        CachedProductVariant? variant)
+    {
+        return UpsertOrderAsync(BuildStateWithAddItem(state, product, modifiers, notes, variant));
     }
 
     private static bool LinesMatchForMerge(
@@ -190,19 +232,11 @@ public sealed class MotherOrderClient
         return line.Modifiers.SequenceEqual(modifiers, StringComparer.OrdinalIgnoreCase);
     }
 
-    public Task<MotherCommandResult> UpdateQuantityAsync(MotherOrderState state, MotherOrderLine line, int quantity)
-    {
-        var lines = state.Lines
-            .Select(existing => existing.Id == line.Id ? existing with { Quantity = Math.Max(quantity, 1) } : existing)
-            .ToList();
-        return UpsertOrderAsync(state with { Lines = lines });
-    }
+    public Task<MotherCommandResult> UpdateQuantityAsync(MotherOrderState state, MotherOrderLine line, int quantity) =>
+        UpsertOrderAsync(BuildStateWithQuantity(state, line, Math.Max(quantity, 1)));
 
-    public Task<MotherCommandResult> RemoveItemAsync(MotherOrderState state, MotherOrderLine line)
-    {
-        var lines = state.Lines.Where(existing => existing.Id != line.Id).ToList();
-        return UpsertOrderAsync(state with { Lines = lines });
-    }
+    public Task<MotherCommandResult> RemoveItemAsync(MotherOrderState state, MotherOrderLine line) =>
+        UpsertOrderAsync(BuildStateWithQuantity(state, line, 0));
 
     public Task<MotherCommandResult> AddNoteAsync(MotherOrderState state, MotherOrderLine line, string note)
     {

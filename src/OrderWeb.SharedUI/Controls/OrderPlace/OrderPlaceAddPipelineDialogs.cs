@@ -27,7 +27,7 @@ public sealed record OrderPlaceQuickNoteResult(OrderPlaceQuickNoteKind Kind, str
 /// <summary>Attaches a full-page overlay dialog to a page's root grid (Mother DialogOverlayHelper parity).</summary>
 public static class OrderPlaceDialogPresenter
 {
-    public static async Task<T> ShowAsync<T>(Page page, ContentView dialog, TaskCompletionSource<T> completion)
+    public static async Task<T> ShowAsync<T>(ContentPage page, ContentView dialog, TaskCompletionSource<T> completion)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(dialog);
@@ -110,7 +110,7 @@ public sealed class OrderPlaceVariantDialog : ContentView
     }
 
     public Task<OrderPlaceVariantChoice?> ShowAsync(
-        Page page,
+        ContentPage page,
         string itemName,
         IEnumerable<OrderPlaceVariantChoice> variants)
     {
@@ -278,7 +278,7 @@ public sealed class OrderPlaceQuickNoteDialog : ContentView
         Content = new Grid { Padding = 18, Children = { panel } };
     }
 
-    public Task<OrderPlaceQuickNoteResult> ShowAsync(Page page, string itemName, IEnumerable<string> notes)
+    public Task<OrderPlaceQuickNoteResult> ShowAsync(ContentPage page, string itemName, IEnumerable<string> notes)
     {
         _tcs = new TaskCompletionSource<OrderPlaceQuickNoteResult>();
         _title.Text = itemName;
@@ -393,7 +393,7 @@ public sealed class OrderPlaceAddonDialog : ContentView
     }
 
     public Task<IReadOnlyList<OrderPlaceAddonChoice>?> ShowAsync(
-        Page page,
+        ContentPage page,
         string itemName,
         IEnumerable<OrderPlaceAddonChoice> addons)
     {

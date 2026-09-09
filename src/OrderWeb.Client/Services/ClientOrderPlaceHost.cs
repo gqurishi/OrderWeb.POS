@@ -13,6 +13,8 @@ namespace OrderWeb.Client.Services;
 /// </summary>
 public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 {
+    private static readonly TimeSpan WarmMenuTtl = TimeSpan.FromMinutes(20);
+
     private readonly ClientCacheService _cache = new();
     private readonly MotherOrderClient _orderClient = new();
     private readonly MotherMenuClient _menuClient = new();
@@ -22,6 +24,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private readonly List<CachedProduct> _products = new();
     private readonly HashSet<int> _categoryIdsWithProducts = new();
     private readonly IClientOrderPlaceUi _ui;
+    private readonly SemaphoreSlim _motherWriteGate = new(1, 1);
+    private readonly object _orderGate = new();
 
     private CachedTable? _table;
     private int _covers;
@@ -31,6 +35,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private CachedMenuCategory? _selectedCategory;
     private MotherOrderState? _currentOrder;
     private bool _initialized;
+    private bool _persistQueued;
 
     public ClientOrderPlaceHost(IClientOrderPlaceUi ui)
     {
@@ -233,33 +238,20 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             selectedModifiers = pickedAddons.Select(addon => addon.Name).ToList();
         }
 
-        try
+        // Optimistic: show line immediately; Mother upsert in background (serial).
+        lock (_orderGate)
         {
-            Session.IsBusy = true;
-            RaiseChanged();
-            var result = await _orderClient.AddItemAsync(
+            _currentOrder = _orderClient.BuildStateWithAddItem(
                 _currentOrder,
                 item,
                 selectedModifiers,
                 selectedNote,
                 selectedVariant);
-            _currentOrder = result.State;
-            await _cache.SaveOrderStateAsync(_currentOrder);
-            PublishSession();
-            if (result.ConflictDetected)
-            {
-                await _ui.ShowAlertAsync("Order conflict", result.Message);
-            }
         }
-        catch (Exception ex)
-        {
-            await _ui.ShowAlertAsync("Mother POS", ex.Message);
-        }
-        finally
-        {
-            Session.IsBusy = false;
-            RaiseChanged();
-        }
+
+        _ = _cache.SaveOrderStateAsync(_currentOrder);
+        PublishSession();
+        QueueMotherPersist();
     }
 
     private static string? NormalizeNote(string? note) =>
@@ -290,31 +282,14 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        try
+        lock (_orderGate)
         {
-            MotherCommandResult result;
-            if (quantity <= 0)
-            {
-                result = await _orderClient.RemoveItemAsync(_currentOrder, motherLine);
-            }
-            else
-            {
-                result = await _orderClient.UpdateQuantityAsync(_currentOrder, motherLine, quantity);
-            }
+            _currentOrder = _orderClient.BuildStateWithQuantity(_currentOrder, motherLine, quantity);
+        }
 
-            _currentOrder = result.State;
-            await _cache.SaveOrderStateAsync(_currentOrder);
-            PublishSession();
-            if (result.ConflictDetected)
-            {
-                await _ui.ShowAlertAsync("Order conflict", result.Message);
-            }
-        }
-        catch (Exception ex)
-        {
-            await _ui.ShowAlertAsync("Mother POS", ex.Message);
-            PublishSession();
-        }
+        _ = _cache.SaveOrderStateAsync(_currentOrder);
+        PublishSession();
+        QueueMotherPersist();
     }
 
     public async Task EditLineNoteAsync(string lineId, CancellationToken cancellationToken = default)
@@ -454,10 +429,23 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
-            Session.IsBusy = true;
+            Session.ActionsBusy = true;
+            Session.SendActionLabel = "SENDING…";
+            Session.StatusMessage = "Sending to kitchen…";
             RaiseChanged();
+
+            await FlushMotherPersistAsync();
+            if (_currentOrder is null)
+            {
+                return;
+            }
+
             var result = await _orderClient.SendToKitchenAsync(_currentOrder);
-            _currentOrder = result.State;
+            lock (_orderGate)
+            {
+                _currentOrder = result.State;
+            }
+
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
             await _ui.ShowAlertAsync(result.ConflictDetected ? "Order conflict" : "Mother POS", result.Message);
@@ -468,7 +456,13 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
         finally
         {
-            Session.IsBusy = false;
+            Session.ActionsBusy = false;
+            Session.SendActionLabel = "SEND TO KITCHEN";
+            if (string.Equals(Session.StatusMessage, "Sending to kitchen…", StringComparison.Ordinal))
+            {
+                Session.StatusMessage = null;
+            }
+
             RaiseChanged();
         }
     }
@@ -493,14 +487,24 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
-            Session.IsBusy = true;
+            Session.ActionsBusy = true;
+            Session.StatusMessage = "Printing…";
             RaiseChanged();
+            await FlushMotherPersistAsync();
+            if (_currentOrder is null)
+            {
+                return;
+            }
 
             if (IsCollectionOrder() || IsDeliveryOrder())
             {
                 // Takeaway PRINT = customer receipt + kitchen (Mother parity).
                 var result = await _orderClient.SendToKitchenAndReceiptAsync(_currentOrder);
-                _currentOrder = result.State;
+                lock (_orderGate)
+                {
+                    _currentOrder = result.State;
+                }
+
                 await _cache.SaveOrderStateAsync(_currentOrder);
                 PublishSession();
                 await _ui.ShowAlertAsync(result.ConflictDetected ? "Order conflict" : "Print", result.Message);
@@ -519,7 +523,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
         finally
         {
-            Session.IsBusy = false;
+            Session.ActionsBusy = false;
+            if (string.Equals(Session.StatusMessage, "Printing…", StringComparison.Ordinal))
+            {
+                Session.StatusMessage = null;
+            }
+
             RaiseChanged();
         }
     }
@@ -542,15 +551,39 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             }
         }
 
-        await _ui.NavigateToPaymentAsync(_currentOrder.Total, _currentOrder.OrderId, _currentOrder.Version);
+        try
+        {
+            Session.ActionsBusy = true;
+            Session.PaymentActionLabel = "OPENING…";
+            RaiseChanged();
+            await FlushMotherPersistAsync();
+            if (_currentOrder is null)
+            {
+                return;
+            }
+
+            await _ui.NavigateToPaymentAsync(_currentOrder.Total, _currentOrder.OrderId, _currentOrder.Version);
+        }
+        finally
+        {
+            Session.ActionsBusy = false;
+            PublishSession();
+        }
     }
 
     public async Task ReloadFromMotherIfIdleAsync()
     {
-        if (_currentOrder is null)
+        if (_currentOrder is null || _persistQueued || Session.ActionsBusy)
         {
             return;
         }
+
+        if (!await _motherWriteGate.WaitAsync(0))
+        {
+            return;
+        }
+
+        _motherWriteGate.Release();
 
         try
         {
@@ -560,10 +593,14 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             var changedElsewhere =
                 result.State.Version != previousVersion ||
                 !string.Equals(result.State.UpdatedUtc, previousUpdated, StringComparison.Ordinal);
-            _currentOrder = result.State with
+            lock (_orderGate)
             {
-                ConflictMessage = changedElsewhere ? null : _currentOrder.ConflictMessage
-            };
+                _currentOrder = result.State with
+                {
+                    ConflictMessage = changedElsewhere ? null : _currentOrder?.ConflictMessage
+                };
+            }
+
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
         }
@@ -625,19 +662,74 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     private async Task LoadMenuAsync()
     {
-        var refreshed = await _menuClient.RefreshCacheAsync();
-        if (!refreshed)
+        var status = await _cache.GetStatusAsync();
+        var sections = await _cache.GetOperationalSectionSyncStatusAsync();
+        var hasWarmCache = status.Categories > 0 && status.Products > 0;
+        var menuFresh = hasWarmCache &&
+                        sections.MenuOk == true &&
+                        IsMenuSyncFresh(sections.MenuUtc);
+
+        if (!menuFresh)
         {
-            try
+            var refreshed = await _menuClient.RefreshCacheAsync();
+            if (!refreshed && !hasWarmCache)
             {
-                await new MotherOperationalSyncClient(_cache).PullAllAsync();
-            }
-            catch
-            {
-                // Use SQLite cache.
+                try
+                {
+                    await new MotherOperationalSyncClient(_cache).PullAllAsync();
+                }
+                catch
+                {
+                    // Use whatever SQLite still has.
+                }
             }
         }
+        else
+        {
+            // Paint from cache now; refresh quietly after Order Place is open.
+            _ = BackgroundRefreshMenuAsync();
+        }
 
+        await ReloadMenuFromCacheAsync();
+
+        if (_categories.Count == 0)
+        {
+            Session.StatusMessage = "No menu synced — use Update All, then reopen.";
+        }
+    }
+
+    private async Task BackgroundRefreshMenuAsync()
+    {
+        try
+        {
+            var refreshed = await _menuClient.RefreshCacheAsync();
+            if (!refreshed)
+            {
+                return;
+            }
+
+            var previousCategoryId = _selectedCategory?.Id;
+            await ReloadMenuFromCacheAsync();
+            if (previousCategoryId is int id)
+            {
+                var still = _categories.FirstOrDefault(c => c.Id == id);
+                if (still != null)
+                {
+                    _selectedCategory = still;
+                    await LoadProductsForSelectedCategoryAsync();
+                }
+            }
+
+            PublishSession();
+        }
+        catch
+        {
+            // Keep warm cache.
+        }
+    }
+
+    private async Task ReloadMenuFromCacheAsync()
+    {
         _categories.Clear();
         _categories.AddRange(await _cache.GetMenuCategoriesAsync());
         _categoryIdsWithProducts.Clear();
@@ -648,11 +740,17 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         _selectedTopCategory = TopLevelCategories().FirstOrDefault() ?? _categories.FirstOrDefault();
         await SelectTopCategoryAsync(_selectedTopCategory, publish: false);
+    }
 
-        if (_categories.Count == 0)
+    private static bool IsMenuSyncFresh(string? menuUtc)
+    {
+        if (string.IsNullOrWhiteSpace(menuUtc) ||
+            !DateTimeOffset.TryParse(menuUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var when))
         {
-            Session.StatusMessage = "No menu synced — use Update All, then reopen.";
+            return false;
         }
+
+        return DateTimeOffset.UtcNow - when.ToUniversalTime() <= WarmMenuTtl;
     }
 
     private async Task SelectTopCategoryAsync(CachedMenuCategory? category, bool publish = true)
@@ -800,7 +898,16 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         Session.ShowServiceCharge = !takeaway;
         Session.ShowDeliveryFee = IsDeliveryOrder();
         Session.PrintActionLabel = takeaway ? "PRINT RECEIPT" : "PRINT BILL";
-        Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
+        if (!Session.ActionsBusy)
+        {
+            Session.SendActionLabel = "SEND TO KITCHEN";
+            Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
+        }
+        else if (!string.Equals(Session.PaymentActionLabel, "OPENING…", StringComparison.Ordinal))
+        {
+            Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
+        }
+
         if (!string.IsNullOrWhiteSpace(_currentOrder?.ConflictMessage) &&
             !_currentOrder.ConflictMessage.Contains('·'))
         {
@@ -808,6 +915,121 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
 
         RaiseChanged();
+    }
+
+    private void QueueMotherPersist()
+    {
+        _persistQueued = true;
+        _ = DrainMotherPersistAsync();
+    }
+
+    private async Task FlushMotherPersistAsync()
+    {
+        _persistQueued = true;
+        await DrainMotherPersistAsync();
+    }
+
+    private async Task DrainMotherPersistAsync()
+    {
+        if (!await _motherWriteGate.WaitAsync(0))
+        {
+            _persistQueued = true;
+            return;
+        }
+
+        try
+        {
+            while (_persistQueued)
+            {
+                _persistQueued = false;
+                MotherOrderState? snapshot;
+                lock (_orderGate)
+                {
+                    snapshot = _currentOrder;
+                }
+
+                if (snapshot is null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var result = await _orderClient.ReplaceLinesAsync(snapshot, snapshot.Lines);
+                    lock (_orderGate)
+                    {
+                        if (_currentOrder is null)
+                        {
+                            _currentOrder = result.State;
+                        }
+                        else if (SameBasketSignature(_currentOrder.Lines, snapshot.Lines))
+                        {
+                            _currentOrder = result.State;
+                        }
+                        else
+                        {
+                            // Newer local edits exist — keep local lines, adopt Mother version for next write.
+                            _currentOrder = _currentOrder with
+                            {
+                                Version = result.State.Version,
+                                OrderNumber = result.State.OrderNumber,
+                                UpdatedUtc = result.State.UpdatedUtc,
+                                Status = result.State.Status
+                            };
+                            _persistQueued = true;
+                        }
+                    }
+
+                    if (_currentOrder != null)
+                    {
+                        await _cache.SaveOrderStateAsync(_currentOrder);
+                    }
+
+                    if (result.ConflictDetected)
+                    {
+                        Session.StatusMessage = result.Message;
+                    }
+
+                    PublishSession();
+                }
+                catch (Exception ex)
+                {
+                    Session.StatusMessage = "Could not save to Mother — tap Send to retry.";
+                    RaiseChanged();
+                    await _ui.ShowAlertAsync("Mother POS", ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            _motherWriteGate.Release();
+            if (_persistQueued)
+            {
+                _ = DrainMotherPersistAsync();
+            }
+        }
+    }
+
+    private static bool SameBasketSignature(
+        IReadOnlyList<MotherOrderLine> left,
+        IReadOnlyList<MotherOrderLine> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (!string.Equals(left[i].Id, right[i].Id, StringComparison.Ordinal) ||
+                left[i].Quantity != right[i].Quantity ||
+                left[i].UnitPrice != right[i].UnitPrice)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private IEnumerable<CachedProduct> FilteredProducts() => _products;

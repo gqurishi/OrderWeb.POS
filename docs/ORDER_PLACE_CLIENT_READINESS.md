@@ -140,4 +140,5 @@ Mother page code-behind may still use legacy colours until a later shell extract
 - [x] Short Phase 8 checklist for Client engineers  
 - [x] Phase 8: Client `OrderPage` hosts `OrderPlaceShellView` + `ClientOrderPlaceHost`  
 - [x] Package 1: Mother `OrderPlacementPageSimple` hosts same shell via `MotherOrderPlaceHost`  
+- [x] Package 2: Client add pipeline = Mother (variant → quick note → addons → add) via SharedUI dialogs  
 - [x] Entry paths (Table / COL / DEL / Live) still land on same `OrderPage`
