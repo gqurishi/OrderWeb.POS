@@ -297,6 +297,9 @@ namespace POS_in_NET.Services
                         floorId.ToString(),
                         new { action = "deleted", tableCount });
 
+                    // Floor delete cascades tables — Clients must refresh both sections.
+                    ClientLayoutChangeNotifier.NotifyTablesChanged();
+
                     NotifyFloorsChanged(FloorChangeAction.Deleted, new Floor
                     {
                         Id = floorId,
@@ -737,6 +740,8 @@ namespace POS_in_NET.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Floor live-update publish skipped: {ex.Message}");
             }
+
+            ClientLayoutChangeNotifier.NotifyFloorsChanged();
         }
 
         private static async Task PublishFloorChangeSafelyAsync(
@@ -756,6 +761,8 @@ namespace POS_in_NET.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Floor live-update publish skipped: {ex.Message}");
             }
+
+            ClientLayoutChangeNotifier.NotifyFloorsChanged();
         }
     }
 

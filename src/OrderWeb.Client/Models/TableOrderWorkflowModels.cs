@@ -1,6 +1,11 @@
 namespace OrderWeb.Client.Models;
 
-public sealed record CachedFloor(int Id, string Name, int SortOrder, IReadOnlyList<CachedTable> Tables);
+public sealed record CachedFloor(
+    int Id,
+    string Name,
+    int SortOrder,
+    IReadOnlyList<CachedTable> Tables,
+    string? BackgroundImageId = null);
 
 public sealed record CachedTable(
     int Id,
@@ -54,6 +59,12 @@ public sealed record MotherOrderLine(
     decimal UnitPrice,
     string? Notes,
     IReadOnlyList<string> Modifiers,
-    string? ProductMotherId = null);
+    string? ProductMotherId = null,
+    string? VariantId = null,
+    string? VariantName = null,
+    decimal? VariantPrice = null,
+    string? MealDealId = null,
+    IReadOnlyList<string>? MealDealChoices = null,
+    string? TastingMenuId = null);
 
 public sealed record MotherCommandResult(MotherOrderState State, bool ConflictDetected, string Message);

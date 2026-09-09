@@ -152,7 +152,13 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@CreatedAt", DateTime.Now);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var created = await command.ExecuteNonQueryAsync() > 0;
+                if (created)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
+                return created;
             }
             catch (Exception ex)
             {
@@ -192,7 +198,13 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@DisplayOrder", deal.DisplayOrder);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
-                return await command.ExecuteNonQueryAsync() > 0;
+                var updated = await command.ExecuteNonQueryAsync() > 0;
+                if (updated)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
+                return updated;
             }
             catch (Exception ex)
             {
@@ -211,7 +223,13 @@ namespace MyFirstMauiApp.Services
 
                 using var command = new MySqlCommand("DELETE FROM MealDeals WHERE Id = @Id", connection);
                 command.Parameters.AddWithValue("@Id", id);
-                return await command.ExecuteNonQueryAsync() > 0;
+                var deleted = await command.ExecuteNonQueryAsync() > 0;
+                if (deleted)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
+                return deleted;
             }
             catch (Exception ex)
             {
@@ -236,7 +254,13 @@ namespace MyFirstMauiApp.Services
                 using var command = new MySqlCommand(query, connection);
                 command.Parameters.AddWithValue("@Id", id);
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
-                return await command.ExecuteNonQueryAsync() > 0;
+                var toggled = await command.ExecuteNonQueryAsync() > 0;
+                if (toggled)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
+                return toggled;
             }
             catch (Exception ex)
             {

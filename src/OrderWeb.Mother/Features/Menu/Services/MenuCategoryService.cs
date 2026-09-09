@@ -230,6 +230,11 @@ namespace MyFirstMauiApp.Services
 
                 var result = await command.ExecuteNonQueryAsync();
                 System.Diagnostics.Debug.WriteLine($"CreateCategoryAsync saved '{category.Name}' ({result} row(s))");
+                if (result > 0)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
                 return result > 0;
             }
             catch (Exception ex)
@@ -273,6 +278,11 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
                 return result > 0;
             }
             catch (Exception ex)
@@ -298,6 +308,11 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@Id", id);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
                 return result > 0;
             }
             catch (Exception ex)
@@ -332,6 +347,7 @@ namespace MyFirstMauiApp.Services
                     }
 
                     await transaction.CommitAsync();
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
                     return true;
                 }
                 catch
@@ -367,6 +383,11 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
                 return result > 0;
             }
             catch (Exception ex)

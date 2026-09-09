@@ -9,14 +9,24 @@ public sealed record PaymentRequest(
     decimal Amount,
     DateTimeOffset RequestedAtUtc,
     long? ExpectedOrderRevision = null,
-    string? CorrelationId = null);
+    string? CorrelationId = null,
+    string? GiftCardNumber = null,
+    string? GiftCardIdempotencyKey = null,
+    string? LoyaltyLookup = null,
+    int? LoyaltyPoints = null,
+    string? LoyaltyIdempotencyKey = null);
 
 public sealed record PaymentResultDto(
     string PaymentId,
     string OrderId,
     string Status,
     decimal ConfirmedAmount,
-    string? ProviderReference = null);
+    string? ProviderReference = null,
+    string? GiftCardNumberMasked = null,
+    decimal? GiftCardRemainingBalance = null,
+    string? LoyaltyCustomerName = null,
+    int? LoyaltyPointsRedeemed = null,
+    int? LoyaltyPointsRemaining = null);
 
 public sealed record PrintRequest(
     string RequestId,

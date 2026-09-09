@@ -94,6 +94,15 @@ public sealed class MotherOperationalSyncClient
                 return (false, 0, 0, message);
             }
 
+            if (snapshot.Categories.Count == 0)
+            {
+                const string emptyPull =
+                    "Mother returned 0 categories. On Mother POS open Food Menu, ensure categories/items exist and are Active, then Retry sync.";
+                await _cache.RecordOperationalSectionAsync("menu", false, emptyPull);
+                var status = await _cache.GetStatusAsync();
+                return (false, status.Categories, status.Products, emptyPull);
+            }
+
             var replace = await _cache.ReplaceMenuAsync(snapshot);
             if (!replace.Applied)
             {
@@ -106,7 +115,8 @@ public sealed class MotherOperationalSyncClient
             var after = await _cache.GetStatusAsync();
             if (after.Categories <= 0)
             {
-                const string emptyMessage = "Mother menu pull returned no categories — order place has nothing to show.";
+                const string emptyMessage =
+                    "Menu sync wrote no categories — order place has nothing to show. Retry after Mother Food Menu has Active categories.";
                 await _cache.RecordOperationalSectionAsync("menu", false, emptyMessage);
                 return (false, 0, 0, emptyMessage);
             }

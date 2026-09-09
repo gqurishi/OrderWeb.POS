@@ -15,7 +15,7 @@ public static class PosNavigationCatalog
     [
         Item("dashboard", "Dashboard", "dashboard.png", [], [], 10),
         // Keep the normal order-taking flow together in every host sidebar.
-        Item("liveorder", "Live Order", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.LiveOrders], 55),
+        Item("liveorder", "Live Orders", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.LiveOrders], 55),
         Item("restaurant", "Restaurant", "restaurant.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.DineIn], 30),
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
@@ -26,15 +26,15 @@ public static class PosNavigationCatalog
         Item("cashdrawer", "Cash Drawer", "cashdrawer.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 20),
         Item("giftcards", "Gift Cards", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.GiftCards], 60),
         Item("loyalty", "Loyalty Points", "loyalty.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.CustomerPoints], 70),
-        Item("reservation", "Reservation", "reservation.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.Reservations], 80),
+        Item("reservation", "Reservations", "reservation.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.Reservations], 80),
         Item("orderhistory", "Order History", "orderhistory.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Payments], 90),
         Item("report", "Reports", "report.png", [PosCapabilityKeys.ViewReports], [], 140),
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
-        Item("printersetup", "Printers", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
+        Item("printersetup", "Printer Setup", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
         Item("settings", "Settings", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 170),
         Item("staffclock", "Staff Clock", "staff.png", [PosCapabilityKeys.AccessAdmin], [], 180),
         Item("inventory", "Inventory", "inventory.png", [PosCapabilityKeys.ViewReports], [], 190),
-        Item("terminalhealth", "Terminal Health", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),
+        Item("terminalhealth", "Terminal", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),
         Item("customerdata", "Recent Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 110)
     ];
 

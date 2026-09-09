@@ -58,6 +58,7 @@ public partial class MainPage : ContentPage
     private readonly MotherLayoutClient _layoutClient;
     private readonly MotherMenuClient _menuClient;
     private readonly MotherOperationalSyncClient _operationalSync;
+    private readonly MotherImageCacheService _imageCache;
     private ClientAuthenticationService? _sharedLoginAuth;
     private LoginViewModel? _sharedLoginViewModel;
     private IReadOnlyList<CachedFloor> _cachedFloors = Array.Empty<CachedFloor>();
@@ -121,6 +122,7 @@ public partial class MainPage : ContentPage
         _menuClient = new MotherMenuClient(_cache);
         _operationalSync = new MotherOperationalSyncClient(_cache);
         _orderClient = new MotherOrderClient(_cache);
+        _imageCache = new MotherImageCacheService(_cache);
         _motherEvents.TerminalControlReceived += OnMotherTerminalControlReceived;
         _motherEvents.AuthoritativeDataChanged += OnMotherAuthoritativeDataChanged;
         _motherEvents.ConnectionChanged += OnMotherConnectionChanged;
@@ -440,6 +442,11 @@ public partial class MainPage : ContentPage
     {
         // Events carry no business data. Fetch fresh authoritative snapshots
         // from Mother instead of merging event payloads into the Client cache.
+        if (IsFeaturesUpdatedEvent(e))
+        {
+            await RefreshClientAccessFromMotherAsync(showToast: true);
+        }
+
         await RefreshAuthoritativeClientCacheAsync();
         _cacheStatus = await _cache.GetStatusAsync();
         await MainThread.InvokeOnMainThreadAsync(async () =>
@@ -459,6 +466,10 @@ public partial class MainPage : ContentPage
             RefreshCurrentPosPage();
         });
     }
+
+    private static bool IsFeaturesUpdatedEvent(MotherDataChangedEventArgs e) =>
+        !string.IsNullOrWhiteSpace(e.EventType) &&
+        e.EventType.Contains("feature", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsOrderUpdatedEvent(MotherDataChangedEventArgs e) =>
         !string.IsNullOrWhiteSpace(e.EventType) &&
@@ -2538,9 +2549,16 @@ public partial class MainPage : ContentPage
                 return;
             }
 
+            var access = await RefreshClientAccessFromMotherAsync(showToast: false);
             _connectionStatus = result.AnyOk ? "Mother online" : "Mother Offline";
             if (frame != null) frame.IsLoading = false;
-            ShowToast(result.SummaryMessage());
+            var summary = result.SummaryMessage();
+            if (access.Success)
+            {
+                summary = $"{summary} Access refreshed.";
+            }
+
+            ShowToast(summary);
             RefreshCurrentPosPage();
         }
         catch (Exception ex)
@@ -2882,9 +2900,10 @@ public partial class MainPage : ContentPage
             IsLoading = true
         };
         _restaurantTablesView = tablesView;
-        tablesView.FloorSelected += (_, floorId) =>
+        tablesView.FloorSelected += async (_, floorId) =>
         {
             _selectedCachedFloor = _cachedFloors.FirstOrDefault(floor => string.Equals(floor.Id.ToString(), floorId, StringComparison.OrdinalIgnoreCase));
+            await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
         };
         tablesView.TableSelected += (_, selected) => OnSharedRestaurantTableSelected(selected.Table);
 
@@ -2903,7 +2922,7 @@ public partial class MainPage : ContentPage
 
             var version = _cachedFloors.SelectMany(floor => floor.Tables).Select(table => table.Version).DefaultIfEmpty(1).Max().ToString();
             var floors = new FloorSnapshotDto(version, _cachedFloors
-                .Select(floor => new FloorDto(floor.Id.ToString(), floor.Name, floor.SortOrder))
+                .Select(floor => new FloorDto(floor.Id.ToString(), floor.Name, floor.SortOrder, floor.BackgroundImageId))
                 .ToList());
             var tables = new TableSnapshotDto(version, _cachedFloors.SelectMany(floor => floor.Tables)
                 .Select(table => new RestaurantTableDto(
@@ -2913,6 +2932,7 @@ public partial class MainPage : ContentPage
                 .ToList());
 
             tablesView.Bind(floors, tables, _selectedCachedFloor?.Id.ToString());
+            await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
             tablesView.ConnectionStatus = _connectionStatus;
             tablesView.IsLoading = false;
 
@@ -2944,7 +2964,39 @@ public partial class MainPage : ContentPage
         }
     }
 
+    private async Task ApplyFloorBackgroundAsync(RestaurantTablesView tablesView, CachedFloor? floor)
+    {
+        if (string.IsNullOrWhiteSpace(floor?.BackgroundImageId))
+        {
+            tablesView.FloorBackground = null;
+            return;
+        }
+
+        var imageId = floor.BackgroundImageId.Trim();
+        tablesView.FloorBackground = await _imageCache.GetOrRefreshAsync(
+            new MotherImageDescriptor(imageId, $"/api/client/images/{Uri.EscapeDataString(imageId)}", string.Empty));
+    }
+
     private Task RefreshMotherOperationalCacheAsync() => SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+
+    private async Task<MotherAccessRefreshResult> RefreshClientAccessFromMotherAsync(bool showToast)
+    {
+        var accessClient = new MotherAccessClient(_cache);
+        var result = await accessClient.RefreshAccessAsync();
+        if (showToast)
+        {
+            ShowToast(result.Success
+                ? "Client access updated from Mother (menus may appear or hide)."
+                : result.Message);
+        }
+
+        if (result.Success)
+        {
+            await MainThread.InvokeOnMainThreadAsync(RefreshCurrentPosPage);
+        }
+
+        return result;
+    }
 
     private async Task RefreshRestaurantLayoutCacheAsync()
     {
@@ -5030,14 +5082,89 @@ public partial class MainPage : ContentPage
                 return;
             }
 
+            string? giftCardNumber = null;
+            string? loyaltyLookup = null;
+            int? loyaltyPoints = null;
+            var amount = submission.Amount;
+            var method = submission.Method;
+            if (string.Equals(NormalizePaymentMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase))
+            {
+                var dialog = new OrderWeb.Client.Dialogs.GiftCardOrderPaymentDialog(amount);
+                await Navigation.PushModalAsync(dialog, false);
+                var gift = await dialog.WaitAsync();
+                if (!gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber))
+                {
+                    viewModel.ApplyAuthoritativeResult(false, gift.Message ?? "Gift card payment cancelled. No balance was changed.", false);
+                    return;
+                }
+
+                giftCardNumber = gift.CardNumber;
+                amount = gift.AmountApplied;
+                method = "gift_card";
+                viewModel.Message = "Redeeming gift card on Mother / OrderWeb…";
+            }
+            else if (string.Equals(NormalizePaymentMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase))
+            {
+                var dialog = new OrderWeb.Client.Dialogs.LoyaltyOrderPaymentDialog(amount);
+                await Navigation.PushModalAsync(dialog, false);
+                var loyalty = await dialog.WaitAsync();
+                if (!loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
+                {
+                    viewModel.ApplyAuthoritativeResult(false, loyalty.Message ?? "Loyalty payment cancelled. No points were changed.", false);
+                    return;
+                }
+
+                loyaltyLookup = loyalty.Lookup;
+                loyaltyPoints = loyalty.Points;
+                amount = loyalty.AmountApplied;
+                method = "loyalty";
+                viewModel.Message = "Redeeming loyalty points on Mother / OrderWeb…";
+            }
+
             var result = await paymentService.TakePaymentAsync(
                 _currentOrder.OrderId,
-                submission.Method,
-                submission.Amount,
+                method,
+                amount,
                 submission.RequestId,
                 expectedOrderRevision: _currentOrder.Version,
-                correlationId: submission.CorrelationId);
+                correlationId: submission.CorrelationId,
+                giftCardNumber: giftCardNumber,
+                giftCardIdempotencyKey: giftCardNumber == null
+                    ? null
+                    : $"gift-card:{_currentOrder.OrderId}:{giftCardNumber}:{amount:F2}",
+                loyaltyLookup: loyaltyLookup,
+                loyaltyPoints: loyaltyPoints,
+                loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
+                    ? null
+                    : $"loyalty:{_currentOrder.OrderId}:{loyaltyLookup}:{loyaltyPoints}");
             viewModel.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
+            if (giftCardNumber != null)
+            {
+                ClientGiftCardDiagnostics.Record(
+                    "order-pay",
+                    result.Approved,
+                    result.Message,
+                    result.Approved ? null : (result.IsUnknown ? GiftCardErrorCodes.OfflineMother : GiftCardErrorCodes.Unknown));
+            }
+
+            if (loyaltyLookup != null)
+            {
+                var queued = !result.Approved &&
+                             result.Message?.Contains("queued", StringComparison.OrdinalIgnoreCase) == true;
+                ClientLoyaltyDiagnostics.Record(
+                    "order-pay",
+                    result.Approved,
+                    result.Message,
+                    result.Approved
+                        ? null
+                        : (result.IsUnknown
+                            ? LoyaltyErrorCodes.OfflineMother
+                            : queued
+                                ? LoyaltyErrorCodes.Queued
+                                : LoyaltyErrorCodes.Unknown),
+                    queued);
+            }
+
             if (result.Approved)
             {
                 try
@@ -5069,9 +5196,14 @@ public partial class MainPage : ContentPage
     private async Task CompletePaymentAsync(string method)
     {
         var policy = new ClientOfflinePolicy(_cache);
-        var operation = string.Equals(method, "card", StringComparison.OrdinalIgnoreCase)
-            ? ClientOperation.CardPayment
-            : ClientOperation.SubmitFinalOrder;
+        var normalized = NormalizePaymentMethod(method);
+        var operation = normalized switch
+        {
+            "card" => ClientOperation.CardPayment,
+            "gift_card" => ClientOperation.GiftCard,
+            "loyalty" => ClientOperation.Loyalty,
+            _ => ClientOperation.SubmitFinalOrder
+        };
         var decision = policy.Evaluate(operation, await policy.IsMotherOnlineAsync());
         if (!decision.Allowed)
         {
@@ -5382,6 +5514,17 @@ public partial class MainPage : ContentPage
         border.GestureRecognizers.Add(tap);
         return border;
     }
+
+    private static string NormalizePaymentMethod(string? method) =>
+        (method ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
+        {
+            "gift" or "giftcard" or "gift_card" => "gift_card",
+            "loyalty" or "points" or "loyalty_points" or "customer_points" => "loyalty",
+            "cash" => "cash",
+            "card" => "card",
+            "split" => "split",
+            var other => other
+        };
 
     private static string NormalizeLiveOrderType(string? orderType)
     {
@@ -5887,6 +6030,8 @@ public partial class MainPage : ContentPage
             $"Cache: {status.Categories} categories, {status.Products} products, {status.Tables} tables, {status.OpenOrders} open orders",
             $"Last operational sync: {FormatCacheTime(sections.LastOperationalSyncUtc)}",
             $"Connection: {_connectionStatus}",
+            ClientGiftCardDiagnostics.Last.SummaryLine,
+            ClientLoyaltyDiagnostics.Last.SummaryLine,
             last is null ? "Session result: none" : string.Join(Environment.NewLine, last.SectionLines()));
 
         if (_activeApplicationFrame is { } frame)

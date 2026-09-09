@@ -10,6 +10,8 @@ public partial class TillShoppingTakeDialog : ContentView
     private readonly string _sourceArea;
     private readonly string? _orderId;
     private readonly string? _orderNumber;
+    private Page? _hostPage;
+    private bool _keyboardOpen;
 
     public TillShoppingTakeDialog(string sourceArea, string? orderId = null, string? orderNumber = null)
     {
@@ -22,6 +24,7 @@ public partial class TillShoppingTakeDialog : ContentView
     public Task<ShoppingTakeRequest?> ShowAsync(Page hostPage)
     {
         _taskCompletionSource = new TaskCompletionSource<ShoppingTakeRequest?>();
+        _hostPage = hostPage;
 
         if (hostPage is ContentPage contentPage)
         {
@@ -80,6 +83,37 @@ public partial class TillShoppingTakeDialog : ContentView
     }
 
     private void OnCancelClicked(object sender, EventArgs e) => Close(null);
+
+    private async void OnItemTapped(object sender, EventArgs e) =>
+        await OpenKeyboardAsync(ItemEntry, "Shopping item or purpose");
+
+    private async void OnAmountTapped(object sender, EventArgs e) =>
+        await OpenKeyboardAsync(AmountEntry, "Amount taken");
+
+    private async Task OpenKeyboardAsync(Entry entry, string title)
+    {
+        if (_keyboardOpen)
+        {
+            return;
+        }
+
+        _keyboardOpen = true;
+        try
+        {
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+            var value = await keyboard.ShowAsync(_hostPage);
+            if (value != null)
+            {
+                entry.Text = value;
+            }
+        }
+        finally
+        {
+            _keyboardOpen = false;
+        }
+    }
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

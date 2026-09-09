@@ -306,7 +306,11 @@ public class LoyaltyService
         {
             System.Diagnostics.Debug.WriteLine($" Exception in AddPointsAsync: {ex.Message}");
             await QueueMoneyOrPointsOperationAsync("loyalty_add", phone, points, reason, transactionId);
-            return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
+            return new LoyaltyLookupResponse
+            {
+                Success = false,
+                Error = "OrderWeb cloud was unreachable. Mother queued this loyalty add for retry. Do not add points again — retry uses the same idempotency key."
+            };
         }
     }
 
@@ -370,7 +374,11 @@ public class LoyaltyService
         {
             System.Diagnostics.Debug.WriteLine($" Exception in RedeemPointsAsync: {ex.Message}");
             await QueueMoneyOrPointsOperationAsync("loyalty_redeem", phone, points, reason, transactionId);
-            return new LoyaltyLookupResponse { Success = false, Error = ex.Message };
+            return new LoyaltyLookupResponse
+            {
+                Success = false,
+                Error = "OrderWeb cloud was unreachable. Mother queued this loyalty redeem for retry. Do not redeem again — retry uses the same idempotency key."
+            };
         }
     }
 

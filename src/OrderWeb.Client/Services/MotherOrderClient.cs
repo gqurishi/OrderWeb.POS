@@ -338,7 +338,13 @@ public sealed class MotherOrderClient
                 line.Quantity,
                 line.UnitPrice,
                 line.Notes,
-                line.Modifiers)).ToList(),
+                line.Modifiers,
+                line.VariantId,
+                line.VariantName,
+                line.VariantPrice,
+                line.MealDealId,
+                line.MealDealChoices,
+                line.TastingMenuId)).ToList(),
             // Existing orders: send version so Mother rejects stale concurrent edits.
             string.IsNullOrWhiteSpace(state.OrderId) ? null : state.Version,
             string.IsNullOrWhiteSpace(state.OrderId) ? null : state.UpdatedUtc,
@@ -462,7 +468,13 @@ public sealed class MotherOrderClient
                 line.UnitPrice,
                 line.Notes,
                 line.Modifiers ?? Array.Empty<string>(),
-                line.ProductMotherId)).ToList(),
+                line.ProductMotherId,
+                line.VariantId,
+                line.VariantName,
+                line.VariantPrice,
+                line.MealDealId,
+                line.MealDealChoices,
+                line.TastingMenuId)).ToList(),
             order.Subtotal,
             order.Tax,
             order.Total,
@@ -542,7 +554,13 @@ public sealed class MotherOrderClient
         int Quantity,
         decimal UnitPrice,
         string? Notes,
-        IReadOnlyList<string> Modifiers);
+        IReadOnlyList<string> Modifiers,
+        string? VariantId = null,
+        string? VariantName = null,
+        decimal? VariantPrice = null,
+        string? MealDealId = null,
+        IReadOnlyList<string>? MealDealChoices = null,
+        string? TastingMenuId = null);
 
     private sealed record OrderEnvelope(bool Success, string? Message, OrderStateDto? Order, PrintState? Print, bool? Conflict = null);
 
@@ -573,5 +591,11 @@ public sealed class MotherOrderClient
         int Quantity,
         decimal UnitPrice,
         string? Notes,
-        IReadOnlyList<string>? Modifiers);
+        IReadOnlyList<string>? Modifiers,
+        string? VariantId = null,
+        string? VariantName = null,
+        decimal? VariantPrice = null,
+        string? MealDealId = null,
+        IReadOnlyList<string>? MealDealChoices = null,
+        string? TastingMenuId = null);
 }

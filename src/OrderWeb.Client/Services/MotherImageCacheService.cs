@@ -39,6 +39,7 @@ public sealed class MotherImageCacheService
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             ClientCompatibilityHeaders.Apply(client);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
             client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);
             client.DefaultRequestHeaders.TryAddWithoutValidation("X-Session-Token", session.SessionToken);
             using var response = await client.GetAsync(ToAbsoluteUrl(settings.ApiBaseUrl, image.RemotePath), cancellationToken);

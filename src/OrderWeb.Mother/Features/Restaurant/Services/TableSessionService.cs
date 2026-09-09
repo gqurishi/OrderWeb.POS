@@ -1782,21 +1782,7 @@ namespace POS_in_NET.Services
 	        /// </summary>
 	        private static void NotifyClientsTablesUpdated(int? tableId)
 	        {
-	            try
-	            {
-	                var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
-	                if (broadcast is null)
-	                {
-	                    return;
-	                }
-
-	                var version = tableId?.ToString() ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
-	                _ = broadcast.PublishDataChangedAsync("tables.updated", version);
-	            }
-	            catch (Exception ex)
-	            {
-	                System.Diagnostics.Debug.WriteLine($"[TableSession] tables.updated notify failed: {ex.Message}");
-	            }
+	            ClientLayoutChangeNotifier.NotifyTablesChanged();
 	        }
 	    }
 	}

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -96,11 +97,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/orders/{orderId}", HandleGetOrderAsync);
             app.MapPost("/api/client/orders", HandleUpsertOrderAsync);
             app.MapPost("/api/client/orders/void", HandleVoidOrderAsync);
+            app.MapGet("/api/client/order-history", HandleOrderHistoryAsync);
+            app.MapGet("/api/client/order-history/{orderId}", HandleOrderHistoryDetailAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
             app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
             app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
             app.MapPost("/api/client/reservations/sync", HandleSyncReservationsAsync);
             app.MapPost("/api/client/login", HandleLoginAsync);
+            app.MapGet("/api/client/access", HandleClientAccessAsync);
             app.MapGet("/api/client/cashier/authorization", HandleCashierAuthorizationAsync);
             app.MapGet("/api/client/cashier/dashboard", HandleCashierDashboardAsync);
             app.MapGet("/api/client/cashier/z-report/preview", HandleCashierZReportPreviewAsync);
@@ -110,6 +114,17 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/customers/upsert", HandleCustomerUpsertAsync);
             app.MapPost("/api/client/payments", HandlePaymentAsync);
             app.MapGet("/api/client/payments/{requestId}", HandlePaymentStatusAsync);
+            app.MapPost("/api/client/gift-cards/lookup", HandleGiftCardLookupAsync);
+            app.MapPost("/api/client/gift-cards/sell", HandleGiftCardSellAsync);
+            app.MapPost("/api/client/gift-cards/top-up", HandleGiftCardTopUpAsync);
+            app.MapPost("/api/client/gift-cards/redeem", HandleGiftCardRedeemAsync);
+            app.MapPost("/api/client/gift-cards/activate", HandleGiftCardActivateAsync);
+            app.MapPost("/api/client/loyalty/search", HandleLoyaltySearchAsync);
+            app.MapPost("/api/client/loyalty/customers", HandleLoyaltyCreateCustomerAsync);
+            app.MapPost("/api/client/loyalty/add", HandleLoyaltyAddPointsAsync);
+            app.MapPost("/api/client/loyalty/redeem", HandleLoyaltyRedeemPointsAsync);
+            app.MapPost("/api/client/loyalty/history", HandleLoyaltyHistoryAsync);
+            app.MapPost("/api/client/loyalty/test", HandleLoyaltyTestAsync);
             app.MapPost("/api/client/prints", HandlePrintAsync);
             app.MapGet("/api/client/prints/{requestId}", HandlePrintStatusAsync);
             app.MapGet("/api/client/images/{imageId}", HandleImageAsync);
@@ -385,6 +400,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     .ToList();
             }
 
+            var floorIdsWithBackground = await LoadFloorIdsWithBackgroundImagesAsync();
+
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
                 success = true,
@@ -395,7 +412,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     id = floor.Id.ToString(),
                     name = string.IsNullOrWhiteSpace(floor.Name) ? $"Floor {floor.Id}" : floor.Name,
                     sortOrder = index,
-                    backgroundImageId = (string?)null
+                    backgroundImageId = floorIdsWithBackground.Contains(floor.Id) || floor.HasBackgroundImage
+                        ? $"floor-{floor.Id}"
+                        : null
                 }),
                 tables = tables.Select(table => new
                 {
@@ -470,7 +489,15 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 prices = snapshot.Prices,
                 modifierGroups = snapshot.ModifierGroups,
                 modifiers = snapshot.Modifiers,
-                productModifiers = snapshot.ProductModifiers
+                productModifiers = snapshot.ProductModifiers,
+                variants = snapshot.Variants,
+                mealDeals = snapshot.MealDeals,
+                mealDealChoices = snapshot.MealDealChoices,
+                mealDealCategoryRules = snapshot.MealDealCategoryRules,
+                tastingMenus = snapshot.TastingMenus,
+                tastingMenuOptions = snapshot.TastingMenuOptions,
+                tastingMenuCourses = snapshot.TastingMenuCourses,
+                tastingMenuChoices = snapshot.TastingMenuChoices
             });
         }
         catch (Exception ex)
@@ -723,7 +750,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     line.Quantity,
                     line.UnitPrice,
                     line.Notes,
-                    line.Modifiers)).ToList(),
+                    line.Modifiers,
+                    line.VariantId,
+                    line.VariantName,
+                    line.VariantPrice,
+                    line.MealDealId,
+                    line.MealDealChoices,
+                    line.TastingMenuId)).ToList(),
                 request.ExpectedVersion,
                 request.ExpectedUpdatedUtc));
             if (!result.Success)
@@ -842,6 +875,129 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             {
                 success = false,
                 message = "Mother POS could not void this Client order."
+            });
+        }
+    }
+
+    private async Task HandleOrderHistoryAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        // Order History on Client is Manager-facing and mapped under Payments / orderhistory.
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakePayments) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments))
+        {
+            return;
+        }
+
+        try
+        {
+            var dateRaw = context.Request.Query["date"].ToString();
+            DateTime? date = null;
+            if (!string.IsNullOrWhiteSpace(dateRaw) &&
+                DateTime.TryParse(dateRaw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDate))
+            {
+                date = parsedDate.Date;
+            }
+
+            var page = 1;
+            if (int.TryParse(context.Request.Query["page"], out var parsedPage))
+            {
+                page = parsedPage;
+            }
+
+            var pageSize = ClientOrderHistoryService.DefaultPageSize;
+            if (int.TryParse(context.Request.Query["pageSize"], out var parsedSize))
+            {
+                pageSize = parsedSize;
+            }
+
+            var history = new ClientOrderHistoryService(_databaseService);
+            var result = await history.SearchAsync(
+                new ClientOrderHistoryRequest(
+                    date,
+                    context.Request.Query["orderType"].ToString(),
+                    context.Request.Query["search"].ToString(),
+                    page,
+                    pageSize),
+                context.RequestAborted);
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = result.Success,
+                message = result.Message,
+                completed = result.Completed,
+                voided = result.Voided,
+                hasNextPage = result.HasNextPage,
+                page = Math.Max(1, page),
+                pageSize = Math.Clamp(
+                    pageSize <= 0 ? ClientOrderHistoryService.DefaultPageSize : pageSize,
+                    1,
+                    ClientOrderHistoryService.MaxPageSize)
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order-history failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load order history."
+            });
+        }
+    }
+
+    private async Task HandleOrderHistoryDetailAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.TakePayments) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments))
+        {
+            return;
+        }
+
+        try
+        {
+            var orderId = context.Request.RouteValues["orderId"]?.ToString();
+            var history = new ClientOrderHistoryService(_databaseService);
+            var result = await history.GetDetailAsync(orderId, context.RequestAborted);
+            var status = result.Success
+                ? HttpStatusCode.OK
+                : string.Equals(result.ErrorCode, OrderHistoryErrorCodes.NotFound, StringComparison.OrdinalIgnoreCase)
+                    ? HttpStatusCode.NotFound
+                    : string.Equals(result.ErrorCode, OrderHistoryErrorCodes.Validation, StringComparison.OrdinalIgnoreCase)
+                        ? HttpStatusCode.BadRequest
+                        : HttpStatusCode.BadRequest;
+
+            await WriteJsonAsync(context, status, result);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order-history detail failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
+            {
+                success = false,
+                message = "Mother POS could not load this order.",
+                errorCode = OrderHistoryErrorCodes.Unknown
             });
         }
     }
@@ -1338,6 +1494,27 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         });
     }
 
+    private async Task HandleClientAccessAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return;
+        }
+
+        var features = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
+        var routes = ClientAccessPolicy.RoutesForFeatures(features);
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            terminalId = session.TerminalId,
+            features,
+            routes,
+            generatedUtc = DateTimeOffset.UtcNow
+        });
+    }
+
     private async Task HandleHeartbeatAsync(HttpContext context)
     {
         var request = await ReadJsonAsync<ClientHeartbeatRequest>(context) ?? new ClientHeartbeatRequest();
@@ -1519,7 +1696,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
         if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments) ||
-            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards))
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards, PosFeatureKeys.CustomerPoints))
         {
             return;
         }
@@ -1533,7 +1710,12 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             request.Amount,
             DateTimeOffset.UtcNow,
             request.ExpectedOrderRevision,
-            request.CorrelationId));
+            request.CorrelationId,
+            request.GiftCardNumber,
+            request.GiftCardIdempotencyKey,
+            request.LoyaltyLookup,
+            request.LoyaltyPoints,
+            request.LoyaltyIdempotencyKey));
 
         if (!result.IsSuccess || result.Value == null)
         {
@@ -1551,6 +1733,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         await WriteJsonAsync(context, HttpStatusCode.OK, new { success = true, payment = result.Value });
         await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_payment", "approved");
+        if (string.Equals(
+                (request.Method ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_"),
+                "loyalty",
+                StringComparison.Ordinal) ||
+            string.Equals(request.Method, "points", StringComparison.OrdinalIgnoreCase))
+        {
+            await PublishDataChangedAsync("loyalty.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+        }
         // WS order.updated is published from OrderService after payment persist.
         NotifyMotherUiOfClientOrderChange(request.OrderId, null, session.TerminalId);
     }
@@ -1571,7 +1761,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
         if (!await EnsureCapabilityAsync(context, session, OrderWeb.Contracts.Capabilities.PosCapabilityKeys.TakePayments) ||
-            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards))
+            !await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Payments, PosFeatureKeys.GiftCards, PosFeatureKeys.CustomerPoints))
         {
             return;
         }
@@ -1583,6 +1773,785 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
         await WriteJsonAsync(context, HttpStatusCode.OK, new { success = true, payment = result.Value });
+    }
+
+    private async Task HandleGiftCardLookupAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "gift-card-lookup", 30, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientGiftCardLookupRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.CardNumber))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientGiftCardLookupResponseDto(
+                Success: false,
+                Message: "A gift card number is required.",
+                Error: "A gift card number is required.",
+                ErrorCode: GiftCardErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientGiftCardRequestAsync(context, request.SessionToken, "client_gift_card_lookup");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosGiftCardService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientGiftCardLookupResponseDto(
+                Success: false,
+                Message: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_lookup", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.LookupAsync(request.CardNumber, request.Purpose ?? GiftCardLookupPurposes.Redeem);
+            var dto = ClientPosGiftCardService.ToLookupDto(result);
+            await WriteJsonAsync(context, dto.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity, dto);
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_gift_card_lookup",
+                dto.Success ? "success" : "denied");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client gift-card lookup failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientGiftCardLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not look up the gift card in OrderWeb cloud.",
+                Error: "Mother POS could not look up the gift card in OrderWeb cloud.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_lookup", "error");
+        }
+    }
+
+    private async Task HandleGiftCardSellAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "gift-card-sell", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientGiftCardMutateRequestDto>(context);
+        if (request == null || request.Amount <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "A positive gift card sale amount is required.",
+                Error: "A positive gift card sale amount is required.",
+                ErrorCode: GiftCardErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientGiftCardRequestAsync(context, request.SessionToken, "client_gift_card_sell");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosGiftCardService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_sell", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.SellAsync(
+                request.CardNumber,
+                request.Amount,
+                request.PaymentMethod ?? "cash",
+                request.OrderId,
+                request.Description,
+                request.IdempotencyKey);
+            var dto = ClientPosGiftCardService.ToTransactionDto(result);
+            await WriteJsonAsync(context, dto.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity, dto);
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_gift_card_sell",
+                dto.Success ? "success" : "denied");
+            if (dto.Success)
+            {
+                await PublishDataChangedAsync("giftcard.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client gift-card sell failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother POS could not sell the gift card through OrderWeb cloud.",
+                Error: "Mother POS could not sell the gift card through OrderWeb cloud.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_sell", "error");
+        }
+    }
+
+    private async Task HandleGiftCardTopUpAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "gift-card-top-up", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientGiftCardMutateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.CardNumber) || request.Amount <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "A gift card number and positive top-up amount are required.",
+                Error: "A gift card number and positive top-up amount are required.",
+                ErrorCode: GiftCardErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientGiftCardRequestAsync(context, request.SessionToken, "client_gift_card_top_up");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosGiftCardService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_top_up", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.TopUpAsync(
+                request.CardNumber,
+                request.Amount,
+                request.PaymentMethod ?? "cash",
+                request.OrderId,
+                request.Description,
+                request.IdempotencyKey);
+            var dto = ClientPosGiftCardService.ToTransactionDto(result);
+            await WriteJsonAsync(context, dto.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity, dto);
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_gift_card_top_up",
+                dto.Success ? "success" : "denied");
+            if (dto.Success)
+            {
+                await PublishDataChangedAsync("giftcard.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client gift-card top-up failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother POS could not top up the gift card through OrderWeb cloud.",
+                Error: "Mother POS could not top up the gift card through OrderWeb cloud.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_top_up", "error");
+        }
+    }
+
+    private async Task HandleGiftCardRedeemAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "gift-card-redeem", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientGiftCardMutateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.CardNumber) || request.Amount <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientGiftCardRedeemResponseDto(
+                Success: false,
+                Message: "A gift card number and positive redeem amount are required.",
+                Error: "A gift card number and positive redeem amount are required.",
+                ErrorCode: GiftCardErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientGiftCardRequestAsync(context, request.SessionToken, "client_gift_card_redeem");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosGiftCardService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientGiftCardRedeemResponseDto(
+                Success: false,
+                Message: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_redeem", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.RedeemAsync(
+                request.CardNumber,
+                request.Amount,
+                request.OrderId,
+                request.Description,
+                request.IdempotencyKey);
+            var dto = ClientPosGiftCardService.ToRedeemDto(result);
+            await WriteJsonAsync(context, dto.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity, dto);
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_gift_card_redeem",
+                dto.Success ? "success" : "denied");
+            if (dto.Success)
+            {
+                await PublishDataChangedAsync("giftcard.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client gift-card redeem failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientGiftCardRedeemResponseDto(
+                Success: false,
+                Message: "Mother POS could not redeem the gift card through OrderWeb cloud.",
+                Error: "Mother POS could not redeem the gift card through OrderWeb cloud.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_redeem", "error");
+        }
+    }
+
+    private async Task HandleGiftCardActivateAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "gift-card-activate", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientGiftCardMutateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.CardNumber) || request.Amount <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "A gift card number and positive activation amount are required.",
+                Error: "A gift card number and positive activation amount are required.",
+                ErrorCode: GiftCardErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientGiftCardRequestAsync(context, request.SessionToken, "client_gift_card_activate");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosGiftCardService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother gift-card service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_activate", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var activate = await service.ActivateAsync(
+                request.CardNumber,
+                request.Amount,
+                request.PaymentMethod ?? "cash",
+                request.OrderId,
+                request.Description,
+                request.IdempotencyKey,
+                queueOnRetryableFailure: true);
+            var dto = ClientPosGiftCardService.ToTransactionDto(activate.Result, activate.Queued, activate.QueueMessage);
+            await WriteJsonAsync(context, dto.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity, dto);
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_gift_card_activate",
+                activate.Result.Success ? "success" : activate.Queued ? "queued" : "denied");
+            if (dto.Success)
+            {
+                await PublishDataChangedAsync("giftcard.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client gift-card activate failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientGiftCardTransactionResponseDto(
+                Success: false,
+                Message: "Mother POS could not activate the gift card through OrderWeb cloud.",
+                Error: "Mother POS could not activate the gift card through OrderWeb cloud.",
+                ErrorCode: GiftCardErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_gift_card_activate", "error");
+        }
+    }
+
+    private async Task<(ClientSessionValidation Session, bool Ok)?> BeginClientGiftCardRequestAsync(
+        HttpContext context,
+        string? sessionToken,
+        string auditAction)
+    {
+        var session = await ValidateClientSessionAsync(context, sessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, message = session.Message });
+            return null;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.GiftCards))
+        {
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, auditAction, "feature_denied");
+            return null;
+        }
+
+        return (session, true);
+    }
+
+    private async Task HandleLoyaltySearchAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-search", 30, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyLookupRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Lookup))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "A phone number or loyalty card lookup is required.",
+                Error: "A phone number or loyalty card lookup is required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_search");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_search", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.SearchAsync(request.Lookup);
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                ClientPosLoyaltyService.ToLookupDto(result));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_search",
+                result.Success ? "success" : "denied");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty search failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not look up loyalty in OrderWeb cloud.",
+                Error: "Mother POS could not look up loyalty in OrderWeb cloud.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_search", "error");
+        }
+    }
+
+    private async Task HandleLoyaltyCreateCustomerAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-create", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyCreateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Phone) || string.IsNullOrWhiteSpace(request.Name))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Customer phone and name are required.",
+                Error: "Customer phone and name are required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_create");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_create", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.CreateCustomerAsync(request.Phone, request.Name, request.Email);
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                ClientPosLoyaltyService.ToLookupDto(result));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_create",
+                result.Success ? "success" : "denied");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync("loyalty.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty create failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not create the loyalty customer in OrderWeb cloud.",
+                Error: "Mother POS could not create the loyalty customer in OrderWeb cloud.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_create", "error");
+        }
+    }
+
+    private async Task HandleLoyaltyAddPointsAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-add", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyMutateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Lookup) || request.Points <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "A customer lookup and positive points amount are required.",
+                Error: "A customer lookup and positive points amount are required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_add");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_add", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.AddPointsAsync(
+                request.Lookup,
+                request.Points,
+                request.Reason,
+                request.IdempotencyKey);
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                ClientPosLoyaltyService.ToLookupDto(result));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_add",
+                result.Success ? "success" : "denied");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync("loyalty.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty add failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not add loyalty points through OrderWeb cloud.",
+                Error: "Mother POS could not add loyalty points through OrderWeb cloud.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_add", "error");
+        }
+    }
+
+    private async Task HandleLoyaltyRedeemPointsAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-redeem", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyMutateRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Lookup) || request.Points <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "A customer lookup and positive points amount are required.",
+                Error: "A customer lookup and positive points amount are required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_redeem");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_redeem", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.RedeemPointsAsync(
+                request.Lookup,
+                request.Points,
+                request.Reason,
+                request.IdempotencyKey);
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                ClientPosLoyaltyService.ToLookupDto(result));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_redeem",
+                result.Success ? "success" : "denied");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync("loyalty.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty redeem failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not redeem loyalty points through OrderWeb cloud.",
+                Error: "Mother POS could not redeem loyalty points through OrderWeb cloud.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_redeem", "error");
+        }
+    }
+
+    private async Task HandleLoyaltyHistoryAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-history", 20, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyLookupRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Lookup))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "A phone number or loyalty card lookup is required.",
+                Error: "A phone number or loyalty card lookup is required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_history");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_history", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var result = await service.HistoryAsync(request.Lookup);
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                ClientPosLoyaltyService.ToLookupDto(result, includeHistory: true));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_history",
+                result.Success ? "success" : "denied");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty history failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "Mother POS could not load loyalty history from OrderWeb cloud.",
+                Error: "Mother POS could not load loyalty history from OrderWeb cloud.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_history", "error");
+        }
+    }
+
+    private async Task HandleLoyaltyTestAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "loyalty-test", 10, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientLoyaltyLookupRequestDto>(context) ?? new ClientLoyaltyLookupRequestDto();
+        var gate = await BeginClientLoyaltyRequestAsync(context, request.SessionToken, "client_loyalty_test");
+        if (gate == null)
+        {
+            return;
+        }
+
+        var service = ClientPosLoyaltyService.TryResolve();
+        if (service == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientLoyaltyTestResponseDto(
+                Success: false,
+                Message: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                Error: "Mother loyalty service is not available. Check OrderWeb cloud settings on Mother POS.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_test", "unavailable");
+            return;
+        }
+
+        try
+        {
+            var test = await service.TestConnectionAsync(request.Lookup);
+            await WriteJsonAsync(
+                context,
+                test.Success ? HttpStatusCode.OK : HttpStatusCode.UnprocessableEntity,
+                new ClientLoyaltyTestResponseDto(
+                    Success: test.Success,
+                    Message: test.Message,
+                    Error: test.Success ? null : test.Message,
+                    ErrorCode: test.Success ? null : test.ErrorCode ?? LoyaltyErrorCodes.Unknown));
+            await AuditSensitiveOperationAsync(
+                gate.Value.Session.TerminalId,
+                gate.Value.Session.UserId,
+                "client_loyalty_test",
+                test.Success ? "success" : "denied");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client loyalty test failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientLoyaltyTestResponseDto(
+                Success: false,
+                Message: "Mother POS could not test the OrderWeb loyalty connection.",
+                Error: "Mother POS could not test the OrderWeb loyalty connection.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(gate.Value.Session.TerminalId, gate.Value.Session.UserId, "client_loyalty_test", "error");
+        }
+    }
+
+    private async Task<(ClientSessionValidation Session, bool Ok)?> BeginClientLoyaltyRequestAsync(
+        HttpContext context,
+        string? sessionToken,
+        string auditAction)
+    {
+        var session = await ValidateClientSessionAsync(context, sessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: session.Message,
+                Error: session.Message,
+                ErrorCode: LoyaltyErrorCodes.AccessDenied));
+            return null;
+        }
+
+        var granted = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
+        if (!granted.Contains(PosFeatureKeys.CustomerPoints))
+        {
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, auditAction, "feature_denied");
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, $"feature_denied:{PosFeatureKeys.CustomerPoints}", "denied");
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new ClientLoyaltyLookupResponseDto(
+                Success: false,
+                Message: "This Client terminal is not allowed to use Loyalty (Terminal Access).",
+                Error: "This Client terminal is not allowed to use Loyalty (Terminal Access).",
+                ErrorCode: LoyaltyErrorCodes.AccessDenied));
+            return null;
+        }
+
+        return (session, true);
     }
 
     private async Task HandlePrintAsync(HttpContext context)
@@ -1888,6 +2857,34 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             value = value[6..].Trim();
         }
         return int.TryParse(value, out var tableNumber) ? tableNumber : 0;
+    }
+
+    private async Task<HashSet<int>> LoadFloorIdsWithBackgroundImagesAsync()
+    {
+        var ids = new HashSet<int>();
+        try
+        {
+            await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(
+                @"SELECT FloorId FROM FloorBackgroundImages
+                  WHERE ImageData IS NOT NULL AND LENGTH(ImageData) > 0",
+                connection);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (!reader.IsDBNull(0))
+                {
+                    ids.Add(reader.GetInt32(0));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client layout floor backgrounds lookup failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        return ids;
     }
 
     private async Task HandleImageAsync(HttpContext context)
@@ -3229,7 +4226,12 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         decimal Amount,
         string? SessionToken = null,
         long? ExpectedOrderRevision = null,
-        string? CorrelationId = null);
+        string? CorrelationId = null,
+        string? GiftCardNumber = null,
+        string? GiftCardIdempotencyKey = null,
+        string? LoyaltyLookup = null,
+        int? LoyaltyPoints = null,
+        string? LoyaltyIdempotencyKey = null);
 
     private sealed record ClientPrintRequest(
         string RequestId,
@@ -3380,7 +4382,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         int Quantity,
         decimal UnitPrice,
         string? Notes,
-        IReadOnlyList<string>? Modifiers);
+        IReadOnlyList<string>? Modifiers,
+        string? VariantId = null,
+        string? VariantName = null,
+        decimal? VariantPrice = null,
+        string? MealDealId = null,
+        IReadOnlyList<string>? MealDealChoices = null,
+        string? TastingMenuId = null);
 
     private sealed record ClientReservationCreateHttpRequest(
         string? ReservationDate,

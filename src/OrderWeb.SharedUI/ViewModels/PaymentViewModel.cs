@@ -51,8 +51,16 @@ public sealed class PaymentViewModel : INotifyPropertyChanged
         if (State is PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard) return;
         var amount = IsSplit ? Math.Min(Tendered, AmountDue) : AmountDue;
         if (amount <= 0) { ApplyAuthoritativeResult(false, "Enter a valid payment amount."); return; }
-        State = SelectedMethod == "card" ? PaymentPresentationState.WaitingForCard : PaymentPresentationState.Submitting;
-        Message = SelectedMethod == "card" ? "Waiting for the card terminal and Mother confirmation…" : "Waiting for Mother confirmation…";
+        State = SelectedMethod == "card"
+            ? PaymentPresentationState.WaitingForCard
+            : PaymentPresentationState.Submitting;
+        Message = SelectedMethod switch
+        {
+            "card" => "Waiting for the card terminal and Mother confirmation…",
+            "gift_card" => "Waiting for gift card details, then Mother / OrderWeb confirmation…",
+            "loyalty" => "Waiting for loyalty points details, then Mother / OrderWeb confirmation…",
+            _ => "Waiting for Mother confirmation…"
+        };
         var requestId = Guid.NewGuid().ToString("N");
         _lastRequestId = requestId;
         SubmissionRequested?.Invoke(this, new PaymentSubmission(requestId, SelectedMethod, amount, Tendered, PrintReceipt, IsSplit, Guid.NewGuid().ToString("N")));

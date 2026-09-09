@@ -166,6 +166,114 @@ public static class ClientCacheSchema
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS product_variants (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            product_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            takeaway_price NUMERIC NOT NULL DEFAULT 0,
+            dine_in_price NUMERIC NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS meal_deals (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            price NUMERIC NOT NULL DEFAULT 0,
+            color TEXT,
+            pick_count INTEGER NOT NULL DEFAULT 1,
+            vat_category TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS meal_deal_choices (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            meal_deal_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (meal_deal_id) REFERENCES meal_deals(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS meal_deal_category_rules (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            meal_deal_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            is_required INTEGER NOT NULL DEFAULT 0,
+            min_selections INTEGER NOT NULL DEFAULT 0,
+            max_selections INTEGER NOT NULL DEFAULT 1,
+            menu_item_mother_ids_json TEXT,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (meal_deal_id) REFERENCES meal_deals(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tasting_menus (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            color TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tasting_menu_options (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            tasting_menu_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            price NUMERIC NOT NULL DEFAULT 0,
+            includes_wine INTEGER NOT NULL DEFAULT 0,
+            course_count INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (tasting_menu_id) REFERENCES tasting_menus(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tasting_menu_courses (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            tasting_menu_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            wine_name TEXT,
+            course_number INTEGER NOT NULL DEFAULT 0,
+            required INTEGER NOT NULL DEFAULT 1,
+            vat_category TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (tasting_menu_id) REFERENCES tasting_menus(id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tasting_menu_choices (
+            id INTEGER PRIMARY KEY,
+            mother_id TEXT UNIQUE,
+            course_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            print_group_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_utc TEXT NOT NULL,
+            FOREIGN KEY (course_id) REFERENCES tasting_menu_courses(id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS tax_rates (
             id INTEGER PRIMARY KEY,
             mother_id TEXT UNIQUE,
@@ -182,6 +290,7 @@ public static class ClientCacheSchema
             name TEXT NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
+            background_image_id TEXT,
             updated_utc TEXT NOT NULL
         )
         """,
@@ -231,11 +340,18 @@ public static class ClientCacheSchema
             id TEXT PRIMARY KEY,
             order_id TEXT NOT NULL,
             product_id INTEGER,
+            product_mother_id TEXT,
             name TEXT NOT NULL,
             quantity INTEGER NOT NULL,
             unit_price NUMERIC NOT NULL,
             notes TEXT,
             modifier_json TEXT,
+            variant_id TEXT,
+            variant_name TEXT,
+            variant_price NUMERIC,
+            meal_deal_id TEXT,
+            meal_deal_choices_json TEXT,
+            tasting_menu_id TEXT,
             status TEXT NOT NULL DEFAULT 'open',
             updated_utc TEXT NOT NULL,
             FOREIGN KEY (order_id) REFERENCES open_orders(id),
@@ -342,6 +458,20 @@ public static class ClientCacheSchema
             last_synchronized_utc TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS order_history_day_snapshot (
+            cache_key TEXT PRIMARY KEY,
+            history_date TEXT NOT NULL,
+            order_type TEXT NOT NULL,
+            search TEXT NOT NULL,
+            page INTEGER NOT NULL,
+            page_size INTEGER NOT NULL,
+            has_next_page INTEGER NOT NULL DEFAULT 0,
+            message TEXT,
+            payload_json TEXT NOT NULL,
+            cached_utc TEXT NOT NULL
+        )
+        """,
         "CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_prices_product_id ON prices(product_id)",
         "CREATE INDEX IF NOT EXISTS idx_modifiers_group_id ON modifiers(modifier_group_id)",
@@ -371,7 +501,15 @@ public static class ClientCacheSchema
         "ALTER TABLE open_orders ADD COLUMN subtotal NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE open_orders ADD COLUMN tax NUMERIC NOT NULL DEFAULT 0",
         "ALTER TABLE open_orders ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
-        "ALTER TABLE order_items ADD COLUMN modifier_json TEXT"
+        "ALTER TABLE order_items ADD COLUMN modifier_json TEXT",
+        "ALTER TABLE floors ADD COLUMN background_image_id TEXT",
+        "ALTER TABLE order_items ADD COLUMN product_mother_id TEXT",
+        "ALTER TABLE order_items ADD COLUMN variant_id TEXT",
+        "ALTER TABLE order_items ADD COLUMN variant_name TEXT",
+        "ALTER TABLE order_items ADD COLUMN variant_price NUMERIC",
+        "ALTER TABLE order_items ADD COLUMN meal_deal_id TEXT",
+        "ALTER TABLE order_items ADD COLUMN meal_deal_choices_json TEXT",
+        "ALTER TABLE order_items ADD COLUMN tasting_menu_id TEXT"
     };
 
     public static readonly string[] ResetTables =
@@ -381,6 +519,7 @@ public static class ClientCacheSchema
         "pending_actions",
         "reservations_cache",
         "online_orders_cache",
+        "order_history_day_snapshot",
         "order_items",
         "open_orders",
         "customers_cache",

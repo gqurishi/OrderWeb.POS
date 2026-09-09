@@ -10,6 +10,33 @@ namespace POS_in_NET;
 
 public partial class AppShell : Shell, INotifyPropertyChanged
 {
+    // This is deliberately a Mother-admin presentation order.  The shared
+    // catalog remains capability-driven so Client and staff navigation stays
+    // limited to the routes each host/role is allowed to use.
+    private static readonly IReadOnlyDictionary<string, int> AdminNavigationOrder =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["dashboard"] = 1,
+            ["cashdrawer"] = 2,
+            ["foodmenu"] = 3,
+            ["reservation"] = 4,
+            ["orderhistory"] = 5,
+            ["report"] = 6,
+            ["inventory"] = 7,
+            ["restaurant"] = 8,
+            ["collection"] = 9,
+            ["delivery"] = 10,
+            ["weborders"] = 11,
+            ["liveorder"] = 12,
+            ["giftcards"] = 13,
+            ["loyalty"] = 14,
+            ["staffclock"] = 15,
+            ["settings"] = 16,
+            ["printersetup"] = 17,
+            ["customerdata"] = 18,
+            ["terminalhealth"] = 19
+        };
+
     private string _currentDateTime = string.Empty;
     private System.Timers.Timer? _timer;
     private readonly AuthenticationService _authService;
@@ -537,7 +564,13 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         SharedSidebar.ConnectionStatus = TerminalConnectionStateService.IsMotherDisconnectedBannerVisible ? "Mother Offline" : "Connected";
         SharedSidebar.AvailableCapabilities = capabilities;
         SharedSidebar.AvailableFeatures = features;
-        SharedSidebar.ItemsSource = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, hostRoutes);
+        var navigationItems = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, hostRoutes);
+        SharedSidebar.ItemsSource = role is UserRole.Admin
+            ? navigationItems
+                .OrderBy(item => AdminNavigationOrder.TryGetValue(item.Route, out var position) ? position : int.MaxValue)
+                .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : navigationItems;
         if (_roleAccessService.TryResolveRoute(CurrentState?.Location?.OriginalString ?? string.Empty, out var currentRoute))
         {
             SharedSidebar.SelectedRoute = currentRoute is "userdashboard" or "managerdashboard" or "cashierdashboard" or "dashboard"

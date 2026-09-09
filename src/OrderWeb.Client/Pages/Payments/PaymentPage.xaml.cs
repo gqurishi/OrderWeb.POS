@@ -1,4 +1,6 @@
+using OrderWeb.Client.Dialogs;
 using OrderWeb.Client.Services;
+using OrderWeb.Contracts.Dtos;
 using OrderWeb.SharedUI.ViewModels;
 using OrderWeb.SharedUI.Views;
 
@@ -24,19 +26,11 @@ public partial class PaymentPage : ContentPage
         _orderId = orderId;
         _expectedOrderRevision = expectedOrderRevision;
         InitializeComponent();
-        // The Client host supplies the operation; the payment presentation is
-        // the same SharedUI surface used by the Mother host.
         _sharedPayment = new PaymentViewModel { AmountDue = _totalDue };
         _sharedPayment.StatusCheckRequested += OnSharedPaymentStatusCheckRequested;
         var sharedPayment = new PaymentView { ViewModel = _sharedPayment };
         sharedPayment.SubmissionRequested += OnSharedPaymentRequested;
         Content = sharedPayment;
-        TopBar.MenuClicked += async (_, _) => await DisplayAlert("Restaurant POS", "Menu stays available from the POS shell.", "OK");
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
-        TotalLabel.Text = Money(_totalDue);
-        TenderedEntry.Text = _totalDue.ToString("F2");
-        SelectMethod("Cash");
-        UpdateChange();
     }
 
     private async void OnSharedPaymentRequested(object? sender, PaymentSubmission submission)
@@ -48,14 +42,103 @@ public partial class PaymentPage : ContentPage
             return;
         }
 
+        string? giftCardNumber = null;
+        string? loyaltyLookup = null;
+        int? loyaltyPoints = null;
+        var amount = submission.Amount;
+        var method = submission.Method;
+
+        if (string.Equals(NormalizeMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(NormalizeMethod(method), "split", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizeMethod(_sharedPayment.SelectedMethod), "gift_card", StringComparison.OrdinalIgnoreCase))
+        {
+            method = "gift_card";
+            var gift = await PromptGiftCardAsync(amount);
+            if (gift is null || !gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber))
+            {
+                _sharedPayment.ApplyAuthoritativeResult(false, gift?.Message ?? "Gift card payment cancelled. No balance was changed.");
+                return;
+            }
+
+            giftCardNumber = gift.CardNumber;
+            amount = gift.AmountApplied;
+            _sharedPayment.Message = "Redeeming gift card on Mother / OrderWeb…";
+        }
+        else if (string.Equals(NormalizeMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(NormalizeMethod(method), "split", StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(NormalizeMethod(_sharedPayment.SelectedMethod), "loyalty", StringComparison.OrdinalIgnoreCase))
+        {
+            method = "loyalty";
+            var loyalty = await PromptLoyaltyAsync(amount);
+            if (loyalty is null || !loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
+            {
+                _sharedPayment.ApplyAuthoritativeResult(false, loyalty?.Message ?? "Loyalty payment cancelled. No points were changed.");
+                return;
+            }
+
+            loyaltyLookup = loyalty.Lookup;
+            loyaltyPoints = loyalty.Points;
+            amount = loyalty.AmountApplied;
+            _sharedPayment.Message = "Redeeming loyalty points on Mother / OrderWeb…";
+        }
+
         var result = await _paymentService.TakePaymentAsync(
             _orderId,
-            submission.Method,
-            submission.Amount,
+            method,
+            amount,
             submission.RequestId,
             expectedOrderRevision: _expectedOrderRevision,
-            correlationId: submission.CorrelationId);
+            correlationId: submission.CorrelationId,
+            giftCardNumber: giftCardNumber,
+            giftCardIdempotencyKey: giftCardNumber == null
+                ? null
+                : $"gift-card:{_orderId}:{giftCardNumber}:{amount:F2}",
+            loyaltyLookup: loyaltyLookup,
+            loyaltyPoints: loyaltyPoints,
+            loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
+                ? null
+                : $"loyalty:{_orderId}:{loyaltyLookup}:{loyaltyPoints}");
         _sharedPayment.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
+        if (giftCardNumber != null)
+        {
+            ClientGiftCardDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved ? null : (result.IsUnknown ? GiftCardErrorCodes.OfflineMother : GiftCardErrorCodes.Unknown));
+        }
+
+        if (loyaltyLookup != null)
+        {
+            var queued = !result.Approved &&
+                         result.Message?.Contains("queued", StringComparison.OrdinalIgnoreCase) == true;
+            ClientLoyaltyDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved
+                    ? null
+                    : (result.IsUnknown
+                        ? LoyaltyErrorCodes.OfflineMother
+                        : queued
+                            ? LoyaltyErrorCodes.Queued
+                            : LoyaltyErrorCodes.Unknown),
+                queued);
+        }
+    }
+
+    private async Task<GiftCardOrderPaymentResult?> PromptGiftCardAsync(decimal amountDue)
+    {
+        var dialog = new GiftCardOrderPaymentDialog(amountDue);
+        await Navigation.PushModalAsync(dialog, false);
+        return await dialog.WaitAsync();
+    }
+
+    private async Task<LoyaltyOrderPaymentResult?> PromptLoyaltyAsync(decimal amountDue)
+    {
+        var dialog = new LoyaltyOrderPaymentDialog(amountDue);
+        await Navigation.PushModalAsync(dialog, false);
+        return await dialog.WaitAsync();
     }
 
     private async void OnSharedPaymentStatusCheckRequested(object? sender, string requestId)
@@ -124,7 +207,45 @@ public partial class PaymentPage : ContentPage
             var amount = _selectedMethod == "Cash" && decimal.TryParse(TenderedEntry.Text, out var tendered)
                 ? Math.Min(tendered, _totalDue)
                 : _totalDue;
-            var result = await _paymentService.TakePaymentAsync(_orderId, _selectedMethod, amount);
+            string? giftCardNumber = null;
+            string? loyaltyLookup = null;
+            int? loyaltyPoints = null;
+            var method = _selectedMethod;
+            if (string.Equals(NormalizeMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase))
+            {
+                var gift = await PromptGiftCardAsync(amount);
+                if (gift is null || !gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber))
+                {
+                    PrintStatus.SetStatus("failed", gift?.Message ?? "Gift card payment cancelled.");
+                    return;
+                }
+
+                giftCardNumber = gift.CardNumber;
+                amount = gift.AmountApplied;
+                method = "gift_card";
+            }
+            else if (string.Equals(NormalizeMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase))
+            {
+                var loyalty = await PromptLoyaltyAsync(amount);
+                if (loyalty is null || !loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
+                {
+                    PrintStatus.SetStatus("failed", loyalty?.Message ?? "Loyalty payment cancelled.");
+                    return;
+                }
+
+                loyaltyLookup = loyalty.Lookup;
+                loyaltyPoints = loyalty.Points;
+                amount = loyalty.AmountApplied;
+                method = "loyalty";
+            }
+
+            var result = await _paymentService.TakePaymentAsync(
+                _orderId,
+                method,
+                amount,
+                giftCardNumber: giftCardNumber,
+                loyaltyLookup: loyaltyLookup,
+                loyaltyPoints: loyaltyPoints);
             if (!result.Approved)
             {
                 PrintStatus.SetStatus("failed", result.Message);
@@ -142,6 +263,14 @@ public partial class PaymentPage : ContentPage
             ConfirmButton.IsEnabled = true;
         }
     }
+
+    private static string NormalizeMethod(string? method) =>
+        (method ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
+        {
+            "gift" or "giftcard" or "gift_card" => "gift_card",
+            "loyalty" or "points" or "loyalty_points" or "customer_points" => "loyalty",
+            var other => other
+        };
 
     private static string Money(decimal value) => $"£{value:F2}";
 }

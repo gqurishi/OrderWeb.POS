@@ -43,6 +43,84 @@ public sealed record BootstrapModifier(int Id, string MotherId, int ModifierGrou
 
 public sealed record BootstrapProductModifier(int ProductId, int ModifierGroupId, int SortOrder);
 
+public sealed record BootstrapVariant(
+    int Id,
+    string MotherId,
+    int ProductId,
+    string Name,
+    string? Description,
+    decimal TakeawayPrice,
+    decimal DineInPrice,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record BootstrapMealDeal(
+    int Id,
+    string MotherId,
+    string Name,
+    string? Description,
+    decimal Price,
+    string Color,
+    int PickCount,
+    string VatCategory,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record BootstrapMealDealChoice(
+    int Id,
+    string MotherId,
+    int MealDealId,
+    string Name,
+    int SortOrder);
+
+public sealed record BootstrapMealDealCategoryRule(
+    int Id,
+    string MotherId,
+    int MealDealId,
+    string Name,
+    bool IsRequired,
+    int MinSelections,
+    int MaxSelections,
+    IReadOnlyList<string> MenuItemMotherIds);
+
+public sealed record BootstrapTastingMenu(
+    int Id,
+    string MotherId,
+    string Name,
+    string? Description,
+    string Color,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record BootstrapTastingMenuOption(
+    int Id,
+    string MotherId,
+    int TastingMenuId,
+    string Name,
+    decimal Price,
+    bool IncludesWine,
+    int CourseCount,
+    int SortOrder);
+
+public sealed record BootstrapTastingMenuCourse(
+    int Id,
+    string MotherId,
+    int TastingMenuId,
+    string Name,
+    string? WineName,
+    int CourseNumber,
+    bool Required,
+    string VatCategory,
+    int SortOrder);
+
+public sealed record BootstrapTastingMenuChoice(
+    int Id,
+    string MotherId,
+    int CourseId,
+    string Name,
+    string? PrintGroupId,
+    int SortOrder);
+
 public sealed record BootstrapTaxRate(int Id, string MotherId, string Name, decimal RatePercent, bool IsActive);
 
 public sealed record BootstrapFloor(int Id, string MotherId, string Name, int SortOrder, bool IsActive);

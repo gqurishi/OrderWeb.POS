@@ -4,28 +4,327 @@
              xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
              x:Class="OrderWeb.Client.Pages.Manager.OrderHistoryPage"
              Shell.NavBarIsVisible="False"
-             BackgroundColor="#FFFFFF"
+             BackgroundColor="#F8FAFC"
              Title="Order History">
-    <Grid RowDefinitions="90,*" BackgroundColor="#FFFFFF">
+    <Grid RowDefinitions="90,*,Auto" BackgroundColor="#F8FAFC">
         <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
 
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="32,28,32,80" Spacing="22" MaximumWidthRequest="1120" HorizontalOptions="Center">
-                <Label Text="Order History" FontFamily="InterBold" FontSize="28" TextColor="#1F2937" HorizontalTextAlignment="Center" />
+            <VerticalStackLayout Padding="24,20,24,24" Spacing="16" MaximumWidthRequest="1120" HorizontalOptions="Center">
+                <Label Text="Order History"
+                       FontFamily="InterBold"
+                       FontSize="28"
+                       TextColor="#1F2937"
+                       HorizontalTextAlignment="Center" />
 
-                <Grid ColumnDefinitions="*,150,150" ColumnSpacing="12">
-                    <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0">
-                        <Entry Placeholder="Search order number, customer, phone..." FontFamily="OpenSansRegular" FontSize="15" HeightRequest="50" BackgroundColor="Transparent" />
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                    <Border BackgroundColor="#EEF7F2"
+                            Stroke="#B7E4C7"
+                            StrokeThickness="1"
+                            Padding="16,12"
+                            MinimumWidthRequest="240"
+                            VerticalOptions="Center">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="FILTER BY DATE"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="11"
+                                   TextColor="#16A34A" />
+                            <DatePicker x:Name="HistoryDatePicker"
+                                        Format="D"
+                                        FontFamily="OpenSansSemibold"
+                                        TextColor="#14532D"
+                                        DateSelected="OnHistoryDateSelected" />
+                        </VerticalStackLayout>
                     </Border>
-                    <Button Grid.Column="1" Text="Today" BackgroundColor="#F1F5F9" TextColor="#334155" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="8" HeightRequest="52" Clicked="OnFilterClicked" />
-                    <Button Grid.Column="2" Text="Search" BackgroundColor="#6366F1" TextColor="#FFFFFF" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="8" HeightRequest="52" Clicked="OnSearchClicked" />
+
+                    <Grid Grid.Column="1" ColumnDefinitions="*,120" ColumnSpacing="10" VerticalOptions="Center">
+                        <Border BackgroundColor="#FFFFFF"
+                                Stroke="#CBD5E1"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 8"
+                                Padding="12,0"
+                                HeightRequest="52">
+                            <Entry x:Name="SearchEntry"
+                                   Placeholder="Search order number, phone..."
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="15"
+                                   HeightRequest="50"
+                                   BackgroundColor="Transparent"
+                                   Completed="OnSearchCompleted" />
+                        </Border>
+                        <Button Grid.Column="1"
+                                Text="Search"
+                                BackgroundColor="#2563EB"
+                                TextColor="#FFFFFF"
+                                FontFamily="OpenSansSemibold"
+                                FontSize="15"
+                                CornerRadius="8"
+                                HeightRequest="52"
+                                Clicked="OnSearchClicked" />
+                    </Grid>
                 </Grid>
 
-                <VerticalStackLayout x:Name="OrderHistoryStack" Spacing="12" />
+                <Border BackgroundColor="White"
+                        Stroke="#E5E7EB"
+                        StrokeThickness="1"
+                        Padding="12,10">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <ScrollView Orientation="Horizontal">
+                        <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
+                            <Border x:Name="AllTabBorder" BackgroundColor="#10B981" StrokeThickness="0" Padding="20,10" HeightRequest="42">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnAllTabClicked" />
+                                </Border.GestureRecognizers>
+                                <Label x:Name="AllTabLabel" Text="All" TextColor="White" FontFamily="OpenSansSemibold" FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <Border x:Name="CollectionTabBorder" BackgroundColor="#F5F5F5" StrokeThickness="0" Padding="20,10" HeightRequest="42">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCollectionTabClicked" />
+                                </Border.GestureRecognizers>
+                                <Label x:Name="CollectionTabLabel" Text="Collection" TextColor="#6B7280" FontFamily="OpenSansSemibold" FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <Border x:Name="DeliveryTabBorder" BackgroundColor="#F5F5F5" StrokeThickness="0" Padding="20,10" HeightRequest="42">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnDeliveryTabClicked" />
+                                </Border.GestureRecognizers>
+                                <Label x:Name="DeliveryTabLabel" Text="Delivery" TextColor="#6B7280" FontFamily="OpenSansSemibold" FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <Border x:Name="TableTabBorder" BackgroundColor="#F5F5F5" StrokeThickness="0" Padding="20,10" HeightRequest="42">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnTableTabClicked" />
+                                </Border.GestureRecognizers>
+                                <Label x:Name="TableTabLabel" Text="Table" TextColor="#6B7280" FontFamily="OpenSansSemibold" FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <Border x:Name="WebTabBorder" BackgroundColor="#F5F5F5" StrokeThickness="0" Padding="20,10" HeightRequest="42">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnWebTabClicked" />
+                                </Border.GestureRecognizers>
+                                <Label x:Name="WebTabLabel" Text="Web" TextColor="#6B7280" FontFamily="OpenSansSemibold" FontSize="14"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </Border>
+
+                <Border x:Name="StatusBanner"
+                        IsVisible="False"
+                        BackgroundColor="#EFF6FF"
+                        Stroke="#BFDBFE"
+                        StrokeThickness="1"
+                        Padding="14,10">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10" />
+                    </Border.StrokeShape>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="2">
+                            <Label x:Name="StatusTitleLabel" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#1E3A8A" />
+                            <Label x:Name="StatusDetailLabel" FontFamily="OpenSansRegular" FontSize="11" TextColor="#2563EB" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1"
+                                x:Name="ClearSearchButton"
+                                Text="Clear"
+                                IsVisible="False"
+                                Clicked="OnClearSearchClicked"
+                                BackgroundColor="White"
+                                TextColor="#1D4ED8"
+                                BorderColor="#93C5FD"
+                                BorderWidth="1"
+                                HeightRequest="38"
+                                Padding="16,4" />
+                    </Grid>
+                </Border>
+
+                <ActivityIndicator x:Name="LoadingIndicator"
+                                   IsRunning="False"
+                                   IsVisible="False"
+                                   Color="#2563EB"
+                                   HeightRequest="36" />
+
+                <CollectionView x:Name="CompletedOrdersCollection"
+                                SelectionMode="None"
+                                HeightRequest="420">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Border BackgroundColor="White"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    Padding="16,12"
+                                    Margin="0,0,0,8"
+                                    MinimumHeightRequest="72">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Grid ColumnDefinitions="2*,1.1*,1.3*,Auto,Auto" ColumnSpacing="10">
+                                    <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#172033" LineBreakMode="TailTruncation" />
+                                        <Label Text="{Binding OrderDateTime}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#64748B" />
+                                        <Label Text="{Binding CustomerDisplay}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" LineBreakMode="TailTruncation" />
+                                    </VerticalStackLayout>
+                                    <Border Grid.Column="1" BackgroundColor="#EEF2FF" Stroke="#C7D2FE" StrokeThickness="1" Padding="12,7" HorizontalOptions="Start" VerticalOptions="Center">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="16" />
+                                        </Border.StrokeShape>
+                                        <Label Text="{Binding OrderTypeDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#4338CA" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Column="2" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding PaymentDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#334155" />
+                                        <Label Text="{Binding StatusDisplay}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="3"
+                                           Text="{Binding TotalDisplay}"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="17"
+                                           TextColor="#059669"
+                                           Margin="6,0"
+                                           VerticalOptions="Center" />
+                                    <Button Grid.Column="4"
+                                            Text="View"
+                                            BackgroundColor="#2563EB"
+                                            TextColor="White"
+                                            FontFamily="OpenSansSemibold"
+                                            FontSize="13"
+                                            CornerRadius="8"
+                                            WidthRequest="80"
+                                            HeightRequest="40"
+                                            Clicked="OnViewOrderClicked" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Label x:Name="CompletedEmptyLabel"
+                       Text="No orders found for this date"
+                       FontFamily="OpenSansRegular"
+                       FontSize="16"
+                       TextColor="#9CA3AF"
+                       HorizontalOptions="Center"
+                       Margin="0,20,0,0"
+                       IsVisible="False" />
+
+                <VerticalStackLayout x:Name="VoidedOrdersLayout" Spacing="12" IsVisible="False">
+                    <Grid ColumnDefinitions="*,Auto,*" Margin="0,8,0,4">
+                        <BoxView BackgroundColor="#E5E7EB" HeightRequest="1" VerticalOptions="Center" />
+                        <Label Grid.Column="1"
+                               Text="Voided Orders"
+                               FontFamily="OpenSansSemibold"
+                               FontSize="14"
+                               TextColor="#6B7280"
+                               Padding="12,0" />
+                        <BoxView Grid.Column="2" BackgroundColor="#E5E7EB" HeightRequest="1" VerticalOptions="Center" />
+                    </Grid>
+
+                    <CollectionView x:Name="VoidedOrdersCollection" SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border BackgroundColor="#FFF7F7"
+                                        Stroke="#FCA5A5"
+                                        StrokeThickness="1"
+                                        Padding="16,12"
+                                        Margin="0,0,0,8"
+                                        MinimumHeightRequest="72">
+                                    <Border.StrokeShape>
+                                        <RoundRectangle CornerRadius="12" />
+                                    </Border.StrokeShape>
+                                    <Grid ColumnDefinitions="2*,1.1*,1.3*,Auto,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                            <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="16" TextColor="#991B1B" LineBreakMode="TailTruncation" />
+                                            <Label Text="{Binding OrderDateTime}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#B91C1C" />
+                                            <Label Text="{Binding CustomerDisplay}" FontFamily="OpenSansRegular" FontSize="11" TextColor="#B91C1C" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                        <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
+                                            <Label Text="{Binding OrderTypeDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#7F1D1D" />
+                                            <Label Text="VOID" FontFamily="OpenSansSemibold" FontSize="11" TextColor="#DC2626" />
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="2"
+                                               Text="{Binding PaymentDisplay}"
+                                               FontFamily="OpenSansSemibold"
+                                               FontSize="12"
+                                               TextColor="#7F1D1D"
+                                               VerticalOptions="Center" />
+                                        <Label Grid.Column="3"
+                                               Text="{Binding TotalDisplay}"
+                                               FontFamily="OpenSansSemibold"
+                                               FontSize="17"
+                                               TextColor="#DC2626"
+                                               Margin="6,0"
+                                               VerticalOptions="Center" />
+                                        <Button Grid.Column="4"
+                                                Text="View"
+                                                BackgroundColor="#2563EB"
+                                                TextColor="White"
+                                                FontFamily="OpenSansSemibold"
+                                                FontSize="13"
+                                                CornerRadius="8"
+                                                WidthRequest="80"
+                                                HeightRequest="40"
+                                                Clicked="OnViewOrderClicked" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
             </VerticalStackLayout>
         </ScrollView>
 
-        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+        <Border Grid.Row="2"
+                BackgroundColor="White"
+                Stroke="#E2E8F0"
+                StrokeThickness="1"
+                Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12" MaximumWidthRequest="1120" HorizontalOptions="Center">
+                <Button Text="Back"
+                        Clicked="OnBackClicked"
+                        BackgroundColor="#E2E8F0"
+                        TextColor="#334155"
+                        FontFamily="OpenSansSemibold"
+                        WidthRequest="100"
+                        HeightRequest="44" />
+                <Button Grid.Column="2"
+                        x:Name="PreviousPageButton"
+                        Text="Previous"
+                        Clicked="OnPreviousPageClicked"
+                        BackgroundColor="#E2E8F0"
+                        TextColor="#334155"
+                        FontFamily="OpenSansSemibold"
+                        WidthRequest="112"
+                        HeightRequest="44" />
+                <Label Grid.Column="3"
+                       x:Name="PageNumberLabel"
+                       Text="Page 1"
+                       FontFamily="OpenSansSemibold"
+                       TextColor="#334155"
+                       VerticalOptions="Center"
+                       MinimumWidthRequest="70"
+                       HorizontalTextAlignment="Center" />
+                <Button Grid.Column="4"
+                        x:Name="NextPageButton"
+                        Text="Next"
+                        Clicked="OnNextPageClicked"
+                        BackgroundColor="#2563EB"
+                        TextColor="White"
+                        FontFamily="OpenSansSemibold"
+                        WidthRequest="112"
+                        HeightRequest="44" />
+            </Grid>
+        </Border>
+
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="3" IsVisible="False" BackgroundColor="Transparent">
             <BoxView BackgroundColor="Transparent">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackdropTapped" />

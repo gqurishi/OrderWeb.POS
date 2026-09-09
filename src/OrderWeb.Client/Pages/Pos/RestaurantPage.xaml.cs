@@ -11,17 +11,26 @@ public partial class RestaurantPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
     private readonly MotherLayoutClient _layoutClient;
+    private readonly MotherImageCacheService _imageCache;
     private readonly RestaurantTablesView _tablesView = new();
     private RestaurantTableDto? _pendingTable;
     private Grid? _guestOverlay;
     private bool _isVisible;
+    private IReadOnlyList<CachedFloor> _cachedFloors = Array.Empty<CachedFloor>();
 
     public RestaurantPage()
     {
         InitializeComponent();
         Shell.SetNavBarIsVisible(this, false);
         _layoutClient = new MotherLayoutClient(_cache);
+        _imageCache = new MotherImageCacheService(_cache);
         _tablesView.TableSelected += OnTableSelected;
+        _tablesView.FloorSelected += async (_, floorId) =>
+        {
+            var floor = _cachedFloors.FirstOrDefault(f =>
+                string.Equals(f.Id.ToString(), floorId, StringComparison.OrdinalIgnoreCase));
+            await ApplyFloorBackgroundAsync(floor);
+        };
         Root.Children.Add(_tablesView);
         _ = LoadAsync();
     }
@@ -46,6 +55,7 @@ public partial class RestaurantPage : ContentPage
         if (!_isVisible ||
             string.IsNullOrWhiteSpace(e.EventType) ||
             !(e.EventType.Contains("table", StringComparison.OrdinalIgnoreCase) ||
+              e.EventType.Contains("floor", StringComparison.OrdinalIgnoreCase) ||
               e.EventType.Contains("layout", StringComparison.OrdinalIgnoreCase) ||
               e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase)))
         {
@@ -77,10 +87,11 @@ public partial class RestaurantPage : ContentPage
             floors = Array.Empty<CachedFloor>();
         }
 
+        _cachedFloors = floors;
         var floorVersion = floors.SelectMany(f => f.Tables).Select(t => t.Version).DefaultIfEmpty(1).Max().ToString();
         var floorDto = new FloorSnapshotDto(
             floorVersion,
-            floors.Select(f => new FloorDto(f.Id.ToString(), f.Name, f.SortOrder)).ToList());
+            floors.Select(f => new FloorDto(f.Id.ToString(), f.Name, f.SortOrder, f.BackgroundImageId)).ToList());
 
         var tableDto = new TableSnapshotDto(
             floorVersion,
@@ -93,9 +104,28 @@ public partial class RestaurantPage : ContentPage
                 t.PositionX,
                 t.PositionY,
                 t.CurrentOrderId,
-                t.Version))).ToList());
+                t.Version,
+                t.Covers,
+                t.CurrentTotal,
+                t.SessionStatus,
+                t.DesignIcon))).ToList());
 
         _tablesView.Bind(floorDto, tableDto);
+        var selected = floors.FirstOrDefault(f => f.Tables.Count > 0) ?? floors.FirstOrDefault();
+        await ApplyFloorBackgroundAsync(selected);
+    }
+
+    private async Task ApplyFloorBackgroundAsync(CachedFloor? floor)
+    {
+        if (string.IsNullOrWhiteSpace(floor?.BackgroundImageId))
+        {
+            _tablesView.FloorBackground = null;
+            return;
+        }
+
+        var imageId = floor.BackgroundImageId.Trim();
+        _tablesView.FloorBackground = await _imageCache.GetOrRefreshAsync(
+            new MotherImageDescriptor(imageId, $"/api/client/images/{Uri.EscapeDataString(imageId)}", string.Empty));
     }
 
     private void OnTableSelected(object? sender, TableSelectedEventArgs e)

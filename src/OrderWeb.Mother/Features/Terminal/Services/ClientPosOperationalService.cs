@@ -31,6 +31,8 @@ public sealed class ClientPosOperationalService
     private readonly OrderService _orderService = new();
     private readonly MenuCategoryService _categoryService = new();
     private readonly MenuItemService _menuItemService = new();
+    private readonly MealDealService _mealDealService = new();
+    private readonly TastingMenuService _tastingMenuService = new();
 
     public ClientPosOperationalService(DatabaseService databaseService, ReservationSyncService? reservationSync = null)
     {
@@ -42,12 +44,58 @@ public sealed class ClientPosOperationalService
 
     public async Task<ClientMenuSnapshot> BuildMenuSnapshotAsync(string version)
     {
-        var categories = (await _categoryService.GetAllCategoriesAsync())
-            .Where(category => category.Active)
+        var allCategories = await _categoryService.GetAllCategoriesAsync();
+        var items = await _menuItemService.GetAllItemsAsync();
+
+        // Client order place needs every category that has sellable items — not only Active.
+        // Inactive categories with items still sync (forced active for Client display).
+        var referencedCategoryIds = items
+            .Select(item => item.CategoryId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var categoriesById = allCategories
+            .Where(category => !string.IsNullOrWhiteSpace(category.Id))
+            .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var includeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var category in allCategories)
+        {
+            if (string.IsNullOrWhiteSpace(category.Id))
+            {
+                continue;
+            }
+
+            if (category.Active || referencedCategoryIds.Contains(category.Id))
+            {
+                includeIds.Add(category.Id);
+            }
+        }
+
+        // Pull in inactive parents so Client hierarchy / naming stays coherent.
+        foreach (var id in includeIds.ToList())
+        {
+            var currentId = id;
+            while (!string.IsNullOrWhiteSpace(currentId) &&
+                   categoriesById.TryGetValue(currentId, out var current) &&
+                   !string.IsNullOrWhiteSpace(current.ParentId))
+            {
+                if (!includeIds.Add(current.ParentId))
+                {
+                    break;
+                }
+
+                currentId = current.ParentId;
+            }
+        }
+
+        var categories = allCategories
+            .Where(category => includeIds.Contains(category.Id))
             .OrderBy(category => category.DisplayOrder)
             .ThenBy(category => category.Name)
             .ToList();
-        var items = await _menuItemService.GetAllItemsAsync();
+
         var usedIds = new HashSet<int>();
         var categoryIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var snapshotCategories = new List<ClientMenuCategoryDto>();
@@ -55,13 +103,14 @@ public sealed class ClientPosOperationalService
         {
             var categoryId = StableEntityId.FromKey($"cat:{category.Id}", usedIds);
             categoryIds[category.Id] = categoryId;
+            var exposeAsActive = category.Active || referencedCategoryIds.Contains(category.Id);
             snapshotCategories.Add(new ClientMenuCategoryDto(
                 categoryId,
                 category.Id,
                 category.Name,
                 string.IsNullOrWhiteSpace(category.Color) ? "#3B82F6" : category.Color,
                 category.DisplayOrder,
-                true));
+                exposeAsActive));
         }
 
         var products = new List<ClientMenuProductDto>();
@@ -69,6 +118,7 @@ public sealed class ClientPosOperationalService
         var modifierGroups = new List<ClientMenuModifierGroupDto>();
         var modifiers = new List<ClientMenuModifierDto>();
         var productModifiers = new List<ClientMenuProductModifierDto>();
+        var variants = new List<ClientMenuVariantDto>();
 
         foreach (var item in items
                      .Where(item => !string.IsNullOrWhiteSpace(item.CategoryId) && categoryIds.ContainsKey(item.CategoryId))
@@ -106,6 +156,28 @@ public sealed class ClientPosOperationalService
                     null));
             }
 
+            foreach (var variant in (item.Variants ?? new List<MenuItemVariant>())
+                         .Where(variant => variant.Active && !string.IsNullOrWhiteSpace(variant.Name))
+                         .OrderBy(variant => variant.DisplayOrder)
+                         .ThenBy(variant => variant.Name))
+            {
+                var variantMotherId = string.IsNullOrWhiteSpace(variant.Id)
+                    ? $"{item.Id}:{variant.Name}"
+                    : variant.Id;
+                // Mother stores one variant price today; expose both channels for Client parity.
+                var variantPrice = variant.Price;
+                variants.Add(new ClientMenuVariantDto(
+                    StableEntityId.FromKey($"var:{variantMotherId}", usedIds),
+                    variantMotherId,
+                    productId,
+                    variant.Name.Trim(),
+                    variant.Description,
+                    variantPrice,
+                    variantPrice,
+                    variant.DisplayOrder,
+                    true));
+            }
+
             var addons = item.Addons
                 .Where(addon => !string.IsNullOrWhiteSpace(addon.Name))
                 .ToList();
@@ -137,7 +209,202 @@ public sealed class ClientPosOperationalService
             }
         }
 
-        return new ClientMenuSnapshot(version, snapshotCategories, products, prices, modifierGroups, modifiers, productModifiers);
+        var mealDeals = new List<ClientMealDealDto>();
+        var mealDealChoices = new List<ClientMealDealChoiceDto>();
+        var mealDealCategoryRules = new List<ClientMealDealCategoryRuleDto>();
+        try
+        {
+            foreach (var deal in (await _mealDealService.GetActiveDealsAsync())
+                         .OrderBy(deal => deal.DisplayOrder)
+                         .ThenBy(deal => deal.Name))
+            {
+                var dealId = StableEntityId.FromKey($"mealdeal:{deal.Id}", usedIds);
+                mealDeals.Add(new ClientMealDealDto(
+                    dealId,
+                    deal.Id,
+                    deal.Name,
+                    deal.Description,
+                    deal.Price,
+                    string.IsNullOrWhiteSpace(deal.Color) ? "#F59E0B" : deal.Color,
+                    Math.Max(1, deal.PickCount),
+                    string.IsNullOrWhiteSpace(deal.VatCategory) ? "HotFood" : deal.VatCategory,
+                    deal.DisplayOrder,
+                    true));
+
+                foreach (var choice in deal.Choices
+                             .Where(choice => !string.IsNullOrWhiteSpace(choice.Name))
+                             .OrderBy(choice => choice.SortOrder)
+                             .ThenBy(choice => choice.Name))
+                {
+                    var choiceMotherId = string.IsNullOrWhiteSpace(choice.Id)
+                        ? $"{deal.Id}:{choice.Name}"
+                        : choice.Id;
+                    mealDealChoices.Add(new ClientMealDealChoiceDto(
+                        StableEntityId.FromKey($"mealdeal-choice:{choiceMotherId}", usedIds),
+                        choiceMotherId,
+                        dealId,
+                        choice.Name.Trim(),
+                        choice.SortOrder));
+                }
+
+                foreach (var rule in deal.Categories
+                             .Where(rule => !string.IsNullOrWhiteSpace(rule.Name))
+                             .OrderBy(rule => rule.Name))
+                {
+                    var ruleMotherId = string.IsNullOrWhiteSpace(rule.Id)
+                        ? $"{deal.Id}:rule:{rule.Name}"
+                        : rule.Id;
+                    var linkedIds = (rule.MenuItemIds ?? new List<string>())
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Select(id => id.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    mealDealCategoryRules.Add(new ClientMealDealCategoryRuleDto(
+                        StableEntityId.FromKey($"mealdeal-rule:{ruleMotherId}", usedIds),
+                        ruleMotherId,
+                        dealId,
+                        rule.Name.Trim(),
+                        rule.IsRequired,
+                        Math.Max(0, rule.MinSelections),
+                        Math.Max(1, rule.MaxSelections),
+                        linkedIds));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ClientMenu] Meal deals snapshot skipped: {ex.Message}");
+        }
+
+        var tastingMenus = new List<ClientTastingMenuDto>();
+        var tastingOptions = new List<ClientTastingMenuOptionDto>();
+        var tastingCourses = new List<ClientTastingMenuCourseDto>();
+        var tastingChoices = new List<ClientTastingMenuChoiceDto>();
+        try
+        {
+            foreach (var tasting in (await _tastingMenuService.GetActiveAsync())
+                         .OrderBy(menu => menu.DisplayOrder)
+                         .ThenBy(menu => menu.Name))
+            {
+                var tastingId = StableEntityId.FromKey($"tasting:{tasting.Id}", usedIds);
+                tastingMenus.Add(new ClientTastingMenuDto(
+                    tastingId,
+                    tasting.Id,
+                    tasting.Name,
+                    tasting.Description,
+                    string.IsNullOrWhiteSpace(tasting.Color) ? "#0EA5E9" : tasting.Color,
+                    tasting.DisplayOrder,
+                    true));
+
+                foreach (var option in tasting.Options
+                             .OrderBy(option => option.SortOrder)
+                             .ThenBy(option => option.Name))
+                {
+                    var optionMotherId = string.IsNullOrWhiteSpace(option.Id)
+                        ? $"{tasting.Id}:opt:{option.Name}:{option.SortOrder}"
+                        : option.Id;
+                    tastingOptions.Add(new ClientTastingMenuOptionDto(
+                        StableEntityId.FromKey($"tasting-opt:{optionMotherId}", usedIds),
+                        optionMotherId,
+                        tastingId,
+                        string.IsNullOrWhiteSpace(option.Name) ? option.DisplayName : option.Name.Trim(),
+                        option.Price,
+                        option.IncludesWine,
+                        option.CourseCount,
+                        option.SortOrder));
+                }
+
+                foreach (var course in tasting.Courses
+                             .OrderBy(course => course.CourseNumber)
+                             .ThenBy(course => course.Name))
+                {
+                    var courseMotherId = string.IsNullOrWhiteSpace(course.Id)
+                        ? $"{tasting.Id}:course:{course.CourseNumber}:{course.Name}"
+                        : course.Id;
+                    var courseId = StableEntityId.FromKey($"tasting-course:{courseMotherId}", usedIds);
+                    tastingCourses.Add(new ClientTastingMenuCourseDto(
+                        courseId,
+                        courseMotherId,
+                        tastingId,
+                        course.Name.Trim(),
+                        course.WineName,
+                        course.CourseNumber,
+                        course.Required,
+                        string.IsNullOrWhiteSpace(course.VatCategory) ? "HotFood" : course.VatCategory,
+                        course.CourseNumber));
+
+                    foreach (var choice in course.Choices
+                                 .Where(choice => !string.IsNullOrWhiteSpace(choice.Name))
+                                 .OrderBy(choice => choice.SortOrder)
+                                 .ThenBy(choice => choice.Name))
+                    {
+                        var choiceMotherId = string.IsNullOrWhiteSpace(choice.Id)
+                            ? $"{courseMotherId}:{choice.Name}"
+                            : choice.Id;
+                        tastingChoices.Add(new ClientTastingMenuChoiceDto(
+                            StableEntityId.FromKey($"tasting-choice:{choiceMotherId}", usedIds),
+                            choiceMotherId,
+                            courseId,
+                            choice.Name.Trim(),
+                            choice.PrintGroupId,
+                            choice.SortOrder));
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ClientMenu] Tasting menus snapshot skipped: {ex.Message}");
+        }
+
+        // Mother till synthesizes these category buttons; Client needs the same anchors.
+        if (mealDeals.Count > 0 &&
+            !snapshotCategories.Any(category =>
+                string.Equals(category.MotherId, MealDeal.PosCategoryId, StringComparison.Ordinal)))
+        {
+            snapshotCategories.Insert(0, new ClientMenuCategoryDto(
+                StableEntityId.FromKey($"cat:{MealDeal.PosCategoryId}", usedIds),
+                MealDeal.PosCategoryId,
+                "Meal Deals",
+                "#F59E0B",
+                -1,
+                true));
+        }
+
+        if (tastingMenus.Count > 0 &&
+            !snapshotCategories.Any(category =>
+                string.Equals(category.MotherId, TastingMenu.PosCategoryId, StringComparison.Ordinal)))
+        {
+            snapshotCategories.Insert(0, new ClientMenuCategoryDto(
+                StableEntityId.FromKey($"cat:{TastingMenu.PosCategoryId}", usedIds),
+                TastingMenu.PosCategoryId,
+                "Tasting Menus",
+                "#0EA5E9",
+                -2,
+                true));
+        }
+
+        AppDiagnostics.Log(
+            $"Client menu snapshot: {snapshotCategories.Count} categories, {products.Count} products, " +
+            $"{mealDeals.Count} meal deals, {tastingMenus.Count} tasting menus " +
+            $"(source: {allCategories.Count} categories / {items.Count} items).");
+
+        return new ClientMenuSnapshot(
+            version,
+            snapshotCategories,
+            products,
+            prices,
+            modifierGroups,
+            modifiers,
+            productModifiers,
+            variants,
+            mealDeals,
+            mealDealChoices,
+            mealDealCategoryRules,
+            tastingMenus,
+            tastingOptions,
+            tastingCourses,
+            tastingChoices);
     }
 
     public async Task<ClientDeliveryQuote> QuoteDeliveryZoneAsync(string? postcode)
@@ -529,6 +796,18 @@ public sealed class ClientPosOperationalService
         IReadOnlyDictionary<string, FoodMenuItem> menuById,
         string orderType)
     {
+        var mealDealId = ResolveMealDealId(line);
+        if (!string.IsNullOrWhiteSpace(mealDealId))
+        {
+            return BuildMealDealOrderItem(line, mealDealId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.TastingMenuId) ||
+            (line.ProductId ?? string.Empty).StartsWith(TastingMenu.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildTastingPackageOrderItem(line);
+        }
+
         menuById.TryGetValue(line.ProductId ?? string.Empty, out var menuItem);
         var selectedNames = (line.Modifiers ?? Array.Empty<string>())
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -561,14 +840,30 @@ public sealed class ClientPosOperationalService
         }
 
         var addonTotal = addons.Sum(addon => addon.AddonPrice ?? 0m);
-        var basePrice = menuItem?.GetEffectivePrice(orderType) ?? Math.Max(0m, line.UnitPrice - addonTotal);
+        var variant = ResolveVariant(menuItem, line);
+        var basePrice = variant != null
+            ? variant.Price
+            : menuItem?.GetEffectivePrice(orderType) ?? Math.Max(0m, line.UnitPrice - addonTotal);
+        if (variant == null && line.VariantPrice is > 0)
+        {
+            basePrice = line.VariantPrice.Value;
+        }
+
+        var itemName = menuItem?.Name ?? line.Name.Trim();
+        var variantName = variant?.Name
+            ?? (string.IsNullOrWhiteSpace(line.VariantName) ? null : line.VariantName.Trim());
+        var displayName = string.IsNullOrWhiteSpace(variantName)
+            ? itemName
+            : $"{itemName} ({variantName})";
 
         return new OrderItem
         {
             ClientItemId = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id.Trim(),
             MenuItemId = menuItem?.Id ?? (IsLikelyMotherMenuId(line.ProductId) ? line.ProductId : null),
-            ItemName = menuItem?.Name ?? line.Name.Trim(),
-            DisplayName = menuItem?.Name ?? line.Name.Trim(),
+            ItemName = itemName,
+            DisplayName = displayName,
+            VariantId = variant?.Id ?? (string.IsNullOrWhiteSpace(line.VariantId) ? null : line.VariantId.Trim()),
+            VariantName = variantName,
             PrintGroupId = menuItem?.PrintGroupId,
             PrintInRed = menuItem?.PrintInRed ?? false,
             Quantity = line.Quantity,
@@ -576,6 +871,102 @@ public sealed class ClientPosOperationalService
             SpecialInstructions = string.IsNullOrWhiteSpace(line.Notes) ? null : line.Notes.Trim(),
             Addons = addons
         };
+    }
+
+    private static OrderItem BuildMealDealOrderItem(ClientOrderLineRequest line, string mealDealId)
+    {
+        var choices = (line.MealDealChoices ?? line.Modifiers ?? Array.Empty<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var notes = string.IsNullOrWhiteSpace(line.Notes)
+            ? MealDealNotesHelper.FormatSelections(choices)
+            : line.Notes.Trim();
+        if (string.IsNullOrWhiteSpace(notes) && choices.Count > 0)
+        {
+            notes = MealDealNotesHelper.FormatSelections(choices);
+        }
+
+        return new OrderItem
+        {
+            ClientItemId = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id.Trim(),
+            MenuItemId = MealDealNotesHelper.BuildOrderMenuItemId(mealDealId),
+            ItemName = string.IsNullOrWhiteSpace(line.Name) ? "Meal Deal" : line.Name.Trim(),
+            DisplayName = string.IsNullOrWhiteSpace(line.Name) ? "Meal Deal" : line.Name.Trim(),
+            Quantity = Math.Max(1, line.Quantity),
+            ItemPrice = Math.Max(0m, line.UnitPrice),
+            SpecialInstructions = string.IsNullOrWhiteSpace(notes) ? null : notes,
+            Addons = new List<OrderItemAddon>()
+        };
+    }
+
+    private static OrderItem BuildTastingPackageOrderItem(ClientOrderLineRequest line)
+    {
+        var tastingId = string.IsNullOrWhiteSpace(line.TastingMenuId)
+            ? (line.ProductId ?? string.Empty).Replace(TastingMenu.OrderMenuItemPrefix, string.Empty, StringComparison.OrdinalIgnoreCase)
+            : line.TastingMenuId.Trim();
+        var menuItemId = string.IsNullOrWhiteSpace(line.ProductId)
+            ? $"{TastingMenu.OrderMenuItemPrefix}{tastingId}"
+            : line.ProductId.Trim();
+
+        return new OrderItem
+        {
+            ClientItemId = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id.Trim(),
+            MenuItemId = menuItemId,
+            ItemName = string.IsNullOrWhiteSpace(line.Name) ? "Tasting Menu" : line.Name.Trim(),
+            DisplayName = string.IsNullOrWhiteSpace(line.Name) ? "Tasting Menu" : line.Name.Trim(),
+            VariantId = string.IsNullOrWhiteSpace(line.VariantId) ? null : line.VariantId.Trim(),
+            VariantName = string.IsNullOrWhiteSpace(line.VariantName) ? null : line.VariantName.Trim(),
+            Quantity = Math.Max(1, line.Quantity),
+            ItemPrice = Math.Max(0m, line.UnitPrice),
+            SpecialInstructions = string.IsNullOrWhiteSpace(line.Notes) ? null : line.Notes.Trim(),
+            Addons = new List<OrderItemAddon>()
+        };
+    }
+
+    private static string? ResolveMealDealId(ClientOrderLineRequest line)
+    {
+        if (!string.IsNullOrWhiteSpace(line.MealDealId))
+        {
+            return line.MealDealId.Trim();
+        }
+
+        var productId = line.ProductId ?? string.Empty;
+        if (productId.StartsWith(MealDeal.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return productId[MealDeal.OrderMenuItemPrefix.Length..].Trim();
+        }
+
+        return null;
+    }
+
+    private static MenuItemVariant? ResolveVariant(FoodMenuItem? menuItem, ClientOrderLineRequest line)
+    {
+        if (menuItem?.Variants == null || menuItem.Variants.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.VariantId))
+        {
+            var byId = menuItem.Variants.FirstOrDefault(variant =>
+                variant.Active &&
+                string.Equals(variant.Id, line.VariantId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (byId != null)
+            {
+                return byId;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(line.VariantName))
+        {
+            return menuItem.Variants.FirstOrDefault(variant =>
+                variant.Active &&
+                string.Equals(variant.Name, line.VariantName.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        return null;
     }
 
     public static ClientOperationalOrder ToClientOrder(Order order)
@@ -587,14 +978,33 @@ public sealed class ClientPosOperationalService
             _ => "Collection"
         };
         var lines = order.Items
-            .Select(item => new ClientOperationalOrderLine(
-                string.IsNullOrWhiteSpace(item.ClientItemId) ? item.Id.ToString() : item.ClientItemId,
-                item.MenuItemId,
-                item.ItemName,
-                item.Quantity,
-                (item.ItemPrice ?? 0m) + item.Addons.Sum(addon => addon.AddonPrice ?? 0m),
-                item.SpecialInstructions,
-                item.Addons.Select(addon => addon.AddonName).Where(name => !string.IsNullOrWhiteSpace(name)).ToList()))
+            .Select(item =>
+            {
+                var mealDealId = item.MenuItemId != null &&
+                                 item.MenuItemId.StartsWith(MealDeal.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? item.MenuItemId[MealDeal.OrderMenuItemPrefix.Length..]
+                    : null;
+                var mealChoices = string.IsNullOrWhiteSpace(item.SpecialInstructions)
+                    ? Array.Empty<string>()
+                    : item.SpecialInstructions
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(part => part.TrimStart('•', '-', ' ').Trim())
+                        .Where(part => !string.IsNullOrWhiteSpace(part))
+                        .ToArray();
+
+                return new ClientOperationalOrderLine(
+                    string.IsNullOrWhiteSpace(item.ClientItemId) ? item.Id.ToString() : item.ClientItemId,
+                    item.MenuItemId,
+                    string.IsNullOrWhiteSpace(item.DisplayName) ? item.ItemName : item.DisplayName,
+                    item.Quantity,
+                    (item.ItemPrice ?? 0m) + item.Addons.Sum(addon => addon.AddonPrice ?? 0m),
+                    item.SpecialInstructions,
+                    item.Addons.Select(addon => addon.AddonName).Where(name => !string.IsNullOrWhiteSpace(name)).ToList()!,
+                    item.VariantId,
+                    item.VariantName,
+                    mealDealId,
+                    mealDealId == null ? null : mealChoices);
+            })
             .ToList();
 
         if (order.DeliveryFee > 0 && lines.All(line => !string.Equals(line.Name, "Delivery Fee", StringComparison.OrdinalIgnoreCase)))
@@ -812,7 +1222,15 @@ public sealed record ClientMenuSnapshot(
     IReadOnlyList<ClientMenuPriceDto> Prices,
     IReadOnlyList<ClientMenuModifierGroupDto> ModifierGroups,
     IReadOnlyList<ClientMenuModifierDto> Modifiers,
-    IReadOnlyList<ClientMenuProductModifierDto> ProductModifiers);
+    IReadOnlyList<ClientMenuProductModifierDto> ProductModifiers,
+    IReadOnlyList<ClientMenuVariantDto> Variants,
+    IReadOnlyList<ClientMealDealDto> MealDeals,
+    IReadOnlyList<ClientMealDealChoiceDto> MealDealChoices,
+    IReadOnlyList<ClientMealDealCategoryRuleDto> MealDealCategoryRules,
+    IReadOnlyList<ClientTastingMenuDto> TastingMenus,
+    IReadOnlyList<ClientTastingMenuOptionDto> TastingMenuOptions,
+    IReadOnlyList<ClientTastingMenuCourseDto> TastingMenuCourses,
+    IReadOnlyList<ClientTastingMenuChoiceDto> TastingMenuChoices);
 
 public sealed record ClientMenuCategoryDto(int Id, string MotherId, string Name, string Color, int SortOrder, bool IsActive);
 
@@ -825,6 +1243,84 @@ public sealed record ClientMenuModifierGroupDto(int Id, string MotherId, string 
 public sealed record ClientMenuModifierDto(int Id, string MotherId, int ModifierGroupId, string Name, decimal PriceDelta, bool IsActive);
 
 public sealed record ClientMenuProductModifierDto(int ProductId, int ModifierGroupId, int SortOrder);
+
+public sealed record ClientMenuVariantDto(
+    int Id,
+    string MotherId,
+    int ProductId,
+    string Name,
+    string? Description,
+    decimal TakeawayPrice,
+    decimal DineInPrice,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record ClientMealDealDto(
+    int Id,
+    string MotherId,
+    string Name,
+    string? Description,
+    decimal Price,
+    string Color,
+    int PickCount,
+    string VatCategory,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record ClientMealDealChoiceDto(
+    int Id,
+    string MotherId,
+    int MealDealId,
+    string Name,
+    int SortOrder);
+
+public sealed record ClientMealDealCategoryRuleDto(
+    int Id,
+    string MotherId,
+    int MealDealId,
+    string Name,
+    bool IsRequired,
+    int MinSelections,
+    int MaxSelections,
+    IReadOnlyList<string> MenuItemMotherIds);
+
+public sealed record ClientTastingMenuDto(
+    int Id,
+    string MotherId,
+    string Name,
+    string? Description,
+    string Color,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record ClientTastingMenuOptionDto(
+    int Id,
+    string MotherId,
+    int TastingMenuId,
+    string Name,
+    decimal Price,
+    bool IncludesWine,
+    int CourseCount,
+    int SortOrder);
+
+public sealed record ClientTastingMenuCourseDto(
+    int Id,
+    string MotherId,
+    int TastingMenuId,
+    string Name,
+    string? WineName,
+    int CourseNumber,
+    bool Required,
+    string VatCategory,
+    int SortOrder);
+
+public sealed record ClientTastingMenuChoiceDto(
+    int Id,
+    string MotherId,
+    int CourseId,
+    string Name,
+    string? PrintGroupId,
+    int SortOrder);
 
 public sealed record ClientDeliveryQuote(string Postcode, bool IsDeliverable, string? DeliveryZoneName, decimal DeliveryFee);
 
@@ -908,7 +1404,13 @@ public sealed record ClientOrderLineRequest(
     int Quantity,
     decimal UnitPrice,
     string? Notes,
-    IReadOnlyList<string>? Modifiers);
+    IReadOnlyList<string>? Modifiers,
+    string? VariantId = null,
+    string? VariantName = null,
+    decimal? VariantPrice = null,
+    string? MealDealId = null,
+    IReadOnlyList<string>? MealDealChoices = null,
+    string? TastingMenuId = null);
 
 public sealed record ClientOperationalOrder(
     string Id,
@@ -933,7 +1435,11 @@ public sealed record ClientOperationalOrderLine(
     int Quantity,
     decimal UnitPrice,
     string? Notes,
-    IReadOnlyList<string> Modifiers);
+    IReadOnlyList<string> Modifiers,
+    string? VariantId = null,
+    string? VariantName = null,
+    string? MealDealId = null,
+    IReadOnlyList<string>? MealDealChoices = null);
 
 public sealed record ClientOrderUpsertResult(bool Success, int StatusCode, string Message, ClientOperationalOrder? Order)
 {

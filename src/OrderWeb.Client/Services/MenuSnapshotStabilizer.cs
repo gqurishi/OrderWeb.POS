@@ -17,30 +17,42 @@ public static class MenuSnapshotStabilizer
 
         foreach (var category in snapshot.Categories)
         {
-            if (string.IsNullOrWhiteSpace(category.MotherId) || string.IsNullOrWhiteSpace(category.Name))
+            if (string.IsNullOrWhiteSpace(category.Name))
             {
                 continue;
             }
 
-            var stableId = StableEntityId.FromKey($"cat:{category.MotherId}", used);
+            // Some payloads omit motherId; fall back to the snapshot int id so we still commit.
+            var motherKey = string.IsNullOrWhiteSpace(category.MotherId)
+                ? category.Id.ToString()
+                : category.MotherId.Trim();
+            if (string.IsNullOrWhiteSpace(motherKey))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"cat:{motherKey}", used);
             categoryMap[category.Id] = stableId;
-            categories.Add(category with { Id = stableId });
+            categories.Add(category with { Id = stableId, MotherId = motherKey });
         }
 
         var productMap = new Dictionary<int, int>();
         var products = new List<BootstrapProduct>();
         foreach (var product in snapshot.Products)
         {
-            if (string.IsNullOrWhiteSpace(product.MotherId) ||
+            var productMotherKey = string.IsNullOrWhiteSpace(product.MotherId)
+                ? product.Id.ToString()
+                : product.MotherId.Trim();
+            if (string.IsNullOrWhiteSpace(productMotherKey) ||
                 string.IsNullOrWhiteSpace(product.Name) ||
                 !categoryMap.TryGetValue(product.CategoryId, out var categoryId))
             {
                 continue;
             }
 
-            var stableId = StableEntityId.FromKey($"prod:{product.MotherId}", used);
+            var stableId = StableEntityId.FromKey($"prod:{productMotherKey}", used);
             productMap[product.Id] = stableId;
-            products.Add(product with { Id = stableId, CategoryId = categoryId });
+            products.Add(product with { Id = stableId, MotherId = productMotherKey, CategoryId = categoryId });
         }
 
         var prices = new List<BootstrapPrice>();
@@ -97,6 +109,124 @@ public static class MenuSnapshotStabilizer
             productModifiers.Add(link with { ProductId = productId, ModifierGroupId = groupId });
         }
 
+        var variants = new List<BootstrapVariant>();
+        foreach (var variant in snapshot.Variants)
+        {
+            if (string.IsNullOrWhiteSpace(variant.MotherId) ||
+                string.IsNullOrWhiteSpace(variant.Name) ||
+                !productMap.TryGetValue(variant.ProductId, out var productId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"var:{variant.MotherId}", used);
+            variants.Add(variant with { Id = stableId, ProductId = productId });
+        }
+
+        var mealDealMap = new Dictionary<int, int>();
+        var mealDeals = new List<BootstrapMealDeal>();
+        foreach (var deal in snapshot.MealDeals)
+        {
+            if (string.IsNullOrWhiteSpace(deal.MotherId) || string.IsNullOrWhiteSpace(deal.Name))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"mealdeal:{deal.MotherId}", used);
+            mealDealMap[deal.Id] = stableId;
+            mealDeals.Add(deal with { Id = stableId });
+        }
+
+        var mealDealChoices = new List<BootstrapMealDealChoice>();
+        foreach (var choice in snapshot.MealDealChoices)
+        {
+            if (string.IsNullOrWhiteSpace(choice.MotherId) ||
+                string.IsNullOrWhiteSpace(choice.Name) ||
+                !mealDealMap.TryGetValue(choice.MealDealId, out var mealDealId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"mealdeal-choice:{choice.MotherId}", used);
+            mealDealChoices.Add(choice with { Id = stableId, MealDealId = mealDealId });
+        }
+
+        var mealDealRules = new List<BootstrapMealDealCategoryRule>();
+        foreach (var rule in snapshot.MealDealCategoryRules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.MotherId) ||
+                string.IsNullOrWhiteSpace(rule.Name) ||
+                !mealDealMap.TryGetValue(rule.MealDealId, out var mealDealId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"mealdeal-rule:{rule.MotherId}", used);
+            mealDealRules.Add(rule with
+            {
+                Id = stableId,
+                MealDealId = mealDealId,
+                MenuItemMotherIds = rule.MenuItemMotherIds ?? Array.Empty<string>()
+            });
+        }
+
+        var tastingMap = new Dictionary<int, int>();
+        var tastingMenus = new List<BootstrapTastingMenu>();
+        foreach (var tasting in snapshot.TastingMenus)
+        {
+            if (string.IsNullOrWhiteSpace(tasting.MotherId) || string.IsNullOrWhiteSpace(tasting.Name))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"tasting:{tasting.MotherId}", used);
+            tastingMap[tasting.Id] = stableId;
+            tastingMenus.Add(tasting with { Id = stableId });
+        }
+
+        var tastingOptions = new List<BootstrapTastingMenuOption>();
+        foreach (var option in snapshot.TastingMenuOptions)
+        {
+            if (string.IsNullOrWhiteSpace(option.MotherId) ||
+                !tastingMap.TryGetValue(option.TastingMenuId, out var tastingMenuId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"tasting-opt:{option.MotherId}", used);
+            tastingOptions.Add(option with { Id = stableId, TastingMenuId = tastingMenuId });
+        }
+
+        var courseMap = new Dictionary<int, int>();
+        var tastingCourses = new List<BootstrapTastingMenuCourse>();
+        foreach (var course in snapshot.TastingMenuCourses)
+        {
+            if (string.IsNullOrWhiteSpace(course.MotherId) ||
+                string.IsNullOrWhiteSpace(course.Name) ||
+                !tastingMap.TryGetValue(course.TastingMenuId, out var tastingMenuId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"tasting-course:{course.MotherId}", used);
+            courseMap[course.Id] = stableId;
+            tastingCourses.Add(course with { Id = stableId, TastingMenuId = tastingMenuId });
+        }
+
+        var tastingChoices = new List<BootstrapTastingMenuChoice>();
+        foreach (var choice in snapshot.TastingMenuChoices)
+        {
+            if (string.IsNullOrWhiteSpace(choice.MotherId) ||
+                string.IsNullOrWhiteSpace(choice.Name) ||
+                !courseMap.TryGetValue(choice.CourseId, out var courseId))
+            {
+                continue;
+            }
+
+            var stableId = StableEntityId.FromKey($"tasting-choice:{choice.MotherId}", used);
+            tastingChoices.Add(choice with { Id = stableId, CourseId = courseId });
+        }
+
         return new MenuSnapshotDto(
             snapshot.Version,
             categories,
@@ -104,7 +234,15 @@ public static class MenuSnapshotStabilizer
             prices,
             groups,
             modifiers,
-            productModifiers);
+            productModifiers,
+            variants,
+            mealDeals,
+            mealDealChoices,
+            mealDealRules,
+            tastingMenus,
+            tastingOptions,
+            tastingCourses,
+            tastingChoices);
     }
 
     public static string? ValidateForCommit(MenuSnapshotDto original, MenuSnapshotDto stabilized)

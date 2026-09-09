@@ -8,6 +8,8 @@ public partial class TillShoppingSettleDialog : ContentView
 {
     private readonly TillExpense _trip;
     private TaskCompletionSource<ShoppingSettleRequest?>? _taskCompletionSource;
+    private Page? _hostPage;
+    private bool _keyboardOpen;
 
     public TillShoppingSettleDialog(TillExpense trip)
     {
@@ -20,6 +22,7 @@ public partial class TillShoppingSettleDialog : ContentView
     public Task<ShoppingSettleRequest?> ShowAsync(Page hostPage)
     {
         _taskCompletionSource = new TaskCompletionSource<ShoppingSettleRequest?>();
+        _hostPage = hostPage;
 
         if (hostPage is ContentPage contentPage)
         {
@@ -92,6 +95,31 @@ public partial class TillShoppingSettleDialog : ContentView
     }
 
     private void OnCancelClicked(object sender, EventArgs e) => Close(null);
+
+    private async void OnSpentTapped(object sender, EventArgs e)
+    {
+        if (_keyboardOpen)
+        {
+            return;
+        }
+
+        _keyboardOpen = true;
+        try
+        {
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt("Actual spent", "Done");
+            keyboard.SetInitialText(SpentEntry.Text ?? string.Empty);
+            var value = await keyboard.ShowAsync(_hostPage);
+            if (value != null)
+            {
+                SpentEntry.Text = value;
+            }
+        }
+        finally
+        {
+            _keyboardOpen = false;
+        }
+    }
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

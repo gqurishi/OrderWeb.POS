@@ -6,6 +6,8 @@ namespace POS_in_NET.Views;
 public partial class TillAmountDialog : ContentView
 {
     private TaskCompletionSource<decimal?>? _taskCompletionSource;
+    private Page? _hostPage;
+    private bool _keyboardOpen;
 
     public TillAmountDialog(string title, string subtitle, string fieldLabel, string confirmText)
     {
@@ -19,6 +21,7 @@ public partial class TillAmountDialog : ContentView
     public Task<decimal?> ShowAsync(Page hostPage)
     {
         _taskCompletionSource = new TaskCompletionSource<decimal?>();
+        _hostPage = hostPage;
 
         if (hostPage is ContentPage contentPage)
         {
@@ -77,6 +80,31 @@ public partial class TillAmountDialog : ContentView
     }
 
     private void OnCancelClicked(object sender, EventArgs e) => Close(null);
+
+    private async void OnAmountTapped(object sender, EventArgs e)
+    {
+        if (_keyboardOpen)
+        {
+            return;
+        }
+
+        _keyboardOpen = true;
+        try
+        {
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(FieldLabel.Text, "Done");
+            keyboard.SetInitialText(AmountEntry.Text ?? string.Empty);
+            var value = await keyboard.ShowAsync(_hostPage);
+            if (value != null)
+            {
+                AmountEntry.Text = value;
+            }
+        }
+        finally
+        {
+            _keyboardOpen = false;
+        }
+    }
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

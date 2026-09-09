@@ -74,12 +74,17 @@
                     <Entry x:Name="SpentEntry"
                            Placeholder="0.00"
                            Keyboard="Numeric"
+                           IsReadOnly="True"
                            FontSize="16"
                            TextColor="#1F2937"
                            PlaceholderColor="#9CA3AF"
                            BackgroundColor="Transparent"
                            HeightRequest="42"
-                           TextChanged="OnSpentChanged"/>
+                           TextChanged="OnSpentChanged">
+                        <Entry.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSpentTapped"/>
+                        </Entry.GestureRecognizers>
+                    </Entry>
                 </Border>
 
                 <Border BackgroundColor="#F0FDFA"

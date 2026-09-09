@@ -185,6 +185,7 @@ namespace MyFirstMauiApp.Services
                 if (result > 0)
                 {
                     await SaveVariantsForItemAsync(connection, item.Id, item.Variants);
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
                 }
 
                 return result > 0;
@@ -244,6 +245,7 @@ namespace MyFirstMauiApp.Services
                 if (result > 0)
                 {
                     await SaveVariantsForItemAsync(connection, item.Id, item.Variants);
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
                 }
 
                 return result > 0;
@@ -272,6 +274,11 @@ namespace MyFirstMauiApp.Services
                 command.Parameters.AddWithValue("@Id", id);
 
                 var result = await command.ExecuteNonQueryAsync();
+                if (result > 0)
+                {
+                    POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+                }
+
                 return result > 0;
             }
             catch (Exception ex)

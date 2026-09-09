@@ -20,7 +20,13 @@ public sealed class PaymentView : ContentView
         _due = Money(36, true); _tendered = new Entry { Keyboard = Keyboard.Numeric, FontSize = 20 }; _tendered.Use(Entry.TextColorProperty, "OwTextPrimary");
         _change = Money(18, true); _remaining = Money(18, true); _status = new Microsoft.Maui.Controls.Label { FontSize = 14, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _status.Use(Microsoft.Maui.Controls.Label.TextColorProperty, "OwTextMuted");
         _waiting = new ActivityIndicator { IsVisible = false, IsRunning = false, WidthRequest = 36, HeightRequest = 36, HorizontalOptions = LayoutOptions.Center };
-        _methods = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }, RowSpacing = 10, ColumnSpacing = 10 };
+        _methods = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) },
+            RowSpacing = 10,
+            ColumnSpacing = 10
+        };
         var receipt = new CheckBox { IsChecked = true }; receipt.CheckedChanged += (_, e) => { if (_viewModel is not null) _viewModel.PrintReceipt = e.Value; };
         var split = new CheckBox(); split.CheckedChanged += (_, e) => { if (_viewModel is not null) _viewModel.IsSplit = e.Value; };
         _submit = new SharedButton { Text = "Confirm Payment", HeightRequest = 58 }; _submit.Clicked += (_, _) => _viewModel?.SubmitCommand.Execute(null);
@@ -39,7 +45,11 @@ public sealed class PaymentView : ContentView
         _submit.IsEnabled = _viewModel.State is not (PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard or PaymentPresentationState.Approved);
         _submit.Text = _viewModel.State == PaymentPresentationState.WaitingForCard ? "Waiting for card…" : _viewModel.State == PaymentPresentationState.Approved ? "Payment Confirmed" : "Confirm Payment";
         _methods.Children.Clear();
-        AddMethod("Cash", "cash", 0, 0); AddMethod("Card", "card", 0, 1); AddMethod("Gift Card", "gift_card", 1, 0); AddMethod("Split", "split", 1, 1);
+        AddMethod("Cash", "cash", 0, 0);
+        AddMethod("Card", "card", 0, 1);
+        AddMethod("Gift Card", "gift_card", 1, 0);
+        AddMethod("Loyalty", "loyalty", 1, 1);
+        AddMethod("Split", "split", 2, 0);
     }
     private void AddMethod(string title, string id, int row, int column)
     {

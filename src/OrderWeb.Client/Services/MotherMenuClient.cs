@@ -6,7 +6,10 @@ namespace OrderWeb.Client.Services;
 
 public sealed class MotherMenuClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
     private readonly ClientCacheService _cache;
 
     public MotherMenuClient()
@@ -81,7 +84,15 @@ public sealed class MotherMenuClient
                 envelope.Prices ?? [],
                 envelope.ModifierGroups ?? [],
                 envelope.Modifiers ?? [],
-                envelope.ProductModifiers ?? []), null);
+                envelope.ProductModifiers ?? [],
+                envelope.Variants ?? [],
+                envelope.MealDeals ?? [],
+                envelope.MealDealChoices ?? [],
+                envelope.MealDealCategoryRules ?? [],
+                envelope.TastingMenus ?? [],
+                envelope.TastingMenuOptions ?? [],
+                envelope.TastingMenuCourses ?? [],
+                envelope.TastingMenuChoices ?? []), null);
         }
         catch (Exception ex)
         {
@@ -98,7 +109,15 @@ public sealed class MotherMenuClient
         IReadOnlyList<BootstrapPrice>? Prices,
         IReadOnlyList<BootstrapModifierGroup>? ModifierGroups,
         IReadOnlyList<BootstrapModifier>? Modifiers,
-        IReadOnlyList<BootstrapProductModifier>? ProductModifiers);
+        IReadOnlyList<BootstrapProductModifier>? ProductModifiers,
+        IReadOnlyList<BootstrapVariant>? Variants,
+        IReadOnlyList<BootstrapMealDeal>? MealDeals,
+        IReadOnlyList<BootstrapMealDealChoice>? MealDealChoices,
+        IReadOnlyList<BootstrapMealDealCategoryRule>? MealDealCategoryRules,
+        IReadOnlyList<BootstrapTastingMenu>? TastingMenus,
+        IReadOnlyList<BootstrapTastingMenuOption>? TastingMenuOptions,
+        IReadOnlyList<BootstrapTastingMenuCourse>? TastingMenuCourses,
+        IReadOnlyList<BootstrapTastingMenuChoice>? TastingMenuChoices);
 }
 
 public sealed record MenuSnapshotDto(
@@ -108,4 +127,12 @@ public sealed record MenuSnapshotDto(
     IReadOnlyList<BootstrapPrice> Prices,
     IReadOnlyList<BootstrapModifierGroup> ModifierGroups,
     IReadOnlyList<BootstrapModifier> Modifiers,
-    IReadOnlyList<BootstrapProductModifier> ProductModifiers);
+    IReadOnlyList<BootstrapProductModifier> ProductModifiers,
+    IReadOnlyList<BootstrapVariant> Variants,
+    IReadOnlyList<BootstrapMealDeal> MealDeals,
+    IReadOnlyList<BootstrapMealDealChoice> MealDealChoices,
+    IReadOnlyList<BootstrapMealDealCategoryRule> MealDealCategoryRules,
+    IReadOnlyList<BootstrapTastingMenu> TastingMenus,
+    IReadOnlyList<BootstrapTastingMenuOption> TastingMenuOptions,
+    IReadOnlyList<BootstrapTastingMenuCourse> TastingMenuCourses,
+    IReadOnlyList<BootstrapTastingMenuChoice> TastingMenuChoices);

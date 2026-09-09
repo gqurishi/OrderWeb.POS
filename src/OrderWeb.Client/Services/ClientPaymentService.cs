@@ -25,13 +25,24 @@ public sealed class ClientPaymentService
         decimal amount,
         string? requestId = null,
         long? expectedOrderRevision = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        string? giftCardNumber = null,
+        string? giftCardIdempotencyKey = null,
+        string? loyaltyLookup = null,
+        int? loyaltyPoints = null,
+        string? loyaltyIdempotencyKey = null)
     {
+        var normalizedMethod = NormalizeMethod(method);
         var offline = new ClientOfflinePolicy(_cache);
         var motherOnline = await offline.IsMotherOnlineAsync();
-        var policy = offline.Evaluate(
-            string.Equals(method, "card", StringComparison.OrdinalIgnoreCase) ? ClientOperation.CardPayment : ClientOperation.SubmitFinalOrder,
-            motherOnline);
+        var operation = normalizedMethod switch
+        {
+            "card" => ClientOperation.CardPayment,
+            "gift_card" => ClientOperation.GiftCard,
+            "loyalty" => ClientOperation.Loyalty,
+            _ => ClientOperation.SubmitFinalOrder
+        };
+        var policy = offline.Evaluate(operation, motherOnline);
         if (!policy.Allowed)
         {
             return new ClientPaymentResult(false, policy.Message, null, IsUnknown: false);
@@ -49,9 +60,27 @@ public sealed class ClientPaymentService
             return new ClientPaymentResult(false, "Payment requires a paired Mother POS, active staff session, and Mother order.", null);
         }
 
+        if (normalizedMethod == "gift_card" && string.IsNullOrWhiteSpace(giftCardNumber))
+        {
+            return new ClientPaymentResult(false, "A gift card number is required for gift card payment.", null);
+        }
+
+        if (normalizedMethod == "loyalty" &&
+            (string.IsNullOrWhiteSpace(loyaltyLookup) || loyaltyPoints is null or <= 0))
+        {
+            return new ClientPaymentResult(false, "A loyalty customer lookup and positive points amount are required.", null);
+        }
+
         requestId ??= Guid.NewGuid().ToString("N");
         correlationId ??= Guid.NewGuid().ToString("N");
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        giftCardIdempotencyKey ??= normalizedMethod == "gift_card"
+            ? $"gift-card:{orderId}:{requestId}:{amount:F2}"
+            : null;
+        loyaltyIdempotencyKey ??= normalizedMethod == "loyalty"
+            ? $"loyalty:{orderId}:{loyaltyLookup}:{loyaltyPoints}"
+            : null;
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
         ClientCompatibilityHeaders.Apply(client);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);
@@ -61,12 +90,57 @@ public sealed class ClientPaymentService
         {
             using var response = await client.PostAsJsonAsync(
                 $"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/payments",
-                new { requestId, orderId, method, amount, expectedOrderRevision, correlationId }, JsonOptions);
+                new
+                {
+                    requestId,
+                    orderId,
+                    method = normalizedMethod,
+                    amount,
+                    expectedOrderRevision,
+                    correlationId,
+                    giftCardNumber,
+                    giftCardIdempotencyKey,
+                    loyaltyLookup,
+                    loyaltyPoints,
+                    loyaltyIdempotencyKey,
+                    sessionToken = session.SessionToken
+                },
+                JsonOptions);
             var body = await response.Content.ReadAsStringAsync();
             var result = JsonSerializer.Deserialize<PaymentEnvelope>(body, JsonOptions);
+            var message = result?.Message;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message = response.IsSuccessStatusCode && result?.Success == true
+                    ? "Payment approved by Mother."
+                    : (response.IsSuccessStatusCode
+                        ? "Mother did not return a payment result."
+                        : "Mother could not approve the payment.");
+            }
+            if (result?.Payment?.GiftCardNumberMasked is { Length: > 0 } masked)
+            {
+                message = $"{message} Card {masked}";
+                if (result.Payment.GiftCardRemainingBalance is decimal remaining)
+                {
+                    message = $"{message}, remaining £{remaining:F2}.";
+                }
+            }
+
+            if (result?.Payment?.LoyaltyPointsRedeemed is int pts)
+            {
+                var name = result.Payment.LoyaltyCustomerName;
+                message = string.IsNullOrWhiteSpace(name)
+                    ? $"{message} Redeemed {pts:N0} pts"
+                    : $"{message} Redeemed {pts:N0} pts for {name}";
+                if (result.Payment.LoyaltyPointsRemaining is int left)
+                {
+                    message = $"{message}, remaining {left:N0} pts.";
+                }
+            }
+
             return new ClientPaymentResult(
                 response.IsSuccessStatusCode && result?.Success == true,
-                result?.Message ?? (response.IsSuccessStatusCode ? "Mother did not return a payment result." : "Mother could not approve the payment."),
+                message,
                 result?.Payment?.ProviderReference,
                 IsUnknown: false);
         }
@@ -107,8 +181,31 @@ public sealed class ClientPaymentService
         catch (TaskCanceledException) { return new ClientPaymentResult(false, "Mother did not respond to the payment status check.", null, IsUnknown: true); }
     }
 
+    private static string NormalizeMethod(string? method)
+    {
+        var value = (method ?? string.Empty).Trim().ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
+        return value switch
+        {
+            "gift" or "giftcard" or "gift_card" => "gift_card",
+            "loyalty" or "points" or "loyalty_points" or "customer_points" => "loyalty",
+            "cash" => "cash",
+            "card" => "card",
+            "split" => "split",
+            _ => value
+        };
+    }
+
     private sealed record PaymentEnvelope(bool Success, string? Message, PaymentState? Payment);
-    private sealed record PaymentState(string? PaymentId, string? Status, decimal ConfirmedAmount, string? ProviderReference);
+    private sealed record PaymentState(
+        string? PaymentId,
+        string? Status,
+        decimal ConfirmedAmount,
+        string? ProviderReference,
+        string? GiftCardNumberMasked = null,
+        decimal? GiftCardRemainingBalance = null,
+        string? LoyaltyCustomerName = null,
+        int? LoyaltyPointsRedeemed = null,
+        int? LoyaltyPointsRemaining = null);
 }
 
 public sealed record ClientPaymentResult(bool Approved, string Message, string? Reference, bool IsUnknown = false);

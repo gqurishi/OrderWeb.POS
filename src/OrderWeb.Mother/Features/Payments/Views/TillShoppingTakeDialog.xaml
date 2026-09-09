@@ -72,11 +72,16 @@
                     </Border.StrokeShape>
                     <Entry x:Name="ItemEntry"
                            Placeholder="e.g. Milk"
+                           IsReadOnly="True"
                            FontSize="16"
                            TextColor="#1F2937"
                            PlaceholderColor="#9CA3AF"
                            BackgroundColor="Transparent"
-                           HeightRequest="42"/>
+                           HeightRequest="42">
+                        <Entry.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnItemTapped"/>
+                        </Entry.GestureRecognizers>
+                    </Entry>
                 </Border>
 
                 <Label Text="Amount taken (£)"
@@ -96,11 +101,16 @@
                     <Entry x:Name="AmountEntry"
                            Placeholder="0.00"
                            Keyboard="Numeric"
+                           IsReadOnly="True"
                            FontSize="16"
                            TextColor="#1F2937"
                            PlaceholderColor="#9CA3AF"
                            BackgroundColor="Transparent"
-                           HeightRequest="42"/>
+                           HeightRequest="42">
+                        <Entry.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAmountTapped"/>
+                        </Entry.GestureRecognizers>
+                    </Entry>
                 </Border>
 
                 <Grid ColumnDefinitions="*,*"

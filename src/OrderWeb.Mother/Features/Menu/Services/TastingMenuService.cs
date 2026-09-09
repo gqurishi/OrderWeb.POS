@@ -93,7 +93,13 @@ namespace MyFirstMauiApp.Services
 
             using var command = new MySqlCommand(query, connection);
             AddParameters(command, menu);
-            return await command.ExecuteNonQueryAsync() > 0;
+            var created = await command.ExecuteNonQueryAsync() > 0;
+            if (created)
+            {
+                POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+            }
+
+            return created;
         }
 
         public async Task<bool> UpdateAsync(TastingMenu menu)
@@ -115,7 +121,13 @@ namespace MyFirstMauiApp.Services
 
             using var command = new MySqlCommand(query, connection);
             AddParameters(command, menu);
-            return await command.ExecuteNonQueryAsync() > 0;
+            var updated = await command.ExecuteNonQueryAsync() > 0;
+            if (updated)
+            {
+                POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+            }
+
+            return updated;
         }
 
         public async Task<bool> DeleteAsync(string id)
@@ -126,7 +138,13 @@ namespace MyFirstMauiApp.Services
 
             using var command = new MySqlCommand("DELETE FROM TastingMenus WHERE Id = @Id", connection);
             command.Parameters.AddWithValue("@Id", id);
-            return await command.ExecuteNonQueryAsync() > 0;
+            var deleted = await command.ExecuteNonQueryAsync() > 0;
+            if (deleted)
+            {
+                POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+            }
+
+            return deleted;
         }
 
         public async Task<bool> ToggleActiveAsync(string id)
@@ -143,7 +161,13 @@ namespace MyFirstMauiApp.Services
             using var command = new MySqlCommand(query, connection);
             command.Parameters.AddWithValue("@Id", id);
             command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now);
-            return await command.ExecuteNonQueryAsync() > 0;
+            var toggled = await command.ExecuteNonQueryAsync() > 0;
+            if (toggled)
+            {
+                POS_in_NET.Services.ClientMenuChangeNotifier.NotifyMenuChanged();
+            }
+
+            return toggled;
         }
 
         private static void AddParameters(MySqlCommand command, TastingMenu menu)

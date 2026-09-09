@@ -49,6 +49,7 @@ public static class ClientAccessPolicy
         (PosFeatureKeys.Customers, "Customers"),
         (PosFeatureKeys.Payments, "Payments / cash drawer"),
         (PosFeatureKeys.GiftCards, "Gift cards"),
+        // Terminal Access UI label "Loyalty" maps to PosFeatureKeys.CustomerPoints (pos.customer_points).
         (PosFeatureKeys.CustomerPoints, "Loyalty")
     ];
 

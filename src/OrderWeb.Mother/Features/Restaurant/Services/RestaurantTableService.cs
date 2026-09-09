@@ -642,6 +642,8 @@ namespace POS_in_NET.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Table live-update publish skipped: {ex.Message}");
             }
+
+            ClientLayoutChangeNotifier.NotifyTablesChanged();
         }
     }
 }
