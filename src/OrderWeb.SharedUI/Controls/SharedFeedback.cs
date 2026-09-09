@@ -113,14 +113,40 @@ public sealed class PosPromptDialog : ContentView
 
 public sealed class PosLoadingOverlay : ContentView
 {
-    private readonly Label _message;
-    public static readonly BindableProperty MessageProperty = BindableProperty.Create(nameof(Message), typeof(string), typeof(PosLoadingOverlay), "Loading…", propertyChanged: (b, _, v) => ((PosLoadingOverlay)b)._message.Text = v?.ToString() ?? "Loading…");
+    private readonly ChefLoaderView _loader;
+
+    public static readonly BindableProperty MessageProperty =
+        BindableProperty.Create(nameof(Message), typeof(string), typeof(PosLoadingOverlay), "Cooking up your data…",
+            propertyChanged: (b, _, v) => ((PosLoadingOverlay)b)._loader.Message = string.IsNullOrWhiteSpace(v?.ToString())
+                ? "Cooking up your data…"
+                : v!.ToString()!);
+
+    public static readonly BindableProperty IsLoadingProperty =
+        BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(PosLoadingOverlay), true,
+            propertyChanged: (b, _, v) => ((PosLoadingOverlay)b)._loader.IsLoading = (bool)v);
+
     public PosLoadingOverlay()
     {
-        _message = new Label { FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _message.Use(Label.TextColorProperty, "OwTextStrong");
-        var panel = new Border { Padding = 24, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 16 }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = new VerticalStackLayout { Spacing = 12, Children = { new ActivityIndicator { IsRunning = true, WidthRequest = 42, HeightRequest = 42 }, _message } } };
-        panel.Use(Border.BackgroundColorProperty, "OwSurface"); panel.Use(Border.StrokeProperty, "OwBorder");
-        BackgroundColor = Color.FromArgb("#66000000"); Content = panel;
+        _loader = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Fullscreen,
+            Size = ChefLoaderSize.Md,
+            Message = "Cooking up your data…",
+            DelayMilliseconds = 0,
+            IsLoading = true
+        };
+        Content = _loader;
     }
-    public string Message { get => (string)GetValue(MessageProperty); set => SetValue(MessageProperty, value); }
+
+    public string Message
+    {
+        get => (string)GetValue(MessageProperty);
+        set => SetValue(MessageProperty, value);
+    }
+
+    public bool IsLoading
+    {
+        get => (bool)GetValue(IsLoadingProperty);
+        set => SetValue(IsLoadingProperty, value);
+    }
 }

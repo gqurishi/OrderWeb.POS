@@ -32,6 +32,7 @@ public static class PosNavigationCatalog
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
         Item("printersetup", "Printer Setup", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
         Item("settings", "Settings", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 170),
+        Item("chefloader", "Chef Loader", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 175),
         Item("staffclock", "Staff Clock", "staff.png", [PosCapabilityKeys.AccessAdmin], [], 180),
         Item("inventory", "Inventory", "inventory.png", [PosCapabilityKeys.ViewReports], [], 190),
         Item("terminalhealth", "Terminal", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),

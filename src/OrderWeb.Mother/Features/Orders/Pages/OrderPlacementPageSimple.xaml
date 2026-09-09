@@ -3,420 +3,245 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+             xmlns:op="clr-namespace:OrderWeb.SharedUI.Controls.OrderPlace;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.OrderPlacementPageSimple"
              Title="Order Placement"
-             BackgroundColor="#F8FAFC">
+             BackgroundColor="#F1F5F9">
 
+    <!-- Phase 2 shell: Header | Left (~70%) | Right (~30%). Page does not scroll. -->
     <Grid RowDefinitions="Auto,*">
-        
-        <!-- Top Bar -->
+
+        <!-- Slim header: nav + order title + time/status + brand (via TopBar/PosHeader) -->
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
 
-        <!-- Toast Notification Overlay -->
         <controls:ToastNotification x:Name="ToastNotification"
                                     Grid.RowSpan="2"
                                     ZIndex="1000"
                                     InputTransparent="True"
                                     Placement="BottomCenter"/>
-        
-        <!-- Main Content -->
+
         <Grid x:Name="MainContentGrid"
               Grid.Row="1"
-              ColumnDefinitions="2*,*"
-              ColumnSpacing="15"
-              Padding="15">
-        
-            <!-- LEFT SIDE - Menu Categories and Items -->
-            <Border x:Name="MenuPanel" Grid.Column="0"
-                BackgroundColor="White" 
-                StrokeThickness="0"
-                Padding="15">
-            <Border.StrokeShape>
-                <RoundRectangle CornerRadius="12"/>
-            </Border.StrokeShape>
-            
-            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="15">
-                <!-- Search Bar (Tap to open keyboard) -->
-                <Border x:Name="SearchBarBorder"
-                        Grid.Row="0" 
-                        BackgroundColor="#F1F5F9" 
-                        Stroke="#E2E8F0"
-                        StrokeThickness="1"
-                        Padding="15,10"
-                        HeightRequest="50">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="10"/>
-                    </Border.StrokeShape>
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnSearchBarTapped"/>
-                    </Border.GestureRecognizers>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Label x:Name="SearchDisplayLabel"
-                               Grid.Column="0"
-                               Text="Search menu items..."
-                               TextColor="#94A3B8"
-                               FontSize="16"
-                               VerticalOptions="Center"/>
-                        <Button x:Name="ClearSearchButton"
-                                Grid.Column="1"
-                                Text="X"
-                                FontSize="14"
-                                TextColor="#64748B"
-                                BackgroundColor="Transparent"
-                                WidthRequest="35"
-                                HeightRequest="35"
-                                Padding="0"
-                                IsVisible="False"
-                                Clicked="OnClearSearchClicked"/>
-                    </Grid>
-                </Border>
-                
-                <!-- Categories (2 rows with swipe pagination) -->
-                <Grid Grid.Row="1" BackgroundColor="#F1F5F9" Padding="5">
-                    <!-- Page Indicator Dots -->
-                    <IndicatorView x:Name="CategoryIndicator"
-                                   IndicatorColor="#D1D5DB"
-                                   SelectedIndicatorColor="#3B82F6"
-                                   HorizontalOptions="End"
-                                   VerticalOptions="Start"
-                                   Margin="0,5,10,0"
-                                   IndicatorSize="10"
-                                   ZIndex="10"/>
-                    
-                    <!-- Categories CarouselView -->
-                    <CarouselView x:Name="CategoryCarousel"
-                                  HeightRequest="155"
-                                  PeekAreaInsets="0"
-                                  IndicatorView="CategoryIndicator"
-                                  Loop="False"
-                                  IsSwipeEnabled="True">
-                        <CarouselView.ItemTemplate>
-                            <DataTemplate>
-                                <VerticalStackLayout Spacing="8" Padding="0">
-                                    <!-- Category Row 1 (5 buttons) -->
-                                    <FlexLayout Direction="Row"
-                                                BindableLayout.ItemsSource="{Binding Row1}">
-                                        <BindableLayout.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Text="{Binding Name}"
-                                                        BackgroundColor="{Binding Color}"
-                                                        TextColor="White"
-                                                        FontSize="17"
-                                                        FontAttributes="Bold"
-                                                        CornerRadius="12"
-                                                        Padding="10,12"
-                                                        Margin="0,0,8,0"
-                                                        FlexLayout.Basis="19%"
-                                                        HeightRequest="58"
-                                                        Clicked="OnCategoryButtonClicked"
-                                                        CommandParameter="{Binding}"/>
-                                            </DataTemplate>
-                                        </BindableLayout.ItemTemplate>
-                                    </FlexLayout>
-                                    
-                                    <!-- Category Row 2 (5 buttons) -->
-                                    <FlexLayout Direction="Row"
-                                                BindableLayout.ItemsSource="{Binding Row2}">
-                                        <BindableLayout.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Text="{Binding Name}"
-                                                        BackgroundColor="{Binding Color}"
-                                                        TextColor="White"
-                                                        FontSize="17"
-                                                        FontAttributes="Bold"
-                                                        CornerRadius="12"
-                                                        Padding="10,12"
-                                                        Margin="0,0,8,0"
-                                                        FlexLayout.Basis="19%"
-                                                        HeightRequest="58"
-                                                        Clicked="OnCategoryButtonClicked"
-                                                        CommandParameter="{Binding}"/>
-                                            </DataTemplate>
-                                        </BindableLayout.ItemTemplate>
-                                    </FlexLayout>
-                                </VerticalStackLayout>
-                            </DataTemplate>
-                        </CarouselView.ItemTemplate>
-                    </CarouselView>
+              ColumnDefinitions="7*,3*"
+              ColumnSpacing="12"
+              Padding="12">
+
+            <!-- LEFT (~70%): Search → categories → subcategories → product host -->
+            <Border x:Name="MenuPanel"
+                    Grid.Column="0"
+                    BackgroundColor="White"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    Padding="12">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="10"/>
+                </Border.StrokeShape>
+
+                <Grid x:Name="MenuWorkspaceGrid"
+                      RowDefinitions="Auto,Auto,Auto,*"
+                      RowSpacing="12">
+
+                    <!-- Search -->
+                    <Border x:Name="SearchBarBorder"
+                            Grid.Row="0"
+                            BackgroundColor="#F1F5F9"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="14,10"
+                            HeightRequest="48">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSearchBarTapped"/>
+                        </Border.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label x:Name="SearchDisplayLabel"
+                                   Grid.Column="0"
+                                   Text="Search menu items..."
+                                   TextColor="#94A3B8"
+                                   FontSize="15"
+                                   VerticalOptions="Center"/>
+                            <Button x:Name="ClearSearchButton"
+                                    Grid.Column="1"
+                                    Text="X"
+                                    FontSize="14"
+                                    TextColor="#64748B"
+                                    BackgroundColor="Transparent"
+                                    WidthRequest="36"
+                                    HeightRequest="36"
+                                    Padding="0"
+                                    IsVisible="False"
+                                    Clicked="OnClearSearchClicked"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Main categories: one strong horizontal row (scroll if overflow) -->
+                    <op:HorizontalChipScroller x:Name="CategoryChipScroller"
+                                               Grid.Row="1"
+                                               HeightRequest="52"/>
+
+                    <!-- Subcategories: one lighter horizontal row -->
+                    <op:HorizontalChipScroller x:Name="SubCategorySection"
+                                               Grid.Row="2"
+                                               HeightRequest="42"
+                                               IsVisible="False"/>
+
+                    <!-- Adaptive product grid (only left scroll region) -->
+                    <ScrollView x:Name="ProductScrollHost" Grid.Row="3">
+                        <op:OrderPlaceProductGrid x:Name="ProductGrid"/>
+                    </ScrollView>
                 </Grid>
-                
-                <!-- Sub-Categories (2 rows with swipe pagination, hidden by default) -->
-                <Grid x:Name="SubCategorySection" Grid.Row="2" BackgroundColor="#FAF5FF" Padding="5" IsVisible="False">
-                    <!-- Page Indicator Dots -->
-                    <IndicatorView x:Name="SubCategoryIndicator"
-                                   IndicatorColor="#D1D5DB"
-                                   SelectedIndicatorColor="#8B5CF6"
-                                   HorizontalOptions="End"
-                                   VerticalOptions="Start"
-                                   Margin="0,5,10,0"
-                                   IndicatorSize="10"
-                                   ZIndex="10"/>
-                    
-                    <!-- Sub-Categories CarouselView -->
-                    <CarouselView x:Name="SubCategoryCarousel"
-                                  HeightRequest="135"
-                                  PeekAreaInsets="0"
-                                  IndicatorView="SubCategoryIndicator"
-                                  Loop="False"
-                                  IsSwipeEnabled="True">
-                        <CarouselView.ItemTemplate>
-                            <DataTemplate>
-                                <VerticalStackLayout Spacing="8" Padding="0">
-                                    <!-- Sub-Category Row 1 (5 buttons) -->
-                                    <FlexLayout Direction="Row"
-                                                BindableLayout.ItemsSource="{Binding Row1}">
-                                        <BindableLayout.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Text="{Binding Name}"
-                                                        BackgroundColor="{Binding Color}"
-                                                        TextColor="#1E293B"
-                                                        FontSize="16"
-                                                        FontAttributes="Bold"
-                                                        CornerRadius="10"
-                                                        Padding="8,10"
-                                                        Margin="0,0,8,0"
-                                                        FlexLayout.Basis="19%"
-                                                        HeightRequest="52"
-                                                        Clicked="OnSubCategoryButtonClicked"
-                                                        CommandParameter="{Binding}"/>
-                                            </DataTemplate>
-                                        </BindableLayout.ItemTemplate>
-                                    </FlexLayout>
-                                    
-                                    <!-- Sub-Category Row 2 (5 buttons) -->
-                                    <FlexLayout Direction="Row"
-                                                BindableLayout.ItemsSource="{Binding Row2}">
-                                        <BindableLayout.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Text="{Binding Name}"
-                                                        BackgroundColor="{Binding Color}"
-                                                        TextColor="#1E293B"
-                                                        FontSize="16"
-                                                        FontAttributes="Bold"
-                                                        CornerRadius="10"
-                                                        Padding="8,10"
-                                                        Margin="0,0,8,0"
-                                                        FlexLayout.Basis="19%"
-                                                        HeightRequest="52"
-                                                        Clicked="OnSubCategoryButtonClicked"
-                                                        CommandParameter="{Binding}"/>
-                                            </DataTemplate>
-                                        </BindableLayout.ItemTemplate>
-                                    </FlexLayout>
-                                </VerticalStackLayout>
-                            </DataTemplate>
-                        </CarouselView.ItemTemplate>
-                    </CarouselView>
-                </Grid>
-                
-                <!-- Menu Items -->
-                <ScrollView Grid.Row="3">
-                    <FlexLayout x:Name="ItemsContainer"
-                              Direction="Row"
-                              Wrap="Wrap"
-                              JustifyContent="Start"
-                              AlignItems="Start"/>
-                </ScrollView>
-            </Grid>
-        </Border>
-        
-        <!-- RIGHT SIDE - Order Panel -->
-        <Border x:Name="OrderPanel" Grid.Column="1"
-                BackgroundColor="White" 
-                StrokeThickness="0"
-                Padding="15">
-            <Border.StrokeShape>
-                <RoundRectangle CornerRadius="12"/>
-            </Border.StrokeShape>
-            
-            <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
-                <!-- Table Info with PAY Button -->
-                <Border Grid.Row="0"
-                        BackgroundColor="#F8FAFC"
-                        Stroke="#E2E8F0"
-                        StrokeThickness="1"
-                        Padding="15,10"
-                        Margin="0,0,0,0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="8"/>
-                    </Border.StrokeShape>
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                        <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
-                            <Label x:Name="OrderIdentityLabel" 
-                                Text="Order # Table 1" 
-                                   FontSize="18" 
-                                   FontAttributes="Bold" 
+            </Border>
+
+            <!-- RIGHT (~30%): fixed identity → scroll lines → fixed totals + actions -->
+            <Border x:Name="OrderPanel"
+                    Grid.Column="1"
+                    BackgroundColor="White"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    Padding="12">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="10"/>
+                </Border.StrokeShape>
+
+                <Grid x:Name="OrderWorkspaceGrid"
+                      RowDefinitions="Auto,*,Auto"
+                      RowSpacing="8">
+
+                    <!-- Fixed order header (table/guests or customer) — Payment removed from here -->
+                    <Border x:Name="OrderHeaderRegion"
+                            Grid.Row="0"
+                            BackgroundColor="#F8FAFC"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="12,10">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                            <Label x:Name="OrderIdentityLabel"
+                                   Text="Order # Table 1"
+                                   FontSize="17"
+                                   FontAttributes="Bold"
                                    TextColor="#0F172A"
                                    LineBreakMode="TailTruncation"
                                    MaxLines="1"/>
-                            <HorizontalStackLayout Spacing="8">
-                                <Label x:Name="GuestsLabel" 
-                                       Text="Guests = 2" 
-                                       FontSize="14" 
-                                       TextColor="#475569"
-                                       FontAttributes="Bold"
-                                       LineBreakMode="TailTruncation"
-                                       MaxLines="1"/>
-                            </HorizontalStackLayout>
+                            <Label x:Name="GuestsLabel"
+                                   Text="Guests = 2"
+                                   FontSize="13"
+                                   TextColor="#475569"
+                                   FontAttributes="Bold"
+                                   LineBreakMode="TailTruncation"
+                                   MaxLines="1"/>
                         </VerticalStackLayout>
+                    </Border>
 
-                        <Button x:Name="PaymentButton" Grid.Column="1"
-                               Text="PAYMENT"
-                               BackgroundColor="#F59E0B"
-                               TextColor="White"
-                               FontSize="16"
-                               FontAttributes="Bold"
-                               CornerRadius="8"
-                               WidthRequest="150"
-                               HeightRequest="50"
-                               HorizontalOptions="End"
-                               VerticalOptions="Center"
-                               Clicked="OnPayClicked"/>
-                    </Grid>
-                </Border>
-                
-                <!-- Order Items -->
-                <ScrollView Grid.Row="1">
-                    <VerticalStackLayout x:Name="OrderItemsContainer" Spacing="8"/>
-                </ScrollView>
-                
-                <!-- Action Buttons Card -->
-                <Border x:Name="OrderActionsCard"
-                        Grid.Row="2" Grid.RowSpan="2"
-                        BackgroundColor="White"
-                        Stroke="#E5E7EB"
-                        StrokeThickness="1"
-                        Padding="20"
-                        Margin="0,15,0,0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12,12,0,0"/>
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Opacity="0.05" Radius="8" Offset="0,-2"/>
-                    </Border.Shadow>
-                    
-                    <VerticalStackLayout x:Name="OrderActionsLayout" Spacing="15">
-                        <!-- Transparent order total breakdown -->
-                        <Border BackgroundColor="#F9FAFB"
-                                Stroke="#E2E8F0"
-                                Padding="15"
-                                Margin="0,0,0,5">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <VerticalStackLayout Spacing="6">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <Label Text="Subtotal" TextColor="#475569" FontSize="14"/>
-                                    <Label x:Name="SubtotalLabel" Grid.Column="1" Text="£0.00" TextColor="#0F172A" FontSize="14"/>
-                                </Grid>
-                                <Grid x:Name="DiscountRow" ColumnDefinitions="*,Auto" IsVisible="False">
-                                    <Label x:Name="DiscountReasonLabel" Text="Discount" TextColor="#475569" FontSize="14"/>
-                                    <Label x:Name="DiscountLabel" Grid.Column="1" Text="-£0.00" TextColor="#DC2626" FontSize="14"/>
-                                </Grid>
-                                <Grid x:Name="ServiceChargeRow" ColumnDefinitions="*,Auto" IsVisible="False">
-                                    <Label x:Name="ServiceChargeDescriptionLabel" Text="Service charge" TextColor="#475569" FontSize="14"/>
-                                    <Label x:Name="ServiceChargeLabel" Grid.Column="1" Text="£0.00" TextColor="#0F766E" FontSize="14" FontAttributes="Bold"/>
-                                </Grid>
-                                <BoxView HeightRequest="1" Color="#CBD5E1" Margin="0,3"/>
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <Label Text="TOTAL" FontSize="16" TextColor="#334155" FontAttributes="Bold" VerticalOptions="Center"/>
-                                    <Label x:Name="TotalLabel" Grid.Column="1" Text="£0.00" FontSize="24" TextColor="#059669" FontAttributes="Bold" VerticalOptions="Center"/>
-                                </Grid>
-                                <Label x:Name="VATLabel" Text="£0.00" IsVisible="False"/>
-                            </VerticalStackLayout>
-                        </Border>
-                        
-                        <!-- Quick Actions Row -->
-                        <Grid x:Name="QuickActionsGrid" ColumnDefinitions="*,*,*" ColumnSpacing="12">
-                            <Button x:Name="NotesButton" Grid.Column="0"
-                                   Text="NOTES"
-                                   BackgroundColor="#3B82F6"
-                                   TextColor="White"
-                                   FontSize="16"
-                                   FontAttributes="Bold"
-                                   CornerRadius="10"
-                                   HeightRequest="55"
-                                   Clicked="OnNotesClicked"/>
-                            
-                            <Button x:Name="VoidButton" Grid.Column="1"
-                                   Text="VOID"
-                                   BackgroundColor="#EF4444"
-                                   TextColor="White"
-                                   FontSize="16"
-                                   FontAttributes="Bold"
-                                   CornerRadius="10"
-                                   HeightRequest="55"
-                                   Clicked="OnVoidClicked"/>
-                            
-                            <Button x:Name="MoreButton" Grid.Column="2"
-                                   Text="MORE ▼"
-                                   BackgroundColor="#64748B"
-                                   TextColor="White"
-                                   FontSize="16"
-                                   FontAttributes="Bold"
-                                   CornerRadius="10"
-                                   HeightRequest="55"
-                                   Clicked="OnMoreClicked"/>
-                        </Grid>
-                        
-                        <!-- Main Actions Row -->
-                        <Grid x:Name="MainActionsGrid" ColumnDefinitions="1.4*,*" ColumnSpacing="12">
-                            <Button x:Name="SendButton" Grid.Column="0"
-                                   Text="SEND TO KITCHEN"
-                                   BackgroundColor="#10B981"
-                                   TextColor="White"
-                                   FontSize="17"
-                                   FontAttributes="Bold"
-                                   CornerRadius="12"
-                                   HeightRequest="65"
-                                   Clicked="OnSendClicked"/>
-                            <Button x:Name="PrintButton" Grid.Column="1"
-                                   Text="PRINT"
-                                   BackgroundColor="#6366F1"
-                                   TextColor="White"
-                                   FontSize="17"
-                                   FontAttributes="Bold"
-                                   CornerRadius="12"
-                                   HeightRequest="65"
-                                   Clicked="OnPrintReceiptClicked"/>
-                        </Grid>
-                    </VerticalStackLayout>
-                </Border>
-            </Grid>
-        </Border>
-        
-        <!-- Loading Overlay -->
-        <Grid x:Name="LoadingOverlay" 
-              Grid.ColumnSpan="2"
-              IsVisible="False"
-              BackgroundColor="#80000000">
-            <Border BackgroundColor="White"
-                    WidthRequest="200"
-                    HeightRequest="150"
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center"
-                    StrokeThickness="0"
-                    Padding="20">
-                <Border.StrokeShape>
-                    <RoundRectangle CornerRadius="12"/>
-                </Border.StrokeShape>
-                <VerticalStackLayout Spacing="15" HorizontalOptions="Center" VerticalOptions="Center">
-                    <ActivityIndicator IsRunning="True"
-                                     Color="#3B82F6"
-                                     WidthRequest="40"
-                                     HeightRequest="40"/>
-                    <Label Text="Loading menu..."
-                           FontSize="16"
-                           FontAttributes="Bold"
-                           TextColor="#1E293B"
-                           HorizontalOptions="Center"/>
-                    <Label Text="Please wait"
-                           FontSize="13"
-                           TextColor="#64748B"
-                           HorizontalOptions="Center"/>
-                </VerticalStackLayout>
+                    <!-- Scrollable order lines (only right scroll region) -->
+                    <ScrollView x:Name="OrderLinesScrollHost" Grid.Row="1">
+                        <VerticalStackLayout x:Name="OrderItemsContainer" Spacing="8"/>
+                    </ScrollView>
+
+                    <!-- Fixed bottom action station: totals → NOTES/VOID/MORE → SEND/PRINT → PAYMENT -->
+                    <Border x:Name="OrderActionsCard"
+                            Grid.Row="2"
+                            BackgroundColor="#FFFFFF"
+                            Stroke="#E5E7EB"
+                            StrokeThickness="1"
+                            Padding="12">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="Black" Opacity="0.06" Radius="8" Offset="0,-2"/>
+                        </Border.Shadow>
+
+                        <VerticalStackLayout x:Name="OrderActionsLayout" Spacing="10">
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="#E2E8F0"
+                                    Padding="12"
+                                    Margin="0,0,0,2">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="8"/>
+                                </Border.StrokeShape>
+                                <VerticalStackLayout Spacing="5">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label Text="Subtotal" TextColor="#475569" FontSize="13"/>
+                                        <Label x:Name="SubtotalLabel" Grid.Column="1" Text="£0.00" TextColor="#0F172A" FontSize="13"/>
+                                    </Grid>
+                                    <Grid x:Name="DiscountRow" ColumnDefinitions="*,Auto" IsVisible="False">
+                                        <Label x:Name="DiscountReasonLabel" Text="Discount" TextColor="#475569" FontSize="13"/>
+                                        <Label x:Name="DiscountLabel" Grid.Column="1" Text="-£0.00" TextColor="#DC2626" FontSize="13"/>
+                                    </Grid>
+                                    <Grid x:Name="ServiceChargeRow" ColumnDefinitions="*,Auto" IsVisible="False">
+                                        <Label x:Name="ServiceChargeDescriptionLabel" Text="Service charge" TextColor="#475569" FontSize="13"/>
+                                        <Label x:Name="ServiceChargeLabel" Grid.Column="1" Text="£0.00" TextColor="#0F766E" FontSize="13" FontAttributes="Bold"/>
+                                    </Grid>
+                                    <!-- Phase 5 type policy will show this for Delivery -->
+                                    <Grid x:Name="DeliveryFeeRow" ColumnDefinitions="*,Auto" IsVisible="False">
+                                        <Label x:Name="DeliveryFeeDescriptionLabel" Text="Delivery fee" TextColor="#475569" FontSize="13"/>
+                                        <Label x:Name="DeliveryFeeLabel" Grid.Column="1" Text="£0.00" TextColor="#0F766E" FontSize="13" FontAttributes="Bold"/>
+                                    </Grid>
+                                    <BoxView HeightRequest="1" Color="#CBD5E1" Margin="0,2"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label Text="TOTAL" FontSize="15" TextColor="#334155" FontAttributes="Bold" VerticalOptions="Center"/>
+                                        <Label x:Name="TotalLabel" Grid.Column="1" Text="£0.00" FontSize="22" TextColor="#059669" FontAttributes="Bold" VerticalOptions="Center"/>
+                                    </Grid>
+                                    <Label x:Name="VATLabel" Text="£0.00" IsVisible="False"/>
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Grid x:Name="QuickActionsGrid" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                <op:PosActionButton x:Name="NotesButton"
+                                                    Grid.Column="0"
+                                                    Text="NOTES"
+                                                    Role="Secondary"
+                                                    Tapped="OnNotesClicked"/>
+                                <op:PosActionButton x:Name="VoidButton"
+                                                    Grid.Column="1"
+                                                    Text="VOID"
+                                                    Role="Destructive"
+                                                    Tapped="OnVoidClicked"/>
+                                <op:PosActionButton x:Name="MoreButton"
+                                                    Grid.Column="2"
+                                                    Text="MORE ▼"
+                                                    Role="Utility"
+                                                    Tapped="OnMoreClicked"/>
+                            </Grid>
+
+                            <Grid x:Name="MainActionsGrid" ColumnDefinitions="1.4*,*" ColumnSpacing="8">
+                                <op:PosActionButton x:Name="SendButton"
+                                                    Grid.Column="0"
+                                                    Text="SEND TO KITCHEN"
+                                                    Role="Primary"
+                                                    Tapped="OnSendClicked"/>
+                                <op:PosActionButton x:Name="PrintButton"
+                                                    Grid.Column="1"
+                                                    Text="PRINT"
+                                                    Role="Secondary"
+                                                    Tapped="OnPrintReceiptClicked"/>
+                            </Grid>
+
+                            <op:PosActionButton x:Name="PaymentButton"
+                                                Text="PAYMENT"
+                                                Role="Payment"
+                                                HorizontalOptions="Fill"
+                                                Tapped="OnPayClicked"/>
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
             </Border>
-        </Grid>
+
+            <shared:ChefLoaderView x:Name="LoadingOverlay"
+                                   Grid.ColumnSpan="2"
+                                   Mode="Fullscreen"
+                                   Size="Md"
+                                   Message="Cooking up your data…"
+                                   DelayMilliseconds="0"
+                                   IsLoading="False"
+                                   IsVisible="False"
+                                   ZIndex="50" />
         </Grid>
     </Grid>
 

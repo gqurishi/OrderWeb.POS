@@ -11,6 +11,7 @@ public class ApplicationShellFrame : ContentView
     private readonly ApplicationSidebar _sidebar;
     private readonly Grid _navigationLayer;
     private readonly Grid _loadingLayer;
+    private readonly ChefLoaderView _chefLoader;
     private readonly Label _loadingMessage;
     private readonly Grid _errorLayer;
     private readonly Label _errorTitle;
@@ -35,8 +36,20 @@ public class ApplicationShellFrame : ContentView
     public static readonly BindableProperty MenuItemsProperty = BindableProperty.Create(nameof(MenuItems), typeof(IEnumerable), typeof(ApplicationShellFrame), propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._sidebar.ItemsSource = (IEnumerable?)v);
     public static readonly BindableProperty SelectedRouteProperty = BindableProperty.Create(nameof(SelectedRoute), typeof(string), typeof(ApplicationShellFrame), string.Empty, BindingMode.TwoWay, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._sidebar.SelectedRoute = v?.ToString() ?? string.Empty);
     public static readonly BindableProperty IsNavigationOpenProperty = BindableProperty.Create(nameof(IsNavigationOpen), typeof(bool), typeof(ApplicationShellFrame), false, BindingMode.TwoWay, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyNavigation((bool)v));
-    public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._loadingLayer.IsVisible = (bool)v);
-    public static readonly BindableProperty LoadingMessageProperty = BindableProperty.Create(nameof(LoadingMessage), typeof(string), typeof(ApplicationShellFrame), "Loading…", propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._loadingMessage.Text = v?.ToString() ?? "Loading…");
+    public static readonly BindableProperty IsLoadingProperty = BindableProperty.Create(nameof(IsLoading), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) =>
+    {
+        var frame = (ApplicationShellFrame)b;
+        var loading = (bool)v;
+        frame._loadingLayer.IsVisible = loading;
+        frame._chefLoader.IsLoading = loading;
+    });
+    public static readonly BindableProperty LoadingMessageProperty = BindableProperty.Create(nameof(LoadingMessage), typeof(string), typeof(ApplicationShellFrame), "Cooking up your data…", propertyChanged: (b, _, v) =>
+    {
+        var text = string.IsNullOrWhiteSpace(v?.ToString()) ? "Cooking up your data…" : v!.ToString()!;
+        var frame = (ApplicationShellFrame)b;
+        frame._loadingMessage.Text = text;
+        frame._chefLoader.Message = text;
+    });
     public static readonly BindableProperty ErrorTitleProperty = BindableProperty.Create(nameof(ErrorTitle), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._errorTitle.Text = string.IsNullOrWhiteSpace(v?.ToString()) ? "Something went wrong" : v!.ToString()!);
     public static readonly BindableProperty ErrorMessageProperty = BindableProperty.Create(nameof(ErrorMessage), typeof(string), typeof(ApplicationShellFrame), string.Empty, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b).ApplyError(v?.ToString()));
     public static readonly BindableProperty ShowUpdateButtonProperty = BindableProperty.Create(nameof(ShowUpdateButton), typeof(bool), typeof(ApplicationShellFrame), false, propertyChanged: (b, _, v) => ((ApplicationShellFrame)b)._sidebar.ShowUpdateButton = (bool)v);
@@ -81,11 +94,17 @@ public class ApplicationShellFrame : ContentView
         var dismissTap = new TapGestureRecognizer(); dismissTap.Tapped += (_, _) => IsNavigationOpen = false; dismiss.GestureRecognizers.Add(dismissTap);
         _navigationLayer = new Grid { IsVisible = false, ZIndex = 20, Children = { dismiss, _sidebar } };
 
-        _loadingMessage = new Label { Text = "Loading…", FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center };
+        _loadingMessage = new Label { Text = "Cooking up your data…", FontSize = 16, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, IsVisible = false };
         _loadingMessage.Use(Label.TextColorProperty, "OwTextStrong");
-        var loadingCard = new Border { Padding = 24, StrokeThickness = 1, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 }, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Content = new VerticalStackLayout { Spacing = 14, Children = { new ActivityIndicator { IsRunning = true, WidthRequest = 42, HeightRequest = 42, Color = Color.FromArgb("#2563EB") }, _loadingMessage } } };
-        loadingCard.Use(Border.BackgroundColorProperty, "OwSurface"); loadingCard.Use(Border.StrokeProperty, "OwBorder");
-        _loadingLayer = new Grid { IsVisible = false, ZIndex = 30, BackgroundColor = Color.FromArgb("#66F8FAFC"), Children = { loadingCard } };
+        _chefLoader = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Fullscreen,
+            Size = ChefLoaderSize.Md,
+            Message = "Cooking up your data…",
+            DelayMilliseconds = 0,
+            IsLoading = false
+        };
+        _loadingLayer = new Grid { IsVisible = false, ZIndex = 30, Children = { _chefLoader } };
 
         _errorTitle = new Label { Text = "Something went wrong", FontSize = 22, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center }; _errorTitle.Use(Label.TextColorProperty, "OwTextStrong");
         _errorMessage = new Label { FontSize = 15, HorizontalTextAlignment = TextAlignment.Center }; _errorMessage.Use(Label.TextColorProperty, "OwTextMuted");

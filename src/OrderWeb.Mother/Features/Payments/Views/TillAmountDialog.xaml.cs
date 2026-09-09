@@ -91,13 +91,11 @@ public partial class TillAmountDialog : ContentView
         _keyboardOpen = true;
         try
         {
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetPrompt(FieldLabel.Text, "Done");
-            keyboard.SetInitialText(AmountEntry.Text ?? string.Empty);
-            var value = await keyboard.ShowAsync(_hostPage);
-            if (value != null)
+            var keyboard = new NumericKeyboardDialog();
+            var value = await keyboard.ShowCurrencyAsync(ParseAmount(AmountEntry.Text), FieldLabel.Text);
+            if (value.HasValue)
             {
-                AmountEntry.Text = value;
+                AmountEntry.Text = value.Value.ToString("0.00", CultureInfo.InvariantCulture);
             }
         }
         finally
@@ -105,6 +103,12 @@ public partial class TillAmountDialog : ContentView
             _keyboardOpen = false;
         }
     }
+
+    private static decimal? ParseAmount(string? text) =>
+        decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var amount)
+        || decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out amount)
+            ? amount
+            : null;
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

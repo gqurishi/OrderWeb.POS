@@ -106,13 +106,11 @@ public partial class TillShoppingSettleDialog : ContentView
         _keyboardOpen = true;
         try
         {
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetPrompt("Actual spent", "Done");
-            keyboard.SetInitialText(SpentEntry.Text ?? string.Empty);
-            var value = await keyboard.ShowAsync(_hostPage);
-            if (value != null)
+            var keyboard = new NumericKeyboardDialog();
+            var value = await keyboard.ShowCurrencyAsync(ParseExistingAmount(), "Actual spent");
+            if (value.HasValue)
             {
-                SpentEntry.Text = value;
+                SpentEntry.Text = value.Value.ToString("0.00", CultureInfo.InvariantCulture);
             }
         }
         finally
@@ -120,6 +118,9 @@ public partial class TillShoppingSettleDialog : ContentView
             _keyboardOpen = false;
         }
     }
+
+    private decimal? ParseExistingAmount() =>
+        TryParseAmount(SpentEntry.Text, out var amount) ? amount : null;
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

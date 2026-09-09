@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.SharedUI.Views.ReservationView">
 
     <Grid x:Name="RootLayout"
@@ -228,13 +229,13 @@
                                            TextColor="{DynamicResource OwTextPlaceholder}" />
                                 </HorizontalStackLayout>
                             </VerticalStackLayout>
-                            <ActivityIndicator Grid.Column="1"
-                                               WidthRequest="22"
-                                               HeightRequest="22"
-                                               IsRunning="{Binding IsLoading}"
-                                               IsVisible="{Binding IsLoading}"
-                                               Color="{DynamicResource OwPrimary}"
-                                               VerticalOptions="Center" />
+                            <shared:ChefLoaderView Grid.Column="1"
+                                                   Mode="Inline"
+                                                   Size="Sm"
+                                                   Message=""
+                                                   DelayMilliseconds="0"
+                                                   IsLoading="{Binding IsLoading}"
+                                                   VerticalOptions="Center" />
                             <Button Grid.Column="2"
                                     Text="Today"
                                     BackgroundColor="{DynamicResource OwSurfaceMuted}"

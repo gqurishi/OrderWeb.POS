@@ -156,8 +156,7 @@ namespace POS_in_NET.Pages
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                LoadingIndicator.IsRunning = isLoading;
-                LoadingIndicator.IsVisible = isLoading;
+                LoadingIndicator.IsLoading = isLoading;
                 AddTableButton.IsEnabled = !isLoading && !_isTableOperationInProgress && !NoFloorsWarning.IsVisible;
             });
         }

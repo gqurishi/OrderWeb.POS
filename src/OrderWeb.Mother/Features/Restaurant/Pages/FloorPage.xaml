@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.FloorPage"
              Title=""
              BackgroundColor="{StaticResource Background}">
@@ -38,12 +39,13 @@
                     Clicked="OnAddFloorClicked"
                     HorizontalOptions="Fill" />
             
-            <!-- Loading Indicator -->
-            <ActivityIndicator x:Name="LoadingIndicator"
-                             IsRunning="False"
-                             IsVisible="False"
-                             Color="#3B82F6"
-                             HeightRequest="40" />
+            <shared:ChefLoaderView x:Name="LoadingIndicator"
+                                   Mode="Inline"
+                                   Size="Sm"
+                                   Message="Loading floors"
+                                   DelayMilliseconds="0"
+                                   IsLoading="False"
+                                   HorizontalOptions="Center" />
         </StackLayout>
 
         <!-- Floors List -->

@@ -21,6 +21,8 @@ public partial class OrderHistoryPage : ContentPage
     private int _pageNumber = 1;
     private bool _hasNextPage;
     private bool _busy;
+    private bool _isVisible;
+    private bool _wsRefreshPending;
     private bool _suppressDateEvent;
     private CancellationTokenSource? _loadCts;
 
@@ -46,7 +48,7 @@ public partial class OrderHistoryPage : ContentPage
         base.OnAppearing();
         if (!HasHistoryAccess())
         {
-            await DisplayAlert(
+            await DisplayAlertAsync(
                 "Order History",
                 "This Client terminal is not allowed to use Order History. Ask Mother to grant Payments / Order History access.",
                 "OK");
@@ -54,18 +56,63 @@ public partial class OrderHistoryPage : ContentPage
             return;
         }
 
+        _isVisible = true;
+        MotherEventClient.SharedAuthoritativeDataChanged += OnMotherDataChanged;
         await LoadHistoryAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _isVisible = false;
+        MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherDataChanged;
         _loadCts?.Cancel();
     }
 
     private static bool HasHistoryAccess() =>
         ClientHostAccess.Features.Contains(PosFeatureKeys.Payments) ||
         ClientHostAccess.CanOpenMenu("Order History");
+
+    /// <summary>
+    /// Light live refresh: WS carries no order list — only a notify. Re-fetch current date/filters
+    /// while this page is visible (same pattern as Live Order).
+    /// </summary>
+    private async void OnMotherDataChanged(object? sender, MotherDataChangedEventArgs e)
+    {
+        if (!_isVisible || !IsHistoryRefreshEvent(e.EventType))
+        {
+            return;
+        }
+
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            if (!_isVisible)
+            {
+                return;
+            }
+
+            if (_busy)
+            {
+                _wsRefreshPending = true;
+                return;
+            }
+
+            await LoadHistoryAsync(fromLiveNotify: true);
+        });
+    }
+
+    private static bool IsHistoryRefreshEvent(string? eventType)
+    {
+        if (string.IsNullOrWhiteSpace(eventType))
+        {
+            return false;
+        }
+
+        return string.Equals(eventType, "order.updated", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(eventType, "history.updated", StringComparison.OrdinalIgnoreCase)
+               || eventType.Contains("order.updated", StringComparison.OrdinalIgnoreCase)
+               || eventType.Contains("history.updated", StringComparison.OrdinalIgnoreCase);
+    }
 
     private async void OnHistoryDateSelected(object? sender, DateChangedEventArgs e)
     {
@@ -180,7 +227,7 @@ public partial class OrderHistoryPage : ContentPage
         await LoadHistoryAsync();
     }
 
-    private async Task LoadHistoryAsync()
+    private async Task LoadHistoryAsync(bool fromLiveNotify = false)
     {
         if (!HasHistoryAccess())
         {
@@ -190,15 +237,26 @@ public partial class OrderHistoryPage : ContentPage
 
         if (_busy)
         {
+            if (fromLiveNotify)
+            {
+                _wsRefreshPending = true;
+            }
+
             return;
         }
 
         _busy = true;
+        _wsRefreshPending = false;
         _loadCts?.Cancel();
         _loadCts = new CancellationTokenSource();
         var token = _loadCts.Token;
 
-        SetLoading(true);
+        // Soft refresh from WS: keep the list visible; avoid flashing the spinner on every notify.
+        if (!fromLiveNotify)
+        {
+            SetLoading(true);
+        }
+
         try
         {
             var result = await _history.SearchAsync(
@@ -222,7 +280,12 @@ public partial class OrderHistoryPage : ContentPage
                     return;
                 }
 
-                ShowErrorState(result.Error ?? result.Message ?? "Could not load order history.");
+                // Keep prior rows on a failed live notify; only hard-fail interactive loads.
+                if (!fromLiveNotify)
+                {
+                    ShowErrorState(result.Error ?? result.Message ?? "Could not load order history.");
+                }
+
                 return;
             }
 
@@ -233,12 +296,20 @@ public partial class OrderHistoryPage : ContentPage
         }
         catch (Exception ex)
         {
-            ShowErrorState($"Could not load order history: {ex.Message}");
+            if (!fromLiveNotify)
+            {
+                ShowErrorState($"Could not load order history: {ex.Message}");
+            }
         }
         finally
         {
             SetLoading(false);
             _busy = false;
+            if (_wsRefreshPending && _isVisible)
+            {
+                _wsRefreshPending = false;
+                await LoadHistoryAsync(fromLiveNotify: true);
+            }
         }
     }
 
@@ -319,8 +390,7 @@ public partial class OrderHistoryPage : ContentPage
 
     private void SetLoading(bool loading)
     {
-        LoadingIndicator.IsVisible = loading;
-        LoadingIndicator.IsRunning = loading;
+        LoadingIndicator.IsLoading = loading;
         PreviousPageButton.IsEnabled = !loading && _pageNumber > 1;
         NextPageButton.IsEnabled = !loading && _hasNextPage;
     }

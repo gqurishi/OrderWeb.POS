@@ -156,13 +156,14 @@ public sealed class ClientCacheService
             foreach (var category in payload.Categories)
             {
                 connection.Execute(
-                    "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, parent_id, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     category.Id,
                     category.MotherId,
                     category.Name,
                     category.Color,
                     category.SortOrder,
                     category.IsActive ? 1 : 0,
+                    category.ParentId,
                     now);
             }
 
@@ -731,13 +732,14 @@ public sealed class ClientCacheService
             foreach (var category in stabilized.Categories)
             {
                 connection.Execute(
-                    "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO categories (id, mother_id, name, color, sort_order, is_active, parent_id, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     category.Id,
                     category.MotherId,
                     category.Name,
                     category.Color,
                     category.SortOrder,
                     category.IsActive ? 1 : 0,
+                    category.ParentId,
                     now);
             }
 
@@ -1047,8 +1049,19 @@ public sealed class ClientCacheService
     public async Task<IReadOnlyList<CachedMenuCategory>> GetMenuCategoriesAsync()
     {
         await InitializeAsync();
-        var rows = await _database.QueryAsync<CachedCategoryRow>("SELECT id, name, color, sort_order FROM categories WHERE is_active = 1 ORDER BY sort_order, name");
-        return rows.Select(row => new CachedMenuCategory(row.Id, row.Name, row.Color ?? "#3B82F6", row.SortOrder)).ToList();
+        var rows = await _database.QueryAsync<CachedCategoryRow>(
+            "SELECT id, name, color, sort_order, parent_id FROM categories WHERE is_active = 1 ORDER BY sort_order, name");
+        return rows
+            .Select(row => new CachedMenuCategory(row.Id, row.Name, row.Color ?? "#3B82F6", row.SortOrder, row.ParentId))
+            .ToList();
+    }
+
+    public async Task<HashSet<int>> GetCategoryIdsWithProductsAsync()
+    {
+        await InitializeAsync();
+        var rows = await _database.QueryAsync<CachedCategoryIdRow>(
+            "SELECT DISTINCT category_id AS id FROM products WHERE is_active = 1");
+        return rows.Select(row => row.Id).ToHashSet();
     }
 
     public async Task<IReadOnlyList<CachedProduct>> GetProductsByCategoryAsync(int categoryId)
@@ -2055,6 +2068,15 @@ public sealed class ClientCacheService
 
         [Column("sort_order")]
         public int SortOrder { get; set; }
+
+        [Column("parent_id")]
+        public int? ParentId { get; set; }
+    }
+
+    private sealed class CachedCategoryIdRow
+    {
+        [Column("id")]
+        public int Id { get; set; }
     }
 
     private sealed class CachedProductRow

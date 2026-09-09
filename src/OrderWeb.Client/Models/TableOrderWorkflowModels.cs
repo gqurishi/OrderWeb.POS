@@ -24,7 +24,7 @@ public sealed record CachedTable(
     int PositionY = 0,
     string? DesignIcon = null);
 
-public sealed record CachedMenuCategory(int Id, string Name, string Color, int SortOrder);
+public sealed record CachedMenuCategory(int Id, string Name, string Color, int SortOrder, int? ParentId = null);
 
 public sealed record CachedProduct(int Id, int CategoryId, string Name, decimal Price, string Currency, IReadOnlyList<CachedModifierGroup> ModifierGroups, string? MotherId = null);
 

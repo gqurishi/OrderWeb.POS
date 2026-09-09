@@ -85,8 +85,7 @@ public partial class RiderPage : ContentPage
         {
             if (showSpinner)
             {
-                LoadingIndicator.IsVisible = true;
-                LoadingIndicator.IsRunning = true;
+                LoadingIndicator.IsLoading = true;
             }
             await _riderService.RefreshActiveDispatchesAsync(token);
             _allOrders = (await _riderService.GetBoardAsync(DateTime.Now, token)).ToList();
@@ -102,8 +101,7 @@ public partial class RiderPage : ContentPage
         }
         finally
         {
-            LoadingIndicator.IsVisible = false;
-            LoadingIndicator.IsRunning = false;
+            LoadingIndicator.IsLoading = false;
             _loadGate.Release();
         }
     }

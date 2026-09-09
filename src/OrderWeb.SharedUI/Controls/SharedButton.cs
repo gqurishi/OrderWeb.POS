@@ -31,6 +31,7 @@ public class SharedButton : Button
             ButtonVariant.Secondary => ("OwSurfaceStrong", "OwTextStrong"),
             ButtonVariant.Success => ("OwSuccessStrong", "OwTextOnPrimary"),
             ButtonVariant.Danger => ("OwErrorStrong", "OwTextOnPrimary"),
+            ButtonVariant.Utility => ("OwSurfaceMuted", "OwTextSecondary"),
             _ => ("OwPrimary", "OwTextOnPrimary")
         };
         this.Use(BackgroundColorProperty, background);

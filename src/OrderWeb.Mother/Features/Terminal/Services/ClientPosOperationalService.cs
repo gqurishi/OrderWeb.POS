@@ -47,51 +47,11 @@ public sealed class ClientPosOperationalService
         var allCategories = await _categoryService.GetAllCategoriesAsync();
         var items = await _menuItemService.GetAllItemsAsync();
 
-        // Client order place needs every category that has sellable items — not only Active.
-        // Inactive categories with items still sync (forced active for Client display).
-        var referencedCategoryIds = items
-            .Select(item => item.CategoryId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var categoriesById = allCategories
-            .Where(category => !string.IsNullOrWhiteSpace(category.Id))
-            .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-        var includeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var category in allCategories)
-        {
-            if (string.IsNullOrWhiteSpace(category.Id))
-            {
-                continue;
-            }
-
-            if (category.Active || referencedCategoryIds.Contains(category.Id))
-            {
-                includeIds.Add(category.Id);
-            }
-        }
-
-        // Pull in inactive parents so Client hierarchy / naming stays coherent.
-        foreach (var id in includeIds.ToList())
-        {
-            var currentId = id;
-            while (!string.IsNullOrWhiteSpace(currentId) &&
-                   categoriesById.TryGetValue(currentId, out var current) &&
-                   !string.IsNullOrWhiteSpace(current.ParentId))
-            {
-                if (!includeIds.Add(current.ParentId))
-                {
-                    break;
-                }
-
-                currentId = current.ParentId;
-            }
-        }
-
+        // Client order place must match Mother Food Menu: export every category Mother has,
+        // including Inactive. Filtering to Active-only left Client with an empty menu while
+        // Mother UI still showed categories.
         var categories = allCategories
-            .Where(category => includeIds.Contains(category.Id))
+            .Where(category => !string.IsNullOrWhiteSpace(category.Id))
             .OrderBy(category => category.DisplayOrder)
             .ThenBy(category => category.Name)
             .ToList();
@@ -103,14 +63,22 @@ public sealed class ClientPosOperationalService
         {
             var categoryId = StableEntityId.FromKey($"cat:{category.Id}", usedIds);
             categoryIds[category.Id] = categoryId;
-            var exposeAsActive = category.Active || referencedCategoryIds.Contains(category.Id);
             snapshotCategories.Add(new ClientMenuCategoryDto(
                 categoryId,
                 category.Id,
                 category.Name,
                 string.IsNullOrWhiteSpace(category.Color) ? "#3B82F6" : category.Color,
                 category.DisplayOrder,
-                exposeAsActive));
+                // Expose Inactive categories as active on Client so order place can sell linked items.
+                IsActive: true,
+                ParentMotherId: string.IsNullOrWhiteSpace(category.ParentId) ? null : category.ParentId.Trim()));
+        }
+
+        if (snapshotCategories.Count == 0)
+        {
+            AppDiagnostics.Log(
+                $"Client menu snapshot EMPTY (source: {allCategories.Count} categories / {items.Count} items). " +
+                "Open Mother → Food Menu and add categories/items.");
         }
 
         var products = new List<ClientMenuProductDto>();
@@ -1232,7 +1200,7 @@ public sealed record ClientMenuSnapshot(
     IReadOnlyList<ClientTastingMenuCourseDto> TastingMenuCourses,
     IReadOnlyList<ClientTastingMenuChoiceDto> TastingMenuChoices);
 
-public sealed record ClientMenuCategoryDto(int Id, string MotherId, string Name, string Color, int SortOrder, bool IsActive);
+public sealed record ClientMenuCategoryDto(int Id, string MotherId, string Name, string Color, int SortOrder, bool IsActive, string? ParentMotherId = null);
 
 public sealed record ClientMenuProductDto(int Id, string MotherId, int CategoryId, string Name, string Description, string? Sku, bool IsActive);
 

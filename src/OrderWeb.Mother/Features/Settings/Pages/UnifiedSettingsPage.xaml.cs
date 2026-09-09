@@ -1524,7 +1524,7 @@ namespace POS_in_NET.Pages
                 }
 
                 // Show loading indicator
-                LoadingIndicator.IsVisible = true;
+                LoadingIndicator.IsLoading = true;
 
                 await _orderNumberService.UpdatePrefixAsync(orderPrefix);
 
@@ -1542,7 +1542,7 @@ namespace POS_in_NET.Pages
                     }
                 }
 
-                LoadingIndicator.IsVisible = false;
+                LoadingIndicator.IsLoading = false;
 
                 if (success)
                 {
@@ -1559,7 +1559,7 @@ namespace POS_in_NET.Pages
             }
             catch (Exception ex)
             {
-                LoadingIndicator.IsVisible = false;
+                LoadingIndicator.IsLoading = false;
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Error saving business info: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"OnSaveBusinessInfoClicked error: {ex.Message}");
             }

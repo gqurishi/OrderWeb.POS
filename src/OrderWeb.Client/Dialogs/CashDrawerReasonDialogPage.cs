@@ -135,11 +135,21 @@ public sealed class CashDrawerTouchKeyboardPage : ContentPage
     private INavigation? _hostNavigation;
     private bool _closed;
     private string _text;
+    private bool _isNumeric;
 
     public CashDrawerTouchKeyboardPage(string title, string initialValue, bool numeric)
     {
         _text = initialValue;
         BackgroundColor = Color.FromArgb("#99000000");
+        _isNumeric = numeric;
+
+        if (numeric)
+        {
+            _value = new Label { Text = _text, FontSize = 24, TextColor = Color.FromArgb("#202B3D"), VerticalTextAlignment = TextAlignment.Center };
+            Content = BuildNumericKeypad(title);
+            return;
+        }
+
         _value = new Label { Text = DisplayText(), FontSize = 22, TextColor = Color.FromArgb("#202B3D"), VerticalTextAlignment = TextAlignment.Center };
         var rows = new VerticalStackLayout { Spacing = 8 };
         var keyRows = numeric
@@ -175,17 +185,52 @@ public sealed class CashDrawerTouchKeyboardPage : ContentPage
         Content = new Grid { Padding = 20, Children = { new Grid { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Children = { card } } } };
     }
 
+    private View BuildNumericKeypad(string title)
+    {
+        var cancel = new Button { Text = "CANCEL", WidthRequest = 110, HeightRequest = 48, CornerRadius = 15, BackgroundColor = Color.FromArgb("#EF2A2A"), TextColor = Colors.White, FontAttributes = FontAttributes.Bold };
+        cancel.Clicked += async (_, _) => await CloseAsync(null);
+        var header = new Grid { Padding = new Thickness(28, 14), ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+        header.Add(new Label { Text = title, FontSize = 25, FontAttributes = FontAttributes.Bold, TextColor = Colors.White, VerticalTextAlignment = TextAlignment.Center }, 0);
+        header.Add(cancel, 1);
+
+        var valueField = new Border { BackgroundColor = Color.FromArgb("#F1F5F9"), Stroke = Color.FromArgb("#D8E2F1"), StrokeThickness = 2, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 }, Padding = new Thickness(18, 8), HeightRequest = 74, Content = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 10, Children = { new Label { Text = "£", FontSize = 34, TextColor = Color.FromArgb("#202B3D"), VerticalTextAlignment = TextAlignment.Center }, _value } } };
+        Grid.SetColumn(_value, 1);
+
+        var keypad = new Grid { RowSpacing = 12, ColumnSpacing = 12, RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) }, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) } };
+        var keys = new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "DEL" };
+        for (var index = 0; index < keys.Length; index++)
+        {
+            var key = keys[index];
+            var button = NumericKeyButton(key);
+            button.Clicked += (_, _) => Press(key, true);
+            keypad.Add(button, index % 3, index / 3);
+        }
+
+        var done = new Button { Text = "DONE", HeightRequest = 64, CornerRadius = 18, BackgroundColor = Color.FromArgb("#10B981"), TextColor = Colors.White, FontSize = 20, FontAttributes = FontAttributes.Bold };
+        done.Clicked += async (_, _) => await CloseAsync(_text);
+        var body = new VerticalStackLayout { Padding = new Thickness(30, 28, 30, 30), Spacing = 20, Children = { valueField, keypad, done } };
+        var card = new Border { WidthRequest = 480, MaximumWidthRequest = 480, BackgroundColor = Colors.White, StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 28 }, Content = new VerticalStackLayout { Spacing = 0, Children = { new Border { BackgroundColor = Color.FromArgb("#3B82F6"), StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = new CornerRadius(28, 28, 0, 0) }, Content = header }, body } } };
+        return new Grid { Padding = 20, Children = { new Grid { HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center, Children = { card } } } };
+    }
+
     public async Task<string?> ShowAsync(INavigation navigation) { _hostNavigation = navigation; await navigation.PushModalAsync(this, false); return await _completion.Task; }
     private void Press(string key, bool numeric)
     {
+        if (key == "DEL")
+        {
+            if (_text.Length > 0) _text = _text[..^1];
+            UpdateValue();
+            return;
+        }
         if (key == "⌫") { if (_text.Length > 0) _text = _text[..^1]; }
         else if (numeric && key == "." && _text.Contains('.')) { return; }
         else if (!numeric || _text.Length < 12) _text += key;
         UpdateValue();
     }
     private void UpdateValue() => _value.Text = DisplayText();
-    private string DisplayText() => string.IsNullOrEmpty(_text) ? "Tap the keys below" : _text;
+    private string DisplayText() => _isNumeric ? _text : string.IsNullOrEmpty(_text) ? "Tap the keys below" : _text;
     private static Button KeyButton(string text, double height) => new() { Text = text, HeightRequest = height, CornerRadius = 12, BackgroundColor = Colors.White, TextColor = Color.FromArgb("#202B3D"), BorderColor = Color.FromArgb("#D8E2F1"), BorderWidth = 1, FontSize = 17, FontAttributes = FontAttributes.Bold, Padding = 0 };
+    private static Button NumericKeyButton(string text) => new() { Text = text == "DEL" ? "⌫" : text, HeightRequest = 58, CornerRadius = 17, BackgroundColor = text == "." ? Color.FromArgb("#FEE2E2") : text == "DEL" ? Color.FromArgb("#FEF3C7") : Color.FromArgb("#F1F5F9"), TextColor = text == "." ? Color.FromArgb("#DC2626") : text == "DEL" ? Color.FromArgb("#D97706") : Color.FromArgb("#202B3D"), BorderColor = Color.FromArgb("#D8E2F1"), BorderWidth = 1, FontSize = text == "DEL" ? 22 : 24, FontAttributes = FontAttributes.Bold };
     private async Task CloseAsync(string? result) { if (_closed) return; _closed = true; try { var navigation = _hostNavigation ?? Navigation; if (navigation.ModalStack.Contains(this)) await navigation.PopModalAsync(false); } finally { _completion.TrySetResult(result); } }
 }
 

@@ -65,7 +65,9 @@ public partial class MainPage : ContentPage
     private CachedFloor? _selectedCachedFloor;
     private CachedTable? _selectedCachedTable;
     private IReadOnlyList<CachedMenuCategory> _cachedCategories = Array.Empty<CachedMenuCategory>();
+    private CachedMenuCategory? _selectedCachedTopCategory;
     private CachedMenuCategory? _selectedCachedCategory;
+    private HashSet<int> _cachedCategoryIdsWithProducts = new();
     private IReadOnlyList<CachedProduct> _cachedProducts = Array.Empty<CachedProduct>();
     private IReadOnlyList<PrintRequestState> _recentPrintRequests = Array.Empty<PrintRequestState>();
     private MotherOrderState? _currentOrder;
@@ -219,7 +221,15 @@ public partial class MainPage : ContentPage
                     new Label { Text = "OrderWeb Client POS", FontSize = 38, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText), HorizontalTextAlignment = TextAlignment.Center },
                     new Label { Text = "Checking Mother POS…", FontSize = 22, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText), HorizontalTextAlignment = TextAlignment.Center },
                     new Label { Text = status, FontSize = 16, TextColor = Color.FromArgb(MutedText), HorizontalTextAlignment = TextAlignment.Center },
-                    new ActivityIndicator { IsRunning = true, Color = Color.FromArgb(AccentBlue), HeightRequest = 42, WidthRequest = 42, HorizontalOptions = LayoutOptions.Center }
+                    new ChefLoaderView
+                    {
+                        Mode = ChefLoaderMode.Inline,
+                        Size = ChefLoaderSize.Md,
+                        Message = "Connecting",
+                        DelayMilliseconds = 0,
+                        IsLoading = true,
+                        HorizontalOptions = LayoutOptions.Center
+                    }
                 }
             }
         });
@@ -514,21 +524,96 @@ public partial class MainPage : ContentPage
 
     private void OnMotherConnectionChanged(object? sender, MotherConnectionChangedEventArgs e)
     {
-        if (e.Connected)
-        {
-            // Reconnect never proves that no notification was missed, so fetch
-            // authoritative snapshots before using cached data as current.
-            _ = RefreshAuthoritativeClientCacheAsync();
-        }
         MainThread.BeginInvokeOnMainThread(() =>
         {
+            var connecting = !e.Connected &&
+                (e.Status.Contains("Connecting", StringComparison.OrdinalIgnoreCase)
+                 || e.Status.Contains("Reconnect", StringComparison.OrdinalIgnoreCase));
             _connectionStatus = e.Connected
                 ? "Mother online"
-                : e.Status.Contains("Reconnect", StringComparison.OrdinalIgnoreCase)
+                : connecting
                     ? "Reconnect required"
                     : "Mother offline";
+
+            // The shared application frame owns the Chef preloader.  Show it
+            // for every live Mother connection/reconnection, then remove it
+            // only after the authoritative refresh has completed.
+            if (_activeApplicationFrame is { } frame)
+            {
+                if (connecting)
+                {
+                    frame.LoadingMessage = "Connecting to Mother POS…";
+                    frame.IsLoading = true;
+                }
+                else if (e.Connected)
+                {
+                    frame.LoadingMessage = "Refreshing from Mother POS…";
+                    frame.IsLoading = true;
+                }
+                else
+                {
+                    frame.IsLoading = false;
+                }
+            }
+
             RefreshCurrentPosPage();
+            ApplyMotherConnectionLoader(connecting, e.Connected);
+
+            if (e.Connected)
+            {
+                // Start after the Chef preloader is visible, so a fast
+                // dashboard refresh cannot leave the loading layer behind.
+                _ = RefreshAfterMotherConnectionAsync();
+            }
         });
+    }
+
+    private void ApplyMotherConnectionLoader(bool connecting, bool connected)
+    {
+        if (_activeApplicationFrame is not { } frame)
+        {
+            return;
+        }
+
+        if (connecting)
+        {
+            frame.LoadingMessage = "Connecting to Mother POS...";
+            frame.IsLoading = true;
+        }
+        else if (connected)
+        {
+            frame.LoadingMessage = "Refreshing from Mother POS...";
+            frame.IsLoading = true;
+        }
+        else
+        {
+            frame.IsLoading = false;
+        }
+    }
+
+    private async Task RefreshAfterMotherConnectionAsync()
+    {
+        try
+        {
+            if (string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
+            {
+                await RefreshCashierDashboardAsync();
+            }
+            else
+            {
+                await RefreshAuthoritativeClientCacheAsync();
+            }
+        }
+        finally
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_activeApplicationFrame is { } frame)
+                {
+                    frame.IsLoading = false;
+                }
+            });
+        }
     }
 
     private async Task RefreshAuthoritativeClientCacheAsync()
@@ -1286,7 +1371,15 @@ public partial class MainPage : ContentPage
             Spacing = 12,
             Children =
             {
-                new ActivityIndicator { IsRunning = true, Color = Color.FromArgb(PrimaryAction) },
+                new ChefLoaderView
+                {
+                    Mode = ChefLoaderMode.Inline,
+                    Size = ChefLoaderSize.Md,
+                    Message = "Syncing menu and tables",
+                    DelayMilliseconds = 0,
+                    IsLoading = true,
+                    HorizontalOptions = LayoutOptions.Center
+                },
                 progressLabel
             }
         });
@@ -1296,10 +1389,15 @@ public partial class MainPage : ContentPage
             MainThread.BeginInvokeOnMainThread(() => progressLabel.Text = report.Message);
         });
         var sync = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false, progress);
-        if (await IsOperationalCacheReadyAsync(sync))
+        if (await IsOperationalCacheReadyAsync(sync, login.Role))
         {
             ShowDashboard();
-            if (sync is { RequiredOk: false })
+            var status = await _cache.GetStatusAsync();
+            if (status.Categories <= 0)
+            {
+                ShowToast("Menu sync failed: Mother Food Menu has no categories yet. Ordering is empty until you add Food Menu on Mother and Retry / Update All.");
+            }
+            else if (sync is { RequiredOk: false })
             {
                 ShowToast(sync.SummaryMessage());
             }
@@ -1314,13 +1412,22 @@ public partial class MainPage : ContentPage
         ShowOperationalSyncFailed(sync);
     }
 
-    private async Task<bool> IsOperationalCacheReadyAsync(MotherOperationalSyncResult? sync)
+    private async Task<bool> IsOperationalCacheReadyAsync(MotherOperationalSyncResult? sync, string? role = null)
     {
         var status = await _cache.GetStatusAsync();
-        // Order place needs a real menu. Tables alone are not enough.
+        var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase);
+
+        // Managers may open the till to use Loyalty / Gift Cards / settings even when Food Menu
+        // is still empty on Mother. Ordering stays empty until menu sync succeeds.
         if (status.Categories <= 0)
         {
-            return false;
+            if (!isManager)
+            {
+                return false;
+            }
+
+            return status.Tables > 0 || sync?.LayoutOk == true;
         }
 
         if (sync?.RequiredOk == true)
@@ -1418,7 +1525,7 @@ public partial class MainPage : ContentPage
                     },
                     new Label
                     {
-                        Text = "Client POS needs Mother menu and tables before it can open. Nothing was wiped — last good cache is kept when Mother returns empty data.",
+                        Text = "Client POS could not load Mother Food Menu (0 categories). Tables may already be OK. On Mother open Food Menu, add categories/items, then Retry sync. Managers can still open after this if tables synced.",
                         FontSize = 15,
                         TextColor = Color.FromArgb(MutedText),
                         HorizontalTextAlignment = TextAlignment.Center
@@ -3612,14 +3719,52 @@ public partial class MainPage : ContentPage
         }
 
         _cachedCategories = await _cache.GetMenuCategoriesAsync();
-        _selectedCachedCategory = _cachedCategories.FirstOrDefault();
-        if (_selectedCachedCategory != null)
+        _cachedCategoryIdsWithProducts = await _cache.GetCategoryIdsWithProductsAsync();
+        _selectedCachedTopCategory = _cachedCategories
+            .Where(category => category.ParentId is null)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Name)
+            .FirstOrDefault()
+            ?? _cachedCategories.FirstOrDefault();
+        await SelectCachedTopCategoryAsync(_selectedCachedTopCategory, rebuildUi: false);
+    }
+
+    private async Task SelectCachedTopCategoryAsync(CachedMenuCategory? category, bool rebuildUi = true)
+    {
+        _selectedCachedTopCategory = category;
+        if (category is null)
         {
-            _cachedProducts = await _cache.GetProductsByCategoryAsync(_selectedCachedCategory.Id);
+            _selectedCachedCategory = null;
+            _cachedProducts = Array.Empty<CachedProduct>();
+            if (rebuildUi)
+            {
+                ShowOrder();
+            }
+
+            return;
+        }
+
+        var children = _cachedCategories
+            .Where(candidate => candidate.ParentId == category.Id)
+            .OrderBy(candidate => candidate.SortOrder)
+            .ThenBy(candidate => candidate.Name)
+            .ToList();
+
+        if (children.Count > 0)
+        {
+            _selectedCachedCategory = _cachedCategoryIdsWithProducts.Contains(category.Id)
+                ? category
+                : children[0];
         }
         else
         {
-            _cachedProducts = Array.Empty<CachedProduct>();
+            _selectedCachedCategory = category;
+        }
+
+        _cachedProducts = await _cache.GetProductsByCategoryAsync(_selectedCachedCategory.Id);
+        if (rebuildUi)
+        {
+            ShowOrder();
         }
     }
 
@@ -3675,9 +3820,10 @@ public partial class MainPage : ContentPage
                 {
                     new RowDefinition(60),
                     new RowDefinition(58),
+                    new RowDefinition(GridLength.Auto),
                     new RowDefinition(GridLength.Star)
                 },
-                RowSpacing = 18,
+                RowSpacing = 12,
                 Children =
                 {
                     new Entry
@@ -3691,6 +3837,7 @@ public partial class MainPage : ContentPage
                         PlaceholderColor = Color.FromArgb("#94A3B8")
                     },
                     CategoryTabs(),
+                    SubCategoryTabs(),
                     _cachedCategories.Count == 0
                         ? new Label
                         {
@@ -3707,6 +3854,7 @@ public partial class MainPage : ContentPage
         };
         SetRow(((Grid)left.Content).Children[1], 1);
         SetRow(((Grid)left.Content).Children[2], 2);
+        SetRow(((Grid)left.Content).Children[3], 3);
 
         var right = new Border
         {
@@ -3735,19 +3883,114 @@ public partial class MainPage : ContentPage
     private View CategoryTabs()
     {
         var row = new HorizontalStackLayout { Spacing = 12, VerticalOptions = LayoutOptions.Center };
-        foreach (var category in _cachedCategories)
+        var topCategories = _cachedCategories
+            .Where(category => category.ParentId is null)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Name)
+            .ToList();
+        if (topCategories.Count == 0)
         {
-            var selected = category == _selectedCachedCategory;
+            topCategories = _cachedCategories
+                .OrderBy(category => category.SortOrder)
+                .ThenBy(category => category.Name)
+                .ToList();
+        }
+
+        foreach (var category in topCategories)
+        {
+            var selected = category.Id == _selectedCachedTopCategory?.Id;
+            var color = ParseMenuCategoryColor(category.Color);
             var button = new Button
             {
                 Text = category.Name,
-                BackgroundColor = Color.FromArgb(selected ? PrimaryAction : "#F1F5F9"),
-                TextColor = selected ? Color.FromArgb(PageBackground) : Color.FromArgb("#334155"),
+                BackgroundColor = selected ? color : LightenMenuCategoryColor(category.Color),
+                TextColor = selected ? Colors.White : Color.FromArgb("#1E293B"),
                 FontSize = 15,
                 FontFamily = "OpenSansSemibold",
-                CornerRadius = 8,
-                WidthRequest = 158,
+                CornerRadius = 10,
+                MinimumWidthRequest = 120,
                 HeightRequest = 48,
+                Padding = new Thickness(14, 0)
+            };
+            button.Clicked += async (_, _) => await SelectCachedTopCategoryAsync(category);
+            row.Children.Add(button);
+        }
+
+        return new ScrollView
+        {
+            Orientation = ScrollOrientation.Horizontal,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
+            Content = row
+        };
+    }
+
+    private View SubCategoryTabs()
+    {
+        var host = new Border
+        {
+            StrokeThickness = 0,
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
+            Padding = 4,
+            IsVisible = false
+        };
+
+        if (_selectedCachedTopCategory is null)
+        {
+            return host;
+        }
+
+        var children = _cachedCategories
+            .Where(category => category.ParentId == _selectedCachedTopCategory.Id)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Name)
+            .ToList();
+        if (children.Count == 0)
+        {
+            return host;
+        }
+
+        host.IsVisible = true;
+        var row = new HorizontalStackLayout { Spacing = 10, VerticalOptions = LayoutOptions.Center };
+        var lightColor = LightenMenuCategoryColor(_selectedCachedTopCategory.Color);
+        var parentColor = ParseMenuCategoryColor(_selectedCachedTopCategory.Color);
+
+        if (_cachedCategoryIdsWithProducts.Contains(_selectedCachedTopCategory.Id))
+        {
+            var mainSelected = _selectedCachedCategory?.Id == _selectedCachedTopCategory.Id;
+            var mainButton = new Button
+            {
+                Text = "Main",
+                BackgroundColor = mainSelected ? parentColor : lightColor,
+                TextColor = mainSelected ? Colors.White : Color.FromArgb("#1E293B"),
+                FontSize = 14,
+                FontFamily = "OpenSansSemibold",
+                CornerRadius = 10,
+                MinimumWidthRequest = 100,
+                HeightRequest = 42,
+                Padding = new Thickness(14, 0)
+            };
+            mainButton.Clicked += async (_, _) =>
+            {
+                _selectedCachedCategory = _selectedCachedTopCategory;
+                _cachedProducts = await _cache.GetProductsByCategoryAsync(_selectedCachedTopCategory.Id);
+                ShowOrder();
+            };
+            row.Children.Add(mainButton);
+        }
+
+        foreach (var category in children)
+        {
+            var selected = category.Id == _selectedCachedCategory?.Id;
+            var button = new Button
+            {
+                Text = category.Name,
+                BackgroundColor = selected ? parentColor : lightColor,
+                TextColor = selected ? Colors.White : Color.FromArgb("#1E293B"),
+                FontSize = 14,
+                FontFamily = "OpenSansSemibold",
+                CornerRadius = 10,
+                MinimumWidthRequest = 110,
+                HeightRequest = 42,
                 Padding = new Thickness(14, 0)
             };
             button.Clicked += async (_, _) =>
@@ -3759,12 +4002,49 @@ public partial class MainPage : ContentPage
             row.Children.Add(button);
         }
 
-        return new ScrollView
+        host.Content = new ScrollView
         {
             Orientation = ScrollOrientation.Horizontal,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
             Content = row
         };
+        return host;
+    }
+
+    private static Color ParseMenuCategoryColor(string? hex)
+    {
+        try
+        {
+            return Color.FromArgb(string.IsNullOrWhiteSpace(hex) ? "#3B82F6" : hex);
+        }
+        catch
+        {
+            return Color.FromArgb("#3B82F6");
+        }
+    }
+
+    private static Color LightenMenuCategoryColor(string? hexColor)
+    {
+        try
+        {
+            var hex = (hexColor ?? "#3B82F6").TrimStart('#');
+            if (hex.Length != 6)
+            {
+                return Color.FromArgb("#E0E7FF");
+            }
+
+            var r = Convert.ToInt32(hex[..2], 16);
+            var g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            var b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            r = (int)(r + (255 - r) * 0.4);
+            g = (int)(g + (255 - g) * 0.4);
+            b = (int)(b + (255 - b) * 0.4);
+            return Color.FromArgb($"#{r:X2}{g:X2}{b:X2}");
+        }
+        catch
+        {
+            return Color.FromArgb("#E0E7FF");
+        }
     }
 
     private View MenuItemsGrid()

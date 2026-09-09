@@ -2,6 +2,7 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Manager.OrderHistoryPage"
              Shell.NavBarIsVisible="False"
              BackgroundColor="#F8FAFC"
@@ -148,11 +149,13 @@
                     </Grid>
                 </Border>
 
-                <ActivityIndicator x:Name="LoadingIndicator"
-                                   IsRunning="False"
-                                   IsVisible="False"
-                                   Color="#2563EB"
-                                   HeightRequest="36" />
+                <shared:ChefLoaderView x:Name="LoadingIndicator"
+                                       Mode="Inline"
+                                       Size="Sm"
+                                       Message="Loading orders"
+                                       DelayMilliseconds="0"
+                                       IsLoading="False"
+                                       HorizontalOptions="Center" />
 
                 <CollectionView x:Name="CompletedOrdersCollection"
                                 SelectionMode="None"

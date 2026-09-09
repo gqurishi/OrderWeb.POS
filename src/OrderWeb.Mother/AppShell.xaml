@@ -190,6 +190,13 @@
     </FlyoutItem>
 
     <ShellContent
+        Title="Order Place Sandbox"
+        ContentTemplate="{DataTemplate pages:OrderPlaceSandboxPage}"
+        Route="orderplacesandbox"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
         Title="Terminal Health"
         ContentTemplate="{DataTemplate pages:TerminalHealthPage}"
         Route="terminalhealth"
@@ -207,6 +214,13 @@
         Title="Initial Admin Setup"
         ContentTemplate="{DataTemplate pages:InitialAdminSetupPage}"
         Route="initialadminsetup"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Title="Chef Loader"
+        ContentTemplate="{DataTemplate pages:ChefLoaderSandboxPage}"
+        Route="chefloader"
         Shell.NavBarIsVisible="False"
         Shell.FlyoutItemIsVisible="False" />
 

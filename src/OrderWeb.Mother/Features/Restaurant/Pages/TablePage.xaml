@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.TablePage"
              Title=""
              BackgroundColor="{StaticResource Background}">
@@ -69,12 +70,13 @@
                         Clicked="OnAddTableClicked" />
             </Grid>
             
-            <!-- Loading Indicator -->
-            <ActivityIndicator x:Name="LoadingIndicator"
-                             IsRunning="False"
-                             IsVisible="False"
-                             Color="{StaticResource Primary}"
-                             HeightRequest="40" />
+            <shared:ChefLoaderView x:Name="LoadingIndicator"
+                                   Mode="Inline"
+                                   Size="Sm"
+                                   Message="Loading tables"
+                                   DelayMilliseconds="0"
+                                   IsLoading="False"
+                                   HorizontalOptions="Center" />
         </VerticalStackLayout>
 
         <!-- Tables List - Compact Card Design -->

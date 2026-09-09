@@ -479,11 +479,19 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             }
 
             var snapshot = await _operational.BuildMenuSnapshotAsync(version);
+            if (snapshot.Categories.Count == 0)
+            {
+                AppDiagnostics.Log("Client menu API returning 0 categories — Client login sync will fail until Food Menu has data.");
+            }
+
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
                 success = true,
                 version = snapshot.Version,
                 generatedUtc = DateTimeOffset.UtcNow,
+                message = snapshot.Categories.Count == 0
+                    ? "Mother Food Menu has no categories for Client. Open Mother → Food Menu, add categories and items, then Retry sync on Client."
+                    : null,
                 categories = snapshot.Categories,
                 products = snapshot.Products,
                 prices = snapshot.Prices,

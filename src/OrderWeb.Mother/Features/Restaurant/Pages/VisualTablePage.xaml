@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.VisualTablePage"
              Title=""
              BackgroundColor="White">
@@ -281,26 +282,14 @@
                 
                 </AbsoluteLayout>
 
-                <Grid x:Name="LoadingOverlay"
-                      BackgroundColor="#80FFFFFF"
-                      IsVisible="False"
-                      ZIndex="900">
-                    <VerticalStackLayout HorizontalOptions="Center"
-                                         VerticalOptions="Center"
-                                         Spacing="10">
-                        <ActivityIndicator x:Name="LoadingIndicator"
-                                           IsRunning="False"
-                                           Color="#3B82F6"
-                                           WidthRequest="40"
-                                           HeightRequest="40"/>
-                        <Label x:Name="LoadingText"
-                               Text="Loading layout..."
-                               FontSize="14"
-                               FontFamily="OpenSansSemibold"
-                               TextColor="#1F2937"
-                               HorizontalOptions="Center"/>
-                    </VerticalStackLayout>
-                </Grid>
+                <shared:ChefLoaderView x:Name="LoadingOverlay"
+                                       Mode="Fullscreen"
+                                       Size="Md"
+                                       Message="Cooking up your data…"
+                                       DelayMilliseconds="0"
+                                       IsLoading="False"
+                                       IsVisible="False"
+                                       ZIndex="900" />
             </Grid>
             
             <!-- Cover Selection Popup Overlay -->

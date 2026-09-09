@@ -87,8 +87,28 @@ public partial class TillShoppingTakeDialog : ContentView
     private async void OnItemTapped(object sender, EventArgs e) =>
         await OpenKeyboardAsync(ItemEntry, "Shopping item or purpose");
 
-    private async void OnAmountTapped(object sender, EventArgs e) =>
-        await OpenKeyboardAsync(AmountEntry, "Amount taken");
+    private async void OnAmountTapped(object sender, EventArgs e)
+    {
+        if (_keyboardOpen)
+        {
+            return;
+        }
+
+        _keyboardOpen = true;
+        try
+        {
+            var keyboard = new NumericKeyboardDialog();
+            var amount = await keyboard.ShowCurrencyAsync(ParseAmount(AmountEntry.Text), "Amount taken");
+            if (amount.HasValue)
+            {
+                AmountEntry.Text = amount.Value.ToString("0.00", CultureInfo.InvariantCulture);
+            }
+        }
+        finally
+        {
+            _keyboardOpen = false;
+        }
+    }
 
     private async Task OpenKeyboardAsync(Entry entry, string title)
     {
@@ -114,6 +134,12 @@ public partial class TillShoppingTakeDialog : ContentView
             _keyboardOpen = false;
         }
     }
+
+    private static decimal? ParseAmount(string? text) =>
+        decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var amount)
+        || decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out amount)
+            ? amount
+            : null;
 
     private async void OnConfirmClicked(object sender, EventArgs e)
     {

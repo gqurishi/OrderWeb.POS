@@ -1,0 +1,244 @@
+/*
+ * ChefLoading styles — self-contained, copy this file together with
+ * chef-loading.tsx to reuse the loader in any app. No external deps.
+ */
+
+.chef-loading {
+  --cl-white: #ffffff;
+  --cl-shade: #e8eaf0;
+  --cl-line: #d7dbe4;
+  --cl-skin: #ffcfa8;
+  --cl-skin-shade: #f2b489;
+  --cl-hair: #3a2a22;
+  --cl-ink: #1e2a4a;
+  --cl-pan: #34383f;
+  --cl-pan-dark: #23262b;
+  --cl-pan-rim: #4a4f58;
+  --cl-red: #e63946;
+  --cl-red-dark: #c02b38;
+  --cl-steam: #c8cedb;
+  --cl-blue: #1d7dfc;
+  color: var(--cl-ink);
+}
+
+
+.cl-layer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.cl-layer-inline {
+  flex-direction: row;
+  gap: 0.625rem;
+}
+
+/* Fade transition (300ms appearance delay is handled by the component) */
+.cl-enter {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.cl-visible {
+  opacity: 1;
+}
+
+/* One shared 1.4s gesture cycle: dip → flick → settle */
+@keyframes cl-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  22% {
+    transform: translateY(1.5px);
+  }
+  45% {
+    transform: translateY(-3.5px);
+  }
+  70% {
+    transform: translateY(0.5px);
+  }
+}
+
+@keyframes cl-head-bob {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  22% {
+    transform: rotate(1.2deg) translateY(0.6px);
+  }
+  45% {
+    transform: rotate(-3deg) translateY(-1.2px);
+  }
+  70% {
+    transform: rotate(0.6deg) translateY(0);
+  }
+}
+
+@keyframes cl-body-lean {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  45% {
+    transform: rotate(-1.4deg);
+  }
+}
+
+/* arm + pan flick */
+@keyframes cl-pan-toss {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  22% {
+    transform: rotate(4deg) translateY(1.5px);
+  }
+  45% {
+    transform: rotate(-12deg) translateY(-3px);
+  }
+  70% {
+    transform: rotate(2.5deg) translateY(0.5px);
+  }
+}
+
+@keyframes cl-toss {
+  0%,
+  100% {
+    transform: translateY(8px) scale(0.82);
+    opacity: 0;
+  }
+  20%,
+  78% {
+    opacity: 1;
+  }
+  52% {
+    transform: translateY(-13px) scale(1) rotate(11deg);
+  }
+}
+
+/* counter-rotation variant for the chilli */
+@keyframes cl-toss-alt {
+  0%,
+  100% {
+    transform: translateY(8px) scale(0.82);
+    opacity: 0;
+  }
+  20%,
+  78% {
+    opacity: 1;
+  }
+  52% {
+    transform: translateY(-15px) scale(1) rotate(-13deg);
+  }
+}
+
+@keyframes cl-steam {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes cl-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.cl-chef {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cl-bounce 1.4s ease-in-out infinite;
+}
+
+.cl-head {
+  transform-box: view-box;
+  transform-origin: 47px 72px;
+  animation: cl-head-bob 1.4s ease-in-out infinite;
+}
+
+.cl-body {
+  transform-box: view-box;
+  transform-origin: 47px 110px;
+  animation: cl-body-lean 1.4s ease-in-out infinite;
+}
+
+.cl-arm {
+  transform-box: view-box;
+  transform-origin: 62px 88px;
+  animation: cl-pan-toss 1.4s ease-in-out infinite;
+}
+
+.cl-food {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: cl-toss 1.4s ease-in-out infinite;
+}
+.cl-food-chilli {
+  animation-name: cl-toss-alt;
+  animation-delay: 0.08s;
+}
+
+
+.cl-steam {
+  transform-box: fill-box;
+  animation: cl-steam 1.7s ease-in-out infinite;
+}
+.cl-steam-2 {
+  animation-delay: 0.55s;
+}
+.cl-steam-3 {
+  animation-delay: 1.1s;
+}
+
+.cl-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+.cl-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 999px;
+  background: var(--cl-blue);
+  animation: cl-dot 1.2s ease-in-out infinite;
+}
+.cl-dot-2 {
+  animation-delay: 0.15s;
+}
+.cl-dot-3 {
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-chef,
+  .cl-head,
+  .cl-body,
+  .cl-arm,
+  .cl-food,
+  .cl-steam,
+  .cl-dot {
+    animation: none !important;
+  }
+  .cl-enter {
+    transition: none;
+  }
+}

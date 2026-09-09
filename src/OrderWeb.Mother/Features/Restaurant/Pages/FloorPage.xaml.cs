@@ -103,8 +103,7 @@ namespace POS_in_NET.Pages
                 _isLoadingFloors = true;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = true;
-                    LoadingIndicator.IsVisible = true;
+                    LoadingIndicator.IsLoading = true;
                     AddFloorButton.IsEnabled = false;
                 });
                 
@@ -136,8 +135,7 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine(" LoadFloorsAsync FINALLY - Stopping loading indicator");
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = false;
-                    LoadingIndicator.IsVisible = false;
+                    LoadingIndicator.IsLoading = false;
                     AddFloorButton.IsEnabled = true;
                 });
                 _isLoadingFloors = false;
@@ -171,8 +169,7 @@ namespace POS_in_NET.Pages
                 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = true;
-                    LoadingIndicator.IsVisible = true;
+                    LoadingIndicator.IsLoading = true;
                     AddFloorButton.IsEnabled = false;
                 });
 
@@ -224,8 +221,7 @@ namespace POS_in_NET.Pages
                 _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = false;
-                    LoadingIndicator.IsVisible = false;
+                    LoadingIndicator.IsLoading = false;
                     AddFloorButton.IsEnabled = true;
                 });
             }
@@ -264,8 +260,7 @@ namespace POS_in_NET.Pages
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = true;
-                    LoadingIndicator.IsVisible = true;
+                    LoadingIndicator.IsLoading = true;
                     AddFloorButton.IsEnabled = false;
                 });
 
@@ -315,8 +310,7 @@ namespace POS_in_NET.Pages
                 _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = false;
-                    LoadingIndicator.IsVisible = false;
+                    LoadingIndicator.IsLoading = false;
                     AddFloorButton.IsEnabled = true;
                 });
             }
@@ -374,8 +368,7 @@ namespace POS_in_NET.Pages
 
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
-                        LoadingIndicator.IsRunning = true;
-                        LoadingIndicator.IsVisible = true;
+                        LoadingIndicator.IsLoading = true;
                         AddFloorButton.IsEnabled = false;
                     });
 
@@ -420,8 +413,7 @@ namespace POS_in_NET.Pages
                 _isFloorOperationInProgress = false;
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    LoadingIndicator.IsRunning = false;
-                    LoadingIndicator.IsVisible = false;
+                    LoadingIndicator.IsLoading = false;
                     AddFloorButton.IsEnabled = true;
                 });
             }

@@ -77,7 +77,7 @@ public sealed class MotherMenuClient
                 return (null, envelope?.Message ?? "Mother POS returned an empty menu response.");
             }
 
-            return (new MenuSnapshotDto(
+            var snapshot = new MenuSnapshotDto(
                 envelope.Version ?? "1",
                 envelope.Categories ?? [],
                 envelope.Products ?? [],
@@ -92,7 +92,16 @@ public sealed class MotherMenuClient
                 envelope.TastingMenus ?? [],
                 envelope.TastingMenuOptions ?? [],
                 envelope.TastingMenuCourses ?? [],
-                envelope.TastingMenuChoices ?? []), null);
+                envelope.TastingMenuChoices ?? []);
+
+            // Empty menu is still a successful HTTP payload; surface Mother's guidance as Error hint.
+            if (snapshot.Categories.Count == 0)
+            {
+                return (snapshot, envelope.Message
+                    ?? "Mother Food Menu has no categories for Client. Open Mother → Food Menu, add categories and items, then Retry sync.");
+            }
+
+            return (snapshot, null);
         }
         catch (Exception ex)
         {

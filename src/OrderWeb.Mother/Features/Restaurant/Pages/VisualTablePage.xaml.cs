@@ -170,7 +170,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            if (LoadingOverlay.IsVisible || CoverPopupOverlay.IsVisible || !NumericKeyboard.InputTransparent)
+            if (LoadingOverlay.IsLoading || CoverPopupOverlay.IsVisible || !NumericKeyboard.InputTransparent)
             {
                 ResetBasicUserIdle();
                 return;
@@ -583,17 +583,10 @@ namespace POS_in_NET.Pages
 
         private void SetLoadingState(bool isLoading, string? message = null)
         {
-            LoadingOverlay.IsVisible = isLoading;
-            LoadingIndicator.IsRunning = isLoading;
-
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                LoadingText.Text = message;
-            }
-            else if (!isLoading)
-            {
-                LoadingText.Text = "Loading layout...";
-            }
+            LoadingOverlay.Message = string.IsNullOrWhiteSpace(message)
+                ? "Cooking up your data…"
+                : message;
+            LoadingOverlay.IsLoading = isLoading;
         }
 
         private void UpdateLastSyncLabel(bool usedFallback)

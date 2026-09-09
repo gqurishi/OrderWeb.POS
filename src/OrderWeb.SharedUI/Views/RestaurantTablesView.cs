@@ -1,4 +1,5 @@
 using OrderWeb.Contracts.Dtos;
+using OrderWeb.SharedUI.Controls;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Layouts;
 
@@ -21,7 +22,14 @@ public class RestaurantTablesView : ContentView
         TextColor = Color.FromArgb("#0F766E")
     };
     private readonly Label _connection = new() { FontSize = 13, FontAttributes = FontAttributes.Bold, IsVisible = false };
-    private readonly ActivityIndicator _loading = new() { IsRunning = true, IsVisible = false, WidthRequest = 24, HeightRequest = 24 };
+    private readonly ChefLoaderView _loading = new()
+    {
+        Mode = ChefLoaderMode.Inline,
+        Size = ChefLoaderSize.Sm,
+        Message = string.Empty,
+        DelayMilliseconds = 0,
+        IsLoading = false
+    };
     private readonly Image _floorBackground = new()
     {
         Aspect = Aspect.Fill,
@@ -330,7 +338,7 @@ public class RestaurantTablesView : ContentView
 
     private void ApplyPresentationState()
     {
-        _loading.IsVisible = IsLoading;
+        _loading.IsLoading = IsLoading;
         var stale = ConnectionStatus.Contains("offline", StringComparison.OrdinalIgnoreCase) ||
                     ConnectionStatus.Contains("reconnect", StringComparison.OrdinalIgnoreCase) ||
                     ConnectionStatus.Contains("outdated", StringComparison.OrdinalIgnoreCase);

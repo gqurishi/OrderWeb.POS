@@ -70,4 +70,32 @@
     <x:Double x:Key="PosAnimationNormalMs">200</x:Double>
     <x:Double x:Key="PosAnimationSlowMs">300</x:Double>
     <x:Double x:Key="PosDisabledOpacity">0.45</x:Double>
+
+    <!-- Order Place redesign (Phase 0/1) — finger-first landscape POS -->
+    <x:Double x:Key="OpSplitMenu">0.70</x:Double>
+    <x:Double x:Key="OpSplitOrder">0.30</x:Double>
+    <x:Double x:Key="OpOrderPanelMinWidth">320</x:Double>
+    <x:Double x:Key="OpHeaderHeight">60</x:Double>
+    <x:Double x:Key="OpTouchMin">44</x:Double>
+    <x:Double x:Key="OpTouchComfort">52</x:Double>
+    <x:Double x:Key="OpActionGap">10</x:Double>
+    <x:Double x:Key="OpSectionGap">14</x:Double>
+    <x:Double x:Key="OpCategoryHeight">48</x:Double>
+    <x:Double x:Key="OpSubcategoryHeight">38</x:Double>
+    <x:Double x:Key="OpProductCardMinWidth">148</x:Double>
+    <x:Double x:Key="OpProductCardMinHeight">80</x:Double>
+    <x:Double x:Key="OpProductCardGap">10</x:Double>
+    <x:Double x:Key="OpOrderLineMinHeight">60</x:Double>
+    <x:Double x:Key="OpQuantityButtonSize">44</x:Double>
+    <x:Double x:Key="OpPrimaryActionHeight">56</x:Double>
+    <x:Double x:Key="OpSecondaryActionHeight">48</x:Double>
+    <x:Int32 x:Key="OpChipCornerRadius">10</x:Int32>
+    <x:Int32 x:Key="OpProductCardCornerRadius">12</x:Int32>
+    <x:Double x:Key="OpFontCategory">15</x:Double>
+    <x:Double x:Key="OpFontSubcategory">13</x:Double>
+    <x:Double x:Key="OpFontProductName">15</x:Double>
+    <x:Double x:Key="OpFontProductPrice">16</x:Double>
+    <x:Double x:Key="OpFontLineName">15</x:Double>
+    <x:Double x:Key="OpFontLineMeta">12</x:Double>
+    <x:Double x:Key="OpFontTotal">20</x:Double>
 </ResourceDictionary>

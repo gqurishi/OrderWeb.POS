@@ -35,9 +35,9 @@ namespace POS_in_NET.Views
         /// Shows the same touch-friendly keypad in currency mode. Physical keyboard
         /// input continues to work through the real Entry inside the dialog.
         /// </summary>
-        public Task<decimal?> ShowCurrencyAsync(decimal? initialValue = null)
+        public Task<decimal?> ShowCurrencyAsync(decimal? initialValue = null, string? title = null)
         {
-            ConfigureCurrencyMode();
+            ConfigureCurrencyMode(title);
             _currencyCompletionSource = new TaskCompletionSource<decimal?>();
 
             if (!DialogOverlayHelper.TryAttachOverlay(this, out _dynamicParentGrid))
@@ -90,18 +90,22 @@ namespace POS_in_NET.Views
             ConfirmButton.Text = "CONFIRM";
             NumericInputEntry.MaxLength = 3;
             NumericInputEntry.HorizontalTextAlignment = TextAlignment.Center;
+            NumericInputEntry.IsReadOnly = false;
         }
 
-        private void ConfigureCurrencyMode()
+        private void ConfigureCurrencyMode(string? title = null)
         {
             _isCurrencyMode = true;
             _maxDigits = 8;
-            KeyboardTitleLabel.Text = "Enter Custom Tip";
+            KeyboardTitleLabel.Text = string.IsNullOrWhiteSpace(title) ? "Enter amount" : title.Trim();
             CurrencyPrefixLabel.IsVisible = true;
             UtilityButton.Text = ".";
             ConfirmButton.Text = "DONE";
             NumericInputEntry.MaxLength = 9;
             NumericInputEntry.HorizontalTextAlignment = TextAlignment.End;
+            // Currency input is touch-first: use the keypad below rather than
+            // opening the operating-system keyboard over the drawer dialog.
+            NumericInputEntry.IsReadOnly = true;
         }
 
         /// <summary>

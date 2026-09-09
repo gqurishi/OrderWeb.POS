@@ -10,7 +10,7 @@ public class DashboardTile : ContentView
     private readonly Label _subtitle;
     private readonly Label _badge;
     private readonly Border _badgeFrame;
-    private readonly ActivityIndicator _loading;
+    private readonly ChefLoaderView _loading;
     private readonly Border _card;
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(DashboardTile), string.Empty, propertyChanged: (b, _, v) => ((DashboardTile)b)._title.Text = v?.ToString());
     public static readonly BindableProperty SubtitleProperty = BindableProperty.Create(nameof(Subtitle), typeof(string), typeof(DashboardTile), string.Empty, propertyChanged: (b, _, v) => { var c = (DashboardTile)b; c._subtitle.Text = v?.ToString(); c._subtitle.IsVisible = !string.IsNullOrWhiteSpace(c._subtitle.Text); });
@@ -32,7 +32,15 @@ public class DashboardTile : ContentView
         _badge.Use(Label.TextColorProperty, "OwTextOnPrimary");
         _badgeFrame = new Border { IsVisible = false, StrokeThickness = 0, StrokeShape = new RoundRectangle { CornerRadius = 10 }, Content = _badge, HorizontalOptions = LayoutOptions.End, VerticalOptions = LayoutOptions.Start };
         _badgeFrame.Use(Border.BackgroundColorProperty, "OwPrimary");
-        _loading = new ActivityIndicator { IsVisible = false, IsRunning = false, WidthRequest = 30, HeightRequest = 30, HorizontalOptions = LayoutOptions.Center };
+        _loading = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Inline,
+            Size = ChefLoaderSize.Sm,
+            Message = string.Empty,
+            DelayMilliseconds = 0,
+            IsLoading = false,
+            HorizontalOptions = LayoutOptions.Center
+        };
         var content = new VerticalStackLayout { Children = { _icon, _loading, _title, _subtitle } };
         content.Use(VerticalStackLayout.SpacingProperty, "PosDashboardTileSpacing");
         _card = new Border { StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 20 }, Content = new Grid { Children = { content, _badgeFrame } } };
@@ -56,8 +64,7 @@ public class DashboardTile : ContentView
     {
         if (_card is null) return;
         _card.Opacity = IsTileEnabled ? 1 : .5;
-        _loading.IsVisible = IsLoading;
-        _loading.IsRunning = IsLoading;
+        _loading.IsLoading = IsLoading;
         _icon.IsVisible = !IsLoading;
     }
 }

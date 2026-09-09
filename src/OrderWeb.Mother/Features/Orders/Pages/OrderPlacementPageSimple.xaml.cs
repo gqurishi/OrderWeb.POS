@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Controls.Shapes;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
+using OrderWeb.SharedUI.Controls.OrderPlace;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
@@ -131,40 +132,29 @@ namespace POS_in_NET.Pages
             var compactDesktop = !tablet && (Width < 1450 || Height < 850);
             var compact = tablet || compactDesktop;
 
-            MainContentGrid.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(15);
-            MainContentGrid.ColumnSpacing = tablet ? 8 : compact ? 10 : 15;
-            MainContentGrid.ColumnDefinitions[0].Width = tablet ? new GridLength(1.62, GridUnitType.Star) : new GridLength(2, GridUnitType.Star);
-            MainContentGrid.ColumnDefinitions[1].Width = GridLength.Star;
+            // ~70/30 on desktop; slightly more order-panel room on smaller tablets.
+            MainContentGrid.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(12);
+            MainContentGrid.ColumnSpacing = tablet ? 8 : compact ? 10 : 12;
+            MainContentGrid.ColumnDefinitions[0].Width = tablet
+                ? new GridLength(6.4, GridUnitType.Star)
+                : new GridLength(7, GridUnitType.Star);
+            MainContentGrid.ColumnDefinitions[1].Width = tablet
+                ? new GridLength(3.6, GridUnitType.Star)
+                : new GridLength(3, GridUnitType.Star);
 
-            MenuPanel.Padding = tablet ? new Thickness(10) : new Thickness(15);
-            OrderPanel.Padding = tablet ? new Thickness(10) : new Thickness(15);
-            CategoryCarousel.HeightRequest = tablet ? 128 : compact ? 135 : 155;
-            SubCategoryCarousel.HeightRequest = tablet ? 112 : compact ? 118 : 135;
+            MenuPanel.Padding = tablet ? new Thickness(8) : new Thickness(12);
+            OrderPanel.Padding = tablet ? new Thickness(8) : new Thickness(12);
+            CategoryChipScroller.HeightRequest = tablet ? 48 : 52;
+            SubCategorySection.HeightRequest = tablet ? 38 : 42;
 
-            PaymentButton.WidthRequest = tablet ? 112 : 150;
-            PaymentButton.FontSize = tablet ? 13 : 16;
-            PaymentButton.HeightRequest = tablet ? 46 : 50;
+            // Payment sits full-width in the bottom action station.
+            PaymentButton.HorizontalOptions = LayoutOptions.Fill;
 
-            OrderActionsCard.Padding = tablet ? new Thickness(9) : compact ? new Thickness(12) : new Thickness(20);
-            OrderActionsCard.Margin = tablet ? new Thickness(0, 6, 0, 0) : compact ? new Thickness(0, 8, 0, 0) : new Thickness(0, 15, 0, 0);
-            OrderActionsLayout.Spacing = tablet ? 7 : compact ? 9 : 15;
-            QuickActionsGrid.ColumnSpacing = tablet ? 6 : 12;
-            MainActionsGrid.ColumnSpacing = tablet ? 7 : 12;
-
-            var quickFontSize = tablet ? 12d : 16d;
-            foreach (var button in new[] { NotesButton, VoidButton, MoreButton })
-            {
-                button.FontSize = quickFontSize;
-                button.HeightRequest = tablet ? 48 : 55;
-                button.Padding = tablet ? new Thickness(4) : new Thickness(14, 10);
-            }
-
-            foreach (var button in new[] { SendButton, PrintButton })
-            {
-                button.FontSize = tablet ? 14 : 17;
-                button.HeightRequest = tablet ? 56 : 65;
-                button.Padding = tablet ? new Thickness(6) : new Thickness(14, 10);
-            }
+            OrderActionsCard.Padding = tablet ? new Thickness(8) : compact ? new Thickness(10) : new Thickness(12);
+            OrderActionsCard.Margin = Thickness.Zero;
+            OrderActionsLayout.Spacing = tablet ? 7 : compact ? 8 : 10;
+            QuickActionsGrid.ColumnSpacing = tablet ? 6 : 8;
+            MainActionsGrid.ColumnSpacing = tablet ? 6 : 8;
         }
 
         public OrderPlacementPageSimple(string tableNumber, int coverCount, string staffName, int staffId)
@@ -224,7 +214,8 @@ namespace POS_in_NET.Pages
         private async Task OnInitialLoadAsync()
         {
             var performance = PosPerformanceMonitor.BeginDataLoad("Order Entry");
-            LoadingOverlay.IsVisible = true;
+            LoadingOverlay.Message = "Cooking up your data…";
+            LoadingOverlay.IsLoading = true;
             await Task.Yield();
 
             try
@@ -244,7 +235,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                LoadingOverlay.IsVisible = false;
+                LoadingOverlay.IsLoading = false;
             }
         }
 
@@ -536,11 +527,8 @@ namespace POS_in_NET.Pages
             public MenuCategory Category { get; set; } = null!;
         }
 
-        private sealed class CategoryPage
-        {
-            public List<CategoryButtonModel> Row1 { get; } = new();
-            public List<CategoryButtonModel> Row2 { get; } = new();
-        }
+        private readonly List<OrderPlaceCategoryButton> _categoryChips = new();
+        private readonly List<OrderPlaceSubcategoryButton> _subCategoryChips = new();
         protected override void OnDisappearing()
         {
             base.OnDisappearing();
@@ -708,61 +696,38 @@ namespace POS_in_NET.Pages
             {
                 topCategories.Insert(0, CreateTastingMenusCategory());
             }
-            
-            System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {topCategories.Count} category buttons");
-            
-            // Group categories into pages of 10 (2 rows x 5 columns)
-            var categoryPages = new ObservableCollection<CategoryPage>();
-            const int BUTTONS_PER_PAGE = 10;
-            
-            for (int i = 0; i < topCategories.Count; i += BUTTONS_PER_PAGE)
+
+            System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {topCategories.Count} category chips");
+
+            _categoryChips.Clear();
+            var chips = new List<View>(topCategories.Count);
+            foreach (var category in topCategories)
             {
-                var page = new CategoryPage();
-                var pageCategories = topCategories.Skip(i).Take(BUTTONS_PER_PAGE).ToList();
-                
-                // First 5 go to Row 1
-                for (int j = 0; j < Math.Min(5, pageCategories.Count); j++)
+                var chip = new OrderPlaceCategoryButton
                 {
-                    var cat = pageCategories[j];
-                    page.Row1.Add(new CategoryButtonModel
-                    {
-                        Id = cat.Id,
-                        Name = cat.Name,
-                        Color = Color.FromArgb(cat.Color),
-                        Category = cat
-                    });
-                }
-                
-                // Next 5 go to Row 2
-                for (int j = 5; j < pageCategories.Count; j++)
-                {
-                    var cat = pageCategories[j];
-                    page.Row2.Add(new CategoryButtonModel
-                    {
-                        Id = cat.Id,
-                        Name = cat.Name,
-                        Color = Color.FromArgb(cat.Color),
-                        Category = cat
-                    });
-                }
-                
-                categoryPages.Add(page);
+                    Text = category.Name,
+                    CommandParameter = category
+                };
+                chip.Tapped += (_, _) => SelectCategory(category);
+                _categoryChips.Add(chip);
+                chips.Add(chip);
             }
-            
-            CategoryCarousel.ItemsSource = categoryPages;
-            
-            // Auto-load first category
-            if (topCategories.Any())
+
+            CategoryChipScroller.SetChips(chips);
+
+            if (topCategories.Count > 0)
             {
                 SelectCategory(topCategories.First());
             }
         }
 
-        private void OnCategoryButtonClicked(object? sender, EventArgs e)
+        private void SyncCategoryChipSelection()
         {
-            if (sender is Button button && button.CommandParameter is CategoryButtonModel model)
+            var selectedId = _selectedCategory?.Id;
+            foreach (var chip in _categoryChips)
             {
-                SelectCategory(model.Category);
+                chip.IsSelected = chip.CommandParameter is MenuCategory category
+                    && string.Equals(category.Id, selectedId, StringComparison.Ordinal);
             }
         }
 
@@ -787,16 +752,18 @@ namespace POS_in_NET.Pages
         private void SelectCategory(MenuCategory category)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Category selected: {category.Name}");
-            
+
             _selectedCategory = category;
             _selectedSubCategory = null;
             _searchQuery = string.Empty;
-            
+
             UpdateSearchDisplay();
+            SyncCategoryChipSelection();
 
             if (string.Equals(category.Id, MealDeal.PosCategoryId, StringComparison.Ordinal))
             {
                 SubCategorySection.IsVisible = false;
+                SubCategorySection.Clear();
                 LoadMealDealsForOrder();
                 return;
             }
@@ -804,19 +771,18 @@ namespace POS_in_NET.Pages
             if (string.Equals(category.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal))
             {
                 SubCategorySection.IsVisible = false;
+                SubCategorySection.Clear();
                 LoadTastingMenusForOrder();
                 return;
             }
-            
-            // Check if this category has sub-categories
+
             var subCategories = _allCategories
                 .Where(c => c.ParentId == category.Id && c.Active)
                 .OrderBy(c => c.DisplayOrder)
                 .ToList();
-            
+
             if (subCategories.Any())
             {
-                // Show sub-categories
                 BuildSubCategories(subCategories);
                 SubCategorySection.IsVisible = true;
 
@@ -826,31 +792,26 @@ namespace POS_in_NET.Pages
                 }
                 else
                 {
-                    // Auto-select first sub-category when the main category has no direct items.
                     SelectSubCategory(subCategories.First());
                 }
             }
             else
             {
-                // No sub-categories, load items directly
                 SubCategorySection.IsVisible = false;
+                SubCategorySection.Clear();
                 LoadItemsForCategory(category.Id);
             }
         }
 
         private void BuildSubCategories(List<MenuCategory> subCategories)
         {
-            System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {subCategories.Count} sub-category buttons");
-            
-            // Use lighter shade of parent category color
-            var lightColor = LightenColor(_selectedCategory?.Color ?? "#3B82F6");
-            var buttonColor = Color.FromArgb(lightColor);
+            System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Building {subCategories.Count} sub-category chips");
+
             var categoryButtons = subCategories
                 .Select(subCat => new CategoryButtonModel
                 {
                     Id = subCat.Id,
                     Name = subCat.Name,
-                    Color = buttonColor,
                     Category = subCat
                 })
                 .ToList();
@@ -861,236 +822,107 @@ namespace POS_in_NET.Pages
                 {
                     Id = _selectedCategory.Id,
                     Name = "Main",
-                    Color = Color.FromArgb(_selectedCategory.Color ?? "#3B82F6"),
                     Category = _selectedCategory
                 });
             }
-            
-            // Group sub-categories into pages of 10 (2 rows x 5 columns)
-            var subCategoryPages = new ObservableCollection<CategoryPage>();
-            const int BUTTONS_PER_PAGE = 10;
-            
-            for (int i = 0; i < categoryButtons.Count; i += BUTTONS_PER_PAGE)
+
+            _subCategoryChips.Clear();
+            var chips = new List<View>(categoryButtons.Count);
+            foreach (var model in categoryButtons)
             {
-                var page = new CategoryPage();
-                var pageSubCategories = categoryButtons.Skip(i).Take(BUTTONS_PER_PAGE).ToList();
-                
-                // First 5 go to Row 1
-                for (int j = 0; j < Math.Min(5, pageSubCategories.Count); j++)
+                var chip = new OrderPlaceSubcategoryButton
                 {
-                    page.Row1.Add(pageSubCategories[j]);
-                }
-                
-                // Next 5 go to Row 2
-                for (int j = 5; j < pageSubCategories.Count; j++)
-                {
-                    page.Row2.Add(pageSubCategories[j]);
-                }
-                
-                subCategoryPages.Add(page);
+                    Text = model.Name,
+                    CommandParameter = model.Category
+                };
+                chip.Tapped += (_, _) => SelectSubCategory(model.Category);
+                _subCategoryChips.Add(chip);
+                chips.Add(chip);
             }
-            
-            SubCategoryCarousel.ItemsSource = subCategoryPages;
+
+            SubCategorySection.SetChips(chips);
+            SyncSubCategoryChipSelection();
         }
 
-        private void OnSubCategoryButtonClicked(object? sender, EventArgs e)
+        private void SyncSubCategoryChipSelection()
         {
-            if (sender is Button button && button.CommandParameter is CategoryButtonModel model)
+            var activeId = _selectedSubCategory?.Id ?? _selectedCategory?.Id;
+            foreach (var chip in _subCategoryChips)
             {
-                SelectSubCategory(model.Category);
+                chip.IsSelected = chip.CommandParameter is MenuCategory category
+                    && string.Equals(category.Id, activeId, StringComparison.Ordinal);
             }
         }
 
         private void SelectSubCategory(MenuCategory subCategory)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Sub-category selected: {subCategory.Name}");
-            
-            _selectedSubCategory = subCategory;
-            LoadItemsForCategory(subCategory.Id);
-        }
 
-        private string LightenColor(string hexColor)
-        {
-            try
-            {
-                // Remove # if present
-                hexColor = hexColor.TrimStart('#');
-                
-                // Parse RGB
-                int r = Convert.ToInt32(hexColor.Substring(0, 2), 16);
-                int g = Convert.ToInt32(hexColor.Substring(2, 2), 16);
-                int b = Convert.ToInt32(hexColor.Substring(4, 2), 16);
-                
-                // Lighten by 40% (move toward white)
-                r = (int)(r + (255 - r) * 0.4);
-                g = (int)(g + (255 - g) * 0.4);
-                b = (int)(b + (255 - b) * 0.4);
-                
-                return $"#{r:X2}{g:X2}{b:X2}";
-            }
-            catch
-            {
-                return "#E0E7FF"; // Default light blue
-            }
+            _selectedSubCategory = string.Equals(subCategory.Id, _selectedCategory?.Id, StringComparison.Ordinal)
+                ? null
+                : subCategory;
+            SyncSubCategoryChipSelection();
+            LoadItemsForCategory(subCategory.Id);
         }
 
         private void LoadItemsForCategory(string categoryId)
         {
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Loading items for category ID: {categoryId}");
-            
-            ItemsContainer.Children.Clear();
-            
+
             var items = _allMenuItems
                 .Where(i => i.CategoryId == categoryId)
                 .Where(IsItemVisibleForCurrentOrderMode)
                 .OrderBy(i => i.DisplayOrder)
                 .ToList();
-            
+
             System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Found {items.Count} items");
-            
-            foreach (var item in items)
-            {
-                var itemButton = CreateItemButton(item);
-                ItemsContainer.Children.Add(itemButton);
-            }
+            ProductGrid.SetItems(items.Select(CreateItemCard));
         }
 
         private void LoadMealDealsForOrder()
         {
-            ItemsContainer.Children.Clear();
-
             var deals = _activeMealDeals
                 .OrderBy(d => d.DisplayOrder)
                 .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            foreach (var deal in deals)
-            {
-                ItemsContainer.Children.Add(CreateMealDealButton(deal));
-            }
+            ProductGrid.SetItems(deals.Select(CreateMealDealCard));
         }
 
-        private Border CreateMealDealButton(MealDeal deal)
+        private OrderPlaceProductCard CreateMealDealCard(MealDeal deal)
         {
-            var border = new Border
+            var card = new OrderPlaceProductCard
             {
-                BackgroundColor = Colors.White,
-                Stroke = Color.FromArgb("#F59E0B"),
-                StrokeThickness = 2,
-                Padding = 12,
-                Margin = new Thickness(0, 0, 12, 12),
-                WidthRequest = 180,
-                HeightRequest = 130,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 }
+                Name = deal.Name,
+                Price = deal.Price,
+                Badge = "DEAL",
+                PriceText = $"£{deal.Price:F2}"
             };
-
-            var gesture = new TapGestureRecognizer();
-            gesture.Tapped += async (_, _) => await OnMealDealTappedAsync(deal);
-            border.GestureRecognizers.Add(gesture);
-
-            var stack = new VerticalStackLayout
-            {
-                Spacing = 6,
-                VerticalOptions = LayoutOptions.Fill
-            };
-
-            stack.Children.Add(new Label
-            {
-                Text = deal.Name,
-                FontSize = 14,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#1E293B"),
-                LineBreakMode = LineBreakMode.WordWrap,
-                MaxLines = 2
-            });
-
-            stack.Children.Add(new Label
-            {
-                Text = deal.PickRuleDisplay,
-                FontSize = 12,
-                TextColor = Color.FromArgb("#64748B")
-            });
-
-            stack.Children.Add(new Label
-            {
-                Text = $"£{deal.Price:F2}",
-                FontSize = 16,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#F59E0B"),
-                VerticalOptions = LayoutOptions.EndAndExpand
-            });
-
-            border.Content = stack;
-            return border;
+            card.Tapped += async (_, _) => await OnMealDealTappedAsync(deal);
+            return card;
         }
 
         private void LoadTastingMenusForOrder()
         {
-            ItemsContainer.Children.Clear();
-
             var menus = _activeTastingMenus
                 .OrderBy(menu => menu.DisplayOrder)
                 .ThenBy(menu => menu.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            foreach (var menu in menus)
-            {
-                ItemsContainer.Children.Add(CreateTastingMenuButton(menu));
-            }
+            ProductGrid.SetItems(menus.Select(CreateTastingMenuCard));
         }
 
-        private Border CreateTastingMenuButton(TastingMenu menu)
+        private OrderPlaceProductCard CreateTastingMenuCard(TastingMenu menu)
         {
-            var border = new Border
+            var priceText = menu.Options.Count == 0 ? "No prices" : menu.OptionsDisplay;
+            var card = new OrderPlaceProductCard
             {
-                BackgroundColor = Colors.White,
-                Stroke = Color.FromArgb("#0EA5E9"),
-                StrokeThickness = 2,
-                Padding = 12,
-                Margin = new Thickness(0, 0, 12, 12),
-                WidthRequest = 190,
-                HeightRequest = 140,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 }
+                Name = menu.Name,
+                Badge = "TASTING",
+                PriceText = priceText
             };
-
-            var gesture = new TapGestureRecognizer();
-            gesture.Tapped += async (_, _) => await OnTastingMenuTappedAsync(menu);
-            border.GestureRecognizers.Add(gesture);
-
-            border.Content = new VerticalStackLayout
-            {
-                Spacing = 6,
-                VerticalOptions = LayoutOptions.Fill,
-                Children =
-                {
-                    new Label
-                    {
-                        Text = menu.Name,
-                        FontSize = 14,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Color.FromArgb("#1E293B"),
-                        LineBreakMode = LineBreakMode.WordWrap,
-                        MaxLines = 2
-                    },
-                    new Label
-                    {
-                        Text = menu.CoursesDisplay,
-                        FontSize = 12,
-                        TextColor = Color.FromArgb("#64748B")
-                    },
-                    new Label
-                    {
-                        Text = menu.Options.Count == 0 ? "No prices" : menu.OptionsDisplay,
-                        FontSize = 13,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Color.FromArgb("#0EA5E9"),
-                        LineBreakMode = LineBreakMode.TailTruncation,
-                        VerticalOptions = LayoutOptions.EndAndExpand
-                    }
-                }
-            };
-
-            return border;
+            card.Tapped += async (_, _) => await OnTastingMenuTappedAsync(menu);
+            return card;
         }
 
         private async Task OnTastingMenuTappedAsync(TastingMenu menu)
@@ -1309,53 +1141,16 @@ namespace POS_in_NET.Pages
                 .OrderBy(TastingCourseProgressDialog.GetCourseNumber)
                 .ToList();
 
-        private Border CreateItemButton(FoodMenuItem item)
+        private OrderPlaceProductCard CreateItemCard(FoodMenuItem item)
         {
             var displayPrice = GetSafeEffectivePrice(item);
-
-            var border = new Border
+            var card = new OrderPlaceProductCard
             {
-                BackgroundColor = Colors.White,
-                Stroke = Color.FromArgb("#E2E8F0"),
-                StrokeThickness = 1,
-                Padding = 12,
-                Margin = new Thickness(0, 0, 12, 12),
-                WidthRequest = 160,
-                HeightRequest = 120,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 }
+                Name = item.Name,
+                Price = displayPrice
             };
-            
-            var gesture = new TapGestureRecognizer();
-            gesture.Tapped += async (s, e) => await OnMenuItemTappedAsync(item);
-            border.GestureRecognizers.Add(gesture);
-            
-            var stack = new VerticalStackLayout
-            {
-                Spacing = 8,
-                VerticalOptions = LayoutOptions.Fill
-            };
-            
-            stack.Children.Add(new Label
-            {
-                Text = item.Name,
-                FontSize = 14,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#1E293B"),
-                LineBreakMode = LineBreakMode.WordWrap,
-                MaxLines = 2
-            });
-            
-            stack.Children.Add(new Label
-            {
-                Text = $"£{displayPrice:F2}",
-                FontSize = 16,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#10B981"),
-                VerticalOptions = LayoutOptions.EndAndExpand
-            });
-            
-            border.Content = stack;
-            return border;
+            card.Tapped += async (_, _) => await OnMenuItemTappedAsync(item);
+            return card;
         }
 
         private async Task OnMenuItemTappedAsync(FoodMenuItem item)
@@ -2463,7 +2258,7 @@ namespace POS_in_NET.Pages
         private void RefreshOrderItems()
         {
             OrderItemsContainer.Children.Clear();
-            
+
             foreach (var item in _currentOrder.Items.Where(item => !IsTastingMenuCourseItem(item)))
             {
                 var isMealDeal = IsMealDealOrderItem(item);
@@ -2473,268 +2268,123 @@ namespace POS_in_NET.Pages
                     : item.Notes;
                 var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
                 var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
-                var hasDetails = hasNotes || hasModifiers || isTastingMenu;
+                var isSent = HasReachedKitchen(item);
 
-                var itemView = new Border
+                string? detailText = null;
+                if (isTastingMenu)
                 {
-                    BackgroundColor = Color.FromArgb("#F9FAFB"),
-                    StrokeThickness = 0,
-                    Padding = new Thickness(8, 6),
-                    Margin = new Thickness(0, 0, 0, 5),
-                    StrokeShape = new RoundRectangle { CornerRadius = 8 }
-                };
-
-                if (!hasDetails)
-                {
-                    itemView.HeightRequest = 40;
-                }
-                
-                // Single-line grid layout
-                var mainGrid = new Grid
-                {
-                    ColumnDefinitions = new ColumnDefinitionCollection
-                    {
-                        new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }, // Item name
-                        new ColumnDefinition { Width = GridLength.Auto }, // Fire tasting course
-                        new ColumnDefinition { Width = GridLength.Auto }, // Minus button
-                        new ColumnDefinition { Width = new GridLength(25, GridUnitType.Absolute) }, // Quantity
-                        new ColumnDefinition { Width = GridLength.Auto }, // Plus button
-                        new ColumnDefinition { Width = new GridLength(78, GridUnitType.Absolute) }, // Note button
-                        new ColumnDefinition { Width = new GridLength(65, GridUnitType.Absolute) } // Price
-                    },
-                    ColumnSpacing = 6,
-                    RowDefinitions = new RowDefinitionCollection
-                    {
-                        new RowDefinition { Height = GridLength.Auto }
-                    }
-                };
-                
-                // Item name
-                var nameLabel = new Label
-                {
-                    Text = item.DisplayName,
-                    FontSize = 15,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb("#1E293B"),
-                    VerticalOptions = LayoutOptions.Center,
-                    LineBreakMode = LineBreakMode.TailTruncation
-                };
-                if (item.IsCourseFired)
-                {
-                    var firedBadge = new Border
-                    {
-                        BackgroundColor = Color.FromArgb("#FEF3C7"),
-                        Stroke = Color.FromArgb("#F59E0B"),
-                        StrokeThickness = 1,
-                        Padding = new Thickness(7, 2),
-                        StrokeShape = new RoundRectangle { CornerRadius = 8 },
-                        VerticalOptions = LayoutOptions.Center,
-                        Content = new Label
+                    detailText = string.Join(
+                        Environment.NewLine,
+                        new[]
                         {
-                            Text = $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}",
-                            FontSize = 9,
-                            FontAttributes = FontAttributes.Bold,
-                            TextColor = Color.FromArgb("#B45309")
-                        }
-                    };
-
-                    mainGrid.Add(new HorizontalStackLayout
-                    {
-                        Spacing = 7,
-                        VerticalOptions = LayoutOptions.Center,
-                        Children = { nameLabel, firedBadge }
-                    }, 0, 0);
+                            BuildTastingCourseStatusText(item),
+                            hasNotes ? $"Note: {visibleItemNote}" : null,
+                            item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
+                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
                 }
-                else
+                else if (hasModifiers || hasNotes)
                 {
-                    mainGrid.Add(nameLabel, 0, 0);
+                    detailText = string.Join(
+                        Environment.NewLine,
+                        new[]
+                        {
+                            hasModifiers ? item.ModifiersDisplay : null,
+                            hasNotes ? item.Notes : null
+                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
+                }
+
+                var row = new OrderPlaceLineRow
+                {
+                    ItemName = item.DisplayName,
+                    LineTotal = item.TotalPrice,
+                    Quantity = item.Quantity,
+                    Details = detailText ?? string.Empty,
+                    IsSent = isSent,
+                    ShowNoteAction = !isMealDeal,
+                    NoteActionText = hasNotes ? "Note Added" : "+ Note",
+                    TrailingActionText = isTastingMenu ? "Fire" : string.Empty
+                };
+
+                row.QuantityChanged += async (_, quantity) =>
+                {
+                    await ApplyOrderLineQuantityAsync(item, isTastingMenu, quantity);
+                };
+
+                if (!isMealDeal)
+                {
+                    row.NoteTapped += async (_, _) => await ShowNoteDialog(item);
                 }
 
                 if (isTastingMenu)
                 {
-                    var fireCoursesBtn = new Button
-                    {
-                        Text = "Fire",
-                        BackgroundColor = Color.FromArgb("#F59E0B"),
-                        TextColor = Colors.White,
-                        FontSize = 11,
-                        FontAttributes = FontAttributes.Bold,
-                        HeightRequest = 32,
-                        CornerRadius = 6,
-                        Padding = new Thickness(10, 0),
-                        VerticalOptions = LayoutOptions.Center
-                    };
-                    fireCoursesBtn.Clicked += async (_, _) => await ShowTastingCourseProgressAsync(item);
-                    SemanticProperties.SetDescription(fireCoursesBtn, "Select a tasting-menu course to fire to the kitchen");
-                    mainGrid.Add(fireCoursesBtn, 1, 0);
+                    row.TrailingActionTapped += async (_, _) => await ShowTastingCourseProgressAsync(item);
                 }
-                
-                // Minus button
-                var minusBtn = new Button
-                {
-                    Text = "-",
-                    BackgroundColor = Color.FromArgb("#EF4444"),
-                    TextColor = Colors.White,
-                    FontSize = 14,
-                    FontAttributes = FontAttributes.Bold,
-                    WidthRequest = 32,
-                    HeightRequest = 32,
-                    Padding = 0,
-                    CornerRadius = 6,
-                    VerticalOptions = LayoutOptions.Center
-                };
-                minusBtn.Clicked += async (s, e) => {
-                    var wasSent = HasReachedKitchen(item);
-                    if (item.Quantity > 1)
-                    {
-                        item.Quantity--;
-                        if (isTastingMenu)
-                        {
-                            foreach (var course in GetTastingMenuCourses(item)) course.Quantity = item.Quantity;
-                        }
-                        if (wasSent)
-                        {
-                            item.SendStatus = ItemSendStatus.NotSent;
-                        }
-                        _currentOrder.RecalculateAll();
-                        RefreshOrderItems();
-                        await MarkCurrentOrderChangedAsync();
-                    }
-                    else
-                    {
-                        if (isTastingMenu)
-                        {
-                            foreach (var course in GetTastingMenuCourses(item)) _currentOrder.Items.Remove(course);
-                        }
-                        _currentOrder.Items.Remove(item);
-                        _currentOrder.RecalculateAll();
-                        RefreshOrderItems();
-                        await MarkCurrentOrderChangedAsync();
-                    }
-                };
-                mainGrid.Add(minusBtn, 2, 0);
-                
-                // Quantity label
-                var qtyLabel = new Label
-                {
-                    Text = item.Quantity.ToString(),
-                    FontSize = 14,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb("#1E293B"),
-                    VerticalOptions = LayoutOptions.Center,
-                    HorizontalOptions = LayoutOptions.Center
-                };
-                mainGrid.Add(qtyLabel, 3, 0);
-                
-                // Plus button
-                var plusBtn = new Button
-                {
-                    Text = "+",
-                    BackgroundColor = Color.FromArgb("#10B981"),
-                    TextColor = Colors.White,
-                    FontSize = 14,
-                    FontAttributes = FontAttributes.Bold,
-                    WidthRequest = 32,
-                    HeightRequest = 32,
-                    Padding = 0,
-                    CornerRadius = 6,
-                    VerticalOptions = LayoutOptions.Center
-                };
-                plusBtn.Clicked += async (s, e) => {
-                    if (HasReachedKitchen(item))
-                    {
-                        if (isTastingMenu)
-                        {
-                            AddAdditionalTastingMenuUnit(item);
-                        }
-                        else
-                        {
-                            _currentOrder.Items.Add(CreateAdditionalUnit(item));
-                        }
-                    }
-                    else
-                    {
-                        item.Quantity++;
-                        if (isTastingMenu)
-                        {
-                            foreach (var course in GetTastingMenuCourses(item)) course.Quantity = item.Quantity;
-                        }
-                    }
-                    _currentOrder.RecalculateAll();
-                    RefreshOrderItems();
-                    await MarkCurrentOrderChangedAsync();
-                };
-                mainGrid.Add(plusBtn, 4, 0);
-                
-                if (!isMealDeal)
-                {
-                    var noteBtn = new Button
-                    {
-                        Text = hasNotes ? "Note Added" : "+ Note",
-                        BackgroundColor = Color.FromArgb("#3B82F6"),
-                        TextColor = Colors.White,
-                        FontSize = 11,
-                        FontAttributes = FontAttributes.Bold,
-                        HeightRequest = 32,
-                        CornerRadius = 6,
-                        Padding = new Thickness(8, 0),
-                        VerticalOptions = LayoutOptions.Center
-                    };
-                    noteBtn.Clicked += async (s, e) => await ShowNoteDialog(item);
-                    mainGrid.Add(noteBtn, 5, 0);
-                }
-                
-                var priceLabel = new Label
-                {
-                    Text = $"£{item.TotalPrice:F2}",
-                    FontSize = 16,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb("#10B981"),
-                    VerticalOptions = LayoutOptions.Center,
-                    HorizontalOptions = LayoutOptions.End
-                };
-                mainGrid.Add(priceLabel, 6, 0);
 
-                if (hasDetails)
-                {
-                    var detailText = isTastingMenu
-                        ? string.Join(
-                            Environment.NewLine,
-                            new[]
-                            {
-                                BuildTastingCourseStatusText(item),
-                                hasNotes ? $"Note: {visibleItemNote}" : null
-                            }.Where(text => !string.IsNullOrWhiteSpace(text)))
-                        : string.Join(
-                            Environment.NewLine,
-                            new[]
-                            {
-                                hasModifiers ? item.ModifiersDisplay : null,
-                                hasNotes ? item.Notes : null
-                            }.Where(text => !string.IsNullOrWhiteSpace(text)));
-
-                    var detailsLabel = new Label
-                    {
-                        Text = detailText,
-                        FontSize = 12,
-                        TextColor = Color.FromArgb("#64748B"),
-                        LineBreakMode = LineBreakMode.WordWrap,
-                        Margin = new Thickness(0, 4, 0, 0)
-                    };
-
-                    itemView.Content = new VerticalStackLayout
-                    {
-                        Spacing = 0,
-                        Children = { mainGrid, detailsLabel }
-                    };
-                }
-                else
-                {
-                    itemView.Content = mainGrid;
-                }
-                
-                OrderItemsContainer.Children.Add(itemView);
+                OrderItemsContainer.Children.Add(row);
             }
+        }
+
+        private async Task ApplyOrderLineQuantityAsync(TableOrderItem item, bool isTastingMenu, int quantity)
+        {
+            var wasSent = HasReachedKitchen(item);
+            var previousQuantity = item.Quantity;
+
+            if (quantity <= 0)
+            {
+                if (isTastingMenu)
+                {
+                    foreach (var course in GetTastingMenuCourses(item))
+                    {
+                        _currentOrder.Items.Remove(course);
+                    }
+                }
+
+                _currentOrder.Items.Remove(item);
+                _currentOrder.RecalculateAll();
+                RefreshOrderItems();
+                await MarkCurrentOrderChangedAsync();
+                return;
+            }
+
+            if (quantity > previousQuantity && wasSent)
+            {
+                // Already-sent lines stay as kitchen history; extra qty becomes a new unsent unit.
+                var unitsToAdd = quantity - previousQuantity;
+                for (var i = 0; i < unitsToAdd; i++)
+                {
+                    if (isTastingMenu)
+                    {
+                        AddAdditionalTastingMenuUnit(item);
+                    }
+                    else
+                    {
+                        _currentOrder.Items.Add(CreateAdditionalUnit(item));
+                    }
+                }
+
+                _currentOrder.RecalculateAll();
+                RefreshOrderItems();
+                await MarkCurrentOrderChangedAsync();
+                return;
+            }
+
+            item.Quantity = quantity;
+            if (isTastingMenu)
+            {
+                foreach (var course in GetTastingMenuCourses(item))
+                {
+                    course.Quantity = item.Quantity;
+                }
+            }
+
+            if (wasSent && quantity < previousQuantity)
+            {
+                item.SendStatus = ItemSendStatus.NotSent;
+            }
+
+            _currentOrder.RecalculateAll();
+            RefreshOrderItems();
+            await MarkCurrentOrderChangedAsync();
         }
 
         private bool IsUncommittedLocalTableOrder()
@@ -2986,54 +2636,63 @@ namespace POS_in_NET.Pages
         private void UpdateDisplay()
         {
             UpdateTopBarOrderTitle();
+            ApplyOrderTypeChrome();
 
             var orderPart = !string.IsNullOrEmpty(_currentOrder.OrderNumber) ? $"Order #{_currentOrder.OrderNumber}" : "Order #";
             var orderNote = string.IsNullOrWhiteSpace(_currentOrder.Notes)
                 ? null
                 : TruncateHeaderNote(_currentOrder.Notes.Trim(), 15);
-            
+
             if (_isCollectionOrder)
             {
-                OrderIdentityLabel.Text = $"{orderPart} Collection";
+                OrderIdentityLabel.Text = $"{orderPart} · COLLECTION";
+                GuestsLabel.IsVisible = true;
                 GuestsLabel.Text = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
             }
             else if (_isDeliveryOrder)
             {
-                OrderIdentityLabel.Text = $"{orderPart} Delivery";
+                OrderIdentityLabel.Text = $"{orderPart} · DELIVERY";
+                GuestsLabel.IsVisible = true;
                 GuestsLabel.Text = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
             }
             else
             {
-                var baseText = $"{orderPart} Table {_currentOrder.TableNumber}";
+                var baseText = $"{orderPart} · TABLE {_currentOrder.TableNumber}";
                 OrderIdentityLabel.Text = string.IsNullOrEmpty(orderNote)
                     ? baseText
                     : $"{baseText} | Note: {orderNote}";
-                GuestsLabel.Text = $"Guests = {_currentOrder.CoverCount}";
+                GuestsLabel.IsVisible = true;
+                GuestsLabel.Text = $"{_currentOrder.CoverCount} guests";
             }
-            
+
             SubtotalLabel.Text = $"£{_currentOrder.Subtotal:F2}";
             VATLabel.Text = $"£{_currentOrder.VAT:F2}";
-            
-            if (_currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied && _currentOrder.ServiceCharge > 0)
+
+            var isTable = !_isCollectionOrder && !_isDeliveryOrder;
+            if (isTable && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied && _currentOrder.ServiceCharge > 0)
             {
                 ServiceChargeRow.IsVisible = true;
                 ServiceChargeLabel.Text = $"£{_currentOrder.ServiceCharge:F2}";
                 ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
             }
-            else if (_currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Removed)
+            else if (isTable && _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Removed)
             {
                 ServiceChargeRow.IsVisible = true;
                 ServiceChargeDescriptionLabel.Text = $"Service charge ({_currentOrder.ServiceChargePercent:0.##}%)";
                 ServiceChargeLabel.Text = "Removed";
             }
-            else
+            else if (isTable)
             {
-                ServiceChargeRow.IsVisible = !_isCollectionOrder && !_isDeliveryOrder;
+                ServiceChargeRow.IsVisible = true;
                 ServiceChargeDescriptionLabel.Text = "Service charge";
                 ServiceChargeLabel.Text = "Not included";
             }
-            
-            // Show discount if applied
+            else
+            {
+                // COL / DEL takeaway: never show service charge.
+                ServiceChargeRow.IsVisible = false;
+            }
+
             if (_currentOrder.Discount > 0)
             {
                 DiscountRow.IsVisible = true;
@@ -3051,8 +2710,41 @@ namespace POS_in_NET.Pages
             {
                 DiscountRow.IsVisible = false;
             }
-            
+
+            if (_isDeliveryOrder)
+            {
+                DeliveryFeeRow.IsVisible = true;
+                DeliveryFeeLabel.Text = $"£{_currentOrder.DeliveryFee:F2}";
+            }
+            else
+            {
+                DeliveryFeeRow.IsVisible = false;
+            }
+
             TotalLabel.Text = $"£{_currentOrder.Total:F2}";
+            PaymentButton.Text = $"PAYMENT £{_currentOrder.Total:F2}";
+        }
+
+        /// <summary>
+        /// Phase 5 chrome that depends only on order type (same page, three modes).
+        /// Pricing / pay-split / print behaviour stay in existing handlers.
+        /// </summary>
+        private void ApplyOrderTypeChrome()
+        {
+            if (_isDeliveryOrder || _isCollectionOrder)
+            {
+                PrintButton.Text = "PRINT RECEIPT";
+                SemanticProperties.SetDescription(
+                    PrintButton,
+                    "Print customer receipt and kitchen tickets for this takeaway order");
+            }
+            else
+            {
+                PrintButton.Text = "PRINT BILL";
+                SemanticProperties.SetDescription(
+                    PrintButton,
+                    "Print the customer bill for this table (does not send to kitchen)");
+            }
         }
 
         private void UpdateTopBarOrderTitle()
@@ -3064,17 +2756,20 @@ namespace POS_in_NET.Pages
 
             if (_isDeliveryOrder)
             {
-                TopBar.SetPageTitle("Delivery Order");
+                var detail = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, string.Empty);
+                TopBar.SetPageTitle(string.IsNullOrWhiteSpace(detail) ? "DELIVERY" : $"DELIVERY • {detail}");
                 return;
             }
 
             if (_isCollectionOrder)
             {
-                TopBar.SetPageTitle("Collection Order");
+                var detail = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, string.Empty);
+                TopBar.SetPageTitle(string.IsNullOrWhiteSpace(detail) ? "COLLECTION" : $"COLLECTION • {detail}");
                 return;
             }
 
-            TopBar.SetPageTitle("Table Order");
+            var table = _currentOrder.TableNumber > 0 ? _currentOrder.TableNumber.ToString(CultureInfo.InvariantCulture) : "?";
+            TopBar.SetPageTitle($"TABLE {table} • {_currentOrder.CoverCount} GUESTS");
         }
 
         private static string FormatOrderHeaderDetail(string? customerName, string? customerPhone, string fallback)
@@ -3374,12 +3069,11 @@ namespace POS_in_NET.Pages
 
         private void FilterAndDisplayItems()
         {
-            ItemsContainer.Children.Clear();
-            
             if (string.IsNullOrEmpty(_searchQuery))
             {
                 if (_selectedCategory == null)
                 {
+                    ProductGrid.Clear();
                     return;
                 }
 
@@ -3389,19 +3083,18 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                var activeCategoryId = _selectedSubCategory?.Id ?? _selectedCategory.Id;
-                var items = _allMenuItems
-                    .Where(i => i.CategoryId == activeCategoryId)
-                    .Where(IsItemVisibleForCurrentOrderMode)
-                    .OrderBy(i => i.DisplayOrder);
-
-                foreach (var item in items)
+                if (string.Equals(_selectedCategory.Id, TastingMenu.PosCategoryId, StringComparison.Ordinal))
                 {
-                    ItemsContainer.Children.Add(CreateItemButton(item));
+                    LoadTastingMenusForOrder();
+                    return;
                 }
 
+                var activeCategoryId = _selectedSubCategory?.Id ?? _selectedCategory.Id;
+                LoadItemsForCategory(activeCategoryId);
                 return;
             }
+
+            var results = new List<View>();
 
             var matchingDeals = _activeMealDeals
                 .Where(d =>
@@ -3412,7 +3105,17 @@ namespace POS_in_NET.Pages
 
             foreach (var deal in matchingDeals)
             {
-                ItemsContainer.Children.Add(CreateMealDealButton(deal));
+                results.Add(CreateMealDealCard(deal));
+            }
+
+            var matchingTasting = _activeTastingMenus
+                .Where(menu => menu.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(menu => menu.DisplayOrder)
+                .ThenBy(menu => menu.Name, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var menu in matchingTasting)
+            {
+                results.Add(CreateTastingMenuCard(menu));
             }
 
             var matchingItems = _allMenuItems
@@ -3422,8 +3125,10 @@ namespace POS_in_NET.Pages
 
             foreach (var item in matchingItems)
             {
-                ItemsContainer.Children.Add(CreateItemButton(item));
+                results.Add(CreateItemCard(item));
             }
+
+            ProductGrid.SetItems(results);
         }
 
         private async void OnSendClicked(object? sender, EventArgs e)
@@ -4182,7 +3887,7 @@ namespace POS_in_NET.Pages
             }
 
             _isPrintInProgress = true;
-            PrintButton.IsEnabled = false;
+            PrintButton.IsActionEnabled = false;
             try
             {
 
@@ -4263,7 +3968,7 @@ namespace POS_in_NET.Pages
             finally
             {
                 _isPrintInProgress = false;
-                PrintButton.IsEnabled = true;
+                PrintButton.IsActionEnabled = true;
             }
         }
 
@@ -4306,34 +4011,42 @@ namespace POS_in_NET.Pages
         private async void OnMoreClicked(object? sender, EventArgs e)
         {
             var dialog = new MoreOptionsDialog();
-            var isCollectionOrDelivery = _isCollectionOrder || _isDeliveryOrder;
+            var isTakeaway = _isCollectionOrder || _isDeliveryOrder;
             var customerPhone = _isDeliveryOrder ? _deliveryCustomerPhone : _collectionCustomerPhone;
-            
-            // Check user role for restricted features
+
             var authService = ServiceHelper.GetService<AuthenticationService>();
             var currentUser = authService?.CurrentUser;
             var options = new List<(string Text, string Icon, bool IsEnabled, bool IsDestructive)>
             {
-                ("Discount", "", true, false),
-                ("Table Transfer", "", true, false),
-                ("Merge Tables", "", true, false),
-                isCollectionOrDelivery
-                    ? ("Previous Orders", "", !string.IsNullOrWhiteSpace(customerPhone), false)
-                    : ("Fire Course", "", _currentOrder.Items.Count > 0, false),
-                ("Loyalty Points", "", true, false), // Now enabled
-                ("Cash Drawer", "", currentUser != null, false)
+                ("Discount", "", true, false)
             };
 
+            if (isTakeaway)
+            {
+                // COL/DEL: no Transfer / Merge / Fire Course. Keep Previous Orders.
+                options.Add(("Previous Orders", "", !string.IsNullOrWhiteSpace(customerPhone), false));
+            }
+            else
+            {
+                options.Add(("Table Transfer", "", true, false));
+                options.Add(("Merge Tables", "", true, false));
+                options.Add(("Fire Course", "", _currentOrder.Items.Count > 0, false));
+            }
+
+            options.Add(("Loyalty Points", "", true, false));
+            options.Add(("Cash Drawer", "", currentUser != null, false));
+
+            // Service charge remove/restore is table-only (CanChangeServiceCharge already gates type).
             if (CanChangeServiceCharge())
             {
                 options.Insert(0, _currentOrder.ServiceChargeStatus == TableServiceChargeStatus.Applied
                     ? ("REMOVE SERVICE CHARGE", "", true, true)
                     : ("RESTORE SERVICE CHARGE", "", true, false));
             }
-            
+
             dialog.SetOptions(options);
             var selected = await dialog.ShowAsync();
-            
+
             if (selected != null)
             {
                 switch (selected)
@@ -4342,13 +4055,22 @@ namespace POS_in_NET.Pages
                         await ShowDiscountDialog();
                         break;
                     case "Table Transfer":
-                        await ShowTableTransferDialog();
+                        if (!isTakeaway)
+                        {
+                            await ShowTableTransferDialog();
+                        }
                         break;
                     case "Merge Tables":
-                        await ShowMergeTablesDialog();
+                        if (!isTakeaway)
+                        {
+                            await ShowMergeTablesDialog();
+                        }
                         break;
                     case "Fire Course":
-                        await ShowFireCourseDialog();
+                        if (!isTakeaway)
+                        {
+                            await ShowFireCourseDialog();
+                        }
                         break;
                     case "Previous Orders":
                         await ShowPreviousOrdersDialogAsync();
@@ -6337,10 +6059,8 @@ namespace POS_in_NET.Pages
                 _currentOrder.TableNumber = int.Parse(selectedTable.TableNumber);
 
                 // Update TopBar title
-                if (TopBar != null)
-                {
-                    TopBar.SetPageTitle($"Table {selectedTable.TableNumber}");
-                }
+                UpdateTopBarOrderTitle();
+                UpdateDisplay();
 
                 await MarkCurrentOrderChangedAsync();
                 

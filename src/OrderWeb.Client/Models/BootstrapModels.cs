@@ -31,7 +31,15 @@ public sealed record BootstrapTerminalConfig(
     string PairingCodeHint,
     string TerminalToken);
 
-public sealed record BootstrapCategory(int Id, string MotherId, string Name, string Color, int SortOrder, bool IsActive);
+public sealed record BootstrapCategory(
+    int Id,
+    string MotherId,
+    string Name,
+    string Color,
+    int SortOrder,
+    bool IsActive,
+    string? ParentMotherId = null,
+    int? ParentId = null);
 
 public sealed record BootstrapProduct(int Id, string MotherId, int CategoryId, string Name, string Description, string? Sku, bool IsActive);
 

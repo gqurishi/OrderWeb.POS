@@ -5,7 +5,9 @@ public enum ButtonVariant
     Primary,
     Secondary,
     Success,
-    Danger
+    Danger,
+    /// <summary>Neutral grey utility actions (e.g. MORE).</summary>
+    Utility
 }
 
 public enum StatusKind

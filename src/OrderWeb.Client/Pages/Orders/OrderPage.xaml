@@ -2,81 +2,21 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
-             xmlns:orders="clr-namespace:OrderWeb.Client.Views.Orders"
              x:Class="OrderWeb.Client.Pages.Orders.OrderPage"
              Shell.NavBarIsVisible="False"
              NavigationPage.HasNavigationBar="False"
              NavigationPage.HasBackButton="False"
-             BackgroundColor="#F6F8FB"
+             BackgroundColor="#F1F5F9"
              Title="Order">
     <Shell.BackButtonBehavior>
         <BackButtonBehavior IsVisible="False" IsEnabled="False" />
     </Shell.BackButtonBehavior>
     <Grid RowDefinitions="Auto,*"
-          BackgroundColor="#F8FAFC">
+          BackgroundColor="#F1F5F9">
         <layout:ClientTopBar x:Name="TopBar"
                              ShowConnectionStatus="True" />
-
-        <Grid x:Name="OrderLayout"
-              Grid.Row="1"
-              Padding="15"
-              RowDefinitions="*"
-              ColumnDefinitions="2*,*"
-              ColumnSpacing="15"
-              BackgroundColor="#F8FAFC">
-            <Border x:Name="MenuPanel"
-                    BackgroundColor="#FFFFFF"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 12"
-                    Padding="15">
-                <Grid RowDefinitions="Auto,Auto,*"
-                      RowSpacing="15">
-                    <Border BackgroundColor="#F1F5F9"
-                            Stroke="#E2E8F0"
-                            StrokeThickness="1"
-                            StrokeShape="RoundRectangle 10"
-                            Padding="15,10"
-                            HeightRequest="50">
-                        <Entry x:Name="SearchEntry"
-                               Placeholder="Search menu items..."
-                               BackgroundColor="Transparent"
-                               TextColor="#1F2937"
-                               PlaceholderColor="#94A3B8"
-                               FontFamily="OpenSansRegular"
-                               FontSize="16"
-                               ClearButtonVisibility="WhileEditing"
-                               TextChanged="OnSearchTextChanged" />
-                    </Border>
-
-                    <Border x:Name="CategoryTabsHost"
-                            Grid.Row="1"
-                            BackgroundColor="#EEF2F7"
-                            StrokeThickness="0"
-                            Padding="4"
-                            HeightRequest="58"
-                            IsVisible="False">
-                        <ScrollView Orientation="Horizontal"
-                                    HorizontalScrollBarVisibility="Never"
-                                    VerticalOptions="Center">
-                            <HorizontalStackLayout x:Name="CategoryTabs"
-                                                   Spacing="12" />
-                        </ScrollView>
-                    </Border>
-
-                    <Border Grid.Row="2"
-                            BackgroundColor="#F8FAFC"
-                            StrokeThickness="0"
-                            StrokeShape="RoundRectangle 10"
-                            Padding="8">
-                        <orders:MenuItemGridView x:Name="MenuGrid" />
-                    </Border>
-                </Grid>
-            </Border>
-
-            <orders:OrderSummaryView x:Name="Summary"
-                                     Grid.Column="1"
-                                     HorizontalOptions="Fill"
-                                     VerticalOptions="Fill" />
-        </Grid>
+        <!-- SharedUI Order Place shell (Phase 8) -->
+        <ContentView x:Name="ShellHost"
+                     Grid.Row="1" />
     </Grid>
 </ContentPage>

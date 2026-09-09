@@ -102,6 +102,7 @@ public static class ClientCacheSchema
             color TEXT,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
+            parent_id INTEGER,
             updated_utc TEXT NOT NULL
         )
         """,
@@ -509,7 +510,8 @@ public static class ClientCacheSchema
         "ALTER TABLE order_items ADD COLUMN variant_price NUMERIC",
         "ALTER TABLE order_items ADD COLUMN meal_deal_id TEXT",
         "ALTER TABLE order_items ADD COLUMN meal_deal_choices_json TEXT",
-        "ALTER TABLE order_items ADD COLUMN tasting_menu_id TEXT"
+        "ALTER TABLE order_items ADD COLUMN tasting_menu_id TEXT",
+        "ALTER TABLE categories ADD COLUMN parent_id INTEGER"
     };
 
     public static readonly string[] ResetTables =

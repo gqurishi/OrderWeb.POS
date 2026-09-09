@@ -210,7 +210,7 @@ public partial class ClockTimeModal : ContentPage
         }
 
         _isBusy = true;
-        PinLoadingIndicator.IsVisible = true;
+        PinLoadingIndicator.IsLoading = true;
         PinErrorFrame.IsVisible = false;
         RegisterActivity();
 
@@ -232,7 +232,7 @@ public partial class ClockTimeModal : ContentPage
         }
         finally
         {
-            PinLoadingIndicator.IsVisible = false;
+            PinLoadingIndicator.IsLoading = false;
             _isBusy = false;
         }
     }

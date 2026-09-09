@@ -17,7 +17,7 @@ public class LoginView : ContentView
     private readonly HorizontalStackLayout _pinDots;
     private readonly Label _date;
     private readonly Label _time;
-    private readonly ActivityIndicator _busy;
+    private readonly ChefLoaderView _busy;
     private readonly IDispatcherTimer _clock;
 
     public LoginView()
@@ -44,8 +44,15 @@ public class LoginView : ContentView
         _pinDots = new HorizontalStackLayout { Spacing = 22, HorizontalOptions = LayoutOptions.Center };
         RebuildDots(0);
 
-        _busy = new ActivityIndicator { IsVisible = false, HeightRequest = 48, WidthRequest = 48, HorizontalOptions = LayoutOptions.Center };
-        _busy.Use(ActivityIndicator.ColorProperty, "OwPrimary");
+        _busy = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Inline,
+            Size = ChefLoaderSize.Sm,
+            Message = "Signing in",
+            DelayMilliseconds = 0,
+            IsLoading = false,
+            HorizontalOptions = LayoutOptions.Center
+        };
 
         var keypad = new Controls.NumberKeypad { KeySize = 100 };
         keypad.KeyPressed += (_, e) => _viewModel?.KeyCommand.Execute(e.Key);
@@ -221,8 +228,8 @@ public class LoginView : ContentView
             _statusFrame.Use(Border.StrokeProperty, "OwPrimarySoftBorder");
             _status.Use(Label.TextColorProperty, "OwInfoText");
         }
-        _busy.IsVisible = _viewModel.IsBusy;
-        _busy.IsRunning = _viewModel.IsBusy;
+        _busy.IsLoading = _viewModel.IsBusy;
+        _busy.Message = _viewModel.IsBusy ? "Signing in" : "Signing in";
         RebuildDots(_viewModel.PinLength);
         SyncClockLabels();
     }

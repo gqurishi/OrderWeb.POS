@@ -132,8 +132,7 @@ namespace POS_in_NET.Pages
             {
                 System.Diagnostics.Debug.WriteLine(" LoadPageAsync START");
                 
-                LoadingIndicator.IsVisible = true;
-                LoadingIndicator.IsRunning = true;
+                LoadingIndicator.IsLoading = true;
 
                 // Get current user (optional - no redirect if not found)
                 _currentUser = _authService?.GetCurrentUser();
@@ -195,8 +194,7 @@ namespace POS_in_NET.Pages
             {
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
-                    LoadingIndicator.IsVisible = false;
-                    LoadingIndicator.IsRunning = false;
+                    LoadingIndicator.IsLoading = false;
                     System.Diagnostics.Debug.WriteLine(" LoadPageAsync COMPLETE");
                 });
             }
@@ -679,8 +677,7 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                LoadingIndicator.IsVisible = true;
-                LoadingIndicator.IsRunning = true;
+                LoadingIndicator.IsLoading = true;
                 
                 // Local refresh only. Use "Sync Now" for an explicit cloud pull.
                 await LoadWebOrdersAsync(forceLocalReload: true);
@@ -707,8 +704,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                LoadingIndicator.IsVisible = false;
-                LoadingIndicator.IsRunning = false;
+                LoadingIndicator.IsLoading = false;
             }
         }
 
@@ -721,8 +717,7 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                LoadingIndicator.IsVisible = true;
-                LoadingIndicator.IsRunning = true;
+                LoadingIndicator.IsLoading = true;
 
                 // Get cloud order service
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
@@ -758,8 +753,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                LoadingIndicator.IsVisible = false;
-                LoadingIndicator.IsRunning = false;
+                LoadingIndicator.IsLoading = false;
             }
         }
 
@@ -1081,8 +1075,7 @@ namespace POS_in_NET.Pages
             {
                 try
                 {
-                    LoadingIndicator.IsVisible = true;
-                    LoadingIndicator.IsRunning = true;
+                    LoadingIndicator.IsLoading = true;
 
                     var cloudService = ServiceHelper.GetService<CloudOrderService>();
                     if (cloudService == null)
@@ -1108,8 +1101,7 @@ namespace POS_in_NET.Pages
                 }
                 finally
                 {
-                    LoadingIndicator.IsVisible = false;
-                    LoadingIndicator.IsRunning = false;
+                    LoadingIndicator.IsLoading = false;
                 }
             }
         }
@@ -1153,8 +1145,7 @@ namespace POS_in_NET.Pages
                     
                     if (!confirm) return;
 
-                    LoadingIndicator.IsVisible = true;
-                    LoadingIndicator.IsRunning = true;
+                    LoadingIndicator.IsLoading = true;
 
                     // Update order status
                     order.Status = OrderStatus.Completed;
@@ -1195,8 +1186,7 @@ namespace POS_in_NET.Pages
                 }
                 finally
                 {
-                    LoadingIndicator.IsVisible = false;
-                    LoadingIndicator.IsRunning = false;
+                    LoadingIndicator.IsLoading = false;
                 }
             }
         }
@@ -1239,8 +1229,7 @@ namespace POS_in_NET.Pages
         {
             try
             {
-                LoadingIndicator.IsVisible = true;
-                LoadingIndicator.IsRunning = true;
+                LoadingIndicator.IsLoading = true;
 
                 // Ultra-fast speed testing using CloudOrderService
                 var cloudService = ServiceHelper.GetService<CloudOrderService>();
@@ -1288,8 +1277,7 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                LoadingIndicator.IsVisible = false;
-                LoadingIndicator.IsRunning = false;
+                LoadingIndicator.IsLoading = false;
             }
         }
 
@@ -1537,8 +1525,7 @@ namespace POS_in_NET.Pages
             {
                 try
                 {
-                    LoadingIndicator.IsVisible = true;
-                    LoadingIndicator.IsRunning = true;
+                    LoadingIndicator.IsLoading = true;
 
                     var cloudService = ServiceHelper.GetService<CloudOrderService>();
                     if (cloudService == null)
@@ -1571,8 +1558,7 @@ namespace POS_in_NET.Pages
                 }
                 finally
                 {
-                    LoadingIndicator.IsVisible = false;
-                    LoadingIndicator.IsRunning = false;
+                    LoadingIndicator.IsLoading = false;
                 }
 
                 return;

@@ -33,7 +33,32 @@ public static class MenuSnapshotStabilizer
 
             var stableId = StableEntityId.FromKey($"cat:{motherKey}", used);
             categoryMap[category.Id] = stableId;
-            categories.Add(category with { Id = stableId, MotherId = motherKey });
+            categories.Add(category with
+            {
+                Id = stableId,
+                MotherId = motherKey,
+                ParentMotherId = string.IsNullOrWhiteSpace(category.ParentMotherId)
+                    ? null
+                    : category.ParentMotherId.Trim()
+            });
+        }
+
+        // Resolve parent Mother ids to stable local parent ids after all categories are mapped.
+        var motherIdToStable = categories.ToDictionary(
+            category => category.MotherId,
+            category => category.Id,
+            StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < categories.Count; i++)
+        {
+            var category = categories[i];
+            if (string.IsNullOrWhiteSpace(category.ParentMotherId) ||
+                !motherIdToStable.TryGetValue(category.ParentMotherId, out var parentId))
+            {
+                categories[i] = category with { ParentId = null };
+                continue;
+            }
+
+            categories[i] = category with { ParentId = parentId };
         }
 
         var productMap = new Dictionary<int, int>();

@@ -1,5 +1,6 @@
 using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
+using OrderWeb.SharedUI.Controls;
 using Microsoft.Maui.Controls.Shapes;
 
 namespace OrderWeb.Client;
@@ -17,7 +18,7 @@ public sealed class ClockTimeModal : ContentPage
     private readonly Label _pinErrorLabel;
     private readonly Border _pinErrorFrame;
     private readonly Border[] _pinDots;
-    private readonly ActivityIndicator _pinLoadingIndicator;
+    private readonly ChefLoaderView _pinLoadingIndicator;
     private readonly Label _staffNameLabel;
     private readonly Label _staffStatusLabel;
     private readonly Label _clockInTimeLabel;
@@ -52,7 +53,15 @@ public sealed class ClockTimeModal : ContentPage
             BackgroundColor = Color.FromArgb("#FEF2F2"),
             Content = _pinErrorLabel
         };
-        _pinLoadingIndicator = new ActivityIndicator { IsVisible = false, IsRunning = true, Color = Color.FromArgb("#6366F1"), HeightRequest = 26 };
+        _pinLoadingIndicator = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Inline,
+            Size = ChefLoaderSize.Sm,
+            Message = "Checking PIN",
+            DelayMilliseconds = 0,
+            IsLoading = false,
+            HorizontalOptions = LayoutOptions.Center
+        };
 
         _staffNameLabel = new Label { FontSize = 30, TextColor = Color.FromArgb("#020617") };
         _staffStatusLabel = new Label { FontSize = 18, TextColor = Color.FromArgb("#64748B") };
@@ -473,7 +482,7 @@ public sealed class ClockTimeModal : ContentPage
         }
 
         _isBusy = true;
-        _pinLoadingIndicator.IsVisible = true;
+        _pinLoadingIndicator.IsLoading = true;
         _pinErrorFrame.IsVisible = false;
 
         try
@@ -493,7 +502,7 @@ public sealed class ClockTimeModal : ContentPage
         }
         finally
         {
-            _pinLoadingIndicator.IsVisible = false;
+            _pinLoadingIndicator.IsLoading = false;
             _isBusy = false;
         }
     }

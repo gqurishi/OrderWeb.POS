@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.ClockTimeModal"
              Shell.NavBarIsVisible="False"
              BackgroundColor="#F1F5F9">
@@ -91,11 +92,13 @@
                                    HorizontalTextAlignment="Center" />
                         </Border>
 
-                        <ActivityIndicator x:Name="PinLoadingIndicator"
-                                           IsVisible="False"
-                                           Color="#6366F1"
-                                           HeightRequest="36"
-                                           HorizontalOptions="Center" />
+                        <shared:ChefLoaderView x:Name="PinLoadingIndicator"
+                                               Mode="Inline"
+                                               Size="Sm"
+                                               Message="Checking PIN"
+                                               DelayMilliseconds="0"
+                                               IsLoading="False"
+                                               HorizontalOptions="Center" />
                     </VerticalStackLayout>
 
                     <Grid Grid.Column="1"

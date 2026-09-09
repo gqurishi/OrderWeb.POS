@@ -32,9 +32,10 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             ["loyalty"] = 14,
             ["staffclock"] = 15,
             ["settings"] = 16,
-            ["printersetup"] = 17,
-            ["customerdata"] = 18,
-            ["terminalhealth"] = 19
+            ["chefloader"] = 17,
+            ["printersetup"] = 18,
+            ["customerdata"] = 19,
+            ["terminalhealth"] = 20
         };
 
     private string _currentDateTime = string.Empty;
@@ -77,6 +78,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         Routing.RegisterRoute("reportdetails", typeof(ReportOrderDetailsPage));
         Routing.RegisterRoute("collection", typeof(CollectionCustomerModal));
         Routing.RegisterRoute("delivery", typeof(DeliveryCustomerModal));
+        Routing.RegisterRoute("orderplacesandbox", typeof(OrderPlaceSandboxPage));
         Routing.RegisterRoute("printtemplates", typeof(PrintTemplatesPage));
 
         // Register User Dashboard route
@@ -554,7 +556,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             {
                 "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "collection", "delivery",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "report", "staffclock",
-                "inventory", "printersetup", "settings", "terminalhealth", "customerdata"
+                "inventory", "printersetup", "settings", "chefloader", "terminalhealth", "customerdata"
             }
         };
 

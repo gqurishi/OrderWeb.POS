@@ -4,6 +4,7 @@
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:converters="clr-namespace:POS_in_NET.Converters"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.UnifiedSettingsPage"
              Title="Settings"
              BackgroundColor="#F8F9FA">
@@ -19,12 +20,15 @@
         <!-- Top Navigation Bar -->
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
         
-        <!-- Loading Indicator -->
-        <Grid x:Name="LoadingIndicator" Grid.Row="0" Grid.RowSpan="4" 
-              IsVisible="False" 
-              BackgroundColor="#80000000">
-            <ActivityIndicator IsRunning="True" Color="White" />
-        </Grid>
+        <shared:ChefLoaderView x:Name="LoadingIndicator"
+                               Grid.Row="0"
+                               Grid.RowSpan="4"
+                               Mode="Fullscreen"
+                               Size="Md"
+                               Message="Cooking up your data…"
+                               DelayMilliseconds="0"
+                               IsLoading="False"
+                               ZIndex="100" />
         
         <!-- Toast Notification -->
         <controls:ToastNotification x:Name="ToastNotification" 

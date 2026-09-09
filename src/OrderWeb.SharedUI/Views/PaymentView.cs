@@ -11,7 +11,7 @@ public sealed class PaymentView : ContentView
     private readonly Label _change;
     private readonly Label _remaining;
     private readonly Label _status;
-    private readonly ActivityIndicator _waiting;
+    private readonly ChefLoaderView _waiting;
     private readonly SharedButton _submit;
     private readonly Grid _methods;
     private PaymentViewModel? _viewModel;
@@ -19,7 +19,15 @@ public sealed class PaymentView : ContentView
     {
         _due = Money(36, true); _tendered = new Entry { Keyboard = Keyboard.Numeric, FontSize = 20 }; _tendered.Use(Entry.TextColorProperty, "OwTextPrimary");
         _change = Money(18, true); _remaining = Money(18, true); _status = new Microsoft.Maui.Controls.Label { FontSize = 14, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap }; _status.Use(Microsoft.Maui.Controls.Label.TextColorProperty, "OwTextMuted");
-        _waiting = new ActivityIndicator { IsVisible = false, IsRunning = false, WidthRequest = 36, HeightRequest = 36, HorizontalOptions = LayoutOptions.Center };
+        _waiting = new ChefLoaderView
+        {
+            Mode = ChefLoaderMode.Inline,
+            Size = ChefLoaderSize.Sm,
+            Message = "Processing payment",
+            DelayMilliseconds = 0,
+            IsLoading = false,
+            HorizontalOptions = LayoutOptions.Center
+        };
         _methods = new Grid
         {
             ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
@@ -41,7 +49,11 @@ public sealed class PaymentView : ContentView
     {
         if (_viewModel is null) return;
         _due.Text = Format(_viewModel.AmountDue); _tendered.Text = _viewModel.Tendered.ToString("0.00"); _change.Text = Format(_viewModel.ChangeDue); _remaining.Text = Format(_viewModel.Remaining); _status.Text = _viewModel.Message;
-        _waiting.IsVisible = _viewModel.State is PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard; _waiting.IsRunning = _waiting.IsVisible;
+        var waiting = _viewModel.State is PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard;
+        _waiting.IsLoading = waiting;
+        _waiting.Message = _viewModel.State == PaymentPresentationState.WaitingForCard
+            ? "Waiting for card"
+            : "Processing payment";
         _submit.IsEnabled = _viewModel.State is not (PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard or PaymentPresentationState.Approved);
         _submit.Text = _viewModel.State == PaymentPresentationState.WaitingForCard ? "Waiting for card…" : _viewModel.State == PaymentPresentationState.Approved ? "Payment Confirmed" : "Confirm Payment";
         _methods.Children.Clear();

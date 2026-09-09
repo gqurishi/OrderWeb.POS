@@ -41,7 +41,7 @@ public sealed class OrderEntryView : ContentView
         var basket = Card(basketGrid);
         var content = new Grid { Padding = new Thickness(18), ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(420) }, ColumnSpacing = 18 };
         content.Use(Grid.BackgroundColorProperty, "OwBackground"); content.Add(menu); content.Add(basket, 1);
-        _loading = new PosLoadingOverlay { IsVisible = false, ZIndex = 10 };
+        _loading = new PosLoadingOverlay { IsVisible = false, IsLoading = false, ZIndex = 10, Message = "Cooking up your data…" };
         _error = new PosToast { IsVisible = false, Kind = StatusKind.Error, IsRetryVisible = true, ZIndex = 11 };
         _error.DismissRequested += (_, _) => _error.IsVisible = false;
         Content = new Grid { Children = { content, _loading, _error } };
@@ -60,6 +60,11 @@ public sealed class OrderEntryView : ContentView
         _title.Text = _viewModel.Title; _status.Text = _viewModel.HasConflict ? "Conflict — refresh before continuing." : _viewModel.Status;
         _subtotal.Text = Money(_viewModel.Subtotal); _tax.Text = Money(_viewModel.Tax); _service.Text = Money(_viewModel.ServiceCharge); _total.Text = Money(_viewModel.Total);
         _loading.IsVisible = _viewModel.IsLoading;
+        _loading.IsLoading = _viewModel.IsLoading;
+        if (_viewModel.IsLoading)
+        {
+            _loading.Message = "Cooking up your data…";
+        }
         _error.IsVisible = !string.IsNullOrWhiteSpace(_viewModel.ErrorMessage); _error.Title = "Order needs attention"; _error.Message = _viewModel.ErrorMessage ?? string.Empty;
         _categories.Children.Clear(); _categories.ColumnDefinitions.Clear();
         var index = 0; foreach (var category in _viewModel.Categories) { _categories.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto)); var button = new CategoryButton { Text = category.Name, IsSelected = category.Id == _viewModel.SelectedCategoryId, IsEnabled = category.IsAvailable, Command = _viewModel.SelectCategoryCommand, CommandParameter = category }; _categories.Add(button, index++); }
