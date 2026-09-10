@@ -73,6 +73,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TerminalHealthService>();
 		builder.Services.AddSingleton<ClientTerminalAccessService>();
 		builder.Services.AddSingleton<ClientWebSocketBroadcastService>();
+		builder.Services.AddSingleton<ClientTipSafetyNetService>();
 		builder.Services.AddSingleton<MotherConnectionStartupService>();
 		builder.Services.AddSingleton<DatabaseBackupService>();
 		

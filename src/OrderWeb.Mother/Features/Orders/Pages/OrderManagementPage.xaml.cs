@@ -96,11 +96,7 @@ public partial class OrderManagementPage : ContentPage, INotifyPropertyChanged
             return;
         }
 
-        await MainThread.InvokeOnMainThreadAsync(async () =>
-        {
-            await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
-        });
-
+        // Phase 2: quiet in-place reload — no "Live update" toast.
         _liveReloadDebounceCts?.Cancel();
         _liveReloadDebounceCts?.Dispose();
         _liveReloadDebounceCts = new CancellationTokenSource();

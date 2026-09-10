@@ -1,5 +1,5 @@
 ---
-description: Client POS busy-dinner speed goals (Phases 1–4)
+description: Client POS busy-dinner speed goals (Phases 1–4 + silent live sync)
 alwaysApply: true
 ---
 
@@ -16,29 +16,23 @@ alwaysApply: true
 | Open Restaurant | Tables visible immediately from cache |
 | Sync / Update All | Till stays usable |
 
-## Architecture
+## Architecture — silent live till
+- **UI reads SQLite only** (warm last-good). Never wait on Mother to paint.
+- **Mother → SQLite** via WebSocket (primary) + quiet safety-net pull (~45s) while logged in.
+- Sync/preloaders/toasts are **silent when cache is warm**. Loader/toast only for cold/empty or explicit Update All / hard failure.
 - Client → Mother HTTP for order mutations (no Client→cloud).
-- Optimistic UI + warm SQLite cache; sync in background.
-- First tap must always work — no invisible dismiss layers after close.
+- Optimistic UI + first-tap overlay hygiene (Phases 1–4).
 
-## Phase 1 (Order Place) — done
-Optimistic add · Incremental shell · Warm menu · Instant Send/Pay · Serial Mother persist
+## Phase 1–4 — done
+Optimistic Order Place · Incremental shell · Warm cache · Non-blocking sync · First-tap · Timers/ChefLoader · In-place tables
 
-## Phase 2 (Floor / Live / Sync) — done
-Restaurant cache-first · Table→Order Place · Update All non-blocking · Live debounce · Login warm-cache
-
-## Phase 3 (First tap) — done
-1. Pos sidebar: `InputTransparent` + remove overlay on select; navigate immediately; short parallel close.
-2. SharedUI `ApplicationShellFrame`: nav/dialog/error/toast layers drop hit-testing when closed.
-3. Guest overlays, virtual keyboard, reservation dialog: dismiss sets `InputTransparent` then removes from tree.
-
-## Phase 4 (Smooth under load) — done
-1. Shared header clock (`ApplicationHeader`); legacy MainPage clock only while those labels exist.
-2. Idle logout stays 3 min via one-shot timer (no 1 Hz work).
-3. Live/Restaurant WS debounce ~400ms; refresh in place / dirty-skip when unchanged.
-4. ChefLoader animates only when revealed; stop timer on hide; no tap-block at opacity 0; shell delay ~280ms.
-5. `RestaurantTablesView` syncs status/color/text/position in place (no full card rebuild each refresh).
+## Silent live sync — done
+1. Login warm → dashboard immediately; background sync; no “Refreshing…” toast on success.
+2. Restaurant warm → paint tables now; Mother pull in background; no preloader/toast.
+3. Default Mother pull does **not** drive shell `IsLoading` (that was flashing Restaurant).
+4. Quiet loop while logged in refreshes SQLite and patches open Restaurant/Live in place.
+5. Reconnect with warm cache: no refresh toast / Syncing flash.
 
 ## Scope
-- Default: `OrderWeb.Client` + SharedUI shell/Order Place.
+- Default: `OrderWeb.Client` + SharedUI.
 - Do not port Mother AppShell nav-lock / Rider / Visual Table admin.

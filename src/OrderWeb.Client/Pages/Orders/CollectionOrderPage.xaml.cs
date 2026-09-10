@@ -1,6 +1,6 @@
 using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
-using OrderWeb.Client.Views.Dialogs;
+using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.Client.Pages.Orders;
 
@@ -10,10 +10,8 @@ public partial class CollectionOrderPage : ContentPage
     private readonly MotherCustomerClient _customerClient = new();
     private readonly MotherOrderClient _orderClient = new();
     private readonly ClientOfflinePolicy _offlinePolicy = new();
-    private CachedCustomer? _selectedCustomer;
     private bool _isContinuing;
     private bool _isClosing;
-    private bool _isOpeningKeyboard;
     private bool _enterAnimationStarted;
     /// <summary>Stable Mother order id for this Collection create attempt (avoids dual rows on retry).</summary>
     private string? _pendingCollectionOrderId;
@@ -25,6 +23,10 @@ public partial class CollectionOrderPage : ContentPage
         // Start off-screen so Delivery/Collection slide in from the right like Mother.
         Opacity = 0;
         TranslationX = 420;
+
+        Entry.SearchRequested += OnSearchRequested;
+        Entry.ContinueRequested += OnContinueRequested;
+        Entry.CancelRequested += OnCancelRequested;
     }
 
     protected override async void OnAppearing()
@@ -45,76 +47,18 @@ public partial class CollectionOrderPage : ContentPage
 
     protected override bool OnBackButtonPressed() => true;
 
-    private async void OnCustomerNameFieldTapped(object sender, TappedEventArgs e)
+    private async void OnSearchRequested(object? sender, (string? Name, string? Phone) e)
     {
-        await OpenKeyboardForEntryAsync(CustomerNameEntry);
-    }
-
-    private async void OnPhoneNumberFieldTapped(object sender, TappedEventArgs e)
-    {
-        await OpenKeyboardForEntryAsync(PhoneNumberEntry);
-    }
-
-    private async Task OpenKeyboardForEntryAsync(Entry entry)
-    {
-        if (_isOpeningKeyboard)
-        {
-            return;
-        }
-
-        _isOpeningKeyboard = true;
-        try
-        {
-            entry.Unfocus();
-
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetPrompt(GetKeyboardTitle(entry), "DONE");
-            keyboard.SetInitialText(entry.Text ?? string.Empty);
-
-            var result = await keyboard.ShowAsync(this);
-            if (result != null)
-            {
-                entry.Text = result.Trim();
-            }
-        }
-        finally
-        {
-            _isOpeningKeyboard = false;
-        }
-    }
-
-    private string GetKeyboardTitle(Entry entry)
-    {
-        if (entry == CustomerNameEntry)
-        {
-            return "Customer name";
-        }
-
-        if (entry == PhoneNumberEntry)
-        {
-            return "Phone number";
-        }
-
-        return "Keyboard";
-    }
-
-    private async void OnSearchClicked(object sender, EventArgs e)
-    {
-        var searchName = CustomerNameEntry.Text?.Trim();
-        var searchPhone = PhoneNumberEntry.Text?.Trim();
+        var searchName = e.Name?.Trim();
+        var searchPhone = e.Phone?.Trim();
 
         if (string.IsNullOrWhiteSpace(searchName) && string.IsNullOrWhiteSpace(searchPhone))
         {
-            ShowStatus("Please enter customer name or phone number to search.", "#DC2626");
+            Entry.ShowStatus("Please enter customer name or phone number to search.", "#DC2626");
             return;
         }
 
-        var originalText = SearchButton.Text;
-        SearchButton.Text = "Searching...";
-        SearchButton.IsEnabled = false;
-        SearchResultsBorder.IsVisible = false;
-        NoResultsLabel.IsVisible = false;
-
+        Entry.SetSearchBusy(true);
         try
         {
             var request = new CustomerSearchRequest("Collection", searchName, searchPhone, null);
@@ -125,81 +69,27 @@ public partial class CollectionOrderPage : ContentPage
                 .Take(10)
                 .ToList();
 
-            SearchResultsCollection.ItemsSource = results;
-            SearchResultsBorder.IsVisible = results.Count > 0;
-            NoResultsLabel.IsVisible = results.Count == 0;
-            ShowStatus(results.Count == 0 ? "No existing customer found." : $"Found {results.Count} customer(s).", results.Count == 0 ? "#64748B" : "#10B981");
+            Entry.SetSearchResults(results.Select(ToSearchItem));
+            Entry.ShowStatus(results.Count == 0 ? "No existing customer found." : $"Found {results.Count} customer(s).", results.Count == 0 ? "#64748B" : "#10B981");
         }
         catch (Exception ex)
         {
-            ShowStatus($"Failed to search customers: {ex.Message}", "#DC2626");
+            Entry.ShowStatus($"Failed to search customers: {ex.Message}", "#DC2626");
         }
         finally
         {
-            SearchButton.Text = originalText;
-            SearchButton.IsEnabled = true;
+            Entry.SetSearchBusy(false);
         }
     }
 
-    private void OnCustomerSelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.CurrentSelection.FirstOrDefault() is not CachedCustomer customer)
-        {
-            return;
-        }
-
-        ApplyCustomer(customer);
-        ((CollectionView)sender).SelectedItem = null;
-    }
-
-    private void OnCustomerTapped(object sender, EventArgs e)
-    {
-        if (sender is VisualElement element && element.BindingContext is CachedCustomer customer)
-        {
-            ApplyCustomer(customer);
-        }
-    }
-
-    private void ApplyCustomer(CachedCustomer customer)
-    {
-        _selectedCustomer = customer;
-        CustomerNameEntry.Text = customer.Name;
-        PhoneNumberEntry.Text = customer.Phone;
-        SearchResultsBorder.IsVisible = false;
-        NoResultsLabel.IsVisible = false;
-        ShowStatus("Existing customer selected.", "#10B981");
-    }
-
-    private async void OnContinueClicked(object sender, EventArgs e)
+    private async void OnContinueRequested(object? sender, CustomerEntryResult e)
     {
         if (_isContinuing)
         {
             return;
         }
 
-        var name = CustomerNameEntry.Text?.Trim();
-        var phone = PhoneNumberEntry.Text?.Trim();
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            ShowStatus("Customer Name is required to continue.", "#DC2626");
-            CustomerNameEntry.Focus();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(phone))
-        {
-            ShowStatus("Phone Number is required to continue.", "#DC2626");
-            PhoneNumberEntry.Focus();
-            return;
-        }
-
-        var customer = _selectedCustomer ?? new CachedCustomer(0, string.Empty, name, phone, null, string.Empty, null, 0);
-        customer = customer with
-        {
-            Name = name,
-            Phone = phone
-        };
+        var customer = new CachedCustomer(0, e.MotherId ?? string.Empty, e.Name, e.Phone, null, string.Empty, null, 0);
 
         var draft = new CustomerOrderDraft(
             "Collection",
@@ -212,28 +102,23 @@ public partial class CollectionOrderPage : ContentPage
             null,
             0m);
 
-        var button = sender as Button;
-        var originalText = button?.Text;
         _isContinuing = true;
-        if (button != null)
-        {
-            button.IsEnabled = false;
-            button.Text = "Opening order...";
-        }
+        Entry.SetContinueBusy(true, "Opening order...");
 
         try
         {
             var decision = _offlinePolicy.Evaluate(ClientOperation.SaveCollectionOrder, await _offlinePolicy.IsMotherOnlineAsync());
             if (!decision.Allowed)
             {
-                ShowStatus(decision.Message, "#DC2626");
+                Entry.ShowStatus(decision.Message, "#DC2626");
                 return;
             }
-            ShowStatus("Saving customer with Mother POS...", "#64748B");
+
+            Entry.ShowStatus("Saving customer with Mother POS...", "#64748B");
             var savedCustomer = await _customerClient.SaveCustomerAsync(draft);
             await _cache.CacheCustomerForActiveOrderAsync(savedCustomer, isDelivery: false);
 
-            ShowStatus("Opening collection order...", "#64748B");
+            Entry.ShowStatus("Opening collection order...", "#64748B");
             var session = await _cache.GetCurrentLoginSessionAsync();
             _pendingCollectionOrderId ??= Guid.NewGuid().ToString("N");
             var orderResult = await _orderClient.CreateCustomerOrderAsync(
@@ -244,7 +129,7 @@ public partial class CollectionOrderPage : ContentPage
             _pendingCollectionOrderId = null;
             if (orderResult.ConflictDetected)
             {
-                ShowStatus(orderResult.Message, "#D97706");
+                Entry.ShowStatus(orderResult.Message, "#D97706");
             }
 
             await Navigation.PushAsync(
@@ -253,20 +138,16 @@ public partial class CollectionOrderPage : ContentPage
         }
         catch (Exception ex)
         {
-            ShowStatus($"Failed to continue: {ex.Message}", "#DC2626");
+            Entry.ShowStatus($"Failed to continue: {ex.Message}", "#DC2626");
         }
         finally
         {
             _isContinuing = false;
-            if (button != null)
-            {
-                button.Text = originalText ?? "Continue to Order";
-                button.IsEnabled = true;
-            }
+            Entry.SetContinueBusy(false);
         }
     }
 
-    private async void OnCancelClicked(object sender, EventArgs e) => await CloseAsync();
+    private async void OnCancelRequested(object? sender, EventArgs e) => await CloseAsync();
 
     private async Task CloseAsync()
     {
@@ -292,10 +173,6 @@ public partial class CollectionOrderPage : ContentPage
         }
     }
 
-    private void ShowStatus(string message, string color)
-    {
-        StatusLabel.Text = message;
-        StatusLabel.TextColor = Color.FromArgb(color);
-        StatusLabel.IsVisible = true;
-    }
+    private static CustomerEntrySearchItem ToSearchItem(CachedCustomer customer) =>
+        new(customer.Name, customer.Phone, customer.MotherId);
 }

@@ -4,64 +4,70 @@
              x:Class="POS_in_NET.Pages.OrderSearchModal"
              BackgroundColor="{StaticResource DialogOverlayColor}">
 
-    <Frame BackgroundColor="White"
-           Margin="60"
-           Padding="24"
-           CornerRadius="16"
-           HasShadow="True"
-           VerticalOptions="Center"
-           HorizontalOptions="Center"
-           WidthRequest="500">
+    <!-- Root Grid so NumericKeyboardDialog can overlay this modal. -->
+    <Grid x:Name="RootGrid">
+        <Frame BackgroundColor="White"
+               Margin="60"
+               Padding="24"
+               CornerRadius="16"
+               HasShadow="True"
+               VerticalOptions="Center"
+               HorizontalOptions="Center"
+               WidthRequest="500">
 
-        <VerticalStackLayout Spacing="20">
-            <Label Text="Search Orders"
-                   FontSize="22"
-                   FontAttributes="Bold"
-                   TextColor="#1F2937" />
-
-            <VerticalStackLayout Spacing="8">
-                <Label Text="Order Number or Phone"
-                       FontSize="14"
+            <VerticalStackLayout Spacing="20">
+                <Label Text="Search Orders"
+                       FontSize="22"
                        FontAttributes="Bold"
-                       TextColor="#374151" />
-                <Border BackgroundColor="White"
-                        Stroke="#D1D5DB"
-                        StrokeThickness="1"
-                        Padding="12,4"
-                        StrokeShape="RoundRectangle 8"
-                        HeightRequest="48">
-                    <Entry x:Name="SearchEntry"
-                           Placeholder="Tap to open keyboard"
-                           Keyboard="Default"
-                           TextColor="#1F2937"
-                           PlaceholderColor="#9CA3AF"
-                           FontSize="16"
-                           VerticalOptions="Center"
-                           BackgroundColor="Transparent"
-                           ReturnType="Search"
-                           Completed="OnSearchClicked" />
-                </Border>
-            </VerticalStackLayout>
+                       TextColor="#1F2937" />
 
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                <Button Text="Search"
-                        BackgroundColor="#10B981"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        FontSize="15"
-                        HeightRequest="48"
-                        CornerRadius="8"
-                        Clicked="OnSearchClicked" />
-                <Button Grid.Column="1"
-                        Text="Cancel"
-                        BackgroundColor="#6B7280"
-                        TextColor="White"
-                        FontAttributes="Bold"
-                        FontSize="15"
-                        HeightRequest="48"
-                        CornerRadius="8"
-                        Clicked="OnCancelClicked" />
-            </Grid>
-        </VerticalStackLayout>
-    </Frame>
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Order Number or Phone"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           TextColor="#374151" />
+                    <Border BackgroundColor="White"
+                            Stroke="#D1D5DB"
+                            StrokeThickness="1"
+                            Padding="12,4"
+                            StrokeShape="RoundRectangle 8"
+                            HeightRequest="48">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSearchFieldTapped" />
+                        </Border.GestureRecognizers>
+                        <Entry x:Name="SearchEntry"
+                               Placeholder="Tap to open keyboard"
+                               Keyboard="Numeric"
+                               IsReadOnly="True"
+                               TextColor="#1F2937"
+                               PlaceholderColor="#9CA3AF"
+                               FontSize="16"
+                               VerticalOptions="Center"
+                               BackgroundColor="Transparent"
+                               Focused="OnSearchEntryFocused" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Button Text="Search"
+                            BackgroundColor="#10B981"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            FontSize="15"
+                            HeightRequest="48"
+                            CornerRadius="8"
+                            Clicked="OnSearchClicked" />
+                    <Button Grid.Column="1"
+                            Text="Cancel"
+                            BackgroundColor="#6B7280"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            FontSize="15"
+                            HeightRequest="48"
+                            CornerRadius="8"
+                            Clicked="OnCancelClicked" />
+                </Grid>
+            </VerticalStackLayout>
+        </Frame>
+    </Grid>
 </ContentPage>

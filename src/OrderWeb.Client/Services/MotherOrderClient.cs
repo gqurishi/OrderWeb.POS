@@ -34,6 +34,8 @@ public sealed class MotherOrderClient
         var now = DateTimeOffset.UtcNow.ToString("O");
         var orderId = Guid.NewGuid().ToString("N");
         var guests = Math.Max(covers, table.Covers > 0 ? table.Covers : 1);
+        // ConflictMessage must stay null/real conflicts only — stuffing "Table N" here made
+        // Order Place show the table twice (HeaderTable + StatusMessage).
         var state = new MotherOrderState(
             orderId,
             string.Empty,
@@ -49,7 +51,7 @@ public sealed class MotherOrderClient
             0,
             now,
             session?.UserName ?? "Client User",
-            $"Table {table.TableNumber}");
+            ConflictMessage: null);
 
         try
         {

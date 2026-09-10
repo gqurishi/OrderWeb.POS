@@ -4,7 +4,20 @@ public static class DialogOverlayHelper
 {
     public static Grid? FindHostGrid(Page? page = null)
     {
-        page ??= Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
+        if (page == null)
+        {
+            // Prefer the top modal (e.g. Order Search) so overlays appear above it.
+            var navigation = Shell.Current?.Navigation ?? Application.Current?.MainPage?.Navigation;
+            if (navigation?.ModalStack is { Count: > 0 } modalStack)
+            {
+                page = modalStack[^1];
+            }
+            else
+            {
+                page = Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
+            }
+        }
+
         if (page is Shell shell)
         {
             page = shell.CurrentPage;
@@ -18,9 +31,9 @@ public static class DialogOverlayHelper
         return FindGridInTree(contentPage.Content);
     }
 
-    public static bool TryAttachOverlay(ContentView overlay, out Grid? hostGrid)
+    public static bool TryAttachOverlay(ContentView overlay, out Grid? hostGrid, Page? page = null)
     {
-        hostGrid = FindHostGrid();
+        hostGrid = FindHostGrid(page);
         if (hostGrid == null)
         {
             return false;

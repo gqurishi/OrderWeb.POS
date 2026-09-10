@@ -364,7 +364,7 @@ public partial class LiveOrderPage : ContentPage
         await Navigation.PushAsync(label switch
         {
             "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new TableLayoutPage(),
+            "Restaurant" => new RestaurantPage(),
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
             "Gift Cards" => new GiftCardPage(),

@@ -8,7 +8,7 @@
              Title="Order Placement"
              BackgroundColor="#F1F5F9">
 
-    <!-- Same chrome as Client Order Place: menu + SharedUI OrderPlaceShellView -->
+    <!-- Full-bleed Order Place; flyout menu lives inside SharedUI category toolbar. -->
     <Grid>
 
         <views:TopBar x:Name="TopBar"
@@ -21,22 +21,8 @@
                                     InputTransparent="True"
                                     Placement="BottomCenter"/>
 
-        <Grid x:Name="MainContentGrid"
-              ColumnDefinitions="Auto,*"
-              ColumnSpacing="6"
-              Padding="8">
-
-            <ImageButton x:Name="OrderPlaceMenuButton"
-                         Source="mian.png"
-                         WidthRequest="40"
-                         HeightRequest="40"
-                         BackgroundColor="Transparent"
-                         VerticalOptions="Start"
-                         Margin="0,4,0,0"
-                         Clicked="OnOrderPlaceMenuClicked"/>
-
-            <ContentView x:Name="ShellHost"
-                         Grid.Column="1" />
+        <Grid x:Name="MainContentGrid" Padding="4">
+            <ContentView x:Name="ShellHost" />
         </Grid>
 
         <shared:ChefLoaderView x:Name="LoadingOverlay"

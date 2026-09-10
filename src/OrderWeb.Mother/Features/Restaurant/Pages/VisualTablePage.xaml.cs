@@ -1,13 +1,13 @@
 using Microsoft.Maui.Controls;
-using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Dispatching;
-using Microsoft.Maui.Layouts;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Maui.Storage;
+using OrderWeb.Contracts.Dtos;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 
@@ -25,7 +25,6 @@ namespace POS_in_NET.Pages
         private readonly OrderServiceAvailabilityService _orderServiceAvailabilityService;
         private List<Floor> _floors = new();
         private Floor? _currentFloor;
-        private Dictionary<int, Border> _tableViews = new();
         private Dictionary<int, RestaurantTable> _currentTablesById = new();
         private bool _isAdmin;
         private bool _hasUnsavedChanges = false;
@@ -41,7 +40,6 @@ namespace POS_in_NET.Pages
         private IDispatcherTimer? _basicUserIdleTimer;
         private DateTime _basicUserLastActivityAt = DateTime.Now;
         private bool _isBasicUserIdleNavigating;
-        private const int GRID_SIZE = 20; // 20px snap grid
         private static readonly TimeSpan BasicUserIdleTimeout = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan TableStateRefreshMinGap = TimeSpan.FromMilliseconds(1200);
         private const string SelectedFloorPreferenceKey = "visual_layout_selected_floor_id";
@@ -65,14 +63,77 @@ namespace POS_in_NET.Pages
             // Set up numeric keyboard event
             NumericKeyboard.NumberConfirmed += OnNumericKeyboardConfirmed;
 
+            WireSharedTablesView();
             UpdateLastSyncLabel(false);
+        }
+
+        private void WireSharedTablesView()
+        {
+            // Reparent admin buttons into SharedUI toolbar (SharedUI owns the Live sync chip).
+            AdminToolsHolder.Content = null;
+            TablesView.AdminToolsContent = AdminToolsHost;
+
+            TablesView.TableSelected += async (_, args) =>
+            {
+                ResetBasicUserIdle();
+                if (!int.TryParse(args.Table.Id, out var tableId))
+                {
+                    return;
+                }
+
+                if (!_currentTablesById.TryGetValue(tableId, out var table))
+                {
+                    return;
+                }
+
+                await SelectTableAsync(table);
+            };
+
+            TablesView.FloorSelected += async (_, floorId) =>
+            {
+                ResetBasicUserIdle();
+                if (!int.TryParse(floorId, out var id))
+                {
+                    return;
+                }
+
+                var floor = _floors.FirstOrDefault(f => f.Id == id);
+                if (floor == null || _currentFloor?.Id == floor.Id)
+                {
+                    return;
+                }
+
+                await SelectFloor(floor, showLoading: false);
+            };
+
+            TablesView.TableMoved += (_, args) =>
+            {
+                ResetBasicUserIdle();
+                if (!_isAdmin || !int.TryParse(args.TableId, out var tableId))
+                {
+                    return;
+                }
+
+                if (_currentTablesById.TryGetValue(tableId, out var table))
+                {
+                    table.PositionX = (int)args.X;
+                    table.PositionY = (int)args.Y;
+                }
+
+                SetUnsavedChanges(true);
+                ShowLayoutStatus("Saving layout...", "info");
+                _ = AutoSaveTablePositionAsync(tableId, (int)args.X, (int)args.Y);
+            };
+
+            TablesView.EmptyActionRequested += OnGoToTableManagementClicked;
         }
 
         protected override async void OnAppearing()
         {
             base.OnAppearing();
 
-            var serviceSettings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            var serviceSettings = await _orderServiceAvailabilityService.GetAsync(
+                forceRefresh: !PosLayoutCache.IsWarm);
             if (!serviceSettings.TableEnabled)
             {
                 await AppAlertService.ShowAlertAsync("Table Service Unavailable", "Table service is disabled by the Administrator.");
@@ -89,6 +150,8 @@ namespace POS_in_NET.Pages
             }
 
             _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
+            TablesView.LayoutEditEnabled = _isAdmin;
+            TablesView.EmptyActionText = _isAdmin ? "Go to Table Management" : string.Empty;
 
             // Do not auto-reset table/session state on page load.
             // Active orders/sessions must persist so colors stay accurate
@@ -116,7 +179,10 @@ namespace POS_in_NET.Pages
 
             SubscribeToRefreshEvents();
             StartAutoRefreshPolling();
-            var shouldShowLoader = !_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue;
+
+            // Phase 1: paint silently when layout was warmed after login (or page already has floors).
+            var shouldShowLoader = !PosLayoutCache.IsWarm
+                && (!_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue);
             await LoadFloorsAndTables(showLoading: shouldShowLoader, loadingMessage: "Loading layout...");
             UpdateAdminToolsVisibility();
         }
@@ -224,16 +290,14 @@ namespace POS_in_NET.Pages
 
             if (e.HasKind(AppDataChangeKind.TableLayout))
             {
+                PosLayoutCache.Invalidate();
                 await OnMainThreadRefreshLayoutAsync();
                 return;
             }
 
             if (e.HasKind(AppDataChangeKind.Orders))
             {
-                await MainThread.InvokeOnMainThreadAsync(async () =>
-                {
-                    await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
-                });
+                // Phase 2: patch in place — no "Live update" toast noise.
                 await RefreshCurrentFloorTableStatesAsync();
             }
         }
@@ -331,6 +395,10 @@ namespace POS_in_NET.Pages
                 
                 var floorService = _floorService;
                 _floors = await Task.Run(async () => await floorService.GetAllFloorsAsync()).ConfigureAwait(true);
+                if (_floors.Count > 0)
+                {
+                    PosLayoutCache.SetFloors(_floors);
+                }
                 
                 System.Diagnostics.Debug.WriteLine($"Floors returned: {_floors.Count}");
                 
@@ -341,9 +409,6 @@ namespace POS_in_NET.Pages
                     await ToastNotification.ShowAsync("Info", "No floors found. Please add floors in Table Management.", NotificationType.Info);
                     return;
                 }
-
-                System.Diagnostics.Debug.WriteLine($"Creating floor tabs for {_floors.Count} floors");
-                CreateFloorTabs();
 
                 var selectedFloorId = previousFloorId ?? (persistedFloorId > 0 ? persistedFloorId : (int?)null);
                 var selectedFloor = selectedFloorId.HasValue
@@ -372,71 +437,41 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void CreateFloorTabs()
-        {
-            FloorTabsLayout.Children.Clear();
-            
-            foreach (var floor in _floors)
-            {
-                var tabBorder = new Border
-                {
-                    BackgroundColor = Color.FromArgb("#F3F4F6"),
-                    Stroke = Color.FromArgb("#E5E7EB"),
-                    StrokeThickness = 1,
-                    Padding = new Thickness(16, 8),
-                    MinimumHeightRequest = 44,
-                    VerticalOptions = LayoutOptions.Center,
-                    BindingContext = floor.Id,
-                    StrokeShape = new RoundRectangle { CornerRadius = 12 }
-                };
-
-                var tabLabel = new Label
-                {
-                    Text = $"{floor.Name} ({floor.TableCount})",
-                    FontSize = 14,
-                    FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb("#374151"),
-                    VerticalOptions = LayoutOptions.Center
-                };
-
-                tabBorder.Content = tabLabel;
-                
-                var tapGesture = new TapGestureRecognizer();
-                tapGesture.Tapped += async (s, e) =>
-                {
-                    ResetBasicUserIdle();
-                    await SelectFloor(floor);
-                };
-                tabBorder.GestureRecognizers.Add(tapGesture);
-                
-                FloorTabsLayout.Children.Add(tabBorder);
-            }
-        }
-
         private async Task SelectFloor(Floor floor, bool showLoading = true, bool showWarnings = true)
         {
-            if (showLoading)
+            var cachedTables = PosLayoutCache.TryGetTables(floor.Id)?.ToList();
+            var paintedFromCache = cachedTables != null;
+
+            // Only cold-miss (no cache) may show a loader.
+            if (showLoading && !paintedFromCache)
             {
                 SetLoadingState(true, $"Loading {floor.Name}...");
+            }
+            else
+            {
+                showLoading = false;
             }
 
             try
             {
                 System.Diagnostics.Debug.WriteLine($"=== SelectFloor: {floor.Name} (ID: {floor.Id}) ===");
-                
+
                 _currentFloor = floor;
                 Preferences.Set(SelectedFloorPreferenceKey, floor.Id);
-                UpdateFloorTabAppearance();
-                
+
+                // Instant paint from warm cache so the floor feels live.
+                if (paintedFromCache)
+                {
+                    PublishSharedLayout(cachedTables!, usedFallback: false);
+                    TablesView.SetSyncState(RestaurantSyncMode.Updating);
+                }
+
                 var floorService = _floorService;
                 var backgroundPath = await Task.Run(async () => await floorService.ResolveFloorBackgroundImageAsync(floor))
                     .ConfigureAwait(true);
                 SetCanvasBackground(backgroundPath);
-                
-                // Update remove button visibility based on current floor's background
                 UpdateRemoveBackgroundButtonVisibility();
-                
-                // Load tables for this floor
+
                 System.Diagnostics.Debug.WriteLine($"Loading tables for floor {floor.Id}...");
                 var floorId = floor.Id;
                 var (tables, usedFallback) = await Task.Run(async () =>
@@ -449,26 +484,11 @@ namespace POS_in_NET.Pages
                         "Using fallback table load. Session data is temporarily unavailable.",
                         NotificationType.Warning);
                 }
-                System.Diagnostics.Debug.WriteLine($"Tables loaded: {tables.Count}");
-                
-                ClearTableViews();
-                _currentTablesById = tables.ToDictionary(table => table.Id);
-                
-                if (tables.Count == 0)
-                {
-                    System.Diagnostics.Debug.WriteLine("No tables on this floor - showing empty state");
-                    EmptyStateView.IsVisible = true;
-                }
-                else
-                {
-                    EmptyStateView.IsVisible = false;
-                    System.Diagnostics.Debug.WriteLine("Creating table views...");
-                    CreateTableViews(tables);
-                    System.Diagnostics.Debug.WriteLine($"Table views created: {_tableViews.Count}");
-                }
 
-                _lastSyncAt = DateTime.Now;
-                UpdateLastSyncLabel(usedFallback);
+                System.Diagnostics.Debug.WriteLine($"Tables loaded: {tables.Count}");
+                PosLayoutCache.SetTables(floor.Id, tables);
+
+                PublishSharedLayout(tables, usedFallback);
             }
             catch (Exception ex)
             {
@@ -483,6 +503,72 @@ namespace POS_in_NET.Pages
                     SetLoadingState(false);
                 }
             }
+        }
+
+        private void PublishSharedLayout(List<RestaurantTable> tables, bool usedFallback = false)
+        {
+            _currentTablesById = tables.ToDictionary(table => table.Id);
+
+            if (_currentFloor != null)
+            {
+                _currentFloor.TableCount = tables.Count;
+            }
+
+            var version = DateTime.UtcNow.Ticks.ToString();
+            var floorDtos = _floors
+                .Select((floor, index) =>
+                {
+                    var count = floor.Id == _currentFloor?.Id
+                        ? tables.Count
+                        : floor.TableCount;
+                    return new FloorDto(
+                        floor.Id.ToString(),
+                        floor.Name,
+                        index,
+                        string.IsNullOrWhiteSpace(floor.BackgroundImage) ? null : floor.BackgroundImage,
+                        TableCount: count);
+                })
+                .ToList();
+
+            var tableDtos = tables.Select(MapToRestaurantTableDto).ToList();
+            var preferredFloorId = _currentFloor?.Id.ToString();
+
+            TablesView.Bind(
+                new FloorSnapshotDto(version, floorDtos),
+                new TableSnapshotDto(version, tableDtos),
+                preferredFloorId);
+
+            _lastSyncAt = DateTime.Now;
+            UpdateLastSyncLabel(usedFallback);
+        }
+
+        private static RestaurantTableDto MapToRestaurantTableDto(RestaurantTable table)
+        {
+            var session = table.CurrentSession;
+            var isProblem = session?.LinkedOrderIsStaleDraft == true
+                || table.Status == TableStatus.Reserved
+                || session?.Status == TableSessionStatus.Cleaning;
+            var hasActiveSession = session != null;
+            var openOrderId = session?.LinkedOrderId
+                ?? session?.CurrentOrderId
+                ?? (ActiveTableOrderCacheService.TryGetOpenOrderByTableNumber(table.TableNumber, out var cached)
+                    ? cached
+                    : null);
+
+            return new RestaurantTableDto(
+                table.Id.ToString(),
+                table.FloorId.ToString(),
+                table.TableNumber,
+                table.Capacity,
+                table.Status.ToString(),
+                table.PositionX,
+                table.PositionY,
+                OpenOrderId: openOrderId,
+                GuestCount: session?.PartySize ?? 0,
+                SessionStatus: session?.Status.ToString(),
+                Icon: table.TableDesignIcon,
+                IsProblem: isProblem,
+                HasActiveSession: hasActiveSession);
         }
 
         private async Task<(List<RestaurantTable> tables, bool usedFallback)> LoadTablesForFloorWithFallbackAsync(int floorId, bool showWarnings = true)
@@ -550,9 +636,8 @@ namespace POS_in_NET.Pages
                         return;
                     }
 
-                    SyncTableViews(tables);
-                    _lastSyncAt = DateTime.Now;
-                    UpdateLastSyncLabel(usedFallback);
+                    PosLayoutCache.SetTables(floorId, tables);
+                    PublishSharedLayout(tables, usedFallback);
                 });
 
                 _lastSuccessfulTableStateRefreshAt = DateTime.UtcNow;
@@ -563,346 +648,26 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void SyncTableViews(List<RestaurantTable> tables)
-        {
-            var incomingIds = tables.Select(table => table.Id).ToHashSet();
-
-            foreach (var orphanId in _tableViews.Keys.Where(id => !incomingIds.Contains(id)).ToList())
-            {
-                if (_tableViews.Remove(orphanId, out var orphanView))
-                {
-                    TableCanvas.Children.Remove(orphanView);
-                }
-
-                _currentTablesById.Remove(orphanId);
-            }
-
-            var index = 0;
-            foreach (var table in tables)
-            {
-                var posX = table.PositionX > 0 ? table.PositionX : 40 + (index % 6) * 140;
-                var posY = table.PositionY > 0 ? table.PositionY : 40 + (index / 6) * 140;
-                var bounds = new Rect(posX, posY, 120, 120);
-
-                if (_tableViews.TryGetValue(table.Id, out var existing))
-                {
-                    UpdateTableViewState(existing, table);
-                    AbsoluteLayout.SetLayoutBounds(existing, bounds);
-                }
-                else
-                {
-                    var tableView = CreateTableView(table);
-                    AbsoluteLayout.SetLayoutBounds(tableView, bounds);
-                    AbsoluteLayout.SetLayoutFlags(tableView, AbsoluteLayoutFlags.None);
-                    TableCanvas.Children.Add(tableView);
-                    _tableViews[table.Id] = tableView;
-                }
-
-                _currentTablesById[table.Id] = table;
-                index++;
-            }
-        }
-
-        private void UpdateTableViewState(Border tableView, RestaurantTable table)
-        {
-            var (bgColor, borderColor, textColor) = GetTableColors(table);
-            var previous = tableView.BindingContext as RestaurantTable;
-            var colorsUnchanged = Equals(tableView.BackgroundColor, bgColor)
-                && Equals(tableView.Stroke, borderColor);
-            var statusUnchanged = previous != null
-                && previous.Id == table.Id
-                && string.Equals(previous.TableNumber, table.TableNumber, StringComparison.Ordinal)
-                && previous.Status == table.Status
-                && previous.CurrentSessionId == table.CurrentSessionId;
-
-            if (colorsUnchanged && statusUnchanged)
-            {
-                tableView.BindingContext = table;
-                return;
-            }
-
-            tableView.BindingContext = table;
-            tableView.BackgroundColor = bgColor;
-            tableView.Stroke = borderColor;
-
-            if (tableView.Content is not VerticalStackLayout stack)
-            {
-                return;
-            }
-
-            foreach (var child in stack.Children)
-            {
-                if (child is Label label)
-                {
-                    label.Text = table.TableNumber;
-                    label.TextColor = textColor;
-                }
-                else if (child is Ellipse statusDot)
-                {
-                    statusDot.Fill = borderColor;
-                }
-                else if (child is Image image
-                         && !string.IsNullOrWhiteSpace(table.TableDesignIcon)
-                         && !string.Equals(image.Source?.ToString(), table.TableDesignIcon, StringComparison.Ordinal))
-                {
-                    image.Source = table.TableDesignIcon;
-                }
-            }
-        }
-
         private void SetLoadingState(bool isLoading, string? message = null)
         {
             LoadingOverlay.Message = string.IsNullOrWhiteSpace(message)
                 ? "Cooking up your data…"
                 : message;
             LoadingOverlay.IsLoading = isLoading;
+            TablesView.IsLoading = isLoading;
         }
 
         private void UpdateLastSyncLabel(bool usedFallback)
         {
             if (!_lastSyncAt.HasValue)
             {
-                LastSyncLabel.Text = "Not synced yet";
-                LastSyncLabel.TextColor = Color.FromArgb("#6B7280");
+                TablesView.SetSyncState(RestaurantSyncMode.NotSynced);
                 return;
             }
 
-            LastSyncLabel.Text = usedFallback
-                ? $"Fallback sync {_lastSyncAt.Value:HH:mm:ss}"
-                : $"Synced {_lastSyncAt.Value:HH:mm:ss}";
-
-            LastSyncLabel.TextColor = usedFallback
-                ? Color.FromArgb("#B45309")
-                : Color.FromArgb("#047857");
-        }
-
-        private void UpdateFloorTabAppearance()
-        {
-            if (_currentFloor == null) return;
-            
-            foreach (var child in FloorTabsLayout.Children.OfType<Border>())
-            {
-                var label = child.Content as Label;
-                var isSelected = child.BindingContext is int floorId && floorId == _currentFloor.Id;
-
-                if (label != null && isSelected)
-                {
-                    child.BackgroundColor = Color.FromArgb("#3B82F6");
-                    child.Stroke = Colors.Transparent;
-                    label.TextColor = Colors.White;
-                }
-                else
-                {
-                    child.BackgroundColor = Color.FromArgb("#F3F4F6");
-                    child.Stroke = Color.FromArgb("#E5E7EB");
-                    if (label != null) label.TextColor = Color.FromArgb("#374151");
-                }
-            }
-        }
-
-        private void ClearTableViews()
-        {
-            foreach (var tableView in _tableViews.Values)
-            {
-                TableCanvas.Children.Remove(tableView);
-            }
-            _tableViews.Clear();
-        }
-
-        private void CreateTableViews(List<RestaurantTable> tables)
-        {
-            int defaultX = 40;
-            int defaultY = 40;
-            int index = 0;
-            
-            foreach (var table in tables)
-            {
-                var tableView = CreateTableView(table);
-                
-                // Use saved position or calculate default grid position
-                int posX = table.PositionX > 0 ? table.PositionX : defaultX + (index % 6) * 140;
-                int posY = table.PositionY > 0 ? table.PositionY : defaultY + (index / 6) * 140;
-                
-                AbsoluteLayout.SetLayoutBounds(tableView, new Rect(posX, posY, 120, 120));
-                AbsoluteLayout.SetLayoutFlags(tableView, AbsoluteLayoutFlags.None);
-                
-                TableCanvas.Children.Add(tableView);
-                _tableViews[table.Id] = tableView;
-                index++;
-            }
-        }
-
-        private Border CreateTableView(RestaurantTable table)
-        {
-            // Get colors based on status
-            var (bgColor, borderColor, textColor) = GetTableColors(table);
-            
-            var tableBorder = new Border
-            {
-                BackgroundColor = bgColor,
-                Stroke = borderColor,
-                StrokeThickness = 2,
-                Padding = new Thickness(8),
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Shadow = new Shadow
-                {
-                    Brush = Brush.Black,
-                    Offset = new Point(2, 2),
-                    Radius = 8,
-                    Opacity = 0.15f
-                }
-            };
-
-            // Content
-            var contentStack = new VerticalStackLayout
-            {
-                Spacing = 4,
-                HorizontalOptions = LayoutOptions.Center,
-                VerticalOptions = LayoutOptions.Center
-            };
-
-            // Table image
-            var tableImage = new Image
-            {
-                Source = table.TableDesignIcon,
-                WidthRequest = 50,
-                HeightRequest = 50,
-                Aspect = Aspect.AspectFit,
-                HorizontalOptions = LayoutOptions.Center
-            };
-
-            // Table number
-            var tableNumber = new Label
-            {
-                Text = table.TableNumber,
-                FontSize = 16,
-                FontFamily = "OpenSansSemibold",
-                FontAttributes = FontAttributes.Bold,
-                TextColor = textColor,
-                HorizontalOptions = LayoutOptions.Center
-            };
-
-            // Status indicator
-            var statusDot = new Ellipse
-            {
-                WidthRequest = 10,
-                HeightRequest = 10,
-                Fill = borderColor,
-                HorizontalOptions = LayoutOptions.Center
-            };
-
-            contentStack.Children.Add(tableImage);
-            contentStack.Children.Add(tableNumber);
-            contentStack.Children.Add(statusDot);
-
-            tableBorder.Content = contentStack;
-
-            // Store table reference
-            tableBorder.BindingContext = table;
-
-            // Add drag gesture for admin FIRST (higher priority)
-            if (_isAdmin)
-            {
-                var panGesture = new PanGestureRecognizer();
-                panGesture.PanUpdated += (s, e) => OnTableDrag(table, tableBorder, e);
-                tableBorder.GestureRecognizers.Add(panGesture);
-            }
-
-            // Add tap gesture for selection
-            var tapGesture = new TapGestureRecognizer();
-            tapGesture.Tapped += async (s, e) =>
-            {
-                ResetBasicUserIdle();
-                var currentTable = tableBorder.BindingContext as RestaurantTable ?? table;
-                await SelectTableAsync(currentTable, tableBorder);
-            };
-            tableBorder.GestureRecognizers.Add(tapGesture);
-
-            return tableBorder;
-        }
-
-        private (Color bg, Color border, Color text) GetTableColors(RestaurantTable table)
-        {
-            var session = table.CurrentSession;
-            var hasActiveSession = session != null;
-            var hasProblemState = session?.LinkedOrderIsStaleDraft == true
-                || table.Status == TableStatus.Reserved
-                || session?.Status == TableSessionStatus.Cleaning;
-
-            if (hasProblemState)
-            {
-                return (Color.FromArgb("#FEE2E2"), Color.FromArgb("#EF4444"), Color.FromArgb("#991B1B"));
-            }
-
-            if (hasActiveSession)
-            {
-                return (Color.FromArgb("#FEF3C7"), Color.FromArgb("#F59E0B"), Color.FromArgb("#92400E"));
-            }
-
-            return (Color.FromArgb("#D1FAE5"), Color.FromArgb("#10B981"), Color.FromArgb("#065F46"));
-        }
-
-        private double _startX, _startY;
-        private double _dragStartX, _dragStartY;
-        
-        private void OnTableDrag(RestaurantTable table, Border tableView, PanUpdatedEventArgs e)
-        {
-            switch (e.StatusType)
-            {
-                case GestureStatus.Started:
-                    var bounds = AbsoluteLayout.GetLayoutBounds(tableView);
-                    _startX = bounds.X;
-                    _startY = bounds.Y;
-                    _dragStartX = bounds.X;
-                    _dragStartY = bounds.Y;
-                    tableView.Scale = 1.05;
-                    tableView.Opacity = 0.8;
-                    System.Diagnostics.Debug.WriteLine($"Drag started at ({_startX}, {_startY})");
-                    break;
-
-                case GestureStatus.Running:
-                    var newX = _startX + e.TotalX;
-                    var newY = _startY + e.TotalY;
-                    
-                    // Get actual canvas dimensions
-                    double canvasWidth = TableCanvas.Width > 0 ? TableCanvas.Width : 1200;
-                    double canvasHeight = TableCanvas.Height > 0 ? TableCanvas.Height : 800;
-                    
-                    // Keep within canvas bounds
-                    newX = Math.Max(0, Math.Min(newX, canvasWidth - 120));
-                    newY = Math.Max(0, Math.Min(newY, canvasHeight - 120));
-                    
-                    AbsoluteLayout.SetLayoutBounds(tableView, new Rect(newX, newY, 120, 120));
-                    break;
-
-                case GestureStatus.Completed:
-                case GestureStatus.Canceled:
-                    tableView.Scale = 1.0;
-                    tableView.Opacity = 1.0;
-                    
-                    // Snap to grid
-                    var finalBounds = AbsoluteLayout.GetLayoutBounds(tableView);
-                    int snappedX = (int)(Math.Round(finalBounds.X / GRID_SIZE) * GRID_SIZE);
-                    int snappedY = (int)(Math.Round(finalBounds.Y / GRID_SIZE) * GRID_SIZE);
-                    
-                    AbsoluteLayout.SetLayoutBounds(tableView, new Rect(snappedX, snappedY, 120, 120));
-                    
-                    // Update table position
-                    table.PositionX = snappedX;
-                    table.PositionY = snappedY;
-                    
-                    System.Diagnostics.Debug.WriteLine($"Drag completed: ({_dragStartX}, {_dragStartY}) -> ({snappedX}, {snappedY})");
-                    
-                    // Only mark as changed if position actually changed
-                    if (Math.Abs(_dragStartX - snappedX) > 1 || Math.Abs(_dragStartY - snappedY) > 1)
-                    {
-                        SetUnsavedChanges(true);
-                        ShowLayoutStatus("Saving layout...", "info");
-                        // Auto-save
-                        _ = AutoSaveTablePositionAsync(table.Id, snappedX, snappedY);
-                    }
-                    break;
-            }
+            TablesView.SetSyncState(
+                usedFallback ? RestaurantSyncMode.Fallback : RestaurantSyncMode.Live,
+                _lastSyncAt);
         }
 
         private void SetUnsavedChanges(bool hasChanges)
@@ -997,9 +762,8 @@ namespace POS_in_NET.Pages
         }
 
         private RestaurantTable? _popupTable;
-        private Border? _popupTableView;
 
-        private async Task SelectTableAsync(RestaurantTable table, Border tableView)
+        private async Task SelectTableAsync(RestaurantTable table)
         {
             if (_isTableSelectionInProgress)
             {
@@ -1015,7 +779,7 @@ namespace POS_in_NET.Pages
 
                 if (isLikelyFreshTable)
                 {
-                    ShowCoverPopup(table, tableView);
+                    ShowCoverPopup(table);
                     return;
                 }
 
@@ -1030,7 +794,7 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                ShowCoverPopup(table, tableView);
+                ShowCoverPopup(table);
             }
             finally
             {
@@ -1038,13 +802,10 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void ShowCoverPopup(RestaurantTable table, Border tableView)
+        private void ShowCoverPopup(RestaurantTable table)
         {
             _popupTable = table;
-            _popupTableView = tableView;
-            
-            tableView.BackgroundColor = Color.FromArgb("#3B82F6");
-            tableView.Stroke = Color.FromArgb("#1D4ED8");
+            TablesView.SetHighlightedTable(table.Id.ToString());
             
             CoverPopupTitle.Text = $"Table {table.TableNumber}";
             _customCoverValue = 0;
@@ -1161,17 +922,8 @@ namespace POS_in_NET.Pages
             CoverPopupOverlay.IsVisible = false;
             CoverPopupOverlay.InputTransparent = true;
             NumericKeyboard.Hide();
-
-            // Reset table appearance
-            if (_popupTable != null && _popupTableView != null)
-            {
-                var (bg, border, _) = GetTableColors(_popupTable);
-                _popupTableView.BackgroundColor = bg;
-                _popupTableView.Stroke = border;
-            }
-            
+            TablesView.ClearHighlightedTable();
             _popupTable = null;
-            _popupTableView = null;
         }
         
         private async void OnCoverSelected(object sender, EventArgs e)
@@ -1238,21 +990,19 @@ namespace POS_in_NET.Pages
             
             // Close popup first
             CoverPopupOverlay.IsVisible = false;
+            CoverPopupOverlay.InputTransparent = true;
+            TablesView.ClearHighlightedTable();
             
             System.Diagnostics.Debug.WriteLine($"Table {selectedTable.TableNumber} selected with {coverCount} covers");
             
-            // Reset table view
-            if (_popupTableView != null)
-            {
-                var (bg, border, _) = GetTableColors(_popupTable);
-                _popupTableView.BackgroundColor = bg;
-                _popupTableView.Stroke = border;
-            }
-            
             _popupTable = null;
-            _popupTableView = null;
 
-            SetLoadingState(true, $"Opening table {selectedTable.TableNumber}...");
+            var showOpenLoader = !OrderPlacementPageSimple.IsMenuCacheWarm;
+            if (showOpenLoader)
+            {
+                SetLoadingState(true, $"Opening table {selectedTable.TableNumber}...");
+            }
+
             try
             {
                 var context = await ResolveTableOrderContextAsync(selectedTable);
@@ -1268,7 +1018,10 @@ namespace POS_in_NET.Pages
             }
             finally
             {
-                SetLoadingState(false);
+                if (showOpenLoader)
+                {
+                    SetLoadingState(false);
+                }
                 _isOpeningTableOrder = false;
             }
         }
@@ -1339,7 +1092,12 @@ namespace POS_in_NET.Pages
 
         private void ShowNoFloorsMessage()
         {
-            EmptyStateView.IsVisible = true;
+            _currentTablesById.Clear();
+            TablesView.Bind(
+                new FloorSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<FloorDto>()),
+                new TableSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<RestaurantTableDto>()));
+            TablesView.SetSyncState(RestaurantSyncMode.NotSynced);
+            TablesView.FloorBackground = null;
         }
 
         // Event Handlers
@@ -1405,11 +1163,23 @@ namespace POS_in_NET.Pages
             try
             {
                 int savedCount = 0;
-                foreach (var kvp in _tableViews)
+                foreach (var kvp in TablesView.GetTablePositions())
                 {
-                    var bounds = AbsoluteLayout.GetLayoutBounds(kvp.Value);
-                    var success = await _tableService.UpdateTablePositionAsync(kvp.Key, (int)bounds.X, (int)bounds.Y);
-                    if (success) savedCount++;
+                    if (!int.TryParse(kvp.Key, out var tableId))
+                    {
+                        continue;
+                    }
+
+                    var success = await _tableService.UpdateTablePositionAsync(tableId, (int)kvp.Value.X, (int)kvp.Value.Y);
+                    if (success)
+                    {
+                        savedCount++;
+                        if (_currentTablesById.TryGetValue(tableId, out var table))
+                        {
+                            table.PositionX = (int)kvp.Value.X;
+                            table.PositionY = (int)kvp.Value.Y;
+                        }
+                    }
                 }
 
                 SetUnsavedChanges(false);
@@ -1473,18 +1243,12 @@ namespace POS_in_NET.Pages
             if (!string.IsNullOrWhiteSpace(imagePath))
             {
                 System.Diagnostics.Debug.WriteLine($"Setting background: {imagePath}");
-                CanvasBackgroundImage.Source = imagePath;
-                CanvasBackgroundImageBlur.Source = imagePath;
-                CanvasBackgroundImage.IsVisible = true;
-                CanvasBackgroundImageBlur.IsVisible = true;
+                TablesView.FloorBackground = ImageSource.FromFile(imagePath);
                 return;
             }
 
             System.Diagnostics.Debug.WriteLine("No background image");
-            CanvasBackgroundImage.Source = null;
-            CanvasBackgroundImageBlur.Source = null;
-            CanvasBackgroundImage.IsVisible = false;
-            CanvasBackgroundImageBlur.IsVisible = false;
+            TablesView.FloorBackground = null;
         }
 
         private static string GetMimeType(string fileName)

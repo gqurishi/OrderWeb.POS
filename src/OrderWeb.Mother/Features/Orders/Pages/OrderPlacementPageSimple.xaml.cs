@@ -308,6 +308,8 @@ namespace POS_in_NET.Pages
             _orderPlaceHost = new MotherOrderPlaceHost(this);
             ShellHost.Content = _orderPlaceShell;
             _orderPlaceShell.BindHost(_orderPlaceHost);
+            _orderPlaceShell.SetFlyoutMenuOverlayMode(true);
+            _orderPlaceShell.FlyoutMenuRequested += OnOrderPlaceMenuClicked;
         }
 
         private void OnOrderPageSizeChanged(object? sender, EventArgs e)
@@ -318,11 +320,8 @@ namespace POS_in_NET.Pages
             }
 
             var tablet = Width <= 1280 || Height <= 800;
-            var compactDesktop = !tablet && (Width < 1450 || Height < 850);
-            var compact = tablet || compactDesktop;
-
-            MainContentGrid.Padding = tablet ? new Thickness(6) : compact ? new Thickness(8) : new Thickness(8);
-            MainContentGrid.ColumnSpacing = tablet ? 4 : 6;
+            // Tight page padding — flyout control is overlayed, not a left rail.
+            MainContentGrid.Padding = tablet ? new Thickness(2) : new Thickness(4);
         }
 
         public OrderPlacementPageSimple(string tableNumber, int coverCount, string staffName, int staffId)
@@ -382,8 +381,14 @@ namespace POS_in_NET.Pages
         private async Task OnInitialLoadAsync()
         {
             var performance = PosPerformanceMonitor.BeginDataLoad("Order Entry");
-            LoadingOverlay.Message = "Cooking up your data…";
-            LoadingOverlay.IsLoading = true;
+            // Phase 1: skip fullscreen preloader when menu was warmed after login.
+            var showLoader = !IsMenuCacheWarm;
+            if (showLoader)
+            {
+                LoadingOverlay.Message = "Cooking up your data…";
+                LoadingOverlay.IsLoading = true;
+            }
+
             await Task.Yield();
 
             try
@@ -767,8 +772,7 @@ namespace POS_in_NET.Pages
 
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
-                    await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
-
+                    // Phase 2: no toast — status line only when draft conflicts.
                     if (_isLoadingPersistentOrder || _isFinalizingOrder)
                     {
                         return;
@@ -2516,33 +2520,10 @@ namespace POS_in_NET.Pages
                 ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
                 : item.Notes;
             var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
-            var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
             var isSent = HasReachedKitchen(item);
+            var detailText = BuildShellLineDetails(item, isTastingMenu, visibleItemNote);
 
-            string? detailText = null;
-            if (isTastingMenu)
-            {
-                detailText = string.Join(
-                    Environment.NewLine,
-                    new[]
-                    {
-                        BuildTastingCourseStatusText(item),
-                        hasNotes ? $"Note: {visibleItemNote}" : null,
-                        item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
-                    }.Where(text => !string.IsNullOrWhiteSpace(text)));
-            }
-            else if (hasModifiers || hasNotes)
-            {
-                detailText = string.Join(
-                    Environment.NewLine,
-                    new[]
-                    {
-                        hasModifiers ? item.ModifiersDisplay : null,
-                        hasNotes ? item.Notes : null
-                    }.Where(text => !string.IsNullOrWhiteSpace(text)));
-            }
-
-            row.ItemName = item.DisplayName;
+            row.ItemName = FormatShellLineName(item);
             row.LineTotal = item.TotalPrice;
             row.Quantity = item.Quantity;
             row.Details = detailText ?? string.Empty;
@@ -2913,17 +2894,22 @@ namespace POS_in_NET.Pages
             {
                 session.HeaderTitle = $"{orderPart} · COLLECTION";
                 session.HeaderDetail = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
+                session.HeaderTable = null;
             }
             else if (_isDeliveryOrder)
             {
                 session.HeaderTitle = $"{orderPart} · DELIVERY";
                 session.HeaderDetail = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
+                session.HeaderTable = null;
             }
             else
             {
-                var baseText = $"{orderPart} · TABLE {_currentOrder.TableNumber}";
-                session.HeaderTitle = string.IsNullOrEmpty(orderNote) ? baseText : $"{baseText} | Note: {orderNote}";
+                // Match Client: short title + guests + separate orange Table line (not truncated away).
+                session.HeaderTitle = string.IsNullOrEmpty(orderNote) ? orderPart : $"{orderPart} | Note: {orderNote}";
                 session.HeaderDetail = $"{Math.Max(_currentOrder.CoverCount, 1)} guests";
+                session.HeaderTable = _currentOrder.TableNumber > 0
+                    ? $"Table {_currentOrder.TableNumber}"
+                    : null;
             }
 
             session.SelectedCategoryId = _shellSelectedCategoryId ?? _selectedCategory?.Id;
@@ -2970,37 +2956,14 @@ namespace POS_in_NET.Pages
                     ? TastingMenuNotesHelper.GetOrderNote(item.Notes)
                     : item.Notes;
                 var hasNotes = !string.IsNullOrWhiteSpace(visibleItemNote);
-                var hasModifiers = !string.IsNullOrWhiteSpace(item.ModifiersDisplay);
-
-                string? detailText = null;
-                if (isTastingMenu)
-                {
-                    detailText = string.Join(
-                        Environment.NewLine,
-                        new[]
-                        {
-                            BuildTastingCourseStatusText(item),
-                            hasNotes ? $"Note: {visibleItemNote}" : null,
-                            item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
-                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
-                }
-                else if (hasModifiers || hasNotes)
-                {
-                    detailText = string.Join(
-                        Environment.NewLine,
-                        new[]
-                        {
-                            hasModifiers ? item.ModifiersDisplay : null,
-                            hasNotes ? item.Notes : null
-                        }.Where(text => !string.IsNullOrWhiteSpace(text)));
-                }
+                var detailExtras = BuildShellLineDetails(item, isTastingMenu, visibleItemNote);
 
                 session.Lines.Add(new OrderPlaceBasketLine(
                     item.Id,
-                    item.DisplayName,
+                    FormatShellLineName(item),
                     item.TotalPrice,
                     item.Quantity,
-                    detailText,
+                    detailExtras,
                     IsSent: HasReachedKitchen(item),
                     ShowNoteAction: !isMealDeal,
                     TrailingActionText: isTastingMenu ? "Fire" : null));
@@ -3056,6 +3019,81 @@ namespace POS_in_NET.Pages
             return fallback;
         }
 
+        /// <summary>Client-parity basket title: Item (Variant) without truncating into a second "learge" detail.</summary>
+        private static string FormatShellLineName(TableOrderItem item)
+        {
+            var name = string.IsNullOrWhiteSpace(item.Name) ? "Item" : item.Name.Trim();
+            var variant = item.VariantName?.Trim();
+            if (string.IsNullOrWhiteSpace(variant))
+            {
+                return string.IsNullOrWhiteSpace(item.DisplayName) ? name : item.DisplayName.Trim();
+            }
+
+            var pretty = ToTitleCaseWords(variant);
+            return $"{name} ({pretty})";
+        }
+
+        /// <summary>Details = notes / addons / free modifiers — not the variant (already in the name).</summary>
+        private string? BuildShellLineDetails(TableOrderItem item, bool isTastingMenu, string? visibleItemNote)
+        {
+            if (isTastingMenu)
+            {
+                var tasting = string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        BuildTastingCourseStatusText(item),
+                        !string.IsNullOrWhiteSpace(visibleItemNote) ? $"Note: {visibleItemNote}" : null,
+                        item.IsCourseFired ? $"FIRED {(item.CourseType ?? "COURSE").ToUpperInvariant()}" : null
+                    }.Where(text => !string.IsNullOrWhiteSpace(text)));
+                return string.IsNullOrWhiteSpace(tasting) ? null : tasting;
+            }
+
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(item.Modifiers))
+            {
+                parts.Add(item.Modifiers.Trim());
+            }
+
+            if (item.SelectedAddons.Count > 0)
+            {
+                parts.AddRange(item.SelectedAddons
+                    .Select(a => a.Name?.Trim())
+                    .Where(n => !string.IsNullOrWhiteSpace(n))!);
+            }
+
+            if (!string.IsNullOrWhiteSpace(visibleItemNote))
+            {
+                parts.Add(visibleItemNote.Trim());
+            }
+
+            return parts.Count == 0 ? null : string.Join(Environment.NewLine, parts);
+        }
+
+        private static string ToTitleCaseWords(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var words = value.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (var i = 0; i < words.Length; i++)
+            {
+                var w = words[i];
+                if (w.Length == 1)
+                {
+                    words[i] = w.ToUpperInvariant();
+                }
+                else
+                {
+                    words[i] = char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant();
+                }
+            }
+
+            return string.Join(' ', words);
+        }
+
         private static string TruncateHeaderNote(string note, int maxChars)
         {
             if (string.IsNullOrWhiteSpace(note) || maxChars <= 0)
@@ -3070,18 +3108,16 @@ namespace POS_in_NET.Pages
 
         private async void OnNotesClicked(object? sender, EventArgs e)
         {
-            var dialog = new StyledPromptDialog();
-            dialog.SetDialog(
+            // SharedUI Mother-parity dialog (single source with Client Order Place).
+            var result = await new OrderPlacePromptDialog().ShowAsync(
+                this,
                 "Order Notes",
                 "Enter notes for this order:",
+                "Save",
+                "Cancel",
                 "e.g., Allergies, special requests...",
-                null,
-                _currentOrder.Notes ?? "",
-                true
-            );
-            
-            var result = await dialog.ShowAsync();
-            
+                _currentOrder.Notes ?? "");
+
             if (result != null)
             {
                 _currentOrder.Notes = string.IsNullOrWhiteSpace(result) ? null : result;
@@ -3143,16 +3179,12 @@ namespace POS_in_NET.Pages
                 return;
             }
             
-            // Show void reason selection
-            var reasonDialog = new ModernActionSheetDialog();
-            reasonDialog.SetActionSheet(
+            // Show void reason selection — SharedUI Mother-parity dialog (single source with Client Order Place).
+            var reason = await new OrderPlaceActionSheetDialog().ShowAsync(
+                this,
                 "Void Reason",
-                new List<string> { "Customer changed mind", "Wrong item entered", "Kitchen error", "Manager override" },
-                ""
-            );
-            
-            var reason = await reasonDialog.ShowAsync();
-            
+                new[] { "Customer changed mind", "Wrong item entered", "Kitchen error", "Manager override" });
+
             if (reason == null)
                 return; // User cancelled
             
@@ -3173,16 +3205,15 @@ namespace POS_in_NET.Pages
 
             if (approvingUser == null)
             {
-                var pinDialog = new StyledPromptDialog();
-                pinDialog.SetDialog(
+                var pin = await new OrderPlacePromptDialog().ShowAsync(
+                    this,
                     "Manager PIN Required",
                     $"Void amount £{_currentOrder.Total:F2} requires manager approval:",
+                    "Continue",
+                    "Cancel",
                     "Enter PIN",
-                    Keyboard.Numeric
-                );
-                
-                var pin = await pinDialog.ShowAsync();
-                
+                    numericOnly: true);
+
                 if (string.IsNullOrEmpty(pin))
                     return; // User cancelled
                 
@@ -4179,7 +4210,6 @@ namespace POS_in_NET.Pages
 
         private async void OnMoreClicked(object? sender, EventArgs e)
         {
-            var dialog = new MoreOptionsDialog();
             var isTakeaway = _isCollectionOrder || _isDeliveryOrder;
             var customerPhone = _isDeliveryOrder ? _deliveryCustomerPhone : _collectionCustomerPhone;
 
@@ -4213,8 +4243,11 @@ namespace POS_in_NET.Pages
                     : ("RESTORE SERVICE CHARGE", "", true, false));
             }
 
-            dialog.SetOptions(options);
-            var selected = await dialog.ShowAsync();
+            // SharedUI Mother-parity dialog (single source with Client Order Place).
+            var sharedOptions = options
+                .Select(o => new OrderPlaceMoreOption(o.Text, o.IsEnabled, o.IsDestructive))
+                .ToList();
+            var selected = await new OrderPlaceMoreOptionsDialog().ShowAsync(this, sharedOptions);
 
             if (selected != null)
             {
@@ -6116,39 +6149,79 @@ namespace POS_in_NET.Pages
 
         private async Task ShowDiscountDialog()
         {
-            var dialog = new DiscountDialog();
-            dialog.SetOrderSubtotal(_currentOrder.Subtotal);
             var previousDiscount = _currentOrder.Discount;
-            
-            var result = await dialog.ShowAsync();
-            
-            if (result != null)
+            var pick = await new OrderPlaceDiscountDialog().ShowAsync(this, _currentOrder.Subtotal);
+            if (pick is null)
             {
-                var discountAmount = result.DiscountAmount;
-                var discountPercent = result.DiscountPercent;
-                var reason = result.Reason;
-                
-                _currentOrder.Discount = discountAmount;
-                _currentOrder.DiscountPercent = discountPercent;
-                _currentOrder.DiscountReason = reason;
-                
-                UpdateDisplay();
-                await MarkCurrentOrderChangedAsync();
-                await LogDiscountAuditAsync(result, previousDiscount);
-                
-                if (discountAmount > 0)
+                return;
+            }
+
+            decimal discountAmount;
+            decimal discountPercent;
+            string? reason;
+            var discountType = "fixed";
+
+            if (pick.Removed)
+            {
+                discountAmount = 0m;
+                discountPercent = 0m;
+                reason = null;
+            }
+            else if (pick.Applied)
+            {
+                if (pick.IsPercentage)
                 {
-                    var alert = new ModernAlertDialog();
-                    alert.SetAlert("Discount Applied", $"£{discountAmount:F2} discount applied.\nReason: {reason}", "", "#10B981", "White");
-                    await alert.ShowAsync();
+                    discountPercent = pick.Amount;
+                    discountAmount = Math.Round(
+                        _currentOrder.Subtotal * (Math.Clamp(pick.Amount, 0m, 100m) / 100m),
+                        2,
+                        MidpointRounding.AwayFromZero);
+                    discountType = "percent";
                 }
-                else if (discountAmount == 0 && string.IsNullOrEmpty(reason))
+                else
                 {
-                    // Discount was removed
-                    var alert = new ModernAlertDialog();
-                    alert.SetAlert("Discount Removed", "Discount has been removed from the order.", "", "#3B82F6", "White");
-                    await alert.ShowAsync();
+                    discountAmount = pick.Amount;
+                    discountPercent = 0m;
                 }
+
+                reason = pick.Reason;
+            }
+            else
+            {
+                return;
+            }
+
+            var mapped = new DiscountDialogResult
+            {
+                DiscountAmount = discountAmount,
+                DiscountPercent = discountPercent,
+                Reason = reason,
+                DiscountType = discountType,
+                ApprovalRequired = !string.IsNullOrWhiteSpace(pick.Pin),
+                ApprovedBy = string.IsNullOrWhiteSpace(pick.Pin)
+                    ? null
+                    : new DiscountApprovalInfo { Name = "Manager PIN", Role = "manager" }
+            };
+
+            _currentOrder.Discount = discountAmount;
+            _currentOrder.DiscountPercent = discountPercent;
+            _currentOrder.DiscountReason = reason;
+
+            UpdateDisplay();
+            await MarkCurrentOrderChangedAsync();
+            await LogDiscountAuditAsync(mapped, previousDiscount);
+
+            if (discountAmount > 0)
+            {
+                var alert = new ModernAlertDialog();
+                alert.SetAlert("Discount Applied", $"£{discountAmount:F2} discount applied.\nReason: {reason}", "", "#10B981", "White");
+                await alert.ShowAsync();
+            }
+            else if (pick.Removed)
+            {
+                var alert = new ModernAlertDialog();
+                alert.SetAlert("Discount Removed", "Discount has been removed from the order.", "", "#3B82F6", "White");
+                await alert.ShowAsync();
             }
         }
 
@@ -6202,50 +6275,71 @@ namespace POS_in_NET.Pages
 
         private async Task ShowTableTransferDialog()
         {
-            var dialog = new TableTransferDialog();
-            dialog.SetCurrentTable(_currentOrder.TableNumber.ToString());
-            
-            var selectedTable = await dialog.ShowAsync();
-            
-            if (selectedTable != null)
+            var tableService = _restaurantTableService ?? new RestaurantTableService();
+            var currentLabel = _currentOrder.TableNumber.ToString(CultureInfo.InvariantCulture);
+            var available = (await tableService.GetAllTablesAsync())
+                .Where(t => t.Status == TableStatus.Available &&
+                            !string.Equals(t.TableNumber, currentLabel, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(t => t.FloorId)
+                .ThenBy(t => t.TableNumber)
+                .Select(t => new OrderPlaceTableOption(t.Id.ToString(CultureInfo.InvariantCulture), $"Table {t.TableNumber}"))
+                .ToList();
+
+            var picked = await new OrderPlaceTableTransferDialog().ShowAsync(this, $"Table {currentLabel}", available);
+            if (picked is null)
             {
-                // Transfer the order to the new table
-                int oldTableNumber = _currentOrder.TableNumber;
-                var transferResult = _tableSessionId.HasValue
-                    ? await _tableSessionService.TransferSessionAsync(_tableSessionId.Value, selectedTable.Id, "system", $"Transferred from Table {oldTableNumber} to Table {selectedTable.TableNumber}")
-                    : (false, "No active table session to transfer");
-                var transferSuccess = transferResult.Item1;
-                var transferMessage = transferResult.Item2;
-
-                if (!transferSuccess)
-                {
-                    var errorDialog = new ModernAlertDialog();
-                    errorDialog.SetAlert("Transfer Failed", transferMessage, "", "#EF4444", "White");
-                    await errorDialog.ShowAsync();
-                    return;
-                }
-
-                _currentOrder.TableNumber = int.Parse(selectedTable.TableNumber);
-
-                // Update TopBar title
-                UpdateTopBarOrderTitle();
-                UpdateDisplay();
-
-                await MarkCurrentOrderChangedAsync();
-                
-                // Show success message
-                var alert = new ModernAlertDialog();
-                alert.SetAlert(
-                    "Transfer Complete", 
-                    $"Order transferred from Table {oldTableNumber} to Table {selectedTable.TableNumber}", 
-                    "", 
-                    "#4CAF50", 
-                    "White"
-                );
-                await alert.ShowAsync();
-
-                await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
+                return;
             }
+
+            if (!int.TryParse(picked.Id, out var destinationTableId))
+            {
+                var errorDialog = new ModernAlertDialog();
+                errorDialog.SetAlert("Transfer Failed", "Could not resolve the selected table.", "", "#EF4444", "White");
+                await errorDialog.ShowAsync();
+                return;
+            }
+
+            var selectedTable = (await tableService.GetAllTablesAsync())
+                .FirstOrDefault(t => t.Id == destinationTableId);
+            if (selectedTable is null)
+            {
+                var errorDialog = new ModernAlertDialog();
+                errorDialog.SetAlert("Transfer Failed", "Selected table is no longer available.", "", "#EF4444", "White");
+                await errorDialog.ShowAsync();
+                return;
+            }
+
+            int oldTableNumber = _currentOrder.TableNumber;
+            var transferResult = _tableSessionId.HasValue
+                ? await _tableSessionService.TransferSessionAsync(_tableSessionId.Value, selectedTable.Id, "system", $"Transferred from Table {oldTableNumber} to Table {selectedTable.TableNumber}")
+                : (false, "No active table session to transfer");
+            var transferSuccess = transferResult.Item1;
+            var transferMessage = transferResult.Item2;
+
+            if (!transferSuccess)
+            {
+                var errorDialog = new ModernAlertDialog();
+                errorDialog.SetAlert("Transfer Failed", transferMessage, "", "#EF4444", "White");
+                await errorDialog.ShowAsync();
+                return;
+            }
+
+            _currentOrder.TableNumber = int.Parse(selectedTable.TableNumber);
+
+            UpdateTopBarOrderTitle();
+            UpdateDisplay();
+            await MarkCurrentOrderChangedAsync();
+
+            var alert = new ModernAlertDialog();
+            alert.SetAlert(
+                "Transfer Complete",
+                $"Order transferred from Table {oldTableNumber} to Table {selectedTable.TableNumber}",
+                "",
+                "#4CAF50",
+                "White");
+            await alert.ShowAsync();
+
+            await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
         }
 
         private async Task ShowMergeTablesDialog()
@@ -6258,15 +6352,14 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var dialog = new StyledPromptDialog();
-            dialog.SetDialog(
+            var targetTableNumber = await new OrderPlacePromptDialog().ShowAsync(
+                this,
                 "Merge Tables",
                 "Enter the child table number to merge into this table:",
+                "Continue",
+                "Cancel",
                 "e.g., 12",
-                Keyboard.Numeric
-            );
-
-            var targetTableNumber = await dialog.ShowAsync();
+                numericOnly: true);
             if (string.IsNullOrWhiteSpace(targetTableNumber))
             {
                 return;
@@ -6282,16 +6375,12 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var confirmDialog = new ModernConfirmDialog();
-            confirmDialog.SetConfirm(
-                "Confirm Merge",
-                $"Merge Table {_currentOrder.TableNumber} with Table {childTable.TableNumber}?\nThis will keep the current table as the parent session.",
-                "Merge",
-                "Cancel",
-                ""
-            );
-
-            if (!await confirmDialog.ShowAsync())
+            if (!await new OrderPlaceConfirmDialog().ShowAsync(
+                    this,
+                    "Confirm Merge",
+                    $"Merge Table {_currentOrder.TableNumber} with Table {childTable.TableNumber}?\nThis will keep the current table as the parent session.",
+                    "Merge",
+                    "Cancel"))
             {
                 return;
             }
@@ -6312,9 +6401,7 @@ namespace POS_in_NET.Pages
 
         private async Task ShowFireCourseDialog()
         {
-            var dialog = new FireCourseDialog();
-            var selected = await dialog.ShowAsync();
-
+            var selected = await new OrderPlaceFireCourseDialog().ShowAsync(this, includeDrinks: true);
             if (!string.IsNullOrWhiteSpace(selected))
             {
                 await FireCourseAsync(selected);

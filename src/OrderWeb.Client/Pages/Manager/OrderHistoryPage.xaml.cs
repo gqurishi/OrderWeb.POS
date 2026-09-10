@@ -448,7 +448,7 @@ public partial class OrderHistoryPage : ContentPage
         await Navigation.PushAsync(menu switch
         {
             "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new TableLayoutPage(),
+            "Restaurant" => new RestaurantPage(),
             "Collection" => new CollectionOrderPage(),
             "Delivery" => new DeliveryOrderPage(),
             "Live Order" => new LiveOrderPage(),

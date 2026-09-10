@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.SharedUI.Controls.VirtualKeyboardDialog"
+             IsVisible="False"
+             ZIndex="10000">
+
+    <!-- Full Screen Overlay (Mother/Client parity DialogOverlayColor) -->
+    <Grid x:Name="OverlayGrid"
+          BackgroundColor="#80000000"
+          HorizontalOptions="Fill"
+          VerticalOptions="Fill"
+          RowDefinitions="*,Auto"
+          ZIndex="10000">
+
+        <BoxView Grid.Row="0"
+                 BackgroundColor="Transparent">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnCancelClicked"/>
+            </BoxView.GestureRecognizers>
+        </BoxView>
+
+        <!-- Dialog Container -->
+        <Border x:Name="KeyboardCard"
+                Grid.Row="1"
+                BackgroundColor="White"
+                Stroke="#DCE3EE"
+                StrokeThickness="1"
+                HorizontalOptions="Fill"
+                VerticalOptions="End"
+                Margin="12,0,12,10"
+                Padding="0">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="22"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Offset="0,8" Radius="20" Opacity="0.16"/>
+            </Border.Shadow>
+
+            <VerticalStackLayout x:Name="KeyboardRootLayout" Spacing="0">
+
+                <!-- Header -->
+                <Grid x:Name="KeyboardHeader" BackgroundColor="#2563EB" Padding="18,12" ColumnDefinitions="*,Auto">
+                    <Label x:Name="KeyboardTitleLabel"
+                           Text="Search"
+                           FontSize="17"
+                           FontAttributes="Bold"
+                           TextColor="White"
+                           VerticalOptions="Center"/>
+                    <Button Grid.Column="1"
+                            Text="Cancel"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            TextColor="#1D4ED8"
+                            BackgroundColor="White"
+                            WidthRequest="92"
+                            HeightRequest="44"
+                            CornerRadius="17"
+                            Clicked="OnCancelClicked"/>
+                </Grid>
+
+                <!-- Search Input Display -->
+                <Border x:Name="KeyboardInputBorder"
+                        BackgroundColor="#F8FAFC"
+                        Stroke="#DCE3EE"
+                        StrokeThickness="1"
+                        Margin="20,14,20,8"
+                        Padding="12,0"
+                        HeightRequest="52">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14"/>
+                    </Border.StrokeShape>
+                    <Entry x:Name="KeyboardInputEntry"
+                           Text=""
+                           FontSize="18"
+                           TextColor="#1E293B"
+                           BackgroundColor="Transparent"
+                           HeightRequest="50"
+                           VerticalOptions="Fill"
+                           VerticalTextAlignment="Center"
+                           ClearButtonVisibility="Never"
+                           ReturnType="Done"
+                           TextChanged="OnPhysicalTextChanged"
+                           Completed="OnPhysicalEnterPressed"/>
+                </Border>
+
+                <!-- Keyboard Grid -->
+                <VerticalStackLayout x:Name="KeyboardRowsContainer" Padding="14,4,14,14" Spacing="6">
+
+                    <!-- Row 1: Numbers (always visible; numeric-only mode keeps just this row + numeric actions) -->
+                    <Grid x:Name="NumberRow" ColumnDefinitions="*,*,*,*,*,*,*,*,*,*" ColumnSpacing="5">
+                        <Button Grid.Column="0" Text="1" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="1" Text="2" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="2" Text="3" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="3" Text="4" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="4" Text="5" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="5" Text="6" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="6" Text="7" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="7" Text="8" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="8" Text="9" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        <Button Grid.Column="9" Text="0" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                    </Grid>
+
+                    <!-- Rows 2-5: letters + punctuation (hidden entirely in numeric-only mode) -->
+                    <VerticalStackLayout x:Name="AlphaRowsContainer" Spacing="6">
+
+                        <!-- Row 2: Q W E R T Y U I O P -->
+                        <Grid ColumnDefinitions="*,*,*,*,*,*,*,*,*,*" ColumnSpacing="5">
+                            <Button Grid.Column="0" Text="Q" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="1" Text="W" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="2" Text="E" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="3" Text="R" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="4" Text="T" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="5" Text="Y" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="6" Text="U" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="7" Text="I" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="8" Text="O" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="9" Text="P" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        </Grid>
+
+                        <!-- Row 3: A S D F G H J K L -->
+                        <Grid ColumnDefinitions="0.5*,*,*,*,*,*,*,*,*,*,0.5*" ColumnSpacing="5">
+                            <Button Grid.Column="1" Text="A" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="2" Text="S" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="3" Text="D" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="4" Text="F" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="5" Text="G" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="6" Text="H" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="7" Text="J" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="8" Text="K" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="9" Text="L" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        </Grid>
+
+                        <!-- Row 4: Z X C V B N M + Backspace -->
+                        <Grid ColumnDefinitions="*,*,*,*,*,*,*,*,*,*" ColumnSpacing="5">
+                            <Button Grid.Column="1" Text="Z" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="2" Text="X" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="3" Text="C" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="4" Text="V" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="5" Text="B" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="6" Text="N" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="7" Text="M" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="46" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="8" Grid.ColumnSpan="2" x:Name="AlphaDeleteButton" Text="DEL" Style="{x:Null}" BackgroundColor="#EF4444" TextColor="White" FontSize="15" FontAttributes="Bold" HeightRequest="46" CornerRadius="14" Clicked="OnBackspacePressed"/>
+                        </Grid>
+
+                        <!-- Row 5: Common punctuation -->
+                        <Grid ColumnDefinitions="*,*,*,*,*,*,*,*" ColumnSpacing="5">
+                            <Button Grid.Column="0" Text="+" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="44" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="1" Text="-" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="2" Text="/" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="3" Text="." Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="4" Text="," Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="5" Text="#" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="6" Text="&amp;" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                            <Button Grid.Column="7" Text="'" Style="{x:Null}" BackgroundColor="#F8FAFC" TextColor="#1E293B" FontSize="17" HeightRequest="42" CornerRadius="14" BorderColor="#D8E1ED" BorderWidth="1" Clicked="OnKeyPressed"/>
+                        </Grid>
+
+                    </VerticalStackLayout>
+
+                    <!-- Row 6: Space and Action Buttons (full keyboard mode) -->
+                    <Grid x:Name="FullActionsRow" ColumnDefinitions="1.5*,1.5*,5*,2*" ColumnSpacing="6">
+                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="44" CornerRadius="14" Clicked="OnCancelClicked"/>
+                        <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
+                        <Button Grid.Column="2" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="15" HeightRequest="42" CornerRadius="14" Clicked="OnSpacePressed"/>
+                        <Button x:Name="EnterButton" Grid.Column="3" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>
+                    </Grid>
+
+                    <!-- Row 6b: Action buttons for numeric-only mode (digits + CLEAR/DEL/DONE) -->
+                    <Grid x:Name="NumericActionsRow" ColumnDefinitions="1.3*,1.3*,1.3*,2*" ColumnSpacing="6" IsVisible="False">
+                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="44" CornerRadius="14" Clicked="OnCancelClicked"/>
+                        <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
+                        <Button Grid.Column="2" Text="DEL" Style="{x:Null}" BackgroundColor="#EF4444" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnBackspacePressed"/>
+                        <Button x:Name="NumericEnterButton" Grid.Column="3" Text="DONE" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>
+                    </Grid>
+
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentView>

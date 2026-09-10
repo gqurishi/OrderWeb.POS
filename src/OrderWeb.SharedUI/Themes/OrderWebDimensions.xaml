@@ -80,13 +80,13 @@
     <x:Double x:Key="OpTouchComfort">52</x:Double>
     <x:Double x:Key="OpActionGap">10</x:Double>
     <x:Double x:Key="OpSectionGap">14</x:Double>
-    <x:Double x:Key="OpCategorySubGap">18</x:Double>
+    <x:Double x:Key="OpCategorySubGap">8</x:Double>
     <x:Double x:Key="OpCategoryWidth">80</x:Double>
     <x:Double x:Key="OpSubcategoryWidth">80</x:Double>
     <x:Double x:Key="OpCategoryHeight">50</x:Double>
-    <x:Double x:Key="OpSubcategoryHeight">50</x:Double>
-    <x:Double x:Key="OpSubcategoryBandPadding">10</x:Double>
-    <x:Int32 x:Key="OpSubcategoryBandCornerRadius">8</x:Int32>
+    <x:Double x:Key="OpSubcategoryHeight">40</x:Double>
+    <x:Double x:Key="OpSubcategoryBandPadding">0</x:Double>
+    <x:Int32 x:Key="OpSubcategoryBandCornerRadius">0</x:Int32>
     <x:Double x:Key="OpProductCardMinWidth">100</x:Double>
     <x:Double x:Key="OpProductCardMinHeight">60</x:Double>
     <x:Double x:Key="OpProductCardGap">8</x:Double>

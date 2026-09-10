@@ -4,6 +4,7 @@
              xmlns:views="clr-namespace:POS_in_NET.Views"
              xmlns:controls="clr-namespace:POS_in_NET.Controls"
              xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+             xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Pages.VisualTablePage"
              Title=""
              BackgroundColor="White">
@@ -26,183 +27,17 @@
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
         
         <!-- Main Content -->
-        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" Padding="0">
+        <Grid Grid.Row="1" RowDefinitions="Auto,*" Padding="0">
             
             <!-- Toast Notification Overlay -->
             <controls:ToastNotification x:Name="ToastNotification" 
-                                       Grid.RowSpan="3"
+                                       Grid.RowSpan="2"
                                        ZIndex="1000"
                                        InputTransparent="True"/>
-        
-            <!-- Floor Tabs Bar (Fixed at top) -->
-            <Border x:Name="LayoutToolbar"
-                    Grid.Row="0"
-                    BackgroundColor="#FFFFFF"
-                    Stroke="#E5E7EB"
-                    StrokeThickness="0,0,0,1"
-                    MinimumHeightRequest="64"
-                    MaximumHeightRequest="72"
-                    VerticalOptions="Start">
-                <Grid ColumnDefinitions="2*,3*"
-                      ColumnSpacing="12"
-                      Padding="12,9">
-                    
-                    <!-- Floor Pills -->
-                    <ScrollView Grid.Column="0" 
-                               Orientation="Horizontal" 
-                               HorizontalScrollBarVisibility="Never"
-                               VerticalScrollBarVisibility="Never"
-                               VerticalOptions="Center"
-                               MaximumHeightRequest="48">
-                        <HorizontalStackLayout x:Name="FloorTabsLayout" 
-                                              Spacing="8"
-                                              VerticalOptions="Center">
-                            <!-- Floor tabs will be generated dynamically -->
-                        </HorizontalStackLayout>
-                    </ScrollView>
-                    
-                    <!-- Admin Tools -->
-                    <ScrollView Grid.Column="1"
-                                Orientation="Horizontal"
-                                HorizontalScrollBarVisibility="Never"
-                                VerticalScrollBarVisibility="Never"
-                                HorizontalOptions="Fill"
-                                VerticalOptions="Center"
-                                MaximumHeightRequest="48">
-                    <HorizontalStackLayout x:Name="AdminToolsLayout"
-                                           Spacing="8"
-                                           HorizontalOptions="End"
-                                           VerticalOptions="Center">
-
-                        <Border BackgroundColor="#F0FDFA"
-                                Stroke="#CCFBF1"
-                                StrokeThickness="1"
-                                Padding="10,7"
-                                MinimumHeightRequest="44">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="10"/>
-                            </Border.StrokeShape>
-                            <Label x:Name="LastSyncLabel"
-                                   Text="Not synced yet"
-                                   FontSize="11"
-                                   FontFamily="OpenSansRegular"
-                                   TextColor="#0F766E"
-                                   VerticalOptions="Center"/>
-                        </Border>
-
-                        <!-- Floor Management Button -->
-                        <Border x:Name="FloorManagementButton"
-                                BackgroundColor="#EFF6FF"
-                                Stroke="#BFDBFE"
-                                StrokeThickness="1"
-                                Padding="12,8"
-                                MinimumHeightRequest="44"
-                                IsVisible="False">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnGoToFloorManagementClicked"/>
-                            </Border.GestureRecognizers>
-                            <Label Text="Floor Management" 
-                                   FontSize="13" 
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#1D4ED8"
-                                   VerticalOptions="Center"/>
-                        </Border>
-
-                        <!-- Table Management Button -->
-                        <Border x:Name="TableManagementButton"
-                                BackgroundColor="#ECFDF5"
-                                Stroke="#BBF7D0"
-                                StrokeThickness="1"
-                                Padding="12,8"
-                                MinimumHeightRequest="44"
-                                IsVisible="False">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnGoToTableManagementClicked"/>
-                            </Border.GestureRecognizers>
-                            <Label Text="Table Management" 
-                                   FontSize="13" 
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#047857"
-                                   VerticalOptions="Center"/>
-                        </Border>
-                        
-                        <!-- Set Background Button -->
-                        <Border x:Name="SetBackgroundButton"
-                                BackgroundColor="#F3F4F6"
-                                Stroke="#E5E7EB"
-                                StrokeThickness="1"
-                                Padding="12,8"
-                                MinimumHeightRequest="44"
-                                IsVisible="False">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnSetBackgroundClicked"/>
-                            </Border.GestureRecognizers>
-                            <Label Text="Set Background" 
-                                   FontSize="13" 
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#374151"
-                                   VerticalOptions="Center"/>
-                        </Border>
-                        
-                        <!-- Remove Background Button -->
-                        <Border x:Name="RemoveBackgroundButton"
-                                BackgroundColor="#FEE2E2"
-                                Stroke="#FECACA"
-                                StrokeThickness="1"
-                                Padding="12,8"
-                                MinimumHeightRequest="44"
-                                IsVisible="False">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnRemoveBackgroundClicked"/>
-                            </Border.GestureRecognizers>
-                            <Label Text="Remove Background" 
-                                   FontSize="13" 
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#DC2626"
-                                   VerticalOptions="Center"/>
-                        </Border>
-                        
-                        <!-- Save Layout Button -->
-                        <Border x:Name="SaveLayoutButton"
-                                BackgroundColor="#3B82F6"
-                                Stroke="Transparent"
-                                StrokeThickness="0"
-                                Padding="14,8"
-                                MinimumHeightRequest="44"
-                                IsVisible="False">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="8"/>
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnSaveLayoutClicked"/>
-                            </Border.GestureRecognizers>
-                            <Label Text="Save Layout" 
-                                   FontSize="13" 
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="White"
-                                   VerticalOptions="Center"/>
-                        </Border>
-                        
-                    </HorizontalStackLayout>
-                    </ScrollView>
-                </Grid>
-            </Border>
 
             <!-- Unsaved Changes Indicator -->
             <Border x:Name="UnsavedChangesBar"
-                    Grid.Row="1"
+                    Grid.Row="0"
                     BackgroundColor="#FEF3C7"
                     Padding="15,10"
                     IsVisible="False">
@@ -215,72 +50,9 @@
                        VerticalOptions="Center"/>
             </Border>
 
-                 <!-- Full Screen Table Canvas -->
-                 <Grid Grid.Row="2"
-                       BackgroundColor="#F1F5F9"
-                       Padding="12,10,12,12">
-                  <AbsoluteLayout x:Name="TableCanvas"
-                           BackgroundColor="White">
-                
-                  <!-- Background Image (if set by admin) -->
-                  <Image x:Name="CanvasBackgroundImage"
-                      AbsoluteLayout.LayoutBounds="0,0,1,1"
-                      AbsoluteLayout.LayoutFlags="All"
-                      Aspect="Fill"
-                      Opacity="0.82"
-                      IsVisible="False"/>
-
-                  <!-- Soft layer to simulate very subtle (~2px) blur -->
-                  <Image x:Name="CanvasBackgroundImageBlur"
-                      AbsoluteLayout.LayoutBounds="0,0,1,1"
-                      AbsoluteLayout.LayoutFlags="All"
-                      Aspect="Fill"
-                      Opacity="0.12"
-                      TranslationX="1.5"
-                      TranslationY="1.5"
-                      IsVisible="False"/>
-                
-                <!-- Tables will be added dynamically here -->
-                
-                <!-- Empty State Message -->
-                <VerticalStackLayout x:Name="EmptyStateView"
-                                    AbsoluteLayout.LayoutBounds="0.5,0.5,-1,-1"
-                                    AbsoluteLayout.LayoutFlags="PositionProportional"
-                                    Spacing="15"
-                                    IsVisible="False">
-                    <Frame Padding="20"
-                           CornerRadius="50"
-                           BackgroundColor="#F3F4F6"
-                           HasShadow="False"
-                           HorizontalOptions="Center">
-                        <Image Source="table_1.png"
-                               WidthRequest="60"
-                               HeightRequest="60"
-                               Opacity="0.4"/>
-                    </Frame>
-                    <Label Text="No Tables on This Floor"
-                           FontSize="18"
-                           FontFamily="OpenSansSemibold"
-                           TextColor="#9CA3AF"
-                           HorizontalOptions="Center"/>
-                    <Label Text="Add tables from Table Management"
-                           FontSize="14"
-                           FontFamily="OpenSansRegular"
-                           TextColor="#D1D5DB"
-                           HorizontalOptions="Center"/>
-                    <Button Text="Go to Table Management"
-                            BackgroundColor="#3B82F6"
-                            TextColor="White"
-                            FontFamily="OpenSansSemibold"
-                            FontSize="14"
-                            CornerRadius="8"
-                            Padding="20,12"
-                            Margin="0,10,0,0"
-                            HorizontalOptions="Center"
-                            Clicked="OnGoToTableManagementClicked"/>
-                </VerticalStackLayout>
-                
-                </AbsoluteLayout>
+            <!-- Shared restaurant layout (floors + canvas + Live chip) -->
+            <Grid Grid.Row="1">
+                <sharedViews:RestaurantTablesView x:Name="TablesView" />
 
                 <shared:ChefLoaderView x:Name="LoadingOverlay"
                                        Mode="Fullscreen"
@@ -290,136 +62,254 @@
                                        IsLoading="False"
                                        IsVisible="False"
                                        ZIndex="900" />
-            </Grid>
-            
-            <!-- Cover Selection Popup Overlay -->
-            <Grid x:Name="CoverPopupOverlay" 
-                  Grid.Row="2"
-                  BackgroundColor="#80000000"
-                  IsVisible="False"
-                  InputTransparent="True"
-                  ZIndex="100">
-                
-                <!-- Popup Card -->
-                <Border HorizontalOptions="Center"
-                        VerticalOptions="Center"
-                        BackgroundColor="White"
-                        Stroke="#E5E7EB"
-                        StrokeThickness="0"
-                        Padding="0"
-                        WidthRequest="380">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="16"/>
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,8" Radius="24" Opacity="0.25"/>
-                    </Border.Shadow>
+
+                <!-- Cover Selection Popup Overlay -->
+                <Grid x:Name="CoverPopupOverlay" 
+                      BackgroundColor="#80000000"
+                      IsVisible="False"
+                      InputTransparent="True"
+                      ZIndex="100">
                     
-                    <VerticalStackLayout Spacing="0">
+                    <!-- Popup Card -->
+                    <Border HorizontalOptions="Center"
+                            VerticalOptions="Center"
+                            BackgroundColor="White"
+                            Stroke="#E5E7EB"
+                            StrokeThickness="0"
+                            Padding="0"
+                            WidthRequest="380">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="16"/>
+                        </Border.StrokeShape>
+                        <Border.Shadow>
+                            <Shadow Brush="Black" Offset="0,8" Radius="24" Opacity="0.25"/>
+                        </Border.Shadow>
                         
-                        <!-- Header -->
-                        <Grid ColumnDefinitions="*,Auto" 
-                              Padding="24,20"
-                              BackgroundColor="#F9FAFB">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4">
-                                <Label x:Name="CoverPopupTitle"
-                                       Text="Table 10"
-                                       FontSize="20"
-                                       FontFamily="OpenSansSemibold"
-                                       TextColor="#1F2937"/>
-                                <Label Text="How many guests?"
-                                       FontSize="14"
-                                       FontFamily="OpenSansRegular"
-                                       TextColor="#6B7280"/>
-                            </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="0">
                             
-                            <!-- Close Button -->
-                            <Border Grid.Column="1"
-                                    BackgroundColor="#FEE2E2"
-                                    Stroke="Transparent"
-                                    WidthRequest="36"
-                                    HeightRequest="36"
-                                    VerticalOptions="Start">
-                                <Border.StrokeShape>
-                                    <RoundRectangle CornerRadius="18"/>
-                                </Border.StrokeShape>
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Tapped="OnCloseCoverPopup"/>
-                                </Border.GestureRecognizers>
-                                <Label Text="X"
-                                       FontSize="16"
-                                       FontFamily="OpenSansSemibold"
-                                       TextColor="#DC2626"
-                                       HorizontalOptions="Center"
-                                       VerticalOptions="Center"/>
-                            </Border>
-                        </Grid>
-                        
-                        <!-- Cover Number Grid -->
-                        <Grid Padding="20" 
-                              ColumnDefinitions="*,*,*,*"
-                              RowDefinitions="Auto,Auto,Auto"
-                              ColumnSpacing="10"
-                              RowSpacing="10">
-                            
-                            <!-- Row 1: 1-4 -->
-                            <Button Grid.Row="0" Grid.Column="0" Text="1" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="0" Grid.Column="1" Text="2" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="0" Grid.Column="2" Text="3" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="0" Grid.Column="3" Text="4" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            
-                            <!-- Row 2: 5-8 -->
-                            <Button Grid.Row="1" Grid.Column="0" Text="5" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="1" Grid.Column="1" Text="6" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="1" Grid.Column="2" Text="7" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="1" Grid.Column="3" Text="8" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            
-                            <!-- Row 3: 9-12 -->
-                            <Button Grid.Row="2" Grid.Column="0" Text="9" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="2" Grid.Column="1" Text="10" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="2" Grid.Column="2" Text="11" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                            <Button Grid.Row="2" Grid.Column="3" Text="12" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
-                        </Grid>
-                        
-                        <!-- Custom Input Section -->
-                        <Border BackgroundColor="#F9FAFB"
-                                Stroke="Transparent"
-                                Padding="20,16">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <Border Grid.Column="0"
-                                        BackgroundColor="White"
-                                        Stroke="#D1D5DB"
-                                        StrokeThickness="1"
-                                        Padding="12,8">
+                            <!-- Header -->
+                            <Grid ColumnDefinitions="*,Auto" 
+                                  Padding="24,20"
+                                  BackgroundColor="#F9FAFB">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label x:Name="CoverPopupTitle"
+                                           Text="Table 10"
+                                           FontSize="20"
+                                           FontFamily="OpenSansSemibold"
+                                           TextColor="#1F2937"/>
+                                    <Label Text="How many guests?"
+                                           FontSize="14"
+                                           FontFamily="OpenSansRegular"
+                                           TextColor="#6B7280"/>
+                                </VerticalStackLayout>
+                                
+                                <!-- Close Button -->
+                                <Border Grid.Column="1"
+                                        BackgroundColor="#FEE2E2"
+                                        Stroke="Transparent"
+                                        WidthRequest="36"
+                                        HeightRequest="36"
+                                        VerticalOptions="Start">
                                     <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
+                                        <RoundRectangle CornerRadius="18"/>
                                     </Border.StrokeShape>
                                     <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnCustomCoverTapped"/>
+                                        <TapGestureRecognizer Tapped="OnCloseCoverPopup"/>
                                     </Border.GestureRecognizers>
-                                    <Label x:Name="CustomCoverLabel"
-                                           Text="Other number..."
-                                           FontSize="15"
-                                           FontFamily="OpenSansRegular"
-                                           TextColor="#9CA3AF"
+                                    <Label Text="X"
+                                           FontSize="16"
+                                           FontFamily="OpenSansSemibold"
+                                           TextColor="#DC2626"
+                                           HorizontalOptions="Center"
                                            VerticalOptions="Center"/>
                                 </Border>
-                                <Button Grid.Column="1"
-                                        Text="Go"
-                                        BackgroundColor="#3B82F6"
-                                        TextColor="White"
-                                        FontFamily="OpenSansSemibold"
-                                        FontSize="14"
-                                        CornerRadius="8"
-                                        Padding="20,12"
-                                        Clicked="OnCustomCoverSubmit"/>
                             </Grid>
-                        </Border>
-                        
-                    </VerticalStackLayout>
-                </Border>
+                            
+                            <!-- Cover Number Grid -->
+                            <Grid Padding="20" 
+                                  ColumnDefinitions="*,*,*,*"
+                                  RowDefinitions="Auto,Auto,Auto"
+                                  ColumnSpacing="10"
+                                  RowSpacing="10">
+                                
+                                <!-- Row 1: 1-4 -->
+                                <Button Grid.Row="0" Grid.Column="0" Text="1" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="0" Grid.Column="1" Text="2" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="0" Grid.Column="2" Text="3" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="0" Grid.Column="3" Text="4" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                
+                                <!-- Row 2: 5-8 -->
+                                <Button Grid.Row="1" Grid.Column="0" Text="5" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="1" Grid.Column="1" Text="6" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="1" Grid.Column="2" Text="7" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="1" Grid.Column="3" Text="8" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                
+                                <!-- Row 3: 9-12 -->
+                                <Button Grid.Row="2" Grid.Column="0" Text="9" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="2" Grid.Column="1" Text="10" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="2" Grid.Column="2" Text="11" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                                <Button Grid.Row="2" Grid.Column="3" Text="12" Style="{StaticResource CoverButtonStyle}" Clicked="OnCoverSelected"/>
+                            </Grid>
+                            
+                            <!-- Custom Input Section -->
+                            <Border BackgroundColor="#F9FAFB"
+                                    Stroke="Transparent"
+                                    Padding="20,16">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <Border Grid.Column="0"
+                                            BackgroundColor="White"
+                                            Stroke="#D1D5DB"
+                                            StrokeThickness="1"
+                                            Padding="12,8">
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="8"/>
+                                        </Border.StrokeShape>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnCustomCoverTapped"/>
+                                        </Border.GestureRecognizers>
+                                        <Label x:Name="CustomCoverLabel"
+                                               Text="Other number..."
+                                               FontSize="15"
+                                               FontFamily="OpenSansRegular"
+                                               TextColor="#9CA3AF"
+                                               VerticalOptions="Center"/>
+                                    </Border>
+                                    <Button Grid.Column="1"
+                                            Text="Go"
+                                            BackgroundColor="#3B82F6"
+                                            TextColor="White"
+                                            FontFamily="OpenSansSemibold"
+                                            FontSize="14"
+                                            CornerRadius="8"
+                                            Padding="20,12"
+                                            Clicked="OnCustomCoverSubmit"/>
+                                </Grid>
+                            </Border>
+                            
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
             </Grid>
 
+            <!-- Admin tools host: reparented into TablesView.AdminToolsContent in code-behind -->
+            <ContentView x:Name="AdminToolsHolder"
+                         Grid.Row="1"
+                         IsVisible="False"
+                         InputTransparent="True"
+                         ZIndex="-1">
+                <HorizontalStackLayout x:Name="AdminToolsHost"
+                                       Spacing="8"
+                                       HorizontalOptions="End"
+                                       VerticalOptions="Center">
+
+                    <!-- Floor Management Button -->
+                    <Border x:Name="FloorManagementButton"
+                            BackgroundColor="#EFF6FF"
+                            Stroke="#BFDBFE"
+                            StrokeThickness="1"
+                            Padding="12,8"
+                            MinimumHeightRequest="44"
+                            IsVisible="False">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnGoToFloorManagementClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Floor Management" 
+                               FontSize="13" 
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#1D4ED8"
+                               VerticalOptions="Center"/>
+                    </Border>
+
+                    <!-- Table Management Button -->
+                    <Border x:Name="TableManagementButton"
+                            BackgroundColor="#ECFDF5"
+                            Stroke="#BBF7D0"
+                            StrokeThickness="1"
+                            Padding="12,8"
+                            MinimumHeightRequest="44"
+                            IsVisible="False">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnGoToTableManagementClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Table Management" 
+                               FontSize="13" 
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#047857"
+                               VerticalOptions="Center"/>
+                    </Border>
+                    
+                    <!-- Set Background Button -->
+                    <Border x:Name="SetBackgroundButton"
+                            BackgroundColor="#F3F4F6"
+                            Stroke="#E5E7EB"
+                            StrokeThickness="1"
+                            Padding="12,8"
+                            MinimumHeightRequest="44"
+                            IsVisible="False">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSetBackgroundClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Set Background" 
+                               FontSize="13" 
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#374151"
+                               VerticalOptions="Center"/>
+                    </Border>
+                    
+                    <!-- Remove Background Button -->
+                    <Border x:Name="RemoveBackgroundButton"
+                            BackgroundColor="#FEE2E2"
+                            Stroke="#FECACA"
+                            StrokeThickness="1"
+                            Padding="12,8"
+                            MinimumHeightRequest="44"
+                            IsVisible="False">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnRemoveBackgroundClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Remove Background" 
+                               FontSize="13" 
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#DC2626"
+                               VerticalOptions="Center"/>
+                    </Border>
+                    
+                    <!-- Save Layout Button -->
+                    <Border x:Name="SaveLayoutButton"
+                            BackgroundColor="#3B82F6"
+                            Stroke="Transparent"
+                            StrokeThickness="0"
+                            Padding="14,8"
+                            MinimumHeightRequest="44"
+                            IsVisible="False">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnSaveLayoutClicked"/>
+                        </Border.GestureRecognizers>
+                        <Label Text="Save Layout" 
+                               FontSize="13" 
+                               FontFamily="OpenSansSemibold"
+                               TextColor="White"
+                               VerticalOptions="Center"/>
+                    </Border>
+                    
+                </HorizontalStackLayout>
+            </ContentView>
+            
         </Grid>
         
         <!-- Numeric Keyboard Dialog -->

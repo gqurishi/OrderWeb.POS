@@ -204,17 +204,20 @@ public sealed class OrderPlaceSubcategoryButton : ContentView
 
     private void ApplyState()
     {
+        // Quieter than main categories: soft selected, not solid fill.
         if (IsSelected)
         {
-            _border.Use(Border.BackgroundColorProperty, "OwPrimary");
+            _border.Use(Border.BackgroundColorProperty, "OwPrimarySoft");
             _border.Use(Border.StrokeProperty, "OwPrimary");
-            _label.Use(Label.TextColorProperty, "OwTextOnPrimary");
+            _label.Use(Label.TextColorProperty, "OwPrimary");
+            _label.FontAttributes = FontAttributes.Bold;
         }
         else
         {
-            _border.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
+            _border.BackgroundColor = Colors.Transparent;
             _border.Use(Border.StrokeProperty, "OwBorder");
             _label.Use(Label.TextColorProperty, "OwTextMuted");
+            _label.FontAttributes = FontAttributes.None;
         }
     }
 }
@@ -491,8 +494,8 @@ public sealed class OrderPlaceLineRow : ContentView
         _name = new Label
         {
             FontAttributes = FontAttributes.Bold,
-            LineBreakMode = LineBreakMode.TailTruncation,
-            MaxLines = 1,
+            LineBreakMode = LineBreakMode.WordWrap,
+            MaxLines = 2,
             VerticalTextAlignment = TextAlignment.Center
         };
         _name.Use(Label.FontSizeProperty, "OpFontLineName");

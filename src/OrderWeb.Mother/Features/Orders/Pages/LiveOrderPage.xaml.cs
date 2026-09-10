@@ -154,19 +154,7 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            if (e.HasKind(AppDataChangeKind.Orders) && !e.IsFromCurrentTerminal)
-            {
-                var generation = _pageGeneration;
-                var cancellationToken = _pageRefreshCts?.Token ?? CancellationToken.None;
-                _ = MainThread.InvokeOnMainThreadAsync(async () =>
-                {
-                    if (CanRenderOrders(generation, cancellationToken))
-                    {
-                        await ToastNotification.ShowAsync("Live update", e.ToastMessage, NotificationType.Info, 1400);
-                    }
-                });
-            }
-
+            // Phase 2: patch board in place — no "Live update" toast.
             RequestOrdersReload();
         }
 

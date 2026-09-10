@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.SharedUI.Views.DeliveryCustomerEntryView">
+
+    <!-- Exact Mother DeliveryCustomerModal / Client DeliveryOrderPage layout (px, spacing, colors). -->
+    <Grid Padding="16" RowDefinitions="Auto,*,Auto">
+
+        <!-- Header -->
+        <VerticalStackLayout Grid.Row="0" Spacing="8" Margin="0,0,0,12">
+            <Label Text="Delivery Order"
+                   FontSize="36"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   TextColor="#1A202C" />
+            <Label Text="Customer Information"
+                   FontSize="16"
+                   HorizontalOptions="Center"
+                   TextColor="#718096"
+                   Margin="0,5,0,0" />
+            <BoxView HeightRequest="3"
+                     WidthRequest="60"
+                     BackgroundColor="#3B82F6"
+                     HorizontalOptions="Center"
+                     CornerRadius="2"
+                     Margin="0,10,0,0" />
+        </VerticalStackLayout>
+
+        <!-- Main Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="14"
+                                 HorizontalOptions="Center"
+                                 MaximumWidthRequest="550">
+
+                <!-- Customer Name -->
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Customer Name"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           TextColor="#4A5568" />
+                    <Border BackgroundColor="White"
+                            StrokeThickness="2"
+                            Stroke="#E2E8F0"
+                            Padding="0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCustomerNameFieldTapped" />
+                        </Border.GestureRecognizers>
+                        <Entry x:Name="CustomerNameEntry"
+                               Placeholder="e.g., John Smith"
+                               FontSize="16"
+                               TextColor="#1A202C"
+                               PlaceholderColor="#A0AEC0"
+                               BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
+                               HeightRequest="56"
+                               Margin="16,0" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Phone Number -->
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Phone Number"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           TextColor="#4A5568" />
+                    <Border BackgroundColor="White"
+                            StrokeThickness="2"
+                            Stroke="#E2E8F0"
+                            Padding="0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPhoneNumberFieldTapped" />
+                        </Border.GestureRecognizers>
+                        <Entry x:Name="PhoneNumberEntry"
+                               Placeholder="e.g., 07123 456789"
+                               Keyboard="Telephone"
+                               FontSize="16"
+                               TextColor="#1A202C"
+                               PlaceholderColor="#A0AEC0"
+                               BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
+                               HeightRequest="56"
+                               Margin="16,0" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Delivery Address -->
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Delivery Address"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           TextColor="#4A5568" />
+
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Border Grid.Column="0"
+                                BackgroundColor="White"
+                                StrokeThickness="2"
+                                Stroke="#E2E8F0"
+                                Padding="0">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="12" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnPostcodeFieldTapped" />
+                            </Border.GestureRecognizers>
+                            <Entry x:Name="PostcodeEntry"
+                                   Placeholder="Enter address or postcode..."
+                                   FontSize="16"
+                                   TextColor="#1A202C"
+                                   PlaceholderColor="#A0AEC0"
+                                   BackgroundColor="Transparent"
+                                   IsReadOnly="True"
+                                   InputTransparent="True"
+                                   HeightRequest="56"
+                                   Margin="16,0" />
+                        </Border>
+
+                        <Button Grid.Column="1"
+                                x:Name="SearchPostcodeButton"
+                                Text="Search"
+                                BackgroundColor="#10B981"
+                                TextColor="White"
+                                FontSize="15"
+                                FontAttributes="Bold"
+                                HeightRequest="56"
+                                WidthRequest="120"
+                                CornerRadius="14"
+                                Clicked="OnSearchPostcodeClicked" />
+                    </Grid>
+
+                    <Border x:Name="AddressResultsBorder"
+                            IsVisible="False"
+                            BackgroundColor="White"
+                            StrokeThickness="2"
+                            Stroke="#E2E8F0"
+                            Padding="0"
+                            MaximumHeightRequest="240"
+                            MinimumHeightRequest="56"
+                            Margin="0,8,0,0">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="12" />
+                        </Border.StrokeShape>
+                        <CollectionView x:Name="AddressResultsCollection"
+                                        SelectionMode="Single"
+                                        SelectionChanged="OnAddressSelected">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="16,12"
+                                            BackgroundColor="Transparent"
+                                            MinimumHeightRequest="52"
+                                            Margin="0,0,0,1">
+                                        <Label Text="{Binding DisplayText}"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#1A202C"
+                                               LineBreakMode="WordWrap" />
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </Border>
+
+                    <VerticalStackLayout Spacing="16" Margin="0,16,0,0">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Flat / House Number"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnHouseNumberFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="HouseNumberEntry"
+                                       Placeholder="e.g., Flat 2 or 24A"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Road Name"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnRoadNameFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="RoadNameEntry"
+                                       Placeholder="e.g., High Street"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="City"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCityFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="CityEntry"
+                                       Placeholder="City"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Postcode"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnPostcodeResultFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Entry x:Name="PostcodeResultEntry"
+                                       Placeholder="Postcode"
+                                       FontSize="16"
+                                       TextColor="#1A202C"
+                                       PlaceholderColor="#A0AEC0"
+                                       BackgroundColor="Transparent"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       HeightRequest="56"
+                                       Margin="16,0" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+                <Button x:Name="SearchCustomerButton"
+                        Text="Search Existing Customer"
+                        BackgroundColor="#3B82F6"
+                        TextColor="White"
+                        FontSize="16"
+                        HeightRequest="54"
+                        CornerRadius="14"
+                        Clicked="OnSearchCustomerClicked"
+                        Margin="0,5,0,0">
+                    <Button.Shadow>
+                        <Shadow Brush="#3B82F6" Radius="8" Opacity="0.3" Offset="0,4" />
+                    </Button.Shadow>
+                </Button>
+
+                <Border x:Name="SearchResultsBorder"
+                        IsVisible="False"
+                        BackgroundColor="White"
+                        StrokeThickness="2"
+                        Stroke="#E2E8F0"
+                        Padding="0"
+                        MaximumHeightRequest="320"
+                        Margin="0,5,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Radius="12" Opacity="0.08" Offset="0,4" />
+                    </Border.Shadow>
+                    <CollectionView x:Name="SearchResultsCollection"
+                                    SelectionMode="Single"
+                                    SelectionChanged="OnCustomerSelected">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="18,16"
+                                        BackgroundColor="Transparent"
+                                        Margin="0,0,0,1">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnCustomerTapped" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <VerticalStackLayout Spacing="6">
+                                            <Label Text="{Binding Name}"
+                                                   FontSize="16"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#1A202C" />
+                                            <Label Text="{Binding Phone}"
+                                                   FontSize="14"
+                                                   TextColor="#718096" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1"
+                                               Text="→"
+                                               FontSize="22"
+                                               TextColor="#3B82F6"
+                                               VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Border>
+
+                <Border x:Name="NoResultsLabel"
+                        IsVisible="False"
+                        BackgroundColor="#FEF2F2"
+                        StrokeThickness="2"
+                        Stroke="#FEE2E2"
+                        Padding="20"
+                        Margin="0,5,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <Label Text="No customers found matching your search"
+                           FontSize="15"
+                           TextColor="#DC2626"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center" />
+                </Border>
+
+                <Label x:Name="StatusLabel"
+                       Text=""
+                       IsVisible="False"
+                       FontSize="14"
+                       TextColor="#718096"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Bottom Buttons -->
+        <Grid Grid.Row="2"
+              ColumnDefinitions="*,1.2*"
+              ColumnSpacing="16"
+              Margin="0,40,0,0"
+              HorizontalOptions="Center"
+              WidthRequest="550">
+            <Button x:Name="CancelButton"
+                    Text="Cancel"
+                    BackgroundColor="White"
+                    TextColor="#64748B"
+                    FontSize="16"
+                    HeightRequest="56"
+                    CornerRadius="14"
+                    BorderColor="#E2E8F0"
+                    BorderWidth="2"
+                    Clicked="OnCancelClicked" />
+
+            <Button x:Name="ContinueButton"
+                    Grid.Column="1"
+                    Text="Continue to Order"
+                    BackgroundColor="#3B82F6"
+                    TextColor="White"
+                    FontSize="16"
+                    FontAttributes="Bold"
+                    HeightRequest="56"
+                    CornerRadius="14"
+                    Clicked="OnContinueClicked">
+                <Button.Shadow>
+                    <Shadow Brush="#3B82F6" Radius="10" Opacity="0.35" Offset="0,4" />
+                </Button.Shadow>
+            </Button>
+        </Grid>
+    </Grid>
+</ContentView>

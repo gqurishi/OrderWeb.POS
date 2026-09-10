@@ -11,26 +11,38 @@
     <Shell.BackButtonBehavior>
         <BackButtonBehavior IsVisible="False" IsEnabled="False" />
     </Shell.BackButtonBehavior>
-    <Grid BackgroundColor="#F1F5F9">
+    <!-- Full-bleed Order Place; flyout menu lives inside SharedUI category toolbar (Mother parity). -->
+    <Grid BackgroundColor="#F1F5F9"
+          SizeChanged="OnOrderPageSizeChanged">
         <layout:ClientTopBar x:Name="TopBar"
                              IsVisible="False"
                              HeightRequest="0"
                              InputTransparent="True"
                              ShowConnectionStatus="True" />
-        <Grid ColumnDefinitions="Auto,*"
-              ColumnSpacing="6"
-              Padding="8">
-            <ImageButton x:Name="OrderPlaceMenuButton"
-                         Source="mian.png"
-                         WidthRequest="40"
-                         HeightRequest="40"
-                         BackgroundColor="Transparent"
-                         VerticalOptions="Start"
-                         Margin="0,4,0,0"
-                         Clicked="OnOrderPlaceMenuClicked"/>
-            <!-- SharedUI Order Place shell (Phase 8) -->
-            <ContentView x:Name="ShellHost"
-                         Grid.Column="1" />
+
+        <Grid x:Name="MainContentGrid" Padding="4">
+            <ContentView x:Name="ShellHost" />
+        </Grid>
+
+        <!-- Same Client POS sidebar as Gift Cards / Live Order (not empty Shell flyout). -->
+        <Grid x:Name="SidebarLayer"
+              IsVisible="False"
+              InputTransparent="True"
+              ZIndex="80"
+              BackgroundColor="Transparent">
+            <BoxView x:Name="SidebarBackdrop"
+                     BackgroundColor="#66000000"
+                     InputTransparent="False">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnSidebarBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar"
+                                  HorizontalOptions="Start"
+                                  TranslationX="-280"
+                                  Role="User"
+                                  SelectedMenu="Restaurant"
+                                  ShowFooter="True" />
         </Grid>
     </Grid>
 </ContentPage>

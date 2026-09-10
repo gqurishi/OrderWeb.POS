@@ -51,6 +51,11 @@ public static class OrderPlaceDialogPresenter
 
         dialog.HorizontalOptions = LayoutOptions.Fill;
         dialog.VerticalOptions = LayoutOptions.Fill;
+        if (dialog.ZIndex <= 0)
+        {
+            dialog.ZIndex = 5000;
+        }
+
         host.Children.Add(dialog);
 
         try

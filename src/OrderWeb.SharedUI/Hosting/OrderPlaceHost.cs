@@ -24,6 +24,7 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     private OrderPlaceOrderKind _kind = OrderPlaceOrderKind.Table;
     private string _headerTitle = string.Empty;
     private string _headerDetail = string.Empty;
+    private string? _headerTable;
     private string? _selectedCategoryId;
     private string? _selectedSubcategoryId;
     private decimal _subtotal;
@@ -61,6 +62,13 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     {
         get => _headerDetail;
         set => Set(ref _headerDetail, value);
+    }
+
+    /// <summary>Table label under guests (e.g. "Table 11"). Empty for collection/delivery.</summary>
+    public string? HeaderTable
+    {
+        get => _headerTable;
+        set => Set(ref _headerTable, value);
     }
 
     public string? SelectedCategoryId

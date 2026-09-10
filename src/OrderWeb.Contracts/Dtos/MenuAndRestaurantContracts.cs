@@ -16,7 +16,13 @@ public sealed record MenuSnapshotDto(
     IReadOnlyList<MenuCategoryDto> Categories,
     IReadOnlyList<MenuProductDto> Products);
 
-public sealed record FloorDto(string Id, string Name, int SortOrder, string? BackgroundImageId = null);
+public sealed record FloorDto(
+    string Id,
+    string Name,
+    int SortOrder,
+    string? BackgroundImageId = null,
+    /// <summary>When set, floor tab uses this count instead of counting tables in the snapshot.</summary>
+    int? TableCount = null);
 
 public sealed record FloorSnapshotDto(string Version, IReadOnlyList<FloorDto> Floors);
 
@@ -33,7 +39,11 @@ public sealed record RestaurantTableDto(
     int GuestCount = 0,
     decimal CurrentTotal = 0m,
     string? SessionStatus = null,
-    string? Icon = null);
+    string? Icon = null,
+    /// <summary>Mother problem state (stale draft / reserved / cleaning) → red card.</summary>
+    bool IsProblem = false,
+    /// <summary>Mother active session → amber card when not a problem.</summary>
+    bool HasActiveSession = false);
 
 public sealed record TableSnapshotDto(string Version, IReadOnlyList<RestaurantTableDto> Tables);
 

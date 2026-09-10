@@ -10,6 +10,8 @@ namespace OrderWeb.SharedUI.Views;
 /// </summary>
 public sealed class OrderPlaceShellView : ContentView
 {
+    private readonly ImageButton _flyoutMenuButton;
+    private readonly Grid _categoryToolbar;
     private readonly HorizontalChipScroller _categories;
     private readonly HorizontalChipScroller _subcategories;
     private readonly Border _subcategoryBand;
@@ -17,6 +19,7 @@ public sealed class OrderPlaceShellView : ContentView
     private readonly VerticalStackLayout _lines;
     private readonly Label _identity;
     private readonly Label _detail;
+    private readonly Label _tableLabel;
     private readonly Label _status;
     private readonly OrderTotalsBlock _totals;
     private readonly Label _discountLabel;
@@ -34,27 +37,53 @@ public sealed class OrderPlaceShellView : ContentView
     private string? _productsFingerprint;
     private string? _linesFingerprint;
 
+    /// <summary>Raised when the in-chrome flyout menu button is tapped.</summary>
+    public event EventHandler? FlyoutMenuRequested;
+
     public OrderPlaceShellView()
     {
+        _flyoutMenuButton = new ImageButton
+        {
+            Source = "companymark.png",
+            WidthRequest = 30,
+            HeightRequest = 30,
+            MinimumWidthRequest = 36,
+            MinimumHeightRequest = 36,
+            BackgroundColor = Colors.Transparent,
+            Aspect = Aspect.AspectFit,
+            VerticalOptions = LayoutOptions.Center,
+            IsVisible = false
+        };
+        SemanticProperties.SetDescription(_flyoutMenuButton, "Open menu");
+        _flyoutMenuButton.Clicked += (_, _) => FlyoutMenuRequested?.Invoke(this, EventArgs.Empty);
+
         _categories = new HorizontalChipScroller { HeightRequest = 56 };
-        _subcategories = new HorizontalChipScroller { HeightRequest = 56 };
+        _subcategories = new HorizontalChipScroller { HeightRequest = 44 };
         _products = new OrderPlaceProductGrid();
 
-        var subBandPadding = OrderPlaceLayout.Token("OpSubcategoryBandPadding", 10);
+        _categoryToolbar = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 10,
+            HeightRequest = 56
+        };
+        _categoryToolbar.Add(_flyoutMenuButton);
+        _categoryToolbar.Add(_categories, 1);
+
+        // Soft subcategory row — no gray tray (same white surface as products).
         _subcategoryBand = new Border
         {
-            StrokeThickness = 1,
-            Padding = new Thickness(subBandPadding, 8),
-            Margin = new Thickness(0, 6, 0, 2),
+            StrokeThickness = 0,
+            BackgroundColor = Colors.Transparent,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
             IsVisible = false,
-            Content = _subcategories,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle
-            {
-                CornerRadius = ControlResources.Value("OpSubcategoryBandCornerRadius", 8)
-            }
+            Content = _subcategories
         };
-        _subcategoryBand.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
-        _subcategoryBand.Use(Border.StrokeProperty, "OwBorder");
 
         var left = new Grid
         {
@@ -64,10 +93,10 @@ public sealed class OrderPlaceShellView : ContentView
                 new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Star)
             },
-            RowSpacing = OrderPlaceLayout.Token("OpSectionGap", 14),
-            Padding = new Thickness(12)
+            RowSpacing = OrderPlaceLayout.Token("OpCategorySubGap", 8),
+            Padding = new Thickness(12, 10, 12, 12)
         };
-        left.Add(_categories);
+        left.Add(_categoryToolbar);
         left.Add(_subcategoryBand, 0, 1);
         left.Add(new ScrollView { Content = _products }, 0, 2);
         left.Use(Grid.BackgroundColorProperty, "OwSurface");
@@ -78,6 +107,15 @@ public sealed class OrderPlaceShellView : ContentView
         _identity.Use(Label.TextColorProperty, "OwTextStrong");
         _detail = new Label { FontAttributes = FontAttributes.Bold, FontSize = 13, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
         _detail.Use(Label.TextColorProperty, "OwTextMuted");
+        _tableLabel = new Label
+        {
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 13,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            IsVisible = false,
+            TextColor = Color.FromArgb("#C2410C")
+        };
         _status = new Label { FontSize = 12, IsVisible = false, LineBreakMode = LineBreakMode.WordWrap };
         _status.Use(Label.TextColorProperty, "OwWarningText");
 
@@ -102,7 +140,7 @@ public sealed class OrderPlaceShellView : ContentView
         _print.Tapped += async (_, _) => { if (_host != null) await _host.PrintAsync(); };
         _pay.Tapped += async (_, _) => { if (_host != null) await _host.PayAsync(); };
 
-        var headerText = new VerticalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { _identity, _detail, _status } };
+        var headerText = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { _identity, _detail, _tableLabel, _status } };
         var headerGrid = new Grid
         {
             ColumnDefinitions =
@@ -218,6 +256,15 @@ public sealed class OrderPlaceShellView : ContentView
         Render();
     }
 
+    /// <summary>
+    /// Shows the flyout control inside the category toolbar (same white card).
+    /// Hosts with their own external menu button leave this false.
+    /// </summary>
+    public void SetFlyoutMenuOverlayMode(bool enabled)
+    {
+        _flyoutMenuButton.IsVisible = enabled;
+    }
+
     private void OnHostStateChanged(object? sender, EventArgs e) =>
         MainThread.BeginInvokeOnMainThread(Render);
 
@@ -233,6 +280,8 @@ public sealed class OrderPlaceShellView : ContentView
         _identity.Text = session.HeaderTitle;
         _detail.Text = session.HeaderDetail;
         _detail.IsVisible = !string.IsNullOrWhiteSpace(session.HeaderDetail);
+        _tableLabel.Text = session.HeaderTable ?? string.Empty;
+        _tableLabel.IsVisible = !string.IsNullOrWhiteSpace(session.HeaderTable);
         _status.Text = session.StatusMessage ?? string.Empty;
         _status.IsVisible = !string.IsNullOrWhiteSpace(session.StatusMessage);
 
@@ -293,7 +342,7 @@ public sealed class OrderPlaceShellView : ContentView
 
     private static string BuildSubcategoriesFingerprint(OrderPlaceSessionState session) =>
         string.Join('|', session.Subcategories.Select(c => $"{c.Id}:{c.Name}")) +
-        $"#{session.SelectedSubcategoryId}";
+        $"#{session.SelectedCategoryId}#{session.SelectedSubcategoryId}";
 
     private static string BuildProductsFingerprint(OrderPlaceSessionState session) =>
         string.Join('|', session.Products.Select(p => $"{p.Id}:{p.Name}:{p.Price:0.00}"));
@@ -336,13 +385,17 @@ public sealed class OrderPlaceShellView : ContentView
             return;
         }
 
+        var parentName = session.Categories
+            .FirstOrDefault(c => string.Equals(c.Id, session.SelectedCategoryId, StringComparison.Ordinal))
+            ?.Name;
+
         _subcategoryBand.IsVisible = true;
         var chips = new List<View>();
         foreach (var category in session.Subcategories)
         {
             var chip = new OrderPlaceSubcategoryButton
             {
-                Text = category.Name,
+                Text = FormatSubcategoryLabel(category.Name, parentName),
                 IsSelected = string.Equals(category.Id, session.SelectedSubcategoryId, StringComparison.Ordinal),
                 CommandParameter = category.Id
             };
@@ -358,6 +411,18 @@ public sealed class OrderPlaceShellView : ContentView
         }
 
         _subcategories.SetChips(chips);
+    }
+
+    /// <summary>Avoid duplicate parent/child labels (e.g. Main → Main becomes All).</summary>
+    private static string FormatSubcategoryLabel(string subcategoryName, string? parentName)
+    {
+        if (!string.IsNullOrWhiteSpace(parentName)
+            && string.Equals(subcategoryName.Trim(), parentName.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return "All";
+        }
+
+        return subcategoryName;
     }
 
     private void RenderProducts(OrderPlaceSessionState session)

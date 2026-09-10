@@ -1,8 +1,12 @@
 using Microsoft.Maui.Devices;
 
-namespace OrderWeb.Client.Views.Dialogs;
+namespace OrderWeb.SharedUI.Controls;
 
-/// <summary>Mother-parity on-screen keyboard overlay for Collection/Delivery customer fields.</summary>
+/// <summary>
+/// Mother/Client-parity on-screen keyboard overlay for Collection/Delivery (and other) customer fields.
+/// Host-neutral: does not reference Mother or Client services. Callers pass the hosting <see cref="Page"/>
+/// to <see cref="ShowAsync"/>.
+/// </summary>
 public partial class VirtualKeyboardDialog : ContentView
 {
     private TaskCompletionSource<string?>? _tcs;
@@ -12,6 +16,7 @@ public partial class VirtualKeyboardDialog : ContentView
     private bool _isClosed;
     private bool _isCompleting;
     private bool _wrappedHostContent;
+    private bool _isNumericOnly;
 
     public VirtualKeyboardDialog()
     {
@@ -27,7 +32,23 @@ public partial class VirtualKeyboardDialog : ContentView
     public void SetPrompt(string title, string actionText = "ENTER")
     {
         KeyboardTitleLabel.Text = string.IsNullOrWhiteSpace(title) ? "Keyboard" : title.Trim();
-        EnterButton.Text = string.IsNullOrWhiteSpace(actionText) ? "ENTER" : actionText.Trim().ToUpperInvariant();
+        var normalizedAction = string.IsNullOrWhiteSpace(actionText) ? "ENTER" : actionText.Trim().ToUpperInvariant();
+        EnterButton.Text = normalizedAction;
+        NumericEnterButton.Text = normalizedAction;
+    }
+
+    /// <summary>
+    /// When true, hides the letter/punctuation rows and the full-keyboard action row, leaving just the
+    /// digit grid plus CANCEL/CLEAR/DEL/DONE — suitable for phone numbers, postcodes, and other numeric entry.
+    /// When false, shows the full QWERTY keyboard (default).
+    /// </summary>
+    public void SetNumericOnly(bool numericOnly)
+    {
+        _isNumericOnly = numericOnly;
+        AlphaRowsContainer.IsVisible = !numericOnly;
+        FullActionsRow.IsVisible = !numericOnly;
+        NumericActionsRow.IsVisible = numericOnly;
+        KeyboardInputEntry.Keyboard = numericOnly ? Keyboard.Numeric : Keyboard.Default;
     }
 
     public async Task<string?> ShowAsync(Page? hostPage = null)
@@ -47,6 +68,56 @@ public partial class VirtualKeyboardDialog : ContentView
         }
 
         AddToPage(page);
+        return await _tcs.Task;
+    }
+
+    /// <summary>
+    /// Show the keyboard on top of an existing dialog overlay grid (Order Notes / Discount / Merge).
+    /// Prefer this when a SharedUI modal is already covering the page — attaching to the page root can sit behind Mother/Client overlays.
+    /// </summary>
+    public async Task<string?> ShowOverAsync(Grid overlayHost, ContentPage? sizePage = null)
+    {
+        ArgumentNullException.ThrowIfNull(overlayHost);
+
+        _tcs = new TaskCompletionSource<string?>();
+        _isClosed = false;
+        _isCompleting = false;
+        _wrappedHostContent = false;
+        _hostPage = sizePage
+            ?? overlayHost.Window?.Page as ContentPage
+            ?? Shell.Current?.CurrentPage as ContentPage
+            ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
+        _hostGrid = overlayHost;
+
+        if (overlayHost.RowDefinitions.Count > 0)
+        {
+            Grid.SetRowSpan(this, Math.Max(1, overlayHost.RowDefinitions.Count));
+        }
+
+        if (overlayHost.ColumnDefinitions.Count > 0)
+        {
+            Grid.SetColumnSpan(this, Math.Max(1, overlayHost.ColumnDefinitions.Count));
+        }
+
+        Grid.SetRow(this, 0);
+        Grid.SetColumn(this, 0);
+        overlayHost.Children.Add(this);
+
+        ZIndex = 20000;
+        InputTransparent = false;
+        IsVisible = true;
+
+        if (_hostPage is not null)
+        {
+            _hostPage.SizeChanged += OnHostPageSizeChanged;
+            ApplyResponsiveLayout(_hostPage.Width, _hostPage.Height);
+        }
+        else
+        {
+            ApplyResponsiveLayout(overlayHost.Width, overlayHost.Height);
+        }
+
+        FocusInput(moveCursorToEnd: true);
         return await _tcs.Task;
     }
 
@@ -81,6 +152,7 @@ public partial class VirtualKeyboardDialog : ContentView
         }
 
         ZIndex = 10000;
+        InputTransparent = false;
         IsVisible = true;
         page.SizeChanged += OnHostPageSizeChanged;
         ApplyResponsiveLayout(page.Width, page.Height);
@@ -161,7 +233,8 @@ public partial class VirtualKeyboardDialog : ContentView
 
         foreach (var button in GetButtons(KeyboardRowsContainer))
         {
-            var isActionButton = button == EnterButton || button.Text is "CANCEL" or "CLEAR" or "ENTER" or "DONE" or "DEL";
+            var isActionButton = button == EnterButton || button == NumericEnterButton ||
+                button.Text is "CANCEL" or "CLEAR" or "ENTER" or "DONE" or "DEL";
             button.HeightRequest = keyHeight;
             button.FontSize = isActionButton ? actionFont : keyFont;
             button.CornerRadius = cornerRadius;
@@ -187,6 +260,14 @@ public partial class VirtualKeyboardDialog : ContentView
     private void SetKeyboardRowSpacing(double spacing)
     {
         foreach (var child in KeyboardRowsContainer.Children)
+        {
+            if (child is Grid row)
+            {
+                row.ColumnSpacing = spacing;
+            }
+        }
+
+        foreach (var child in AlphaRowsContainer.Children)
         {
             if (child is Grid row)
             {

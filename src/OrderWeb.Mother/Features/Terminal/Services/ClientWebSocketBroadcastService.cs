@@ -196,21 +196,68 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             // just committed. The data itself is fetched separately by Client.
             version = await IncrementConfigurationVersionAsync(section);
         }
+
+        await FanOutDataChangedAsync(eventType, version ?? string.Empty, correlationId).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-tip Clients with the current version — does NOT bump configuration_versions.
+    /// Used by the quiet Client tip safety-net when a WS tip may have been missed.
+    /// </summary>
+    public async Task RepublishDataChangedAsync(string eventType, string? version = null, string? correlationId = null)
+    {
+        if (string.IsNullOrWhiteSpace(eventType))
+        {
+            throw new ArgumentException("An event type is required.", nameof(eventType));
+        }
+
+        var section = ResolveConfigurationSection(eventType);
+        if (section != null && string.IsNullOrWhiteSpace(version))
+        {
+            var versions = await GetConfigurationVersionsAsync().ConfigureAwait(false);
+            version = versions.TryGetValue(section, out var current) ? current : "0";
+        }
+
+        await FanOutDataChangedAsync(eventType.Trim(), version ?? string.Empty, correlationId).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetSyncVersionsAsync() =>
+        await GetConfigurationVersionsAsync().ConfigureAwait(false);
+
+    public async Task<long> GetLatestTipEventIdAsync()
+    {
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync().ConfigureAwait(false);
+        await EnsureClientConnectionTablesAsync(connection).ConfigureAwait(false);
+        return await GetLastSyncEventIdAsync(connection).ConfigureAwait(false);
+    }
+
+    /// <summary>Call after a Mother configuration transaction commits.</summary>
+    public Task PublishConfigurationChangedAsync(string section, string? correlationId = null) =>
+        PublishDataChangedAsync($"{section.Trim().ToLowerInvariant()}.updated", string.Empty, correlationId);
+
+    private async Task FanOutDataChangedAsync(string eventType, string version, string? correlationId)
+    {
         var timestamp = DateTimeOffset.UtcNow;
         var correlation = string.IsNullOrWhiteSpace(correlationId) ? Guid.NewGuid().ToString("N") : correlationId;
         long eventId;
         await using (var connection = new MySqlConnection(_databaseService.GetConnectionString()))
         {
-            await connection.OpenAsync();
-            await EnsureClientConnectionTablesAsync(connection);
+            await connection.OpenAsync().ConfigureAwait(false);
+            await EnsureClientConnectionTablesAsync(connection).ConfigureAwait(false);
             await using var command = new MySqlCommand(@"
                 INSERT INTO terminal_events (event_type, entity_type, entity_id, payload_json, created_at)
                 VALUES (@eventType, 'sync', @version, @payload, UTC_TIMESTAMP());
                 SELECT LAST_INSERT_ID();", connection);
             command.Parameters.AddWithValue("@eventType", eventType.Trim());
             command.Parameters.AddWithValue("@version", version ?? string.Empty);
-            command.Parameters.AddWithValue("@payload", JsonSerializer.Serialize(new { correlationId = correlation, restaurantId = GetRestaurantSlug(), timestamp }));
-            eventId = Convert.ToInt64(await command.ExecuteScalarAsync());
+            command.Parameters.AddWithValue("@payload", JsonSerializer.Serialize(new
+            {
+                correlationId = correlation,
+                restaurantId = GetRestaurantSlug(),
+                timestamp
+            }));
+            eventId = Convert.ToInt64(await command.ExecuteScalarAsync().ConfigureAwait(false));
         }
 
         var notification = new
@@ -226,14 +273,10 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             if (client.WebSocket.State == WebSocketState.Open)
             {
-                await SendWebSocketJsonAsync(client.WebSocket, notification, CancellationToken.None);
+                await SendWebSocketJsonAsync(client.WebSocket, notification, CancellationToken.None).ConfigureAwait(false);
             }
         }
     }
-
-    /// <summary>Call after a Mother configuration transaction commits.</summary>
-    public Task PublishConfigurationChangedAsync(string section, string? correlationId = null) =>
-        PublishDataChangedAsync($"{section.Trim().ToLowerInvariant()}.updated", string.Empty, correlationId);
 
     /// <summary>
     /// Phase 4: Client API mutations run inside Mother but must refresh Mother Live Order UI

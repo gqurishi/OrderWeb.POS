@@ -1,5 +1,7 @@
 using OrderWeb.Client.Models;
+using OrderWeb.Client.Pages.Manager;
 using OrderWeb.Client.Pages.Payments;
+using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
 using OrderWeb.SharedUI.Controls;
@@ -16,6 +18,7 @@ namespace OrderWeb.Client.Pages.Orders;
 public partial class OrderPage : ContentPage, IClientOrderPlaceUi
 {
     private const int ToastAutoHideMs = 2200;
+    private const double SidebarWidth = 280;
 
     private readonly ClientOrderPlaceHost _host;
     private readonly OrderPlaceShellView _shell;
@@ -28,6 +31,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     private bool _loaded;
     private bool _isVisible;
     private bool _liveReloadInFlight;
+    private bool _sidebarOpen;
 
     public OrderPage()
     {
@@ -37,13 +41,18 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         _host = new ClientOrderPlaceHost(this);
         _shell = new OrderPlaceShellView();
         _shell.BindHost(_host);
+        _shell.SetFlyoutMenuOverlayMode(true);
+        _shell.FlyoutMenuRequested += (_, _) => _ = OpenSidebarAsync();
         ShellHost.Content = _shell;
+
+        Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
+        Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllFromMotherAsync();
 
         _loader = new PosLoadingOverlay
         {
             IsLoading = false,
             ZIndex = 50,
-            Message = "Opening order…"
+            Message = "Cooking up your data…"
         };
         _toast = new PosToast();
         _toast.DismissRequested += (_, _) => HideToast();
@@ -65,7 +74,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             root.Children.Add(_toastLayer);
         }
 
-        TopBar.MenuClicked += async (_, _) => await OnMenuClickedAsync();
+        TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await OnLogoutClickedAsync();
         TopBar.IsVisible = false;
         _ = ApplyChromeAsync("Order");
@@ -144,16 +153,37 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         });
 
     public Task<bool> ConfirmAsync(string title, string message, string accept, string cancel) =>
-        DisplayAlert(title, message, accept, cancel);
+        new OrderPlaceConfirmDialog().ShowAsync(this, title, message, accept, cancel);
 
-    public Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder) =>
-        DisplayPromptAsync(title, message, accept, cancel, placeholder);
-
-    public async Task<string?> PickActionAsync(string title, params string[] options)
+    public Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder)
     {
-        var result = await DisplayActionSheet(title, "Cancel", null, options);
-        return string.IsNullOrWhiteSpace(result) || result == "Cancel" ? null : result;
+        var numericOnly =
+            title.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
+            placeholder.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("Merge", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("Redeem", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("table number", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("phone", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("points to redeem", StringComparison.OrdinalIgnoreCase) ||
+            placeholder.Contains("07123", StringComparison.OrdinalIgnoreCase) ||
+            placeholder.Contains("e.g. 12", StringComparison.OrdinalIgnoreCase);
+        return new OrderPlacePromptDialog().ShowAsync(this, title, message, accept, cancel, placeholder, numericOnly: numericOnly);
     }
+
+    public Task<string?> PickActionAsync(string title, params string[] options) =>
+        new OrderPlaceActionSheetDialog().ShowAsync(this, title, options);
+
+    public Task<string?> ShowMoreOptionsAsync(IReadOnlyList<OrderPlaceMoreOption> options) =>
+        new OrderPlaceMoreOptionsDialog().ShowAsync(this, options);
+
+    public Task<OrderPlaceDiscountResult?> ShowDiscountAsync(decimal subtotal) =>
+        new OrderPlaceDiscountDialog().ShowAsync(this, subtotal);
+
+    public Task<OrderPlaceTableOption?> ShowTableTransferAsync(string currentTableLabel, IReadOnlyList<OrderPlaceTableOption> availableTables) =>
+        new OrderPlaceTableTransferDialog().ShowAsync(this, currentTableLabel, availableTables);
+
+    public Task<string?> ShowFireCourseAsync(bool includeDrinks = false) =>
+        new OrderPlaceFireCourseDialog().ShowAsync(this, includeDrinks);
 
     public Task<OrderPlaceVariantChoice?> PickVariantAsync(
         string itemName,
@@ -316,22 +346,124 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         }
     }
 
-    private void OnOrderPlaceMenuClicked(object? sender, EventArgs e) =>
-        _ = OnMenuClickedAsync();
-
-    private async Task OnMenuClickedAsync()
+    private void OnOrderPageSizeChanged(object? sender, EventArgs e)
     {
-        if (Shell.Current != null)
+        if (Width <= 0 || Height <= 0)
         {
-            Shell.Current.FlyoutIsPresented = true;
             return;
         }
 
-        await Navigation.PopToRootAsync(false);
+        // Match Mother: tight page padding — flyout control is overlayed, not a left rail.
+        var tablet = Width <= 1280 || Height <= 800;
+        MainContentGrid.Padding = tablet ? new Thickness(2) : new Thickness(4);
+    }
+
+    private void OnSidebarBackdropTapped(object? sender, TappedEventArgs e) =>
+        _ = CloseSidebarAsync();
+
+    private async Task OpenSidebarAsync()
+    {
+        if (_sidebarOpen)
+        {
+            return;
+        }
+
+        _sidebarOpen = true;
+        SidebarLayer.InputTransparent = false;
+        SidebarLayer.IsVisible = true;
+        Sidebar.InputTransparent = false;
+        SidebarBackdrop.InputTransparent = false;
+        Sidebar.TranslationX = -SidebarWidth;
+        await Sidebar.TranslateTo(0, 0, 180, Easing.CubicOut);
+    }
+
+    private async Task CloseSidebarAsync()
+    {
+        if (!_sidebarOpen && !SidebarLayer.IsVisible)
+        {
+            return;
+        }
+
+        // Drop hit-testing immediately so the next Order Place tap is never eaten.
+        SidebarLayer.InputTransparent = true;
+        Sidebar.InputTransparent = true;
+        SidebarBackdrop.InputTransparent = true;
+        _sidebarOpen = false;
+
+        try
+        {
+            await Sidebar.TranslateTo(-SidebarWidth, 0, 100, Easing.CubicIn);
+        }
+        catch
+        {
+            // Ignore animation failures during teardown.
+        }
+
+        SidebarLayer.IsVisible = false;
+    }
+
+    private async Task NavigateFromSidebarAsync(string menu)
+    {
+        await CloseSidebarAsync();
+
+        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        if (!ClientHostAccess.CanOpenMenu(menu))
+        {
+            return;
+        }
+
+        Page page = menu switch
+        {
+            "Cash Drawer" => new CashDrawerPage(),
+            "Restaurant" => new RestaurantPage(),
+            "Collection" => new CollectionOrderPage(),
+            "Delivery" => new DeliveryOrderPage(),
+            "Live Order" => new LiveOrderPage(),
+            "Gift Cards" => new GiftCardPage(),
+            "Loyalty Points" => new LoyaltyPage(),
+            "Reservation" => new ReservationPage(),
+            "Order History" => new OrderHistoryPage(),
+            _ => new LiveOrderPage()
+        };
+
+        if (menu is "Collection" or "Delivery")
+        {
+            await ClientSideNavigation.PushFromSideAsync(Navigation, page);
+            return;
+        }
+
+        await Navigation.PushAsync(page, false);
+    }
+
+    private async Task UpdateAllFromMotherAsync()
+    {
+        await CloseSidebarAsync();
+        if (!await _offlinePolicy.IsMotherOnlineAsync())
+        {
+            await DisplayAlert("Update All", "Mother POS is offline. Connect to Mother to sync this terminal.", "OK");
+            return;
+        }
+
+        try
+        {
+            var sync = new MotherOperationalSyncClient(_cache);
+            var result = await sync.PullAllAsync();
+            await DisplayAlert("Update All", result.SummaryMessage(), "OK");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("Update All failed", ex.Message, "OK");
+        }
     }
 
     private async Task OnLogoutClickedAsync()
     {
+        await CloseSidebarAsync();
         await _cache.ClearLoginSessionAsync();
         await Navigation.PopToRootAsync(false);
     }

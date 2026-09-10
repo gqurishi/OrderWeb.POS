@@ -540,31 +540,34 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     public async Task MoreAsync(CancellationToken cancellationToken = default)
     {
         var takeaway = IsCollectionOrder() || IsDeliveryOrder();
-        var options = new List<string>();
+        var options = new List<OrderPlaceMoreOption>();
 
         if (!takeaway && CanChangeServiceCharge())
         {
             var scRemoved = string.Equals(_currentOrder?.ServiceChargeStatus, "removed", StringComparison.OrdinalIgnoreCase);
-            options.Add(scRemoved ? "RESTORE SERVICE CHARGE" : "REMOVE SERVICE CHARGE");
+            options.Add(scRemoved
+                ? new OrderPlaceMoreOption("RESTORE SERVICE CHARGE")
+                : new OrderPlaceMoreOption("REMOVE SERVICE CHARGE", IsDestructive: true));
         }
 
-        options.Add("Discount");
+        options.Add(new OrderPlaceMoreOption("Discount"));
 
         if (takeaway)
         {
-            options.Add("Previous Orders");
+            var customerPhone = FirstNonEmpty(_customerPhone, _currentOrder?.CustomerPhone);
+            options.Add(new OrderPlaceMoreOption("Previous Orders", IsEnabled: !string.IsNullOrWhiteSpace(customerPhone)));
         }
         else
         {
-            options.Add("Table Transfer");
-            options.Add("Merge Tables");
-            options.Add("Fire Course");
+            options.Add(new OrderPlaceMoreOption("Table Transfer"));
+            options.Add(new OrderPlaceMoreOption("Merge Tables"));
+            options.Add(new OrderPlaceMoreOption("Fire Course", IsEnabled: _currentOrder?.Lines.Count > 0));
         }
 
-        options.Add("Loyalty Points");
-        options.Add("Cash Drawer");
+        options.Add(new OrderPlaceMoreOption("Loyalty Points"));
+        options.Add(new OrderPlaceMoreOption("Cash Drawer"));
 
-        var selected = await _ui.PickActionAsync("More", options.ToArray());
+        var selected = await _ui.ShowMoreOptionsAsync(options);
         if (string.IsNullOrWhiteSpace(selected))
         {
             return;
@@ -652,8 +655,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        var type = await _ui.PickActionAsync("Discount Type", "Fixed amount", "Percentage", "Remove discount");
-        if (string.IsNullOrWhiteSpace(type))
+        var discountPick = await _ui.ShowDiscountAsync(_currentOrder.Subtotal);
+        if (discountPick is null)
         {
             return;
         }
@@ -661,49 +664,31 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         decimal amount = 0m;
         decimal percent = 0m;
         var discountType = "fixed";
-        string? reason = null;
+        string? reason;
 
-        if (type == "Remove discount")
+        if (discountPick.Removed)
         {
             discountType = "fixed";
             amount = 0m;
             reason = "Discount removed";
         }
-        else
+        else if (discountPick.Applied)
         {
-            var amountText = await _ui.PromptAsync(
-                type == "Percentage" ? "Discount %" : "Discount £",
-                type == "Percentage" ? "Enter percentage (0-100):" : "Enter fixed discount amount:",
-                "Apply",
-                "Cancel",
-                "0.00");
-            if (string.IsNullOrWhiteSpace(amountText) ||
-                !decimal.TryParse(amountText, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ||
-                parsed < 0m)
+            discountType = discountPick.IsPercentage ? "percent" : "fixed";
+            if (discountPick.IsPercentage)
             {
-                if (!string.IsNullOrWhiteSpace(amountText))
-                {
-                    await _ui.ShowAlertAsync("Discount", "Enter a valid amount.");
-                }
-
-                return;
-            }
-
-            if (type == "Percentage")
-            {
-                discountType = "percent";
-                percent = parsed;
+                percent = discountPick.Amount;
             }
             else
             {
-                amount = parsed;
+                amount = discountPick.Amount;
             }
 
-            reason = await _ui.PromptAsync("Discount Reason", "Enter a reason for this discount:", "Continue", "Cancel", "Reason");
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                return;
-            }
+            reason = discountPick.Reason;
+        }
+        else
+        {
+            return;
         }
 
         var appliedAmount = discountType == "percent"
@@ -839,15 +824,18 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        var labels = available.Select(table => $"Table {table.TableNumber}").ToArray();
-        var picked = await _ui.PickActionAsync("Transfer to", labels);
-        if (string.IsNullOrWhiteSpace(picked))
+        var currentLabel = $"Table {FirstNonEmpty(_currentOrder.TableNumber, _table?.TableNumber) ?? "?"}";
+        var tableOptions = available
+            .Select(table => new OrderPlaceTableOption(table.Id.ToString(CultureInfo.InvariantCulture), $"Table {table.TableNumber}"))
+            .ToList();
+        var picked = await _ui.ShowTableTransferAsync(currentLabel, tableOptions);
+        if (picked is null)
         {
             return;
         }
 
         var target = available.FirstOrDefault(table =>
-            string.Equals($"Table {table.TableNumber}", picked, StringComparison.OrdinalIgnoreCase));
+            string.Equals(table.Id.ToString(CultureInfo.InvariantCulture), picked.Id, StringComparison.OrdinalIgnoreCase));
         if (target is null)
         {
             return;
@@ -920,7 +908,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        var course = await _ui.PickActionAsync("Fire Course", "Starters", "Mains", "Desserts", "All");
+        var course = await _ui.ShowFireCourseAsync(includeDrinks: false);
         if (string.IsNullOrWhiteSpace(course))
         {
             return;
@@ -1357,9 +1345,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 !string.Equals(result.State.UpdatedUtc, previousUpdated, StringComparison.Ordinal);
             lock (_orderGate)
             {
+                var preservedConflict = IsTableHeaderLabel(_currentOrder?.ConflictMessage)
+                    ? null
+                    : _currentOrder?.ConflictMessage;
                 _currentOrder = result.State with
                 {
-                    ConflictMessage = changedElsewhere ? null : _currentOrder?.ConflictMessage
+                    ConflictMessage = changedElsewhere ? null : preservedConflict
                 };
             }
 
@@ -1625,6 +1616,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         Session.HeaderTitle = BuildHeaderTitle();
         Session.HeaderDetail = BuildHeaderDetail();
+        Session.HeaderTable = BuildHeaderTable();
         Session.SelectedCategoryId = _selectedTopCategory?.Id.ToString(CultureInfo.InvariantCulture);
         Session.SelectedSubcategoryId = _selectedCategory?.Id.ToString(CultureInfo.InvariantCulture);
 
@@ -1752,10 +1744,17 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
         }
 
+        // Real conflicts only. Never promote a "Table N" label into StatusMessage —
+        // that duplicates the orange HeaderTable line (Mother shows table once).
         if (!string.IsNullOrWhiteSpace(_currentOrder?.ConflictMessage) &&
-            !_currentOrder.ConflictMessage.Contains('·'))
+            !_currentOrder.ConflictMessage.Contains('·') &&
+            !IsTableHeaderLabel(_currentOrder.ConflictMessage))
         {
             Session.StatusMessage = _currentOrder.ConflictMessage;
+        }
+        else if (IsTableHeaderLabel(Session.StatusMessage))
+        {
+            Session.StatusMessage = null;
         }
 
         RaiseChanged();
@@ -1941,10 +1940,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return $"{orderPart} · COLLECTION";
         }
 
-        var table = FirstNonEmpty(_currentOrder?.TableNumber, _table?.TableNumber) ?? "?";
-        var baseText = $"{orderPart} · TABLE {table}";
         var orderNote = TruncateHeaderNote(_currentOrder?.Notes, 15);
-        return string.IsNullOrEmpty(orderNote) ? baseText : $"{baseText} | Note: {orderNote}";
+        return string.IsNullOrEmpty(orderNote) ? orderPart : $"{orderPart} | Note: {orderNote}";
     }
 
     private string BuildHeaderDetail()
@@ -1962,6 +1959,43 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
 
         return $"{Math.Max(_currentOrder?.Guests ?? _covers, 1)} guests";
+    }
+
+    private string? BuildHeaderTable()
+    {
+        if (!IsTableOrder())
+        {
+            return null;
+        }
+
+        var table = FirstNonEmpty(_currentOrder?.TableNumber, _table?.TableNumber);
+        if (string.IsNullOrWhiteSpace(table))
+        {
+            return null;
+        }
+
+        // Guard if TableNumber already includes the "Table " prefix.
+        return table.StartsWith("Table ", StringComparison.OrdinalIgnoreCase)
+            ? table
+            : $"Table {table}";
+    }
+
+    /// <summary>Legacy drafts stuffed "Table N" into ConflictMessage; that is not a status line.</summary>
+    private static bool IsTableHeaderLabel(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith("Table ", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // "Table 11" / "Table 11A" only — not longer operational messages.
+        return trimmed.Length <= 24 && !trimmed.Contains('·');
     }
 
     private void RaiseChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
@@ -2121,4 +2155,16 @@ public interface IClientOrderPlaceUi
     Task<IReadOnlyList<string>?> PickMealDealChoicesAsync(string dealName, int pickCount, IReadOnlyList<string> choices);
     Task NavigateToPaymentAsync(decimal total, string orderId, int version, bool allowSplit = true);
     Task CloseOrderPageAsync();
+
+    /// <summary>Mother MoreOptionsDialog parity: blue "i" circle, 3-column tile grid, Cancel.</summary>
+    Task<string?> ShowMoreOptionsAsync(IReadOnlyList<OrderPlaceMoreOption> options);
+
+    /// <summary>Mother DiscountDialog parity: Fixed/Percent, amount, reason chips, Remove/Apply.</summary>
+    Task<OrderPlaceDiscountResult?> ShowDiscountAsync(decimal subtotal);
+
+    /// <summary>Mother TableTransferDialog parity: current table + grid of available empty tables.</summary>
+    Task<OrderPlaceTableOption?> ShowTableTransferAsync(string currentTableLabel, IReadOnlyList<OrderPlaceTableOption> availableTables);
+
+    /// <summary>Mother FireCourseDialog parity: colored course tiles + Fire All.</summary>
+    Task<string?> ShowFireCourseAsync(bool includeDrinks = false);
 }

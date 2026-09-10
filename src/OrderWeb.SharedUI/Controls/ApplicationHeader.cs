@@ -43,7 +43,7 @@ public class ApplicationHeader : ContentView
 
     public ApplicationHeader()
     {
-        _menuButton = IconButton("mian.png", 32);
+        _menuButton = IconButton("companymark.png", 32);
         _logoutButton = IconButton("outred.png", 36);
         _back = new Button { Text = "‹", FontSize = 32, Padding = 0, WidthRequest = 38, HeightRequest = 38, MinimumWidthRequest = 44, MinimumHeightRequest = 44, BackgroundColor = Colors.Transparent, BorderWidth = 0 };
         _back.Use(Button.TextColorProperty, "OwTextPrimary");

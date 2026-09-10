@@ -2,6 +2,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
 using OrderWeb.Client.Dialogs;
 using OrderWeb.Client.Pages.Manager;
+using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Views.Layout;
 using OrderWeb.Client.Views.Printing;
 using Microsoft.Maui.Controls.Shapes;
@@ -592,15 +593,11 @@ public partial class MainPage : ContentPage
                 }
                 else if (e.Connected)
                 {
-                    if (warmCache)
+                    frame.IsLoading = false;
+                    frame.ConnectionStatus = warmCache ? "Mother online" : "Connecting…";
+                    if (!warmCache)
                     {
-                        frame.IsLoading = false;
-                        frame.ConnectionStatus = "Syncing…";
-                        ShowToast("Refreshing from Mother POS…");
-                    }
-                    else
-                    {
-                        frame.LoadingMessage = "Refreshing from Mother POS…";
+                        frame.LoadingMessage = "Loading from Mother POS…";
                         frame.IsLoading = true;
                     }
                 }
@@ -705,7 +702,10 @@ public partial class MainPage : ContentPage
         });
     }
 
-    /// <summary>Full Mother pull used after login and when opening Restaurant.</summary>
+    /// <summary>
+    /// Mother pull into SQLite. Silent by default — never drives fullscreen loader unless
+    /// caller passes an explicit progress reporter (cold login / Update All).
+    /// </summary>
     private async Task<MotherOperationalSyncResult?> SyncOperationalDataFromMotherAsync(
         bool showToastOnFailure = false,
         IProgress<MotherSyncProgress>? progress = null)
@@ -732,8 +732,8 @@ public partial class MainPage : ContentPage
         }
 
         await _configurationVersions.CompareAsync();
-        var progressBridge = progress ?? CreateShellSyncProgress();
-        var result = await _operationalSync.PullAllAsync(progressBridge);
+        // Do not default to CreateShellSyncProgress — that made every Restaurant open flash a preloader.
+        var result = await _operationalSync.PullAllAsync(progress);
         _cachedFloors = await _cache.GetFloorsWithTablesAsync();
         _cacheStatus = await _cache.GetStatusAsync();
         _connectionStatus = result.AnyOk ? "Mother online" : _connectionStatus;
@@ -741,7 +741,10 @@ public partial class MainPage : ContentPage
         if (_activeApplicationFrame is { } frame)
         {
             frame.ConnectionStatus = _connectionStatus;
-            frame.IsLoading = false;
+            if (progress is not null)
+            {
+                frame.IsLoading = false;
+            }
         }
 
         await ApplyOperationalBannerAsync(result, motherOnline: true);
@@ -754,16 +757,20 @@ public partial class MainPage : ContentPage
         return result;
     }
 
+    /// <summary>Visible sync progress only for cold/empty cache (never for warm silent pulls).</summary>
     private IProgress<MotherSyncProgress> CreateShellSyncProgress() =>
         new Progress<MotherSyncProgress>(report =>
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (_activeApplicationFrame is { } frame)
+                var warm = (_cacheStatus?.Categories ?? 0) > 0 && (_cacheStatus?.Tables ?? 0) > 0;
+                if (warm || _activeApplicationFrame is not { } frame)
                 {
-                    frame.IsLoading = true;
-                    frame.LoadingMessage = report.Message;
+                    return;
                 }
+
+                frame.IsLoading = true;
+                frame.LoadingMessage = report.Message;
             });
         });
 
@@ -1411,7 +1418,7 @@ public partial class MainPage : ContentPage
         if (await IsOperationalCacheReadyAsync(null, login.Role))
         {
             ShowDashboard();
-            ShowToast("Refreshing menu and tables from Mother…");
+            StartSilentLiveSync();
             _ = RefreshLoginOperationalSyncInBackgroundAsync(login);
             return;
         }
@@ -1420,7 +1427,7 @@ public partial class MainPage : ContentPage
         Root.BackgroundColor = Color.FromArgb(PageBackground);
         var progressLabel = new Label
         {
-            Text = "Syncing menu and tables from Mother…",
+            Text = "Loading menu and tables from Mother…",
             FontSize = 18,
             FontFamily = "OpenSansSemibold",
             TextColor = Color.FromArgb(MainText),
@@ -1437,7 +1444,7 @@ public partial class MainPage : ContentPage
                 {
                     Mode = ChefLoaderMode.Inline,
                     Size = ChefLoaderSize.Md,
-                    Message = "Syncing menu and tables",
+                    Message = "Loading menu and tables",
                     DelayMilliseconds = 0,
                     IsLoading = true,
                     HorizontalOptions = LayoutOptions.Center
@@ -1454,16 +1461,13 @@ public partial class MainPage : ContentPage
         if (await IsOperationalCacheReadyAsync(sync, login.Role))
         {
             ShowDashboard();
+            StartSilentLiveSync();
             var status = await _cache.GetStatusAsync();
             if (status.Categories <= 0)
             {
                 ShowToast("Menu sync failed: Mother Food Menu has no categories yet. Ordering is empty until you add Food Menu on Mother and Retry / Update All.");
             }
             else if (sync is { RequiredOk: false })
-            {
-                ShowToast(sync.SummaryMessage());
-            }
-            else if (sync is { AllOk: false })
             {
                 ShowToast(sync.SummaryMessage());
             }
@@ -1488,24 +1492,20 @@ public partial class MainPage : ContentPage
             var status = await _cache.GetStatusAsync();
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
+                // Silent success — only surface problems that break the till.
                 if (status.Categories <= 0)
                 {
                     ShowToast("Menu sync failed: Mother Food Menu has no categories yet. Ordering is empty until you add Food Menu on Mother and Update All.");
                 }
-                else if (sync is { AllOk: false })
+                else if (sync is { RequiredOk: false })
                 {
                     ShowToast(sync.SummaryMessage());
-                }
-                else
-                {
-                    ShowToast(sync?.SummaryMessage() ?? "Synced from Mother.");
                 }
             });
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
-                ShowToast($"Background sync failed — using last good cache. ({ex.Message})"));
+            System.Diagnostics.Debug.WriteLine($"Silent login sync failed (using cache): {ex.Message}");
         }
     }
 
@@ -3157,6 +3157,7 @@ public partial class MainPage : ContentPage
 
     private void Logout()
     {
+        StopSilentLiveSync();
         _inactivity.Stop();
         _currentSession = null;
         _ = _cache.ClearLoginSessionAsync();
@@ -3166,6 +3167,108 @@ public partial class MainPage : ContentPage
         _loginMotherUnreachable = false;
         _posSidebarOpen = false;
         ShowLogin();
+    }
+
+    private CancellationTokenSource? _silentLiveSyncCts;
+
+    /// <summary>
+    /// Keeps SQLite fresh from Mother while logged in. WebSocket is primary;
+    /// this is a quiet safety-net pull. Never shows preloaders/toasts.
+    /// </summary>
+    private void StartSilentLiveSync()
+    {
+        if (string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        StopSilentLiveSync();
+        _silentLiveSyncCts = new CancellationTokenSource();
+        var token = _silentLiveSyncCts.Token;
+        _ = RunSilentLiveSyncLoopAsync(token);
+    }
+
+    private void StopSilentLiveSync()
+    {
+        try
+        {
+            _silentLiveSyncCts?.Cancel();
+        }
+        catch
+        {
+            // ignore
+        }
+
+        _silentLiveSyncCts?.Dispose();
+        _silentLiveSyncCts = null;
+    }
+
+    private async Task RunSilentLiveSyncLoopAsync(CancellationToken token)
+    {
+        // First quiet pull shortly after login (dashboard already shown).
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8), token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                if (_currentSession is null)
+                {
+                    return;
+                }
+
+                if (await _offlinePolicy.IsMotherOnlineAsync())
+                {
+                    await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+                    await MainThread.InvokeOnMainThreadAsync(() => ApplySilentLiveSyncToOpenPage());
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Silent live sync: {ex.Message}");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(45), token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private void ApplySilentLiveSyncToOpenPage()
+    {
+        if (_isViewingOrderScreen || _currentSession is null)
+        {
+            return;
+        }
+
+        if (_posSelectedMenu == "Restaurant" && _restaurantTablesView is not null)
+        {
+            BindRestaurantTablesView(_restaurantTablesView, _selectedCachedFloor?.Id);
+            _restaurantTablesView.ConnectionStatus = _connectionStatus;
+            _restaurantTablesView.IsLoading = false;
+            return;
+        }
+
+        if (_posSelectedMenu == "Live Order")
+        {
+            _ = SoftRefreshLiveOrdersAsync();
+        }
     }
 
     private void StartIdleAutoLogout()
@@ -3255,30 +3358,28 @@ public partial class MainPage : ContentPage
 
             Root.Children.Clear();
             Root.BackgroundColor = Color.FromArgb(PageBackground);
-            Root.Children.Add(SharedAppFrame("Restaurant", tablesView, "restaurant"));
+            Root.Children.Add(SharedAppFrame("Restaurant Layout", tablesView, "restaurant"));
         }
 
         try
         {
-            // Cache-first: paint last-good tables immediately.
+            // Cache-first: paint last-good tables immediately — never make the user wait.
             _cachedFloors = await _cache.GetFloorsWithTablesAsync();
             BindRestaurantTablesView(tablesView, preferredFloorId);
             await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
             tablesView.ConnectionStatus = _connectionStatus;
             tablesView.IsLoading = false;
 
-            if (_cachedFloors.SelectMany(f => f.Tables).Any())
+            var hasTables = _cachedFloors.SelectMany(f => f.Tables).Any();
+            if (hasTables)
             {
-                if (remount)
-                {
-                    ShowToast("Refreshing tables from Mother…");
-                }
-            }
-            else
-            {
-                tablesView.IsLoading = true;
+                // Warm floor: silent Mother pull; patch UI only if data changes.
+                _ = SoftRefreshRestaurantFromMotherAsync(tablesView, preferredFloorId ?? _selectedCachedFloor?.Id);
+                return;
             }
 
+            // Cold floor only: show inline busy while first hydrate runs.
+            tablesView.IsLoading = true;
             var sync = await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
             _cachedFloors = await _cache.GetFloorsWithTablesAsync();
             _cacheStatus = await _cache.GetStatusAsync();
@@ -3309,7 +3410,8 @@ public partial class MainPage : ContentPage
             tablesView.IsLoading = false;
             if (_cachedFloors.SelectMany(f => f.Tables).Any())
             {
-                ShowToast($"Table refresh failed — showing last good floor. ({ex.Message})");
+                // Keep last-good floor; no toast for soft refresh failures.
+                System.Diagnostics.Debug.WriteLine($"Restaurant soft refresh failed: {ex.Message}");
                 return;
             }
 
@@ -3318,6 +3420,32 @@ public partial class MainPage : ContentPage
                 frame.ErrorTitle = "Unable to load tables";
                 frame.ErrorMessage = ex.Message;
             }
+        }
+    }
+
+    private async Task SoftRefreshRestaurantFromMotherAsync(RestaurantTablesView tablesView, int? preferredFloorId)
+    {
+        try
+        {
+            await SyncOperationalDataFromMotherAsync(showToastOnFailure: false);
+            if (_posSelectedMenu != "Restaurant" || !ReferenceEquals(_restaurantTablesView, tablesView))
+            {
+                return;
+            }
+
+            _cachedFloors = await _cache.GetFloorsWithTablesAsync();
+            _cacheStatus = await _cache.GetStatusAsync();
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                BindRestaurantTablesView(tablesView, preferredFloorId ?? _selectedCachedFloor?.Id);
+                await ApplyFloorBackgroundAsync(tablesView, _selectedCachedFloor);
+                tablesView.ConnectionStatus = _connectionStatus;
+                tablesView.IsLoading = false;
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Silent restaurant sync failed: {ex.Message}");
         }
     }
 
@@ -3332,13 +3460,29 @@ public partial class MainPage : ContentPage
             .Select(floor => new FloorDto(floor.Id.ToString(), floor.Name, floor.SortOrder, floor.BackgroundImageId))
             .ToList());
         var tables = new TableSnapshotDto(version, _cachedFloors.SelectMany(floor => floor.Tables)
-            .Select(table => new RestaurantTableDto(
-                table.Id.ToString(), table.FloorId.ToString(), table.TableNumber, table.Seats, table.Status,
-                table.PositionX, table.PositionY, table.CurrentOrderId, table.Version, table.Covers,
-                table.CurrentTotal, table.SessionStatus, table.DesignIcon))
+            .Select(table =>
+            {
+                var isProblem =
+                    string.Equals(table.Status, "Reserved", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(table.SessionStatus, "Cleaning", StringComparison.OrdinalIgnoreCase);
+                var hasActiveSession =
+                    !string.IsNullOrWhiteSpace(table.CurrentOrderId) ||
+                    string.Equals(table.Status, "Occupied", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(table.SessionStatus, "Occupied", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(table.SessionStatus, "Payment", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(table.SessionStatus, "Open", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(table.SessionStatus, "Active", StringComparison.OrdinalIgnoreCase);
+                return new RestaurantTableDto(
+                    table.Id.ToString(), table.FloorId.ToString(), table.TableNumber, table.Seats, table.Status,
+                    table.PositionX, table.PositionY, table.CurrentOrderId, table.Version, table.Covers,
+                    table.CurrentTotal, table.SessionStatus, table.DesignIcon,
+                    IsProblem: isProblem,
+                    HasActiveSession: hasActiveSession);
+            })
             .ToList());
 
         tablesView.Bind(floors, tables, _selectedCachedFloor?.Id.ToString());
+        tablesView.SetSyncState(RestaurantSyncMode.Live, DateTime.Now);
     }
 
     private async Task ApplyFloorBackgroundAsync(RestaurantTablesView tablesView, CachedFloor? floor)
@@ -3943,20 +4087,16 @@ public partial class MainPage : ContentPage
 
         _selectedCachedTable = table;
         _guests = Math.Max(covers, 1);
-        _connectionStatus = "Syncing";
+        // SharedUI Order Place (same shell as Mother) — not the legacy MainPage ShowOrder layout.
+        _isViewingOrderScreen = false;
         try
         {
-            // Opens order-create with empty basket (Mother session + draft); first item saves the ledger row.
-            var result = await _orderClient.OpenOrCreateTableOrderAsync(table, _guests, _currentSession);
-            await ApplyMotherOrderResultAsync(result);
-            await LoadOrderMenuAsync();
-            await RefreshRestaurantLayoutCacheAsync();
-            _connectionStatus = "Connected";
-            ShowOrder();
+            var page = new OrderPage(table, covers);
+            ClientPageChrome.HideSystemBackChrome(page);
+            await Navigation.PushAsync(page, false);
         }
         catch (Exception ex)
         {
-            _connectionStatus = "Connected";
             ShowToast(ex.Message);
         }
     }
@@ -5352,13 +5492,10 @@ public partial class MainPage : ContentPage
             await ApplyMotherOrderResultAsync(result);
             _pendingCustomerOrderId = null;
             view.SetStatus("Mother confirmed the customer and opened the order.");
-            await LoadOrderMenuAsync();
-            if (_cachedCategories.Count == 0)
-            {
-                ShowToast("No menu synced from Mother — use Update All, then reopen Collection/Delivery.");
-            }
-
-            ShowOrder();
+            _isViewingOrderScreen = false;
+            var page = new OrderPage(result.State, saved.Name, saved.Phone);
+            ClientPageChrome.HideSystemBackChrome(page);
+            await Navigation.PushAsync(page, false);
         }
         catch (Exception ex)
         {
@@ -6079,10 +6216,15 @@ public partial class MainPage : ContentPage
                                 : null;
                             _guests = Math.Max(_currentOrder.Guests, 1);
                             await _cache.SaveOrderStateAsync(_currentOrder);
-                            await LoadOrderMenuAsync();
                             _connectionStatus = "Connected";
                             ShowToast(opened.Message);
-                            ShowOrder();
+                            _isViewingOrderScreen = false;
+                            var page = new OrderPage(
+                                opened.State,
+                                opened.State.CustomerName,
+                                opened.State.CustomerPhone);
+                            ClientPageChrome.HideSystemBackChrome(page);
+                            await Navigation.PushAsync(page, false);
                         }
                         catch (Exception ex)
                         {
@@ -6099,8 +6241,10 @@ public partial class MainPage : ContentPage
                         : null;
                     _guests = Math.Max(order.Guests, 1);
                     await _cache.SaveOrderStateAsync(order);
-                    await LoadOrderMenuAsync();
-                    ShowOrder();
+                    _isViewingOrderScreen = false;
+                    var fallbackPage = new OrderPage(order, order.CustomerName, order.CustomerPhone);
+                    ClientPageChrome.HideSystemBackChrome(fallbackPage);
+                    await Navigation.PushAsync(fallbackPage, false);
                 }));
         }
 

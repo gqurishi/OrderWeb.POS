@@ -131,23 +131,39 @@ public partial class RestaurantPage : ContentPage
 
         var tableDto = new TableSnapshotDto(
             floorVersion,
-            floors.SelectMany(f => f.Tables.Select(t => new RestaurantTableDto(
-                t.Id.ToString(),
-                t.FloorId.ToString(),
-                t.TableNumber,
-                t.Seats,
-                t.Status,
-                t.PositionX,
-                t.PositionY,
-                t.CurrentOrderId,
-                t.Version,
-                t.Covers,
-                t.CurrentTotal,
-                t.SessionStatus,
-                t.DesignIcon))).ToList());
+            floors.SelectMany(f => f.Tables.Select(t =>
+            {
+                var isProblem =
+                    string.Equals(t.Status, "Reserved", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(t.SessionStatus, "Cleaning", StringComparison.OrdinalIgnoreCase);
+                var hasActiveSession =
+                    !string.IsNullOrWhiteSpace(t.CurrentOrderId) ||
+                    string.Equals(t.Status, "Occupied", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(t.SessionStatus, "Occupied", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(t.SessionStatus, "Payment", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(t.SessionStatus, "Open", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(t.SessionStatus, "Active", StringComparison.OrdinalIgnoreCase);
+                return new RestaurantTableDto(
+                    t.Id.ToString(),
+                    t.FloorId.ToString(),
+                    t.TableNumber,
+                    t.Seats,
+                    t.Status,
+                    t.PositionX,
+                    t.PositionY,
+                    t.CurrentOrderId,
+                    t.Version,
+                    t.Covers,
+                    t.CurrentTotal,
+                    t.SessionStatus,
+                    t.DesignIcon,
+                    IsProblem: isProblem,
+                    HasActiveSession: hasActiveSession);
+            })).ToList());
 
         _tablesView.IsLoading = false;
         _tablesView.Bind(floorDto, tableDto);
+        _tablesView.SetSyncState(RestaurantSyncMode.Live, DateTime.Now);
         var selected = floors.FirstOrDefault(f => f.Tables.Count > 0) ?? floors.FirstOrDefault();
         await ApplyFloorBackgroundAsync(selected);
     }

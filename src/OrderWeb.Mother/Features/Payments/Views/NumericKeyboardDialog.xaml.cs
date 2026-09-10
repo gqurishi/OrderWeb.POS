@@ -59,12 +59,16 @@ namespace POS_in_NET.Views
         /// <summary>
         /// Shows the keypad for long digit strings (gift card numbers, etc.).
         /// </summary>
-        public Task<string?> ShowDigitsAsync(string? initialValue = null, string? title = null, int maxDigits = 20)
+        public Task<string?> ShowDigitsAsync(
+            string? initialValue = null,
+            string? title = null,
+            int maxDigits = 20,
+            Page? hostPage = null)
         {
             ConfigureDigitMode(title, maxDigits);
             _digitCompletionSource = new TaskCompletionSource<string?>();
 
-            if (!DialogOverlayHelper.TryAttachOverlay(this, out _dynamicParentGrid))
+            if (!DialogOverlayHelper.TryAttachOverlay(this, out _dynamicParentGrid, hostPage))
             {
                 _digitCompletionSource.TrySetResult(null);
                 return _digitCompletionSource.Task;

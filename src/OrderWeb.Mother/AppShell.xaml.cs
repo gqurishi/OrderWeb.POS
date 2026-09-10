@@ -289,6 +289,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             var cloudSyncMessage = await TrySyncCloudOrdersAsync(databaseService);
 
             OrderPlacementPageSimple.InvalidateMenuCache();
+            PosLayoutCache.Invalidate();
             AppDataRefreshService.RequestRefresh(AppDataChangeKind.All);
 
             // Push Clients so every paired terminal refreshes authoritative data.

@@ -21,6 +21,7 @@ public static class BackgroundSyncJobRegistrar
         {
             await RegisterPrinterJobsAsync(manager, services);
             RegisterLiveUpdateJob(manager);
+            RegisterClientTipSafetyNetJob(manager, services);
             RegisterCloudJobs(manager, services);
         }
     }
@@ -171,6 +172,38 @@ public static class BackgroundSyncJobRegistrar
                 cancellationToken.ThrowIfCancellationRequested();
                 await DatabaseChangeMonitorService.PollOnceAsync();
                 return BackgroundSyncRunResult.Completed("Till live updates checked.");
+            });
+    }
+
+    private static void RegisterClientTipSafetyNetJob(
+        BackgroundSyncManager manager,
+        IServiceProvider services)
+    {
+        if (!TerminalConfigurationService.IsMotherTerminal)
+        {
+            return;
+        }
+
+        var safetyNet = services.GetRequiredService<ClientTipSafetyNetService>();
+        manager.RegisterJob(
+            new BackgroundSyncJobDefinition
+            {
+                Name = "client-tip-safety-net",
+                Priority = BackgroundSyncPriority.Important,
+                NormalInterval = TimeSpan.FromSeconds(45),
+                IdleInterval = TimeSpan.FromSeconds(45),
+                FailureBackoff = TimeSpan.FromSeconds(60),
+                InitialDelay = TimeSpan.FromSeconds(20),
+                RequiredResources = BackgroundSyncResources.Database |
+                                    BackgroundSyncResources.Network,
+                TerminalScope = BackgroundSyncTerminalScope.MotherOnly,
+                CanRunDuringPaymentOrOrderEntry = true,
+                CanRunWhileUserActive = true
+            },
+            async cancellationToken =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return await safetyNet.RunOnceAsync(cancellationToken);
             });
     }
 
