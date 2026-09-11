@@ -193,8 +193,8 @@
                                                        TextColor="#64748B" />
                                                 <Label Text="{Binding PairingDisplay}"
                                                        FontFamily="OpenSansSemibold"
-                                                       FontSize="18"
-                                                       TextColor="#0F172A"
+                                                       FontSize="20"
+                                                       TextColor="#1D4ED8"
                                                        LineBreakMode="NoWrap" />
                                                 <Label Text="{Binding PairingCodeHint}"
                                                        FontFamily="OpenSansRegular"

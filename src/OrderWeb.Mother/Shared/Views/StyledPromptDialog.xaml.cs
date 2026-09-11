@@ -28,9 +28,10 @@ namespace POS_in_NET.Views
             InputEntry.Keyboard = keyboard ?? Keyboard.Default;
             InputEntry.Text = initialValue;
             InputEntry.IsPassword = false;
-            _useVirtualKeyboard = useVirtualKeyboard;
+            _useVirtualKeyboard = useVirtualKeyboard || InputEntry.Keyboard == Keyboard.Numeric;
             _virtualKeyboardOpened = false;
-            InputEntry.IsReadOnly = useVirtualKeyboard;
+            InputEntry.IsReadOnly = _useVirtualKeyboard;
+            InputEntry.InputTransparent = _useVirtualKeyboard;
         }
 
         public void SetIsPassword(bool isPassword)
@@ -55,14 +56,8 @@ namespace POS_in_NET.Views
 
             if (!DialogOverlayHelper.TryAttachOverlay(this, out _parentGrid))
             {
-                var page = Shell.Current?.CurrentPage ?? Application.Current?.MainPage;
-                if (page != null)
-                {
-                    var result = await page.DisplayPromptAsync(TitleLabel.Text, MessageLabel.Text, initialValue: InputEntry.Text);
-                    return result;
-                }
-
-                return null;
+                var keyboard = CreateSharedKeyboard();
+                return await keyboard.ShowAsync(Shell.Current?.CurrentPage);
             }
 
             if (_useVirtualKeyboard)
@@ -99,16 +94,44 @@ namespace POS_in_NET.Views
             }
 
             _virtualKeyboardOpened = true;
-            var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetInitialText(InputEntry.Text ?? string.Empty);
-
-            var result = await keyboard.ShowAsync();
+            var keyboard = CreateSharedKeyboard();
+            var result = _parentGrid is not null
+                ? await keyboard.ShowOverAsync(_parentGrid)
+                : await keyboard.ShowAsync();
             if (result != null)
             {
                 InputEntry.Text = result;
             }
 
             _virtualKeyboardOpened = false;
+        }
+
+        private OrderWeb.SharedUI.Controls.VirtualKeyboardDialog CreateSharedKeyboard()
+        {
+            var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+            keyboard.SetPrompt(TitleLabel.Text, OkButton.Text);
+            keyboard.SetPlaceholder(InputEntry.Placeholder);
+            if (InputEntry.Keyboard == Keyboard.Numeric)
+            {
+                var descriptor = $"{TitleLabel.Text} {MessageLabel.Text} {InputEntry.Placeholder}";
+                keyboard.SetNumericMode(
+                    descriptor.Contains("PIN", StringComparison.OrdinalIgnoreCase)
+                        ? OrderWeb.SharedUI.Controls.VirtualKeyboardNumericMode.LongDigits
+                        : OrderWeb.SharedUI.Controls.VirtualKeyboardNumericMode.WholeNumber);
+                keyboard.SetRequired(true);
+            }
+            else
+            {
+                keyboard.SetTextMode(InputEntry.Keyboard == Keyboard.Email
+                    ? OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Email
+                    : InputEntry.Keyboard == Keyboard.Telephone
+                        ? OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Phone
+                        : OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Name);
+                keyboard.SetRequired(true);
+            }
+            keyboard.SetMaximumLength(InputEntry.MaxLength == int.MaxValue ? 0 : InputEntry.MaxLength);
+            keyboard.SetInitialText(InputEntry.Text ?? string.Empty);
+            return keyboard;
         }
 
         private void CloseDialog()

@@ -80,7 +80,29 @@ public sealed class ClientTerminalAccessService
             return ClientAccessPolicy.DefaultGrantedFeatures;
         }
 
-        return ClientAccessPolicy.FilterFeatures(stored.Where(pair => pair.Value).Select(pair => pair.Key));
+        // Features added to EditableFeatures after this terminal was first seeded
+        // (e.g. Gift cards / Loyalty) are missing rows — treat those as default-on
+        // so Mother UI "Gift cards ON" and Client API agree without a forced re-Save.
+        var enabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, _) in ClientAccessPolicy.EditableFeatures)
+        {
+            if (stored.TryGetValue(key, out var isEnabled))
+            {
+                if (isEnabled)
+                {
+                    enabled.Add(key);
+                }
+
+                continue;
+            }
+
+            if (ClientAccessPolicy.DefaultGrantedFeatures.Contains(key))
+            {
+                enabled.Add(key);
+            }
+        }
+
+        return ClientAccessPolicy.FilterFeatures(enabled);
     }
 
     public async Task<bool> HasFeatureAsync(string? terminalId, string feature, CancellationToken cancellationToken = default)

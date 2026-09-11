@@ -74,6 +74,8 @@ public static class ClientAccessPolicy
         "restaurant",
         "collection",
         "delivery",
+        // Sidebar label "Rider" (Mother parity). Board stays Mother-only; Client shows a notice on tap.
+        "weborders",
         "liveorder",
         "reservation",
         "customers",
@@ -88,7 +90,6 @@ public static class ClientAccessPolicy
     /// <summary>Never shown or served on Client POS. These stay on Mother.</summary>
     public static readonly IReadOnlySet<string> BlockedRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "weborders",
         "weborder",
         "printersetup",
         "printers",
@@ -196,7 +197,7 @@ public static class ClientAccessPolicy
 
     /// <summary>
     /// Routes Mother will allow a Client to show for the granted feature list.
-    /// Dashboard is always included. Web Orders is never included.
+    /// Dashboard is always included. Rider (weborders) is added by ClientHostAccess for Manager sidebar parity.
     /// </summary>
     public static IReadOnlySet<string> RoutesForFeatures(IEnumerable<string>? features)
     {

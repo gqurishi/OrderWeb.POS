@@ -218,13 +218,6 @@
         Shell.FlyoutItemIsVisible="False" />
 
     <ShellContent
-        Title="Chef Loader"
-        ContentTemplate="{DataTemplate pages:ChefLoaderSandboxPage}"
-        Route="chefloader"
-        Shell.NavBarIsVisible="False"
-        Shell.FlyoutItemIsVisible="False" />
-
-    <ShellContent
         ContentTemplate="{DataTemplate pages:PostcodeLookupPage}"
         Route="postcodelookup"
         Shell.NavBarIsVisible="False"

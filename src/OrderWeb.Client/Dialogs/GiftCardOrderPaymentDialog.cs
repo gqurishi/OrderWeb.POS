@@ -20,8 +20,8 @@ public sealed class GiftCardOrderPaymentDialog : ContentPage
 {
     private readonly decimal _amountDue;
     private readonly MotherGiftCardClient _giftCards = new();
-    private readonly Entry _cardEntry = new() { Placeholder = "Enter or scan gift card number", FontSize = 18 };
-    private readonly Entry _applyEntry = new() { Keyboard = Keyboard.Numeric, FontSize = 18, Placeholder = "0.00" };
+    private readonly Entry _cardEntry = new() { AutomationId = "GiftCardNumber", Placeholder = "Enter or scan gift card number", FontSize = 18, Keyboard = Keyboard.Numeric, MaxLength = 24 };
+    private readonly Entry _applyEntry = new() { AutomationId = "GiftCardAmount", Keyboard = Keyboard.Numeric, FontSize = 18, Placeholder = "0.00", MaxLength = 9 };
     private readonly Label _statusLabel = new() { FontSize = 14, TextColor = Color.FromArgb("#64748B") };
     private readonly Label _balanceLabel = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, Text = "Balance: —" };
     private readonly Button _checkButton = new() { Text = "Check balance", BackgroundColor = Color.FromArgb("#7C3AED"), TextColor = Colors.White, HeightRequest = 48 };

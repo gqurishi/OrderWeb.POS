@@ -1382,6 +1382,39 @@ public sealed class ClientCacheService
         }
     }
 
+    /// <summary>
+    /// After Mother void/pay finalize: drop the open order and free the table in SQLite
+    /// so Restaurant paints released without waiting for the next pull.
+    /// </summary>
+    public async Task RemoveOpenOrderAsync(string? orderId, int? tableId = null)
+    {
+        await InitializeAsync();
+        var now = DateTimeOffset.UtcNow.ToString("O");
+
+        if (!string.IsNullOrWhiteSpace(orderId))
+        {
+            await _database.ExecuteAsync("DELETE FROM order_items WHERE order_id = ?", orderId);
+            await _database.ExecuteAsync("DELETE FROM open_orders WHERE id = ?", orderId);
+        }
+
+        if (tableId is > 0)
+        {
+            await _database.ExecuteAsync(@"
+                UPDATE tables
+                SET status = 'Available',
+                    current_total = 0,
+                    current_order_id = NULL,
+                    covers = 0,
+                    server_name = NULL,
+                    session_status = NULL,
+                    minutes_occupied = 0,
+                    updated_utc = ?
+                WHERE id = ?",
+                now,
+                tableId.Value);
+        }
+    }
+
     public async Task<IReadOnlyList<CachedCustomer>> SearchCachedCustomersAsync(Models.CustomerSearchRequest request)
     {
         await InitializeAsync();

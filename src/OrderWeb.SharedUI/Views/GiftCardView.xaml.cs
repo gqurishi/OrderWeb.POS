@@ -1,5 +1,7 @@
 namespace OrderWeb.SharedUI.Views;
 
+using OrderWeb.SharedUI.Controls;
+
 public enum GiftCardFlowKind
 {
     Activate,
@@ -11,17 +13,22 @@ public enum GiftCardFlowKind
 public partial class GiftCardView : ContentView
 {
     private static readonly string[] PaymentMethods = ["cash", "card"];
+    private bool _isOpeningKeyboard;
 
     public GiftCardView()
     {
         InitializeComponent();
         InitializePaymentPickers();
-        ShowFlow(GiftCardFlowKind.Activate);
+        WireGiftCardKeypads();
+        WireSuccessActionChrome(RedeemActionButtonControl);
+        WireSuccessActionChrome(ActivateActionButtonControl);
+        ShowFlow(GiftCardFlowKind.Redeem);
     }
 
-    public GiftCardFlowKind CurrentFlow { get; private set; } = GiftCardFlowKind.Activate;
+    public GiftCardFlowKind CurrentFlow { get; private set; } = GiftCardFlowKind.Redeem;
 
     public event EventHandler<GiftCardFlowKind>? FlowChanged;
+    public event EventHandler? CloseRequested;
     public event EventHandler? ActivateLookupRequested;
     public event EventHandler? ActivateRequested;
     public event EventHandler? GenerateSellCardRequested;
@@ -119,8 +126,26 @@ public partial class GiftCardView : ContentView
             picker.SelectedIndex = 0;
         }
 
+        ApplyPaymentMethod(ActivatePaymentMethodPickerControl, ActivateCashButton, ActivateCardButton, "cash");
         ApplyPaymentMethod(SellPaymentMethodPickerControl, SellCashButton, SellCardButton, "cash");
         ApplyPaymentMethod(TopUpPaymentMethodPickerControl, TopUpCashButton, TopUpCardButton, "cash");
+    }
+
+    private void WireGiftCardKeypads()
+    {
+        // Tap opens VirtualKeyboardDialog over RootOverlay (Loyalty pattern).
+        // Entries are InputTransparent so Border taps always win.
+        DisableSharedTouchKeyboard(ActivateCardEntryControl);
+        DisableSharedTouchKeyboard(SellCardEntryControl);
+        DisableSharedTouchKeyboard(TopUpCardEntryControl);
+        DisableSharedTouchKeyboard(RedeemCardEntryControl);
+        DisableSharedTouchKeyboard(RedeemAmountEntryControl);
+    }
+
+    private static void DisableSharedTouchKeyboard(Entry entry)
+    {
+        SharedTouchKeyboard.SetEnabled(entry, false);
+        entry.HandlerChanged += (_, _) => SharedTouchKeyboard.SetEnabled(entry, false);
     }
 
     private static void SetFlowButtonState(Button button, bool active)
@@ -153,6 +178,33 @@ public partial class GiftCardView : ContentView
     private void OnSellModeClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Sell);
     private void OnTopUpModeClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.TopUp);
     private void OnRedeemFlowClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Redeem);
+    private void OnCloseFlowClicked(object? sender, EventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Keep Mother emerald action buttons green on WinUI when disabled (not platform grey).</summary>
+    private static void WireSuccessActionChrome(Button button)
+    {
+        ApplySuccessActionChrome(button);
+        button.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Button.IsEnabled))
+            {
+                ApplySuccessActionChrome(button);
+            }
+        };
+    }
+
+    private static void ApplySuccessActionChrome(Button button)
+    {
+        button.SetDynamicResource(BackgroundColorProperty, "OwSuccess");
+        button.SetDynamicResource(Button.TextColorProperty, "OwTextOnPrimary");
+        button.Opacity = button.IsEnabled ? 1d : 0.55d;
+    }
+
+    private void OnActivateCashClicked(object? sender, EventArgs e) =>
+        ApplyPaymentMethod(ActivatePaymentMethodPickerControl, ActivateCashButton, ActivateCardButton, "cash");
+
+    private void OnActivateCardPayClicked(object? sender, EventArgs e) =>
+        ApplyPaymentMethod(ActivatePaymentMethodPickerControl, ActivateCashButton, ActivateCardButton, "card");
 
     private void OnSellCashClicked(object? sender, EventArgs e) =>
         ApplyPaymentMethod(SellPaymentMethodPickerControl, SellCashButton, SellCardButton, "cash");
@@ -174,4 +226,121 @@ public partial class GiftCardView : ContentView
     private void OnTopUpCardClicked(object? sender, EventArgs e) => TopUpRequested?.Invoke(this, EventArgs.Empty);
     private void OnRedeemLookupClicked(object? sender, EventArgs e) => RedeemLookupRequested?.Invoke(this, EventArgs.Empty);
     private void OnRedeemCardClicked(object? sender, EventArgs e) => RedeemRequested?.Invoke(this, EventArgs.Empty);
+
+    private async void OnActivateCardEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenTextKeyboardAsync(ActivateCardEntryControl, "Stock card number");
+
+    private async void OnSellCardEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenTextKeyboardAsync(SellCardEntryControl, "Card number");
+
+    private async void OnTopUpCardEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenTextKeyboardAsync(TopUpCardEntryControl, "Gift card number");
+
+    private async void OnRedeemCardEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenTextKeyboardAsync(RedeemCardEntryControl, "Gift card number");
+
+    private async void OnRedeemAmountEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenNumericKeyboardAsync(
+            RedeemAmountEntryControl,
+            "Redeem amount",
+            VirtualKeyboardNumericMode.Currency,
+            minimum: 0,
+            maximum: 999999.99m);
+
+    /// <summary>After a successful check, open the amount keypad.</summary>
+    public void FocusRedeemAmountForKeypad() =>
+        _ = OpenNumericKeyboardAsync(
+            RedeemAmountEntryControl,
+            "Redeem amount",
+            VirtualKeyboardNumericMode.Currency,
+            minimum: 0,
+            maximum: 999999.99m);
+
+    private async Task OpenTextKeyboardAsync(Entry entry, string title)
+    {
+        if (_isOpeningKeyboard || !entry.IsEnabled)
+        {
+            return;
+        }
+
+        _isOpeningKeyboard = true;
+        try
+        {
+            entry.Unfocus();
+            await Task.Delay(30);
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetTextMode(VirtualKeyboardTextMode.Text);
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetPlaceholder(entry.Placeholder ?? "Type here");
+            keyboard.SetMaximumLength(entry.MaxLength == int.MaxValue ? 32 : Math.Max(entry.MaxLength, 1));
+            keyboard.SetRequired(false);
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+
+            var result = await keyboard.ShowOverAsync(RootOverlay, FindHostPage());
+            if (result is not null)
+            {
+                entry.Text = result.Trim();
+            }
+        }
+        finally
+        {
+            _isOpeningKeyboard = false;
+        }
+    }
+
+    private async Task OpenNumericKeyboardAsync(
+        Entry entry,
+        string title,
+        VirtualKeyboardNumericMode mode,
+        decimal? minimum = null,
+        decimal? maximum = null)
+    {
+        if (_isOpeningKeyboard || !entry.IsEnabled)
+        {
+            return;
+        }
+
+        _isOpeningKeyboard = true;
+        try
+        {
+            entry.Unfocus();
+            await Task.Delay(30);
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetPlaceholder(entry.Placeholder ?? "0.00");
+            keyboard.SetMaximumLength(entry.MaxLength == int.MaxValue ? 12 : Math.Max(entry.MaxLength, 1));
+            keyboard.SetRequired(false);
+            keyboard.SetNumericMode(mode, minimum: minimum, maximum: maximum);
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+
+            var result = await keyboard.ShowOverAsync(RootOverlay, FindHostPage());
+            if (result is not null)
+            {
+                entry.Text = result.Trim();
+            }
+        }
+        finally
+        {
+            _isOpeningKeyboard = false;
+        }
+    }
+
+    private ContentPage? FindHostPage()
+    {
+        Element? current = this;
+        while (current is not null)
+        {
+            if (current is ContentPage page)
+            {
+                return page;
+            }
+
+            current = current.Parent;
+        }
+
+        return Shell.Current?.CurrentPage as ContentPage
+            ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
+    }
 }

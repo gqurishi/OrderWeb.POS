@@ -2182,7 +2182,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             request.GiftCardIdempotencyKey,
             request.LoyaltyLookup,
             request.LoyaltyPoints,
-            request.LoyaltyIdempotencyKey));
+            request.LoyaltyIdempotencyKey,
+            request.TipAmount,
+            request.TipTotal));
 
         if (!result.IsSuccess || result.Value == null)
         {
@@ -3571,9 +3573,17 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             }
             else if (!reader.IsDBNull(reader.GetOrdinal("paired_at")))
             {
-                return ClientActivationResult.Fail(
-                    "This pairing code has already been used. Create a new code on the Mother terminal.",
-                    HttpStatusCode.Conflict);
+                var storedCode = reader.IsDBNull(reader.GetOrdinal("pairing_code"))
+                    ? string.Empty
+                    : reader.GetString("pairing_code");
+                if (!string.Equals(storedCode, code, StringComparison.Ordinal))
+                {
+                    failureReason = "already_paired";
+                    failureMessage = string.IsNullOrWhiteSpace(storedCode)
+                        ? "This terminal is already paired but has no permanent code. Create a new code on Mother Terminal Health."
+                        : "This pairing code is incorrect for the already-paired terminal.";
+                }
+                // Matching permanent code: continue and re-issue token below.
             }
             else
             {
@@ -3624,13 +3634,11 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     websocket_connected_at = NULL,
                     websocket_disconnected_at = NULL,
                     websocket_last_message_at = NULL,
-                    pairing_code = NULL,
                     pairing_expires_at = NULL,
                     revoked_at = NULL,
                     updated_at = NOW()
                 WHERE terminal_name = @terminalName
                   AND pairing_code = @pairingCode
-                  AND paired_at IS NULL
                   AND disabled_at IS NULL", connection, transaction))
             {
                 updatePairingCommand.Parameters.AddWithValue("@terminalId", terminalId);
@@ -4698,7 +4706,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string? GiftCardIdempotencyKey = null,
         string? LoyaltyLookup = null,
         int? LoyaltyPoints = null,
-        string? LoyaltyIdempotencyKey = null);
+        string? LoyaltyIdempotencyKey = null,
+        decimal TipAmount = 0m,
+        decimal TipTotal = 0m);
 
     private sealed record ClientPrintRequest(
         string RequestId,

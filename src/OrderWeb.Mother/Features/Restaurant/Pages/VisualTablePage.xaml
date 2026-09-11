@@ -313,7 +313,7 @@
         </Grid>
         
         <!-- Numeric Keyboard Dialog -->
-        <views:NumericKeyboardDialog x:Name="NumericKeyboard" 
+        <shared:NumericKeyboardDialog x:Name="NumericKeyboard"
                                      Grid.RowSpan="3"
                                      ZIndex="2000"/>
     </Grid>

@@ -3,6 +3,7 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.Contracts.Dtos;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
@@ -391,7 +392,13 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             }
         }
 
-        var note = await _ui.PromptAsync("Notes", $"Note for {motherLine.Name}", "Save", "Cancel", motherLine.Notes ?? "Kitchen note");
+        var note = await _ui.PromptAsync(
+            "Notes",
+            $"Note for {motherLine.Name}",
+            "Save",
+            "Cancel",
+            "Kitchen note",
+            motherLine.Notes ?? string.Empty);
         if (note is null)
         {
             return;
@@ -426,7 +433,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             "Enter notes for this order:",
             "Save",
             "Cancel",
-            _currentOrder.Notes ?? "e.g., Allergies, special requests...");
+            "e.g., Allergies, special requests...",
+            _currentOrder.Notes ?? string.Empty);
         if (note is null)
         {
             return;
@@ -457,10 +465,11 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     {
         var isTable = IsTableOrder();
         var hasItems = _currentOrder?.Lines.Count > 0;
+        // Match Mother IsUncommittedLocalTableOrder: no Mother order number yet
+        // (do not use Version alone — failed sync can leave Version 0 with a real order).
         var isUncommittedTable = isTable &&
                                  (_currentOrder is null ||
-                                  string.IsNullOrWhiteSpace(_currentOrder.OrderNumber) ||
-                                  _currentOrder.Version <= 0);
+                                  string.IsNullOrWhiteSpace(_currentOrder.OrderNumber));
 
         if (isUncommittedTable && !hasItems)
         {
@@ -498,6 +507,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
+        // Same SharedUI Void Reason sheet as Mother (blue "i", stacked reasons, Cancel).
         var reason = await _ui.PickActionAsync(
             "Void Reason",
             "Customer changed mind",
@@ -630,15 +640,20 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
+            var tableId = _table?.Id ?? _currentOrder.TableId;
             var result = await _orderClient.VoidCollectionOrderAsync(
                 _currentOrder,
                 reason,
                 approvingPin,
-                _table?.Id ?? _currentOrder.TableId);
+                tableId);
+            var orderId = _currentOrder.OrderId;
             _currentOrder = result.State;
-            await _cache.SaveOrderStateAsync(_currentOrder);
+            await _cache.RemoveOpenOrderAsync(orderId, tableId);
             PublishSession();
-            await _ui.ShowToastAsync("Voided", result.Message, StatusKind.Success);
+            // Match Mother: confirm void, then leave Order Place (dashboard / prior surface).
+            await _ui.ShowAlertAsync("Voided", string.IsNullOrWhiteSpace(result.Message)
+                ? $"Order has been voided.\nReason: {reason}"
+                : result.Message);
             await _ui.CloseOrderPageAsync();
         }
         catch (Exception ex)
@@ -908,7 +923,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             return;
         }
 
-        var course = await _ui.ShowFireCourseAsync(includeDrinks: false);
+        var course = await _ui.ShowFireCourseAsync(includeDrinks: true);
         if (string.IsNullOrWhiteSpace(course))
         {
             return;
@@ -1305,17 +1320,309 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 return;
             }
 
-            await _ui.NavigateToPaymentAsync(
-                _currentOrder.Total,
-                _currentOrder.OrderId,
-                _currentOrder.Version,
-                allowSplit: !IsCustomerHubOrder(_currentOrder));
+            var billTotal = _currentOrder.Total;
+            var isTakeaway = IsCollectionOrder() || IsDeliveryOrder();
+            // Table can tip/split; Collection/Delivery stay full-bill only.
+            var allowSplit = !isTakeaway;
+
+            decimal tip = 0m;
+            if (allowSplit && ShouldOfferTip())
+            {
+                var tipResult = await _ui.ShowPaymentTipAsync(billTotal);
+                if (tipResult is null)
+                {
+                    return;
+                }
+
+                tip = Math.Max(0m, tipResult.Value);
+            }
+
+            var totalDue = billTotal + tip;
+            var remainingBalance = totalDue;
+
+            OrderWeb.SharedUI.Payments.PaymentSplitPlan plan;
+            if (isTakeaway)
+            {
+                plan = OrderWeb.SharedUI.Payments.PaymentSplitPlan.Full(totalDue);
+            }
+            else
+            {
+                var setup = await _ui.ShowPaymentSetupPlanAsync(
+                    totalDue,
+                    remainingBalance,
+                    BuildPayByItemsLines(_currentOrder),
+                    _currentOrder.Subtotal,
+                    _currentOrder.ServiceCharge,
+                    GetDeliveryFee(_currentOrder),
+                    _currentOrder.Discount);
+                if (setup is null)
+                {
+                    return;
+                }
+
+                plan = setup;
+            }
+
+            var paymentAmount = plan.GetThisPaymentAmount(remainingBalance);
+            if (paymentAmount <= 0m)
+            {
+                await _ui.ShowAlertAsync("Payment", "There is nothing left to pay on this order.");
+                return;
+            }
+
+            var tipThisAttempt = AllocateTip(tip, paymentAmount, remainingBalance);
+            var remainingAfter = Math.Max(0m, remainingBalance - paymentAmount);
+
+            // Mother chrome: SELECT PAYMENT METHOD (not the full Client PaymentView page).
+            var method = await _ui.ShowPaymentMethodAsync(
+                paymentAmount,
+                remainingAfter,
+                plan.GetPaymentTitle());
+            if (method == OrderWeb.SharedUI.Payments.PaymentMethodChoice.Cancelled)
+            {
+                return;
+            }
+
+            await TakeWizardPaymentAsync(
+                method,
+                paymentAmount,
+                tipThisAttempt,
+                tip,
+                settlesOrder: remainingAfter <= 0.009m);
         }
         finally
         {
             Session.ActionsBusy = false;
             PublishSession();
         }
+    }
+
+    private async Task TakeWizardPaymentAsync(
+        OrderWeb.SharedUI.Payments.PaymentMethodChoice method,
+        decimal amount,
+        decimal tipAmount,
+        decimal tipTotal,
+        bool settlesOrder)
+    {
+        if (_currentOrder is null)
+        {
+            return;
+        }
+
+        string? giftCardNumber = null;
+        string? loyaltyLookup = null;
+        int? loyaltyPoints = null;
+        var payAmount = amount;
+        string methodKey;
+
+        switch (method)
+        {
+            case OrderWeb.SharedUI.Payments.PaymentMethodChoice.Cash:
+            {
+                methodKey = "cash";
+                var cash = await _ui.ShowPaymentCashAsync(amount);
+                if (!cash.Success)
+                {
+                    return;
+                }
+
+                payAmount = cash.AmountPaid > 0 ? cash.AmountPaid : amount;
+                break;
+            }
+            case OrderWeb.SharedUI.Payments.PaymentMethodChoice.Card:
+                // Mother parity: CARD records immediately (no terminal confirm dialog).
+                methodKey = "card";
+                break;
+            case OrderWeb.SharedUI.Payments.PaymentMethodChoice.GiftCard:
+            {
+                methodKey = "gift_card";
+                var gift = await _ui.ShowPaymentGiftCardAsync(amount);
+                if (!gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber) || gift.AmountApplied <= 0)
+                {
+                    await _ui.ShowAlertAsync("Gift card", gift.Message ?? "Gift card payment cancelled. No balance was changed.");
+                    return;
+                }
+
+                giftCardNumber = gift.CardNumber;
+                payAmount = gift.AmountApplied;
+                break;
+            }
+            case OrderWeb.SharedUI.Payments.PaymentMethodChoice.Loyalty:
+                methodKey = "loyalty";
+                var loyalty = await _ui.PromptLoyaltyPaymentAsync(amount);
+                if (loyalty is null || !loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
+                {
+                    await _ui.ShowAlertAsync("Loyalty", loyalty?.Message ?? "Loyalty payment cancelled. No points were changed.");
+                    return;
+                }
+
+                loyaltyLookup = loyalty.Lookup;
+                loyaltyPoints = loyalty.Points;
+                payAmount = loyalty.AmountApplied;
+                break;
+            default:
+                return;
+        }
+
+        Session.PaymentActionLabel = "PAYING…";
+        RaiseChanged();
+        var paymentService = new ClientPaymentService(_cache);
+        var result = await paymentService.TakePaymentAsync(
+            _currentOrder.OrderId,
+            methodKey,
+            payAmount,
+            expectedOrderRevision: _currentOrder.Version,
+            giftCardNumber: giftCardNumber,
+            giftCardIdempotencyKey: giftCardNumber == null
+                ? null
+                : $"gift-card:{_currentOrder.OrderId}:{giftCardNumber}:{payAmount:F2}",
+            loyaltyLookup: loyaltyLookup,
+            loyaltyPoints: loyaltyPoints,
+            loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
+                ? null
+                : $"loyalty:{_currentOrder.OrderId}:{loyaltyLookup}:{loyaltyPoints}",
+            tipAmount: tipAmount,
+            tipTotal: tipTotal);
+
+        if (giftCardNumber != null)
+        {
+            ClientGiftCardDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved ? null : (result.IsUnknown ? GiftCardErrorCodes.OfflineMother : GiftCardErrorCodes.Unknown));
+        }
+
+        if (loyaltyLookup != null)
+        {
+            var queued = !result.Approved &&
+                         result.Message?.Contains("queued", StringComparison.OrdinalIgnoreCase) == true;
+            ClientLoyaltyDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved
+                    ? null
+                    : (result.IsUnknown
+                        ? LoyaltyErrorCodes.OfflineMother
+                        : queued
+                            ? LoyaltyErrorCodes.Queued
+                            : LoyaltyErrorCodes.Unknown),
+                queued);
+        }
+
+        if (!result.Approved)
+        {
+            await _ui.ShowAlertAsync(
+                result.IsUnknown ? "Payment status unknown" : "Payment not approved",
+                result.Message);
+            return;
+        }
+
+        var fullyPaid = settlesOrder && payAmount + 0.009m >= amount;
+        var paidByLabel = methodKey switch
+        {
+            "card" => "Paid by card",
+            "cash" => "Paid by cash",
+            "gift_card" => "Paid by gift card",
+            "loyalty" => "Paid by loyalty",
+            _ => "Payment approved"
+        };
+        await _ui.ShowToastAsync(
+            fullyPaid ? paidByLabel : "Payment approved",
+            fullyPaid
+                ? $"£{payAmount:F2} paid. Printing receipt…"
+                : result.Message,
+            StatusKind.Success);
+
+        if (fullyPaid)
+        {
+            // Mother completes order + prints receipt; Client leaves Order Place.
+            await _ui.CloseOrderPageAsync();
+            return;
+        }
+
+        try
+        {
+            var refreshed = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
+            _currentOrder = PreserveCustomer(refreshed.State);
+            await _cache.SaveOrderStateAsync(_currentOrder);
+            PublishSession();
+        }
+        catch
+        {
+            // Payment already succeeded; refresh is best-effort.
+        }
+    }
+
+    private bool ShouldOfferTip()
+    {
+        if (!IsTableOrder() || _currentOrder is null)
+        {
+            return false;
+        }
+
+        var status = (_currentOrder.ServiceChargeStatus ?? "not_configured").Trim().ToLowerInvariant();
+        return status is "not_configured" or "" or "none"
+            && _currentOrder.ServiceChargePercent <= 0m
+            && _currentOrder.ServiceCharge <= 0m;
+    }
+
+    private static decimal AllocateTip(decimal tipRemaining, decimal paymentAmount, decimal remainingBalance)
+    {
+        if (tipRemaining <= 0m || paymentAmount <= 0m || remainingBalance <= 0m)
+        {
+            return 0m;
+        }
+
+        if (paymentAmount >= remainingBalance - 0.009m)
+        {
+            return tipRemaining;
+        }
+
+        return Math.Min(
+            tipRemaining,
+            decimal.Round(tipRemaining * paymentAmount / remainingBalance, 2, MidpointRounding.AwayFromZero));
+    }
+
+    private static decimal GetDeliveryFee(MotherOrderState order) =>
+        order.Lines
+            .Where(line => string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                || line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
+            .Sum(line => line.UnitPrice * line.Quantity);
+
+    private static IReadOnlyList<OrderWeb.SharedUI.Payments.PaymentPayByItemsLine> BuildPayByItemsLines(MotherOrderState order)
+    {
+        return order.Lines
+            .Where(line => line.Quantity > 0
+                && !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                && !line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
+            .Select(line =>
+            {
+                var detailParts = new List<string>();
+                if (line.Modifiers is { Count: > 0 })
+                {
+                    detailParts.Add(string.Join(", ", line.Modifiers));
+                }
+
+                if (!string.IsNullOrWhiteSpace(line.Notes))
+                {
+                    detailParts.Add(line.Notes!);
+                }
+
+                // Mother uses line total ÷ qty (VAT-inclusive unit). Client UnitPrice is already that unit.
+                var unit = Math.Round(Math.Max(0m, line.UnitPrice), 2, MidpointRounding.AwayFromZero);
+                return new OrderWeb.SharedUI.Payments.PaymentPayByItemsLine
+                {
+                    ItemId = line.Id,
+                    Name = line.Name,
+                    Detail = detailParts.Count == 0 ? null : string.Join(" · ", detailParts),
+                    Quantity = line.Quantity,
+                    UnitAmount = unit
+                };
+            })
+            .Where(line => line.UnitAmount > 0)
+            .ToList();
     }
 
     /// <summary>
@@ -2147,14 +2454,47 @@ public interface IClientOrderPlaceUi
     Task ShowToastAsync(string title, string message, StatusKind kind = StatusKind.Info);
     Task SetLoadingAsync(bool isLoading, string? message = null);
     Task<bool> ConfirmAsync(string title, string message, string accept, string cancel);
-    Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder);
+    Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder, string? initialText = null);
     Task<string?> PickActionAsync(string title, params string[] options);
     Task<OrderPlaceVariantChoice?> PickVariantAsync(string itemName, IReadOnlyList<OrderPlaceVariantChoice> variants);
     Task<OrderPlaceQuickNoteResult> PickQuickNoteAsync(string itemName, IReadOnlyList<string> notes);
     Task<IReadOnlyList<OrderPlaceAddonChoice>?> PickAddonsAsync(string itemName, IReadOnlyList<OrderPlaceAddonChoice> addons);
     Task<IReadOnlyList<string>?> PickMealDealChoicesAsync(string dealName, int pickCount, IReadOnlyList<string> choices);
-    Task NavigateToPaymentAsync(decimal total, string orderId, int version, bool allowSplit = true);
+    Task NavigateToPaymentAsync(
+        decimal total,
+        string orderId,
+        int version,
+        bool allowSplit = true,
+        decimal tipAmount = 0m,
+        decimal tipTotal = 0m);
     Task CloseOrderPageAsync();
+
+    /// <summary>SharedUI tip dialog (Table). Null = cancelled.</summary>
+    Task<decimal?> ShowPaymentTipAsync(decimal orderTotal);
+
+    /// <summary>SharedUI Payment Setup (Table). Null = cancelled/back.</summary>
+    Task<OrderWeb.SharedUI.Payments.PaymentSplitPlan?> ShowPaymentSetupPlanAsync(
+        decimal totalDue,
+        decimal remainingBalance,
+        IReadOnlyList<OrderWeb.SharedUI.Payments.PaymentPayByItemsLine> payByItemsLines,
+        decimal orderSubtotal,
+        decimal serviceCharge,
+        decimal deliveryFee,
+        decimal discount);
+
+    /// <summary>Mother SELECT PAYMENT METHOD (Cash / Card / Gift).</summary>
+    Task<OrderWeb.SharedUI.Payments.PaymentMethodChoice> ShowPaymentMethodAsync(
+        decimal amountDue,
+        decimal remainingAfterThisPayment = 0,
+        string? title = null);
+
+    /// <summary>SharedUI CASH PAYMENT (Exact / change / confirm).</summary>
+    Task<OrderWeb.SharedUI.Payments.PaymentCashResult> ShowPaymentCashAsync(decimal amountDue);
+
+    /// <summary>SharedUI GIFT CARD PAYMENT (lookup via Mother; APPLY returns card+amount).</summary>
+    Task<OrderWeb.SharedUI.Payments.PaymentGiftCardResult> ShowPaymentGiftCardAsync(decimal amountDue);
+
+    Task<OrderWeb.Client.Dialogs.LoyaltyOrderPaymentResult?> PromptLoyaltyPaymentAsync(decimal amountDue);
 
     /// <summary>Mother MoreOptionsDialog parity: blue "i" circle, 3-column tile grid, Cancel.</summary>
     Task<string?> ShowMoreOptionsAsync(IReadOnlyList<OrderPlaceMoreOption> options);
@@ -2165,6 +2505,6 @@ public interface IClientOrderPlaceUi
     /// <summary>Mother TableTransferDialog parity: current table + grid of available empty tables.</summary>
     Task<OrderPlaceTableOption?> ShowTableTransferAsync(string currentTableLabel, IReadOnlyList<OrderPlaceTableOption> availableTables);
 
-    /// <summary>Mother FireCourseDialog parity: colored course tiles + Fire All.</summary>
-    Task<string?> ShowFireCourseAsync(bool includeDrinks = false);
+    /// <summary>Mother FireCourseDialog parity: colored course tiles + Fire All (includes Drinks).</summary>
+    Task<string?> ShowFireCourseAsync(bool includeDrinks = true);
 }

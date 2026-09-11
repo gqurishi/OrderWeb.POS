@@ -80,7 +80,9 @@
                                         StrokeShape="RoundRectangle 8"
                                         Padding="12,0">
                                     <Entry x:Name="TenderedEntry"
+                                           AutomationId="PaymentAmount"
                                            Placeholder="0.00"
+                                           MaxLength="9"
                                            Keyboard="Numeric"
                                            BackgroundColor="Transparent"
                                            FontFamily="OpenSansRegular"

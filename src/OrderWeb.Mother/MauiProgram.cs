@@ -46,6 +46,19 @@ public static class MauiProgram
 #endif
 			});
 
+		// Mother POS uses the canonical SharedUI touch keyboard for every Entry/Editor,
+		// including controls with explicit styles and controls created in code.
+		Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping("OrderWebSharedTouchKeyboard", (_, entry) =>
+		{
+			if (entry is Entry control)
+				OrderWeb.SharedUI.Controls.SharedTouchKeyboard.SetEnabled(control, true);
+		});
+		Microsoft.Maui.Handlers.EditorHandler.Mapper.AppendToMapping("OrderWebSharedTouchKeyboard", (_, editor) =>
+		{
+			if (editor is Editor control)
+				OrderWeb.SharedUI.Controls.SharedTouchKeyboard.SetEnabled(control, true);
+		});
+
 #if DEBUG
 		builder.Logging.AddDebug();
 #endif

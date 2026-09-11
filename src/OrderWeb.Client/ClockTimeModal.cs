@@ -231,7 +231,7 @@ public sealed class ClockTimeModal : ContentPage
                         _pinErrorFrame
                     }
                 },
-                BuildSquareKeypad()
+                BuildSharedKeypad()
             }
         };
         SetColumn(pinPanel.Children[1], 1);
@@ -350,58 +350,19 @@ public sealed class ClockTimeModal : ContentPage
         return dashboard;
     }
 
-    private View BuildSquareKeypad()
+    private View BuildSharedKeypad()
     {
-        var grid = new Grid
+        var keypad = new NumberKeypad
         {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(112),
-                new ColumnDefinition(112),
-                new ColumnDefinition(112)
-            },
-            RowDefinitions =
-            {
-                new RowDefinition(112),
-                new RowDefinition(112),
-                new RowDefinition(112),
-                new RowDefinition(112)
-            },
-            ColumnSpacing = 20,
-            RowSpacing = 20,
+            KeySize = 112,
+            ShowActions = true,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center
         };
-
-        var values = new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "X" };
-        for (var i = 0; i < values.Length; i++)
-        {
-            var value = values[i];
-            var key = SquareKey(value);
-            grid.Children.Add(key);
-            SetRow(key, i / 3);
-            SetColumn(key, i % 3);
-        }
-
-        return grid;
-    }
-
-    private Button SquareKey(string text)
-    {
-        var button = new Button
-        {
-            Text = text,
-            BackgroundColor = text == "X" ? Color.FromArgb("#FFF1F2") : Colors.White,
-            BorderColor = Color.FromArgb("#222222"),
-            BorderWidth = 2,
-            CornerRadius = 0,
-            TextColor = text == "X" ? Color.FromArgb("#DC2626") : Color.FromArgb("#111827"),
-            FontSize = text.Length == 1 ? 34 : 16,
-            WidthRequest = 112,
-            HeightRequest = 112
-        };
-        button.Clicked += (_, _) => OnPinKey(text);
-        return button;
+        keypad.KeyPressed += (_, e) => OnPinKey(e.Key);
+        keypad.ClearPressed += (_, _) => OnPinKey("Clear");
+        keypad.BackspacePressed += (_, _) => OnPinKey("X");
+        return keypad;
     }
 
     private static Border PinDot() =>

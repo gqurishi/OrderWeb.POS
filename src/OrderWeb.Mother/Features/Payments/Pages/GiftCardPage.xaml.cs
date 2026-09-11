@@ -14,7 +14,7 @@ public partial class GiftCardPage : ContentPage
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
 
-    private GiftCardFlowKind _activeFlow = GiftCardFlowKind.Activate;
+    private GiftCardFlowKind _activeFlow = GiftCardFlowKind.Redeem;
     private string? _activateCardNumber;
     private string? _activateCapturedPaymentKey;
     private string? _sellCapturedPaymentKey;
@@ -41,6 +41,7 @@ public partial class GiftCardPage : ContentPage
             _activeFlow = flow;
             TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
         };
+        Gift.CloseRequested += OnCloseClicked;
         Gift.ActivateLookupRequested += OnActivateLookupClicked;
         Gift.ActivateRequested += OnActivateCardClicked;
         Gift.GenerateSellCardRequested += OnGenerateSellCardClicked;
@@ -50,7 +51,8 @@ public partial class GiftCardPage : ContentPage
         Gift.RedeemLookupRequested += OnRedeemLookupClicked;
         Gift.RedeemRequested += OnRedeemCardClicked;
 
-        Gift.ShowFlow(GiftCardFlowKind.Activate);
+        Gift.ShowFlow(GiftCardFlowKind.Redeem);
+        TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
         NotificationService.Instance.NotificationRequested += OnNotificationRequested;
     }
 
@@ -397,7 +399,7 @@ public partial class GiftCardPage : ContentPage
             _redeemGiftCard = null;
             Gift.RedeemActionButton.IsEnabled = false;
             Gift.RedeemBalanceLabel.Text = "GBP 0.00";
-            Gift.RedeemCardStatusLabel.Text = "No card selected";
+            Gift.RedeemCardStatusLabel.Text = "No card checked yet";
             return;
         }
 
@@ -405,6 +407,7 @@ public partial class GiftCardPage : ContentPage
         Gift.RedeemActionButton.IsEnabled = true;
         Gift.RedeemBalanceLabel.Text = FormatMoney(_redeemGiftCard.Balance);
         Gift.RedeemCardStatusLabel.Text = $"{_redeemGiftCard.CardNumber} - {_redeemGiftCard.StatusDisplay.Trim()}";
+        Gift.FocusRedeemAmountForKeypad();
     }
 
     private async void OnRedeemCardClicked(object? sender, EventArgs e)

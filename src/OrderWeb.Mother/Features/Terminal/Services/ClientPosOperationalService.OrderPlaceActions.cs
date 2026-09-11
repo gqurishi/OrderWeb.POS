@@ -373,12 +373,14 @@ public sealed partial class ClientPosOperationalService
         var normalizedCourse = fireAll ? null : NormalizeCourseType(course);
         if (!fireAll && normalizedCourse == null)
         {
-            return ClientOrderUpsertResult.Fail(400, "Choose Starters, Mains, Desserts, or All.");
+            return ClientOrderUpsertResult.Fail(400, "Choose Starters, Mains, Desserts, Drinks, or All.");
         }
 
+        var menuItems = await _menuItemService.GetAllItemsAsync() ?? new List<FoodMenuItem>();
+        var categories = await _categoryService.GetAllCategoriesAsync() ?? new List<MenuCategory>();
         foreach (var item in order.Items.Where(item => string.IsNullOrWhiteSpace(item.CourseType)))
         {
-            item.CourseType = "Mains";
+            item.CourseType = ResolveCourseTypeFromMenu(item.MenuItemId, menuItems, categories) ?? "Mains";
         }
 
         var matching = order.Items
@@ -718,14 +720,85 @@ public sealed partial class ClientPosOperationalService
 
     private static string? NormalizeCourseType(string? course)
     {
-        var value = (course ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(course))
+        {
+            return null;
+        }
+
+        var value = course.Trim().ToLowerInvariant();
+        if (value.Contains("starter") || value.Contains("appetiser") || value.Contains("appetizer"))
+        {
+            return "Starters";
+        }
+
+        if (value.Contains("dessert") || value.Contains("pudding") || value.Contains("sweet"))
+        {
+            return "Desserts";
+        }
+
+        if (value.Contains("drink") || value.Contains("beverage") || value.Contains("cocktail")
+            || value.Contains("wine") || value.Contains("beer") || value.Contains("bar"))
+        {
+            return "Drinks";
+        }
+
+        if (value.Contains("main") || value.Contains("entree") || value.Contains("entrée"))
+        {
+            return "Mains";
+        }
+
         return value switch
         {
-            "starter" or "starters" or "appetizer" or "appetizers" => "Starters",
-            "main" or "mains" or "entree" or "entrees" => "Mains",
-            "dessert" or "desserts" or "sweet" or "sweets" => "Desserts",
+            "starters" => "Starters",
+            "mains" => "Mains",
+            "desserts" => "Desserts",
+            "drinks" => "Drinks",
+            "all" => null,
             _ => null
         };
+    }
+
+    /// <summary>Mother Order Place parity: blank CourseType from category name / Drink item type.</summary>
+    private static string? ResolveCourseTypeFromMenu(
+        string? menuItemId,
+        IReadOnlyList<FoodMenuItem> menuItems,
+        IReadOnlyList<MenuCategory> categories)
+    {
+        if (string.IsNullOrWhiteSpace(menuItemId))
+        {
+            return null;
+        }
+
+        var menuItem = menuItems.FirstOrDefault(item =>
+            string.Equals(item.Id, menuItemId, StringComparison.OrdinalIgnoreCase));
+        if (menuItem is null)
+        {
+            return null;
+        }
+
+        var categoryId = menuItem.CategoryId;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (!string.IsNullOrWhiteSpace(categoryId) && visited.Add(categoryId))
+        {
+            var category = categories.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, categoryId, StringComparison.OrdinalIgnoreCase));
+            if (category is null)
+            {
+                break;
+            }
+
+            var course = NormalizeCourseType(category.Name);
+            if (course is not null)
+            {
+                return course;
+            }
+
+            categoryId = category.ParentId;
+        }
+
+        return string.Equals(menuItem.ItemType, "Drink", StringComparison.OrdinalIgnoreCase)
+            ? "Drinks"
+            : "Mains";
     }
 
     private static ServiceChargeClassification? ParseServiceChargeClassification(string? value) =>

@@ -18,7 +18,8 @@
                              HorizontalOptions="Center"
                              Margin="0,24,0,34">
             <Label Text="Collection Order"
-                   FontFamily="AlegreyaBold"
+                   FontFamily="OpenSansSemibold"
+                   FontAttributes="Bold"
                    FontSize="40"
                    HorizontalOptions="Center"
                    TextColor="#111827" />
@@ -43,6 +44,7 @@
                 <VerticalStackLayout Spacing="10">
                     <Label Text="Customer Name"
                            FontFamily="OpenSansSemibold"
+                           FontAttributes="Bold"
                            FontSize="15"
                            TextColor="#475569" />
                     <Border BackgroundColor="White"
@@ -71,6 +73,7 @@
                 <VerticalStackLayout Spacing="10">
                     <Label Text="Phone Number"
                            FontFamily="OpenSansSemibold"
+                           FontAttributes="Bold"
                            FontSize="15"
                            TextColor="#475569" />
                     <Border BackgroundColor="White"
@@ -103,6 +106,7 @@
                         BackgroundColor="#3B82F6"
                         TextColor="White"
                         FontFamily="OpenSansSemibold"
+                        FontAttributes="Bold"
                         FontSize="16"
                         HeightRequest="58"
                         CornerRadius="14">
@@ -130,6 +134,7 @@
                     <VerticalStackLayout Spacing="0">
                         <Label Text="Select Existing Customer"
                                FontFamily="OpenSansSemibold"
+                               FontAttributes="Bold"
                                FontSize="14"
                                TextColor="#334155"
                                Padding="16,14,16,10" />
@@ -208,6 +213,7 @@
                     BackgroundColor="#10B981"
                     TextColor="White"
                     FontFamily="OpenSansSemibold"
+                    FontAttributes="Bold"
                     FontSize="16"
                     HeightRequest="58"
                     CornerRadius="14">

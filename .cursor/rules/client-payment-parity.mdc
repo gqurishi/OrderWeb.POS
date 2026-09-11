@@ -1,0 +1,43 @@
+---
+description: Client↔Mother payment UI parity — Phase 0 locked; SharedUI-first
+alwaysApply: false
+---
+
+# Payment UI parity (Mother chrome → SharedUI → Client)
+
+## Phase 0 — locked
+
+**Flow (Order Place PAYMENT)**
+1. **Tip** — Table only when tip not set / policy allows.
+2. **Payment Setup** — Table only: Pay Full | Split Evenly | Pay By Items | Custom Amount.
+3. **Tender** — Cash / Card / Gift (+ Loyalty on Client where supported).
+4. Partial loop until remaining = 0 (Table).
+
+**COL / DEL**
+- Skip tip + Payment Setup.
+- Full bill only (`AllowSplit = false`).
+
+**Architecture**
+- Client → Mother payments API only (no Client→cloud).
+- SharedUI owns wizard chrome (Tip, Setup, Split, Pay By Items, Custom Amount keypad).
+- Hosts own order data, tip save, and payment post.
+
+**Loyalty**
+- Keep Client pay-with-points path on tender; do not drop when matching Mother chrome.
+
+## Build order
+| Phase | Status |
+|-------|--------|
+| 0 Spec lock | ✅ |
+| 1 SharedUI Tip / Setup / Split / Pay By Items / Custom Amount | ✅ |
+| 2 SharedUI tender screen align | ✅ |
+| 3 Wire Client Order Place PAYMENT | ✅ |
+| 4 Mother uses SharedUI wizard | ✅ |
+| 5 SharedUI SELECT PAYMENT METHOD + Client Pay Full | ✅ |
+| 5b SharedUI CASH + GIFT CARD dialogs + Client wire | ✅ |
+| 6 SharedUI CARD on Client (record → complete → Mother print) | ✅ |
+| 6b SharedUI Pay By Items harden (Mother math + Client lines) | ✅ |
+| 7 QA both POS | ← next |
+
+## Done when (Phase 1)
+Both hosts can open the same SharedUI dialogs via `PaymentWizard` / dialog `ShowAsync` APIs.

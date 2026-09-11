@@ -1551,8 +1551,10 @@ public partial class ReportPage : ContentPage
         {
             OrdersSearchEntry.Unfocus();
 
-            var keyboard = new VirtualKeyboardDialog();
+            var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
             keyboard.SetPrompt("Search orders", "SEARCH");
+            keyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Text);
+            keyboard.SetPlaceholder(OrdersSearchEntry.Placeholder);
             keyboard.SetInitialText(SearchText);
 
             var result = await keyboard.ShowAsync(this);
@@ -2075,13 +2077,13 @@ public partial class ReportPage : ContentPage
         }
 
         var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
-		var reason = await DisplayPromptAsync(
-			"Delete Test Order",
-			$"Enter why local order {orderLabel} is test/demo data. This is recorded locally and is never sent to OrderWeb.",
-			"Continue",
-			"Cancel",
-			"Required reason",
-			200);
+		var reasonKeyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+		reasonKeyboard.SetPrompt($"Reason for deleting test order {orderLabel}", "Continue");
+		reasonKeyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes);
+		reasonKeyboard.SetPlaceholder("Required reason");
+		reasonKeyboard.SetMaximumLength(200);
+		reasonKeyboard.SetRequired(true);
+		var reason = await reasonKeyboard.ShowAsync(this);
 		if (string.IsNullOrWhiteSpace(reason))
 		{
 			return;

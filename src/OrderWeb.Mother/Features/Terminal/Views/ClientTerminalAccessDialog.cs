@@ -121,7 +121,7 @@ public sealed class ClientTerminalAccessDialog : ContentView
                     },
                     new Label
                     {
-                        Text = "Mother decides what this Client can see and do. Web Orders stay on Mother. The Client applies this list at the next PIN login.",
+                        Text = "Mother decides what this Client can see and do. Web Orders stay on Mother. Client picks this up on Update All, Gift Cards/Loyalty open, or the next PIN login.",
                         FontFamily = "OpenSansRegular",
                         FontSize = 13,
                         TextColor = Color.FromArgb("#64748B")

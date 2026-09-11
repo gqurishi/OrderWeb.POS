@@ -39,6 +39,12 @@ public class NumberKeypad : ContentView
     private Button NewButton(string text)
     {
         var button = new Button { Text = text, WidthRequest = KeySize, HeightRequest = KeySize, CornerRadius = (int)(KeySize / 2), Padding = 0, FontSize = KeySize >= 90 ? 34 : 24, FontAttributes = FontAttributes.Bold };
+        SemanticProperties.SetDescription(button, text switch
+        {
+            "Clear" => "Clear PIN",
+            "X" => "Delete previous digit",
+            _ => $"Digit {text}"
+        });
         button.Use(Button.BackgroundColorProperty, "OwSurface");
         button.Use(Button.TextColorProperty, "OwTextPrimary");
         button.Use(Button.BorderColorProperty, "OwBorderStrong");

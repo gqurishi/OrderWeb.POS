@@ -1,3 +1,5 @@
+using OrderWeb.SharedUI.Assets;
+
 namespace OrderWeb.SharedUI.Controls;
 
 public class HeaderView : ContentView
@@ -13,12 +15,12 @@ public class HeaderView : ContentView
     public static readonly BindableProperty EyebrowProperty = BindableProperty.Create(nameof(Eyebrow), typeof(string), typeof(HeaderView), "Welcome to", propertyChanged: (b, _, v) => ((HeaderView)b)._eyebrow.Text = v?.ToString());
     public static readonly BindableProperty ConnectionStatusProperty = BindableProperty.Create(nameof(ConnectionStatus), typeof(string), typeof(HeaderView), "Connected", propertyChanged: (b, _, v) => ((HeaderView)b)._connection.Status = v?.ToString() ?? "Connected");
     public static readonly BindableProperty ShowConnectionStatusProperty = BindableProperty.Create(nameof(ShowConnectionStatus), typeof(bool), typeof(HeaderView), false, propertyChanged: (b, _, v) => ((HeaderView)b)._connection.IsVisible = (bool)v);
-    public static readonly BindableProperty MenuIconProperty = BindableProperty.Create(nameof(MenuIcon), typeof(ImageSource), typeof(HeaderView), ImageSource.FromFile("companymark.png"), propertyChanged: (b, _, v) => ((HeaderView)b).MenuButton.Source = (ImageSource?)v);
-    public static readonly BindableProperty LogoutIconProperty = BindableProperty.Create(nameof(LogoutIcon), typeof(ImageSource), typeof(HeaderView), ImageSource.FromFile("outred.png"), propertyChanged: (b, _, v) => ((HeaderView)b).LogoutButton.Source = (ImageSource?)v);
+    public static readonly BindableProperty MenuIconProperty = BindableProperty.Create(nameof(MenuIcon), typeof(ImageSource), typeof(HeaderView), ImageSource.FromFile(SharedImageNames.CompanyLogo), propertyChanged: (b, _, v) => ((HeaderView)b).MenuButton.Source = (ImageSource?)v);
+    public static readonly BindableProperty LogoutIconProperty = BindableProperty.Create(nameof(LogoutIcon), typeof(ImageSource), typeof(HeaderView), ImageSource.FromFile(SharedImageNames.Logout), propertyChanged: (b, _, v) => ((HeaderView)b).LogoutButton.Source = (ImageSource?)v);
 
     public HeaderView()
     {
-        MenuButton = IconButton("companymark.png"); LogoutButton = IconButton("outred.png");
+        MenuButton = IconButton(SharedImageNames.CompanyLogo); LogoutButton = IconButton(SharedImageNames.Logout);
         MenuButton.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
         LogoutButton.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
         _eyebrow = new Label { Text = "Welcome to", FontSize = 14 }; _eyebrow.Use(Label.TextColorProperty, "OwTextMuted");

@@ -13,6 +13,31 @@ public sealed class ZReportService
     private readonly BusinessSettingsService _businessSettingsService;
     private static bool _auditSchemaEnsured;
 
+    /// <summary>
+    /// Prepaid website orders often stay lifecycle=active until closed on the till.
+    /// Count them when payment_status shows paid, or when a non-COD web order is not pending/failed.
+    /// </summary>
+    private const string PaidSalePredicate = @"
+              AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
+              AND COALESCE(local_lifecycle_state, '') <> 'voided'
+              AND (
+                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
+                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
+                  OR paid_at IS NOT NULL
+                  OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+                  OR (
+                      LOWER(COALESCE(source_channel, '')) IN ('web', 'online')
+                      AND LOWER(COALESCE(payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+                      AND LOWER(COALESCE(payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM order_payments op
+                      WHERE op.order_id = orders.id
+                        AND LOWER(COALESCE(op.status, '')) = 'approved'
+                      )
+              )";
+
     public ZReportService(
         DatabaseService databaseService,
         DailyReportService dailyReportService,
@@ -389,7 +414,7 @@ public sealed class ZReportService
 
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = @"
+        command.CommandText = $@"
             SELECT
                 LOWER(COALESCE(NULLIF(payment_method, ''), 'cash')) AS payment_method,
                 COUNT(*) AS txn_count,
@@ -398,19 +423,7 @@ public sealed class ZReportService
             WHERE created_at >= @startDate
               AND created_at < @endDate
               AND LOWER(COALESCE(NULLIF(source_channel, ''), 'local')) NOT IN ('web', 'online')
-              AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-              AND COALESCE(local_lifecycle_state, '') <> 'voided'
-              AND (
-                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
-                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
-                  OR paid_at IS NOT NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM order_payments op
-                      WHERE op.order_id = orders.id
-                        AND LOWER(COALESCE(op.status, '')) = 'approved'
-                  )
-              )
+              {PaidSalePredicate}
             GROUP BY LOWER(COALESCE(NULLIF(payment_method, ''), 'cash'))";
 
         command.Parameters.AddWithValue("@startDate", start);
@@ -448,7 +461,7 @@ public sealed class ZReportService
 
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = @"
+        command.CommandText = $@"
             SELECT
                 LOWER(COALESCE(NULLIF(payment_method, ''), 'cash')) AS payment_method,
                 COUNT(*) AS txn_count,
@@ -456,19 +469,7 @@ public sealed class ZReportService
             FROM orders
             WHERE created_at >= @startDate
               AND created_at < @endDate
-              AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-              AND COALESCE(local_lifecycle_state, '') <> 'voided'
-              AND (
-                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
-                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
-                  OR paid_at IS NOT NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM order_payments op
-                      WHERE op.order_id = orders.id
-                        AND LOWER(COALESCE(op.status, '')) = 'approved'
-                  )
-              )
+              {PaidSalePredicate}
             GROUP BY LOWER(COALESCE(NULLIF(payment_method, ''), 'cash'))";
 
         command.Parameters.AddWithValue("@startDate", start);
@@ -513,49 +514,54 @@ public sealed class ZReportService
         var breakdown = new ChannelBreakdown();
 
         await using var connection = await _databaseService.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = @"
-            SELECT
-                LOWER(COALESCE(NULLIF(source_channel, ''), 'local')) AS source_channel,
-                COUNT(*) AS order_count,
-                COALESCE(SUM(total_amount), 0) AS gross_sales
-            FROM orders
-            WHERE created_at >= @startDate
-              AND created_at < @endDate
-              AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-              AND COALESCE(local_lifecycle_state, '') <> 'voided'
-              AND (
-                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
-                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
-                  OR paid_at IS NOT NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM order_payments op
-                      WHERE op.order_id = orders.id
-                        AND LOWER(COALESCE(op.status, '')) = 'approved'
-                  )
-              )
-            GROUP BY LOWER(COALESCE(NULLIF(source_channel, ''), 'local'))";
 
-        command.Parameters.AddWithValue("@startDate", start);
-        command.Parameters.AddWithValue("@endDate", end);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        // POS / local: still paid sales only (cash till accuracy).
+        await using (var localCommand = connection.CreateCommand())
         {
-            var channel = reader.GetString("source_channel");
-            var count = reader.GetInt32("order_count");
-            var gross = reader.GetDecimal("gross_sales");
+            localCommand.CommandText = $@"
+                SELECT
+                    COUNT(*) AS order_count,
+                    COALESCE(SUM(total_amount), 0) AS gross_sales
+                FROM orders
+                WHERE created_at >= @startDate
+                  AND created_at < @endDate
+                  AND LOWER(COALESCE(NULLIF(source_channel, ''), 'local')) NOT IN ('web', 'online')
+                  {PaidSalePredicate}";
+            localCommand.Parameters.AddWithValue("@startDate", start);
+            localCommand.Parameters.AddWithValue("@endDate", end);
 
-            if (channel is "web" or "online")
+            await using var localReader = await localCommand.ExecuteReaderAsync();
+            if (await localReader.ReadAsync())
             {
-                breakdown.WebCount += count;
-                breakdown.WebGross += gross;
+                breakdown.LocalCount = localReader.GetInt32("order_count");
+                breakdown.LocalGross = localReader.GetDecimal("gross_sales");
             }
-            else
+        }
+
+        // Online: website orders for the trading day, plus any still-open web orders
+        // (so Dashboard Online Sales shows £ even before the till closes the order).
+        await using (var webCommand = connection.CreateCommand())
+        {
+            webCommand.CommandText = $@"
+                SELECT
+                    COUNT(*) AS order_count,
+                    COALESCE(SUM(total_amount), 0) AS gross_sales
+                FROM orders
+                WHERE LOWER(COALESCE(source_channel, '')) IN ('web', 'online')
+                  AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
+                  AND COALESCE(local_lifecycle_state, '') <> 'voided'
+                  AND (
+                      (created_at >= @startDate AND created_at < @endDate)
+                      OR LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided')
+                  )";
+            webCommand.Parameters.AddWithValue("@startDate", start);
+            webCommand.Parameters.AddWithValue("@endDate", end);
+
+            await using var webReader = await webCommand.ExecuteReaderAsync();
+            if (await webReader.ReadAsync())
             {
-                breakdown.LocalCount += count;
-                breakdown.LocalGross += gross;
+                breakdown.WebCount = webReader.GetInt32("order_count");
+                breakdown.WebGross = webReader.GetDecimal("gross_sales");
             }
         }
 
@@ -568,7 +574,7 @@ public sealed class ZReportService
 
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = @"
+        command.CommandText = $@"
             SELECT
                 LOWER(COALESCE(NULLIF(order_type, ''), 'table')) AS order_type,
                 COUNT(*) AS order_count,
@@ -576,19 +582,7 @@ public sealed class ZReportService
             FROM orders
             WHERE created_at >= @startDate
               AND created_at < @endDate
-              AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-              AND COALESCE(local_lifecycle_state, '') <> 'voided'
-              AND (
-                  LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
-                  OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
-                  OR paid_at IS NOT NULL
-                  OR EXISTS (
-                      SELECT 1
-                      FROM order_payments op
-                      WHERE op.order_id = orders.id
-                        AND LOWER(COALESCE(op.status, '')) = 'approved'
-                  )
-              )
+              {PaidSalePredicate}
             GROUP BY LOWER(COALESCE(NULLIF(order_type, ''), 'table'))";
 
         command.Parameters.AddWithValue("@startDate", start);

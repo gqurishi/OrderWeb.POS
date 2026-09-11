@@ -1,25 +1,29 @@
 using System.Globalization;
+using Microsoft.Maui.Controls.Shapes;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.ViewModels;
 
 namespace OrderWeb.SharedUI.Views;
 
 /// <summary>
-/// Canonical Mother-style payment UI. It cannot declare payment success itself.
-/// COL/DEL: hide Split and force full bill. Cash: quick tenders + on-screen currency keypad.
+/// Canonical SharedUI tender screen (Mother chrome) for Cash / Card / Gift / Loyalty.
+/// COL/DEL: AllowSplit=false forces full bill. Cash: quick tenders + on-screen keypad.
+/// Both hosts should call this after PaymentWizard setup (Phase 1).
 /// </summary>
 public sealed class PaymentView : ContentView
 {
     private static readonly CultureInfo Gb = CultureInfo.GetCultureInfo("en-GB");
 
-    private readonly Microsoft.Maui.Controls.Label _due;
-    private readonly Microsoft.Maui.Controls.Label _tenderedDisplay;
-    private readonly Microsoft.Maui.Controls.Label _change;
-    private readonly Microsoft.Maui.Controls.Label _remaining;
-    private readonly Microsoft.Maui.Controls.Label _status;
-    private readonly Microsoft.Maui.Controls.Label _policyHint;
+    private readonly Label _dueValue;
+    private readonly Label _tenderedDisplay;
+    private readonly Label _changeValue;
+    private readonly Label _remainingValue;
+    private readonly Border _changeCard;
+    private readonly Border _remainingCard;
+    private readonly Label _status;
+    private readonly Label _policyHint;
     private readonly ChefLoaderView _waiting;
-    private readonly SharedButton _submit;
+    private readonly Button _submit;
     private readonly Grid _methods;
     private readonly VerticalStackLayout _cashPanel;
     private readonly HorizontalStackLayout _splitRow;
@@ -29,24 +33,53 @@ public sealed class PaymentView : ContentView
 
     public PaymentView()
     {
-        _due = Money(36, true);
-        _tenderedDisplay = Money(28, true);
-        _change = Money(18, true);
-        _remaining = Money(18, true);
-        _status = new Microsoft.Maui.Controls.Label
+        _dueValue = new Label
+        {
+            FontSize = 36,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#B45309"),
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        _tenderedDisplay = new Label
+        {
+            FontSize = 28,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#0F172A")
+        };
+
+        _changeValue = new Label
+        {
+            FontSize = 28,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#047857"),
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        _remainingValue = new Label
+        {
+            FontSize = 20,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#DC2626"),
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        _status = new Label
         {
             FontSize = 14,
             HorizontalTextAlignment = TextAlignment.Center,
-            LineBreakMode = LineBreakMode.WordWrap
+            LineBreakMode = LineBreakMode.WordWrap,
+            TextColor = Color.FromArgb("#64748B")
         };
-        _status.Use(Microsoft.Maui.Controls.Label.TextColorProperty, "OwTextMuted");
-        _policyHint = new Microsoft.Maui.Controls.Label
+
+        _policyHint = new Label
         {
             FontSize = 13,
             LineBreakMode = LineBreakMode.WordWrap,
-            IsVisible = false
+            IsVisible = false,
+            TextColor = Color.FromArgb("#64748B")
         };
-        _policyHint.Use(Microsoft.Maui.Controls.Label.TextColorProperty, "OwTextMuted");
 
         _waiting = new ChefLoaderView
         {
@@ -60,13 +93,8 @@ public sealed class PaymentView : ContentView
 
         _methods = new Grid
         {
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
-            RowDefinitions =
-            {
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto)
-            },
+            ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) },
+            RowDefinitions = { new(GridLength.Auto), new(GridLength.Auto) },
             RowSpacing = 10,
             ColumnSpacing = 10
         };
@@ -74,15 +102,48 @@ public sealed class PaymentView : ContentView
         _keypad = BuildKeypad();
         _cashPanel = new VerticalStackLayout
         {
-            Spacing = 10,
+            Spacing = 12,
             Children =
             {
-                Label("Cash received", 14, false),
+                new Label
+                {
+                    Text = "Cash received",
+                    FontSize = 14,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb("#334155")
+                },
                 _tenderedDisplay,
                 BuildQuickTenders(),
                 _keypad
             }
         };
+
+        _changeCard = BannerCard(
+            "#ECFDF5",
+            "#10B981",
+            new Label
+            {
+                Text = "CHANGE:",
+                FontSize = 20,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb("#047857"),
+                VerticalOptions = LayoutOptions.Center
+            },
+            _changeValue);
+
+        _remainingCard = BannerCard(
+            "#FEF2F2",
+            "#EF4444",
+            new Label
+            {
+                Text = "REMAINING:",
+                FontSize = 16,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb("#DC2626"),
+                VerticalOptions = LayoutOptions.Center
+            },
+            _remainingValue);
+        _remainingCard.IsVisible = false;
 
         var receipt = new CheckBox { IsChecked = true };
         receipt.CheckedChanged += (_, e) =>
@@ -104,25 +165,59 @@ public sealed class PaymentView : ContentView
         _splitRow = new HorizontalStackLayout
         {
             Spacing = 8,
-            Children = { split, Label("Split / partial payment", 14, false) }
-        };
-
-        _submit = new SharedButton { Text = "Confirm Payment", HeightRequest = 58 };
-        _submit.Clicked += (_, _) => _viewModel?.SubmitCommand.Execute(null);
-
-        var left = Card(new VerticalStackLayout
-        {
-            Spacing = 16,
+            IsVisible = false,
             Children =
             {
-                Label("Amount Due", 14, false),
-                _due,
+                split,
+                new Label { Text = "Split / partial payment", FontSize = 14, TextColor = Color.FromArgb("#475569") }
+            }
+        };
+
+        _submit = new Button
+        {
+            Text = "CONFIRM PAYMENT",
+            BackgroundColor = Color.FromArgb("#059669"),
+            TextColor = Colors.White,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 18,
+            CornerRadius = 14,
+            HeightRequest = 58
+        };
+        _submit.Clicked += (_, _) => _viewModel?.SubmitCommand.Execute(null);
+
+        var dueBanner = BannerCard(
+            "#FFFBEB",
+            "#F59E0B",
+            new Label
+            {
+                Text = "AMOUNT DUE:",
+                FontSize = 18,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb("#92400E"),
+                VerticalOptions = LayoutOptions.Center
+            },
+            _dueValue);
+
+        var left = SurfaceCard(new VerticalStackLayout
+        {
+            Spacing = 14,
+            Children =
+            {
+                dueBanner,
                 _policyHint,
                 _methods,
                 _cashPanel,
-                Line("Change", _change),
-                Line("Remaining", _remaining),
-                new HorizontalStackLayout { Spacing = 8, Children = { receipt, Label("Print receipt", 14, false) } },
+                _changeCard,
+                _remainingCard,
+                new HorizontalStackLayout
+                {
+                    Spacing = 8,
+                    Children =
+                    {
+                        receipt,
+                        new Label { Text = "Print receipt", FontSize = 14, TextColor = Color.FromArgb("#475569") }
+                    }
+                },
                 _splitRow,
                 _waiting,
                 _status,
@@ -130,24 +225,42 @@ public sealed class PaymentView : ContentView
             }
         });
 
-        var right = Card(new VerticalStackLayout
+        var right = SurfaceCard(new VerticalStackLayout
         {
             Spacing = 14,
             Children =
             {
-                Label("Authoritative payment status", 20, true),
-                Label("Mother POS confirms a payment only after its payment integration returns a final result.", 14, false),
-                Label("If a request times out, check status before retrying. Do not charge again.", 14, false)
+                new Label
+                {
+                    Text = "Authoritative payment status",
+                    FontSize = 20,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb("#0F172A")
+                },
+                new Label
+                {
+                    Text = "Mother POS confirms a payment only after its payment integration returns a final result.",
+                    FontSize = 14,
+                    TextColor = Color.FromArgb("#64748B"),
+                    LineBreakMode = LineBreakMode.WordWrap
+                },
+                new Label
+                {
+                    Text = "If a request times out, check status before retrying. Do not charge again.",
+                    FontSize = 14,
+                    TextColor = Color.FromArgb("#64748B"),
+                    LineBreakMode = LineBreakMode.WordWrap
+                }
             }
         });
 
         var content = new Grid
         {
             Padding = 24,
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(360) },
-            ColumnSpacing = 18
+            ColumnDefinitions = { new(GridLength.Star), new(new GridLength(340)) },
+            ColumnSpacing = 18,
+            BackgroundColor = Color.FromArgb("#F8FAFC")
         };
-        content.Use(Grid.BackgroundColorProperty, "OwBackground");
         content.Add(left);
         content.Add(right, 1);
         Content = new ScrollView { Content = content };
@@ -172,7 +285,9 @@ public sealed class PaymentView : ContentView
             if (value is not null)
             {
                 value.PropertyChanged += OnChanged;
-                _keypadBuffer = value.Tendered > 0 ? value.Tendered.ToString("0.##", CultureInfo.InvariantCulture) : string.Empty;
+                _keypadBuffer = value.Tendered > 0
+                    ? value.Tendered.ToString("0.##", CultureInfo.InvariantCulture)
+                    : string.Empty;
             }
 
             Rebuild();
@@ -204,10 +319,10 @@ public sealed class PaymentView : ContentView
             return;
         }
 
-        _due.Text = Format(_viewModel.AmountDue);
+        _dueValue.Text = Format(_viewModel.AmountDue);
         _tenderedDisplay.Text = Format(_viewModel.Tendered);
-        _change.Text = Format(_viewModel.ChangeDue);
-        _remaining.Text = Format(_viewModel.Remaining);
+        _changeValue.Text = Format(_viewModel.ChangeDue);
+        _remainingValue.Text = Format(_viewModel.Remaining);
         _status.Text = _viewModel.Message;
 
         var allowSplit = _viewModel.AllowSplit;
@@ -215,10 +330,12 @@ public sealed class PaymentView : ContentView
         _policyHint.Text = allowSplit
             ? string.Empty
             : "Collection / Delivery: full bill only (same as Mother). Split and partial tender are disabled.";
-        _splitRow.IsVisible = allowSplit;
+        _splitRow.IsVisible = allowSplit && _viewModel.ShowInlineSplitToggle;
 
         var isCash = string.Equals(_viewModel.SelectedMethod, "cash", StringComparison.OrdinalIgnoreCase);
         _cashPanel.IsVisible = isCash;
+        _changeCard.IsVisible = isCash;
+        _remainingCard.IsVisible = isCash && _viewModel.Remaining > 0.009m && _viewModel.EffectiveSplit;
 
         var waiting = _viewModel.State is PaymentPresentationState.Submitting or PaymentPresentationState.WaitingForCard;
         _waiting.IsLoading = waiting;
@@ -228,19 +345,29 @@ public sealed class PaymentView : ContentView
         _submit.IsEnabled = _viewModel.State is not (PaymentPresentationState.Submitting
             or PaymentPresentationState.WaitingForCard
             or PaymentPresentationState.Approved);
-        _submit.Text = _viewModel.State == PaymentPresentationState.WaitingForCard
-            ? "Waiting for card…"
-            : _viewModel.State == PaymentPresentationState.Approved
-                ? "Payment Confirmed"
-                : "Confirm Payment";
+        _submit.Text = _viewModel.State switch
+        {
+            PaymentPresentationState.WaitingForCard => "Waiting for card…",
+            PaymentPresentationState.Approved => "Payment Confirmed",
+            _ => "CONFIRM PAYMENT"
+        };
 
         _methods.Children.Clear();
+        _methods.RowDefinitions.Clear();
+        _methods.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        _methods.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
         AddMethod("Cash", "cash", 0, 0);
         AddMethod("Card", "card", 0, 1);
         AddMethod("Gift Card", "gift_card", 1, 0);
-        AddMethod("Loyalty", "loyalty", 1, 1);
-        if (allowSplit)
+        if (_viewModel.ShowLoyaltyMethod)
         {
+            AddMethod("Loyalty", "loyalty", 1, 1);
+        }
+
+        if (allowSplit && _viewModel.ShowInlineSplitMethod)
+        {
+            _methods.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             AddMethod("Split", "split", 2, 0);
         }
     }
@@ -249,12 +376,19 @@ public sealed class PaymentView : ContentView
     {
         var selected = id == "split"
             ? _viewModel?.EffectiveSplit == true
-            : _viewModel?.SelectedMethod == id;
-        var button = new SharedButton
+            : string.Equals(_viewModel?.SelectedMethod, id, StringComparison.OrdinalIgnoreCase);
+
+        var button = new Button
         {
             Text = title,
-            Variant = selected == true ? ButtonVariant.Primary : ButtonVariant.Secondary,
-            HeightRequest = 52
+            HeightRequest = 56,
+            CornerRadius = 14,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 16,
+            BackgroundColor = selected == true ? Color.FromArgb("#2563EB") : Color.FromArgb("#F1F5F9"),
+            TextColor = selected == true ? Colors.White : Color.FromArgb("#0F172A"),
+            BorderColor = selected == true ? Color.FromArgb("#2563EB") : Color.FromArgb("#CBD5E1"),
+            BorderWidth = 1
         };
         button.Clicked += (_, _) =>
         {
@@ -271,15 +405,14 @@ public sealed class PaymentView : ContentView
                 }
 
                 _viewModel.IsSplit = true;
+                return;
             }
-            else
+
+            _viewModel.SelectedMethod = id;
+            if (id == "cash" && _viewModel.Tendered <= 0)
             {
-                _viewModel.SelectedMethod = id;
-                if (id == "cash" && _viewModel.Tendered <= 0)
-                {
-                    _viewModel.SetTenderedExact();
-                    _keypadBuffer = _viewModel.Tendered.ToString("0.##", CultureInfo.InvariantCulture);
-                }
+                _viewModel.SetTenderedExact();
+                _keypadBuffer = _viewModel.Tendered.ToString("0.##", CultureInfo.InvariantCulture);
             }
         };
         _methods.Add(button, column, row);
@@ -287,69 +420,61 @@ public sealed class PaymentView : ContentView
 
     private View BuildQuickTenders()
     {
-        var row = new FlexLayout
+        var row = new Grid
         {
-            Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap,
-            JustifyContent = Microsoft.Maui.Layouts.FlexJustify.Start,
-            AlignItems = Microsoft.Maui.Layouts.FlexAlignItems.Start
+            ColumnDefinitions =
+            {
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star)
+            },
+            ColumnSpacing = 8
         };
 
-        void AddChip(string text, Action action)
+        void AddChip(int column, string text, Action action, Color bg, Color fg)
         {
-            var button = new SharedButton
+            var button = new Button
             {
                 Text = text,
-                Variant = ButtonVariant.Secondary,
                 HeightRequest = 44,
-                Margin = new Thickness(0, 0, 8, 8),
-                Padding = new Thickness(14, 0)
+                CornerRadius = 12,
+                FontAttributes = FontAttributes.Bold,
+                FontSize = 13,
+                BackgroundColor = bg,
+                TextColor = fg,
+                Padding = 0
             };
             button.Clicked += (_, _) =>
             {
                 action();
                 SyncKeypadFromTendered();
             };
-            row.Children.Add(button);
+            row.Add(button, column);
         }
 
-        AddChip("Exact", () => _viewModel?.SetTenderedExact());
-        AddChip("Round £", () =>
+        AddChip(0, "Exact", () => _viewModel?.SetTenderedExact(), Color.FromArgb("#D1FAE5"), Color.FromArgb("#065F46"));
+        AddChip(1, "Round £", () =>
         {
-            if (_viewModel is null)
-            {
-                return;
-            }
-
-            var rounded = Math.Ceiling(_viewModel.AmountDue);
-            _viewModel.SetTenderedQuick(rounded);
-        });
-        AddChip("+£5", () =>
+            if (_viewModel is null) return;
+            _viewModel.SetTenderedQuick(Math.Ceiling(_viewModel.AmountDue));
+        }, Color.FromArgb("#E2E8F0"), Color.FromArgb("#1E293B"));
+        AddChip(2, "+£5", () =>
         {
-            if (_viewModel is null)
-            {
-                return;
-            }
-
+            if (_viewModel is null) return;
             _viewModel.SetTenderedQuick(Math.Ceiling(_viewModel.AmountDue / 5m) * 5m);
-        });
-        AddChip("+£10", () =>
+        }, Color.FromArgb("#DBEAFE"), Color.FromArgb("#1E40AF"));
+        AddChip(3, "+£10", () =>
         {
-            if (_viewModel is null)
-            {
-                return;
-            }
-
+            if (_viewModel is null) return;
             _viewModel.SetTenderedQuick(Math.Ceiling(_viewModel.AmountDue / 10m) * 10m);
-        });
-        AddChip("+£20", () =>
+        }, Color.FromArgb("#DBEAFE"), Color.FromArgb("#1E40AF"));
+        AddChip(4, "+£20", () =>
         {
-            if (_viewModel is null)
-            {
-                return;
-            }
-
+            if (_viewModel is null) return;
             _viewModel.SetTenderedQuick(Math.Ceiling(_viewModel.AmountDue / 20m) * 20m);
-        });
+        }, Color.FromArgb("#DBEAFE"), Color.FromArgb("#1E40AF"));
 
         return row;
     }
@@ -360,28 +485,33 @@ public sealed class PaymentView : ContentView
         {
             RowDefinitions =
             {
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto)
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Auto),
+                new(GridLength.Auto)
             },
             ColumnDefinitions =
             {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Star)
+                new(GridLength.Star),
+                new(GridLength.Star),
+                new(GridLength.Star)
             },
             RowSpacing = 8,
             ColumnSpacing = 8
         };
 
-        void AddKey(string label, int column, int row, Action action)
+        void AddKey(string label, int column, int row, Action action, bool danger = false)
         {
-            var button = new SharedButton
+            var button = new Button
             {
                 Text = label,
-                Variant = ButtonVariant.Secondary,
-                HeightRequest = 56
+                HeightRequest = 58,
+                CornerRadius = 14,
+                FontAttributes = FontAttributes.Bold,
+                FontSize = 20,
+                BackgroundColor = danger ? Color.FromArgb("#FEE2E2") : Color.FromArgb("#E2E8F0"),
+                TextColor = danger ? Color.FromArgb("#B91C1C") : Color.FromArgb("#0F172A"),
+                Padding = 0
             };
             button.Clicked += (_, _) => action();
             grid.Add(button, column, row);
@@ -398,7 +528,7 @@ public sealed class PaymentView : ContentView
         AddKey("9", 2, 2, () => AppendKey("9"));
         AddKey(".", 0, 3, () => AppendKey("."));
         AddKey("0", 1, 3, () => AppendKey("0"));
-        AddKey("⌫", 2, 3, BackspaceKey);
+        AddKey("⌫", 2, 3, BackspaceKey, danger: true);
 
         return grid;
     }
@@ -485,53 +615,34 @@ public sealed class PaymentView : ContentView
             : string.Empty;
     }
 
-    private static Border Card(View content)
-    {
-        var card = new Border
-        {
-            Padding = 20,
-            StrokeThickness = 1,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
-            Content = content
-        };
-        card.Use(Border.BackgroundColorProperty, "OwSurface");
-        card.Use(Border.StrokeProperty, "OwBorder");
-        return card;
-    }
-
-    private static Microsoft.Maui.Controls.Label Label(string text, double size, bool bold)
-    {
-        var label = new Microsoft.Maui.Controls.Label
-        {
-            Text = text,
-            FontSize = size,
-            FontAttributes = bold ? FontAttributes.Bold : FontAttributes.None
-        };
-        label.Use(Microsoft.Maui.Controls.Label.TextColorProperty, bold ? "OwTextStrong" : "OwTextMuted");
-        return label;
-    }
-
-    private static Microsoft.Maui.Controls.Label Money(double size, bool bold)
-    {
-        var label = new Microsoft.Maui.Controls.Label
-        {
-            FontSize = size,
-            FontAttributes = bold ? FontAttributes.Bold : FontAttributes.None
-        };
-        label.Use(Microsoft.Maui.Controls.Label.TextColorProperty, "OwTextStrong");
-        return label;
-    }
-
-    private static Grid Line(string text, Microsoft.Maui.Controls.Label value)
+    private static Border BannerCard(string bg, string stroke, View left, View right)
     {
         var grid = new Grid
         {
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }
+            ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) },
+            Children = { left }
         };
-        grid.Add(Label(text, 14, false));
-        grid.Add(value, 1);
-        return grid;
+        grid.Add(right, 1);
+        return new Border
+        {
+            BackgroundColor = Color.FromArgb(bg),
+            Stroke = Color.FromArgb(stroke),
+            StrokeThickness = 2,
+            Padding = 16,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Content = grid
+        };
     }
+
+    private static Border SurfaceCard(View content) => new()
+    {
+        Padding = 20,
+        StrokeThickness = 1,
+        Stroke = Color.FromArgb("#E2E8F0"),
+        BackgroundColor = Colors.White,
+        StrokeShape = new RoundRectangle { CornerRadius = 18 },
+        Content = content
+    };
 
     private static string Format(decimal value) => value.ToString("C2", Gb);
 
@@ -539,7 +650,6 @@ public sealed class PaymentView : ContentView
     {
         if (e.PropertyName is nameof(PaymentViewModel.Tendered) or nameof(PaymentViewModel.AmountDue))
         {
-            // Keep keypad buffer aligned when Exact / quick chips change tendered.
             if (_viewModel is not null &&
                 decimal.TryParse(_keypadBuffer, NumberStyles.Number, CultureInfo.InvariantCulture, out var buffered) &&
                 buffered != _viewModel.Tendered)

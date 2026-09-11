@@ -32,7 +32,6 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             ["loyalty"] = 14,
             ["staffclock"] = 15,
             ["settings"] = 16,
-            ["chefloader"] = 17,
             ["printersetup"] = 18,
             ["customerdata"] = 19,
             ["terminalhealth"] = 20
@@ -625,7 +624,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             {
                 "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "collection", "delivery",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "report", "staffclock",
-                "inventory", "printersetup", "settings", "chefloader", "terminalhealth", "customerdata"
+                "inventory", "printersetup", "settings", "terminalhealth", "customerdata"
             }
         };
 

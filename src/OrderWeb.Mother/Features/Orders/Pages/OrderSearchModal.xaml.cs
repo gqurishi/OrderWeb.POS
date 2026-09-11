@@ -63,7 +63,7 @@ namespace POS_in_NET.Pages
             try
             {
                 SearchEntry.Unfocus();
-                var keyboard = new NumericKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
                 var value = await keyboard.ShowDigitsAsync(
                     SearchEntry.Text,
                     title: "Order number or phone",

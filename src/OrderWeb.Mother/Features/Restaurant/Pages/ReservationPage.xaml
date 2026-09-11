@@ -8,6 +8,9 @@
              BackgroundColor="#F8FAFC">
     <Grid RowDefinitions="Auto,*">
         <views:TopBar x:Name="TopBar" Grid.Row="0" />
-        <sharedViews:ReservationView x:Name="Reservation" Grid.Row="1" />
+        <sharedViews:ReservationView x:Name="Reservation"
+                                     Grid.Row="1"
+                                     VerticalOptions="Fill"
+                                     HorizontalOptions="Fill" />
     </Grid>
 </ContentPage>

@@ -882,6 +882,12 @@ public sealed class DailyReportService
 					LOWER(COALESCE(local_lifecycle_state, '')) = 'paid'
 					OR LOWER(COALESCE(status, '')) IN ('completed', 'paid', 'closed')
 					OR paid_at IS NOT NULL
+					OR LOWER(COALESCE(payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+					OR (
+						LOWER(COALESCE(source_channel, '')) IN ('web', 'online')
+						AND LOWER(COALESCE(payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+						AND LOWER(COALESCE(payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+					)
 					OR EXISTS (
 						SELECT 1
 						FROM order_payments op
@@ -1175,9 +1181,9 @@ public sealed class DailyReportService
 		{
 			var status = GetString(reader, "status");
 			var lifecycle = GetString(reader, "lifecycle_state");
-			var isCancelled = string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
-			var isVoided = !isCancelled && (string.Equals(lifecycle, "voided", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(status, "voided", StringComparison.OrdinalIgnoreCase));
+			// Mother void sets status=cancelled + local_lifecycle_state=voided — count as voided.
+			var isVoided = string.Equals(lifecycle, "voided", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(status, "voided", StringComparison.OrdinalIgnoreCase);
 			var amount = GetDecimal(reader, "original_amount");
 
 			if (isVoided)
@@ -1985,6 +1991,12 @@ public sealed class DailyReportService
 						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
 						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
 						OR o.paid_at IS NOT NULL
+						OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+						OR (
+							LOWER(COALESCE(o.source_channel, '')) IN ('web', 'online')
+							AND LOWER(COALESCE(o.payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+							AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+						)
 						OR EXISTS (
 							SELECT 1
 							FROM order_payments op
@@ -2022,6 +2034,12 @@ public sealed class DailyReportService
 						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
 						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
 						OR o.paid_at IS NOT NULL
+						OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+						OR (
+							LOWER(COALESCE(o.source_channel, '')) IN ('web', 'online')
+							AND LOWER(COALESCE(o.payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+							AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+						)
 						OR EXISTS (
 							SELECT 1
 							FROM order_payments op

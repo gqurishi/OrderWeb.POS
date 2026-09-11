@@ -1,0 +1,58 @@
+---
+description: Live Order SharedUI plan — Mother look, host-owned data/nav
+alwaysApply: true
+---
+
+# Live Order → SharedUI (remember)
+
+## Goal
+Mother Live Order look is the source of truth. SharedUI board; Mother + Client same chrome. Hosts own data + navigation.
+
+## SharedUI (look + interaction chrome)
+- Filter strip: **All / Collection / Delivery / Table** (Mother green selected style)
+- Card chrome: size, border, title, `#order`, total, time
+- Empty states via `LiveOrderSampleData.EmptyTextFor` (“No open local/collection/delivery orders”, “No active table sessions”)
+- Optional badge row (e.g. WEB / CASH DUE) — host supplies text; SharedUI only draws
+- Safe FlexLayout child remove (`SafeFlexLayout` — no `Children.Clear()`)
+
+## Host-owned (data + navigation)
+
+| | Mother | Client |
+|--|--|--|
+| Load | MySQL + table sessions | SQLite first, then Mother `GET /api/client/orders` |
+| Refresh | `AppDataRefreshService` (no Refresh button) | WS + quiet ~45s sync; Refresh optional / host-only |
+| Open card | `OrderPlacementPageSimple` | Online `OrderPage` via Mother |
+| Header/shell | Mother `TopBar` | Client header / MainPage shell |
+| Table tab | Active **sessions** | Open **table orders** (unless later session API) |
+
+Same UI shell; different pipes. Pattern: `RestaurantTablesView` / `LoyaltyView`.
+
+## Build order
+1. SharedUI board + models + cards ✅
+2. Mother thin host ✅
+3. Client `MainPage` ✅
+4. Client `LiveOrderPage` ✅
+5. Polish & QA ✅ checklist below (manual run ← next)
+
+## Phase 5 polish
+- FlexLayout: both hosts only mutate cards via `LiveOrderBoardView.SetCards` → `SafeFlexLayout` ✅
+- Fingerprint skip: Client MainPage + Client `LiveOrderPage` + Mother host ✅
+- Empty copy: “open” not “unpaid” (lifecycle/sent board) ✅
+- Theme `Ow*` tokens: deferred (Mother hex kept for v1)
+
+## Non-goals (v1)
+- Do **not** move Mother MySQL or Client HTTP into SharedUI
+- Do **not** force Client Table tab to sessions without Mother session list API
+- Do **not** push Mother web cash-due onto Client until `GET /api/client/orders` expands
+- Do **not** redesign Mother TopBar / Client header into the shared board
+
+## QA checklist (manual)
+1. Mother: All / Collection / Delivery / Table — empty + with orders; tap → Order Place / table session
+2. Mother: web cash-due shows WEB / CASH DUE badges when present
+3. Client: same tab look; open Collection / Delivery / Table order online
+4. Client: offline refuse open; Live Order still paints from cache
+5. Client: WS / silent sync updates board without flash/toast when warm
+6. Side-by-side: Mother vs Client tabs + cards match (Table data meaning may differ)
+
+## Client known difference
+Table tab = open table-type **orders**, not Mother table sessions.

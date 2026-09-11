@@ -14,7 +14,11 @@ public sealed record PaymentRequest(
     string? GiftCardIdempotencyKey = null,
     string? LoyaltyLookup = null,
     int? LoyaltyPoints = null,
-    string? LoyaltyIdempotencyKey = null);
+    string? LoyaltyIdempotencyKey = null,
+    /// <summary>Tip allocated to this payment line.</summary>
+    decimal TipAmount = 0m,
+    /// <summary>Full tip for the order (ceiling for approved totals). Defaults to TipAmount when 0.</summary>
+    decimal TipTotal = 0m);
 
 public sealed record PaymentResultDto(
     string PaymentId,

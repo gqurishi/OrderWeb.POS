@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Microsoft.Maui.Controls.Shapes;
+using OrderWeb.SharedUI.Assets;
 
 namespace OrderWeb.SharedUI.Controls;
 
@@ -24,12 +25,17 @@ public class ApplicationHeader : ContentView
     private readonly VerticalStackLayout _clock;
 
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._title.Text = v?.ToString());
-    public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._restaurantName.Text = v?.ToString() ?? string.Empty);
+    public static readonly BindableProperty RestaurantNameProperty = BindableProperty.Create(nameof(RestaurantName), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) =>
+    {
+        var header = (ApplicationHeader)b;
+        header._restaurantName.Text = v?.ToString() ?? string.Empty;
+        header.ApplyWelcomeBrand();
+    });
     public static readonly BindableProperty RestaurantLogoProperty = BindableProperty.Create(nameof(RestaurantLogo), typeof(ImageSource), typeof(ApplicationHeader), propertyChanged: (b, _, v) =>
     {
         var header = (ApplicationHeader)b;
         header._restaurantLogo.Source = (ImageSource?)v;
-        header._restaurantLogo.IsVisible = !header.ShowWelcomeBrand && v is ImageSource;
+        header.ApplyWelcomeBrand();
     });
     public static readonly BindableProperty UserNameProperty = BindableProperty.Create(nameof(UserName), typeof(string), typeof(ApplicationHeader), "No user", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.UserName = v?.ToString() ?? "No user");
     public static readonly BindableProperty TerminalNameProperty = BindableProperty.Create(nameof(TerminalName), typeof(string), typeof(ApplicationHeader), "Terminal", propertyChanged: (b, _, v) => ((ApplicationHeader)b)._identity.TerminalName = v?.ToString() ?? "Terminal");
@@ -43,8 +49,8 @@ public class ApplicationHeader : ContentView
 
     public ApplicationHeader()
     {
-        _menuButton = IconButton("companymark.png", 32);
-        _logoutButton = IconButton("outred.png", 36);
+        _menuButton = IconButton(SharedImageNames.CompanyLogo, 32);
+        _logoutButton = IconButton(SharedImageNames.Logout, 36);
         _back = new Button { Text = "‹", FontSize = 32, Padding = 0, WidthRequest = 38, HeightRequest = 38, MinimumWidthRequest = 44, MinimumHeightRequest = 44, BackgroundColor = Colors.Transparent, BorderWidth = 0 };
         _back.Use(Button.TextColorProperty, "OwTextPrimary");
         _back.IsVisible = false;
@@ -110,7 +116,8 @@ public class ApplicationHeader : ContentView
         {
             VerticalOptions = LayoutOptions.Center,
             Compact = true,
-            Margin = new Thickness(0, 0, 12, 0)
+            Margin = new Thickness(0, 0, 12, 0),
+            IsVisible = true
         };
 
         _clock = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Margin = new Thickness(0, 0, 14, 0), Children = { _date, _time } };
@@ -212,7 +219,10 @@ public class ApplicationHeader : ContentView
         var welcome = ShowWelcomeBrand;
         _welcome.IsVisible = welcome;
         _title.IsVisible = !welcome;
-        _restaurantLogo.IsVisible = !welcome && RestaurantLogo is ImageSource;
+        // Welcome brand: left menu is mainlogo; title is text only (Mother User/Manager parity).
+        // RestaurantLogo still feeds the sidebar via ApplicationShellFrame.
+        _restaurantLogo.IsVisible = false;
+        _restaurantName.IsVisible = welcome && !string.IsNullOrWhiteSpace(RestaurantName);
         _restaurantName.FontSize = welcome ? 21 : 12;
         _restaurantName.FontFamily = welcome ? "InterBold" : "OpenSansRegular";
         _restaurantName.FontAttributes = welcome ? FontAttributes.Bold : FontAttributes.None;

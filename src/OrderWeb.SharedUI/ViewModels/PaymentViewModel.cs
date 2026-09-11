@@ -17,6 +17,9 @@ public sealed class PaymentViewModel : INotifyPropertyChanged
     private bool _printReceipt = true;
     private bool _isSplit;
     private bool _allowSplit = true;
+    private bool _showLoyaltyMethod = true;
+    private bool _showInlineSplitToggle;
+    private bool _showInlineSplitMethod;
     private PaymentPresentationState _state;
     private string _message = "Choose a payment method. Mother confirms every payment.";
     private string? _lastRequestId;
@@ -27,6 +30,40 @@ public sealed class PaymentViewModel : INotifyPropertyChanged
     public event EventHandler<PaymentSubmission>? SubmissionRequested;
     public event EventHandler<string>? StatusCheckRequested;
     public ICommand SubmitCommand { get; }
+
+    /// <summary>Client shows Loyalty; Mother Order Place may hide it (points via order menu).</summary>
+    public bool ShowLoyaltyMethod
+    {
+        get => _showLoyaltyMethod;
+        set
+        {
+            if (!Set(ref _showLoyaltyMethod, value))
+            {
+                return;
+            }
+
+            if (!_showLoyaltyMethod && SelectedMethod == "loyalty")
+            {
+                SelectedMethod = "cash";
+            }
+
+            OnPropertyChanged(nameof(ShowLoyaltyMethod));
+        }
+    }
+
+    /// <summary>Prefer PaymentWizard for split; leave false on tender after setup plan.</summary>
+    public bool ShowInlineSplitToggle
+    {
+        get => _showInlineSplitToggle;
+        set => Set(ref _showInlineSplitToggle, value);
+    }
+
+    /// <summary>Legacy Split method tile on tender screen (default off).</summary>
+    public bool ShowInlineSplitMethod
+    {
+        get => _showInlineSplitMethod;
+        set => Set(ref _showInlineSplitMethod, value);
+    }
 
     public decimal AmountDue
     {

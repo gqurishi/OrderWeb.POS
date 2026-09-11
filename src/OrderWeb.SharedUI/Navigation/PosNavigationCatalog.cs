@@ -19,7 +19,8 @@ public static class PosNavigationCatalog
         Item("restaurant", "Restaurant", "restaurant.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.DineIn], 30),
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
-        // Mother-only rider board (Shell route remains "weborders"; Client blocks that route).
+        // Mother-only rider board (Shell route remains "weborders").
+        // Client shows the same sidebar label for Manager parity; board stays on Mother.
         Item("weborders", "Rider", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery, PosFeatureKeys.WebOrders], 52),
         Item("customers", "Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 60),
         Item("payments", "Payments", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 70),
@@ -32,7 +33,6 @@ public static class PosNavigationCatalog
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
         Item("printersetup", "Printer Setup", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
         Item("settings", "Settings", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 170),
-        Item("chefloader", "Chef Loader", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 175),
         Item("staffclock", "Staff Clock", "staff.png", [PosCapabilityKeys.AccessAdmin], [], 180),
         Item("inventory", "Inventory", "inventory.png", [PosCapabilityKeys.ViewReports], [], 190),
         Item("terminalhealth", "Terminal", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),

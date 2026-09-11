@@ -123,6 +123,7 @@ public sealed class TerminalHealthService : IDisposable
         await connection.OpenAsync();
         await EnsureTableAsync(connection);
         await TerminalPairingService.EnsureTableAsync(connection);
+        await TerminalPairingService.EnsurePermanentPairingCodesAsync(connection);
         await EnsureClientPairingColumnsAsync(connection);
 
         // Existing pending codes keep working; expiry is no longer used.

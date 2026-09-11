@@ -434,29 +434,34 @@ public partial class OrderHistoryPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        if (ClientSidebarNavigation.IsDashboard(menu))
         {
             await Navigation.PopToRootAsync(false);
             return;
         }
 
-        if (!ClientHostAccess.CanOpenMenu(menu))
+        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
         {
             return;
         }
 
-        await Navigation.PushAsync(menu switch
+        if (ClientHostAccess.IsMenuRoute(menu, "orderhistory") ||
+            !ClientHostAccess.CanOpenMenu(menu))
         {
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new RestaurantPage(),
-            "Collection" => new CollectionOrderPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Gift Cards" => new GiftCardPage(),
-            "Loyalty Points" => new LoyaltyPage(),
-            "Reservation" => new ReservationPage(),
-            _ => new OrderHistoryPage()
-        }, false);
+            return;
+        }
+
+        if (ClientSidebarNavigation.IsCustomerSurface(menu))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        var page = ClientSidebarNavigation.CreatePage(menu);
+        if (page is not null)
+        {
+            await Navigation.PushAsync(page, false);
+        }
     }
 }
 

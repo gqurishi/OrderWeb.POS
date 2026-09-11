@@ -720,27 +720,24 @@ namespace POS_in_NET.Pages
                 return;
             }
 
-            var confirmWord = await DisplayPromptAsync(
-                "Restore Database",
-                "This will replace the current Mother database. Type RESTORE to continue.",
-                "Continue",
-                "Cancel",
-                "RESTORE",
-                maxLength: 7);
+            var confirmKeyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+            confirmKeyboard.SetPrompt("Type RESTORE to continue", "Continue");
+            confirmKeyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Text);
+            confirmKeyboard.SetPlaceholder("RESTORE");
+            confirmKeyboard.SetMaximumLength(7);
+            confirmKeyboard.SetRequired(true);
+            var confirmWord = await confirmKeyboard.ShowAsync(this);
 
             if (!string.Equals(confirmWord, "RESTORE", StringComparison.Ordinal))
             {
                 return;
             }
 
-            var adminPin = await DisplayPromptAsync(
-                "Admin Verification",
-                "Enter an Admin PIN to restore the database.",
-                "Restore",
-                "Cancel",
-                "Admin PIN",
-                maxLength: 12,
-                keyboard: Keyboard.Numeric);
+            var pinKeyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+            var adminPin = await pinKeyboard.ShowDigitsAsync(
+                title: "Admin Verification — enter Admin PIN",
+                maxDigits: 12,
+                hostPage: this);
 
             if (string.IsNullOrWhiteSpace(adminPin))
             {

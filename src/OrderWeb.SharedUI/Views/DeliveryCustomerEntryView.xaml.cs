@@ -190,8 +190,14 @@ public partial class DeliveryCustomerEntryView : ContentView
             }
 
             var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetNumericOnly(numericOnly);
+            keyboard.SetTextMode(numericOnly
+                ? VirtualKeyboardTextMode.Phone
+                : title.Contains("name", StringComparison.OrdinalIgnoreCase)
+                    ? VirtualKeyboardTextMode.Name
+                    : VirtualKeyboardTextMode.Address);
             keyboard.SetPrompt(title, "DONE");
+            keyboard.SetPlaceholder(entry.Placeholder);
+            keyboard.SetMaximumLength(entry.MaxLength == int.MaxValue ? 0 : entry.MaxLength);
             keyboard.SetInitialText(entry.Text ?? string.Empty);
 
             var result = await keyboard.ShowAsync(hostPage);

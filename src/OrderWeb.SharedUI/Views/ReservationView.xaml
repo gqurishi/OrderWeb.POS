@@ -5,34 +5,42 @@
              x:Class="OrderWeb.SharedUI.Views.ReservationView">
 
     <Grid x:Name="RootLayout"
-          BackgroundColor="{DynamicResource OwBackground}">
+          BackgroundColor="{DynamicResource OwBackground}"
+          VerticalOptions="Fill"
+          HorizontalOptions="Fill">
 
         <Grid x:Name="MainLayoutGrid"
               Padding="20"
               ColumnDefinitions="300,*"
               RowDefinitions="Auto,*"
               ColumnSpacing="16"
-              RowSpacing="14">
+              RowSpacing="14"
+              VerticalOptions="Fill"
+              HorizontalOptions="Fill">
 
-            <!-- Summary strip -->
+            <!-- Summary strip (Phase 1: short + slim) -->
             <Grid Grid.Row="0"
                   Grid.ColumnSpan="2"
                   ColumnDefinitions="*,*,*,Auto"
-                  ColumnSpacing="12">
+                  ColumnSpacing="10"
+                  HeightRequest="64"
+                  VerticalOptions="Start">
 
                 <Border BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="18,14"
-                        StrokeShape="RoundRectangle 14">
-                    <VerticalStackLayout Spacing="2">
+                        Padding="12,6"
+                        VerticalOptions="Fill"
+                        StrokeShape="RoundRectangle 12">
+                    <VerticalStackLayout Spacing="0"
+                                         VerticalOptions="Center">
                         <Label Text="BOOKINGS TODAY"
-                               FontSize="11"
+                               FontSize="10"
                                FontAttributes="Bold"
-                               CharacterSpacing="0.8"
+                               CharacterSpacing="0.6"
                                TextColor="{DynamicResource OwTextMuted}" />
                         <Label Text="{Binding TodayCountText}"
-                               FontSize="28"
+                               FontSize="22"
                                FontAttributes="Bold"
                                TextColor="{DynamicResource OwTextStrong}" />
                     </VerticalStackLayout>
@@ -42,16 +50,18 @@
                         BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="18,14"
-                        StrokeShape="RoundRectangle 14">
-                    <VerticalStackLayout Spacing="2">
+                        Padding="12,6"
+                        VerticalOptions="Fill"
+                        StrokeShape="RoundRectangle 12">
+                    <VerticalStackLayout Spacing="0"
+                                         VerticalOptions="Center">
                         <Label Text="GUESTS TODAY"
-                               FontSize="11"
+                               FontSize="10"
                                FontAttributes="Bold"
-                               CharacterSpacing="0.8"
+                               CharacterSpacing="0.6"
                                TextColor="{DynamicResource OwTextMuted}" />
                         <Label Text="{Binding GuestCountText}"
-                               FontSize="28"
+                               FontSize="22"
                                FontAttributes="Bold"
                                TextColor="{DynamicResource OwSuccessStrong}" />
                     </VerticalStackLayout>
@@ -61,41 +71,45 @@
                         BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="18,14"
-                        StrokeShape="RoundRectangle 14">
-                    <VerticalStackLayout Spacing="2">
+                        Padding="12,6"
+                        VerticalOptions="Fill"
+                        StrokeShape="RoundRectangle 12">
+                    <VerticalStackLayout Spacing="0"
+                                         VerticalOptions="Center">
                         <Label Text="NEXT BOOKING"
-                               FontSize="11"
+                               FontSize="10"
                                FontAttributes="Bold"
-                               CharacterSpacing="0.8"
+                               CharacterSpacing="0.6"
                                TextColor="{DynamicResource OwTextMuted}" />
                         <Label Text="{Binding NextReservationText}"
-                               FontSize="28"
+                               FontSize="22"
                                FontAttributes="Bold"
                                TextColor="{DynamicResource OwPrimary}" />
                     </VerticalStackLayout>
                 </Border>
 
                 <HorizontalStackLayout Grid.Column="3"
-                                       Spacing="10"
+                                       Spacing="8"
                                        VerticalOptions="Center">
                     <Button Text="Refresh"
                             BackgroundColor="{DynamicResource OwPrimarySoft}"
                             TextColor="{DynamicResource OwInfoText}"
                             FontAttributes="Bold"
-                            FontSize="14"
-                            CornerRadius="12"
-                            HeightRequest="48"
-                            Padding="18,0"
+                            FontSize="13"
+                            CornerRadius="10"
+                            HeightRequest="40"
+                            MinimumHeightRequest="40"
+                            Padding="14,0"
                             Clicked="OnUpdateClicked" />
                     <Button Text="New booking"
                             BackgroundColor="{DynamicResource OwPrimary}"
                             TextColor="{DynamicResource OwTextOnPrimary}"
                             FontAttributes="Bold"
-                            FontSize="14"
-                            CornerRadius="12"
-                            HeightRequest="48"
-                            Padding="18,0"
+                            FontSize="13"
+                            CornerRadius="10"
+                            HeightRequest="40"
+                            MinimumHeightRequest="40"
+                            Padding="14,0"
                             Clicked="OnNewReservationClicked" />
                 </HorizontalStackLayout>
             </Grid>
@@ -202,30 +216,34 @@
                 </VerticalStackLayout>
             </Border>
 
-            <!-- List panel -->
+            <!-- List panel: header fixed; booking CollectionView scrolls (Phase 4) -->
             <Grid Grid.Row="1"
                   Grid.Column="1"
                   RowDefinitions="Auto,*"
-                  RowSpacing="12">
+                  RowSpacing="8"
+                  VerticalOptions="Fill"
+                  HorizontalOptions="Fill">
 
+                <!-- Phase 2: slim date / sync / Today / search -->
                 <Border BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="16,14"
-                        StrokeShape="RoundRectangle 16">
-                    <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-                            <VerticalStackLayout Spacing="2">
+                        Padding="10,8"
+                        StrokeShape="RoundRectangle 12">
+                    <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <VerticalStackLayout Spacing="0"
+                                                 VerticalOptions="Center">
                                 <Label Text="{Binding SelectedDateDisplay}"
-                                       FontSize="17"
+                                       FontSize="15"
                                        FontAttributes="Bold"
                                        TextColor="{DynamicResource OwTextStrong}" />
-                                <HorizontalStackLayout Spacing="8">
+                                <HorizontalStackLayout Spacing="6">
                                     <Label Text="{Binding SyncStatusText}"
-                                           FontSize="12"
+                                           FontSize="11"
                                            TextColor="{DynamicResource OwTextMuted}" />
                                     <Label Text="{Binding LastUpdatedText}"
-                                           FontSize="12"
+                                           FontSize="11"
                                            TextColor="{DynamicResource OwTextPlaceholder}" />
                                 </HorizontalStackLayout>
                             </VerticalStackLayout>
@@ -241,10 +259,12 @@
                                     BackgroundColor="{DynamicResource OwSurfaceMuted}"
                                     TextColor="{DynamicResource OwTextStrong}"
                                     FontAttributes="Bold"
-                                    FontSize="13"
-                                    CornerRadius="10"
-                                    HeightRequest="36"
-                                    WidthRequest="78"
+                                    FontSize="12"
+                                    CornerRadius="8"
+                                    HeightRequest="30"
+                                    MinimumHeightRequest="30"
+                                    WidthRequest="68"
+                                    Padding="0"
                                     Clicked="OnTodayClicked" />
                         </Grid>
 
@@ -252,8 +272,9 @@
                                 BackgroundColor="{DynamicResource OwBackground}"
                                 Stroke="{DynamicResource OwInputBorder}"
                                 StrokeThickness="1"
-                                Padding="12,6"
-                                StrokeShape="RoundRectangle 12">
+                                Padding="10,2"
+                                HeightRequest="36"
+                                StrokeShape="RoundRectangle 10">
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnSearchBoxTapped" />
                             </Border.GestureRecognizers>
@@ -262,7 +283,9 @@
                                    BackgroundColor="Transparent"
                                    TextColor="{DynamicResource OwTextPrimary}"
                                    PlaceholderColor="{DynamicResource OwTextPlaceholder}"
-                                   FontSize="14"
+                                   FontSize="13"
+                                   HeightRequest="32"
+                                   VerticalOptions="Center"
                                    Keyboard="Text"
                                    TextChanged="OnSearchTextChanged" />
                         </Border>
@@ -273,11 +296,21 @@
                         BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="8"
-                        StrokeShape="RoundRectangle 16">
-                    <CollectionView ItemsSource="{Binding Reservations}"
+                        Padding="6"
+                        StrokeShape="RoundRectangle 16"
+                        VerticalOptions="Fill"
+                        HorizontalOptions="Fill">
+                    <CollectionView x:Name="BookingListCollectionView"
+                                    ItemsSource="{Binding Reservations}"
                                     SelectionMode="None"
-                                    ItemSizingStrategy="MeasureAllItems">
+                                    ItemSizingStrategy="MeasureAllItems"
+                                    VerticalOptions="Fill"
+                                    HorizontalOptions="Fill"
+                                    VerticalScrollBarVisibility="Default">
+                        <CollectionView.ItemsLayout>
+                            <LinearItemsLayout Orientation="Vertical"
+                                               ItemSpacing="0" />
+                        </CollectionView.ItemsLayout>
                         <CollectionView.EmptyView>
                             <VerticalStackLayout Padding="36"
                                                  Spacing="10"
@@ -305,34 +338,34 @@
                         </CollectionView.EmptyView>
                         <CollectionView.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="4,4"
+                                <Border Margin="2,2"
                                         BackgroundColor="{DynamicResource OwBackground}"
                                         Stroke="{DynamicResource OwBorder}"
                                         StrokeThickness="1"
-                                        Padding="12"
-                                        StrokeShape="RoundRectangle 14">
+                                        Padding="8"
+                                        StrokeShape="RoundRectangle 12">
                                     <Border.GestureRecognizers>
                                         <TapGestureRecognizer Tapped="OnReservationRowTapped" />
                                     </Border.GestureRecognizers>
-                                    <Grid ColumnDefinitions="72,*,Auto"
-                                          ColumnSpacing="12">
+                                    <Grid ColumnDefinitions="64,*,Auto"
+                                          ColumnSpacing="8">
                                         <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
                                                 Stroke="{DynamicResource OwPrimarySoftBorder}"
                                                 StrokeThickness="1"
-                                                Padding="6"
-                                                HeightRequest="58"
-                                                StrokeShape="RoundRectangle 12"
+                                                Padding="4"
+                                                HeightRequest="48"
+                                                StrokeShape="RoundRectangle 10"
                                                 VerticalOptions="Center">
-                                            <VerticalStackLayout Spacing="1"
+                                            <VerticalStackLayout Spacing="0"
                                                                  HorizontalOptions="Center"
                                                                  VerticalOptions="Center">
                                                 <Label Text="{Binding TimeText}"
-                                                       FontSize="17"
+                                                       FontSize="15"
                                                        FontAttributes="Bold"
                                                        TextColor="{DynamicResource OwPrimary}"
                                                        HorizontalTextAlignment="Center" />
                                                 <Label Text="{Binding SourceDisplay}"
-                                                       FontSize="10"
+                                                       FontSize="9"
                                                        FontAttributes="Bold"
                                                        TextColor="{DynamicResource OwTextMuted}"
                                                        HorizontalTextAlignment="Center"
@@ -341,10 +374,10 @@
                                         </Border>
 
                                         <VerticalStackLayout Grid.Column="1"
-                                                             Spacing="6"
+                                                             Spacing="4"
                                                              VerticalOptions="Center">
                                             <Label Text="{Binding Name}"
-                                                   FontSize="16"
+                                                   FontSize="14"
                                                    FontAttributes="Bold"
                                                    TextColor="{DynamicResource OwTextStrong}"
                                                    LineBreakMode="TailTruncation" />
@@ -355,69 +388,69 @@
                                                 <Border BackgroundColor="{DynamicResource OwSuccessSoft}"
                                                         Stroke="#A7F3D0"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8">
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6">
                                                     <Label Text="{Binding GuestsText}"
-                                                           FontSize="11"
+                                                           FontSize="10"
                                                            FontAttributes="Bold"
                                                            TextColor="{DynamicResource OwSuccessText}" />
                                                 </Border>
                                                 <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
                                                         Stroke="{DynamicResource OwPrimarySoftBorder}"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8">
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6">
                                                     <Label Text="{Binding TableDisplay}"
-                                                           FontSize="11"
+                                                           FontSize="10"
                                                            FontAttributes="Bold"
                                                            TextColor="{DynamicResource OwInfoText}" />
                                                 </Border>
                                                 <Border BackgroundColor="{DynamicResource OwSurface}"
                                                         Stroke="{DynamicResource OwBorder}"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8">
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6">
                                                     <Label Text="{Binding PhoneDisplay}"
-                                                           FontSize="11"
+                                                           FontSize="10"
                                                            TextColor="{DynamicResource OwTextSecondary}"
                                                            LineBreakMode="TailTruncation" />
                                                 </Border>
                                                 <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
                                                         Stroke="{DynamicResource OwPrimarySoftBorder}"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8"
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6"
                                                         IsVisible="{Binding HasPromoCode}">
                                                     <Label Text="{Binding PromoBadgeText}"
-                                                           FontSize="11"
+                                                           FontSize="10"
                                                            FontAttributes="Bold"
                                                            TextColor="{DynamicResource OwPrimary}" />
                                                 </Border>
                                                 <Border BackgroundColor="{DynamicResource OwWarningSoft}"
                                                         Stroke="{DynamicResource OwWarningBorder}"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8"
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6"
                                                         IsVisible="{Binding HasAllergies}">
                                                     <Label Text="Dietary"
-                                                           FontSize="10"
+                                                           FontSize="9"
                                                            FontAttributes="Bold"
                                                            TextColor="{DynamicResource OwWarningText}" />
                                                 </Border>
                                                 <Border BackgroundColor="{DynamicResource OwSuccessSoft}"
                                                         Stroke="#A7F3D0"
                                                         StrokeThickness="1"
-                                                        Padding="8,3"
-                                                        Margin="0,0,6,4"
-                                                        StrokeShape="RoundRectangle 8"
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        StrokeShape="RoundRectangle 6"
                                                         IsVisible="{Binding HasSpecialRequests}">
                                                     <Label Text="Requests"
-                                                           FontSize="10"
+                                                           FontSize="9"
                                                            FontAttributes="Bold"
                                                            TextColor="{DynamicResource OwSuccessText}" />
                                                 </Border>
@@ -425,17 +458,17 @@
                                         </VerticalStackLayout>
 
                                         <VerticalStackLayout Grid.Column="2"
-                                                             Spacing="6"
+                                                             Spacing="4"
                                                              HorizontalOptions="End"
                                                              VerticalOptions="Center">
                                             <Border BackgroundColor="{Binding StatusBadgeBackground}"
                                                     Stroke="{Binding StatusBadgeBorder}"
                                                     StrokeThickness="1"
-                                                    Padding="10,4"
+                                                    Padding="8,3"
                                                     HorizontalOptions="End"
-                                                    StrokeShape="RoundRectangle 8">
+                                                    StrokeShape="RoundRectangle 6">
                                                 <Label Text="{Binding Status}"
-                                                       FontSize="11"
+                                                       FontSize="10"
                                                        FontAttributes="Bold"
                                                        TextColor="{Binding StatusBadgeTextColor}"
                                                        HorizontalTextAlignment="Center"
@@ -451,7 +484,8 @@
                                                         FontAttributes="Bold"
                                                         FontSize="11"
                                                         CornerRadius="8"
-                                                        HeightRequest="32"
+                                                        HeightRequest="30"
+                                                        MinimumHeightRequest="30"
                                                         WidthRequest="64"
                                                         Padding="0"
                                                         IsVisible="{Binding IsShowButtonVisible}"
@@ -465,7 +499,8 @@
                                                         FontAttributes="Bold"
                                                         FontSize="11"
                                                         CornerRadius="8"
-                                                        HeightRequest="32"
+                                                        HeightRequest="30"
+                                                        MinimumHeightRequest="30"
                                                         WidthRequest="68"
                                                         Padding="0"
                                                         Clicked="OnReservationDetailsClicked" />
@@ -477,7 +512,8 @@
                                                         FontAttributes="Bold"
                                                         FontSize="11"
                                                         CornerRadius="8"
-                                                        HeightRequest="32"
+                                                        HeightRequest="30"
+                                                        MinimumHeightRequest="30"
                                                         WidthRequest="72"
                                                         Padding="0"
                                                         IsVisible="{Binding IsNoShowButtonVisible}"
@@ -491,7 +527,8 @@
                                                         FontAttributes="Bold"
                                                         FontSize="11"
                                                         CornerRadius="8"
-                                                        HeightRequest="32"
+                                                        HeightRequest="30"
+                                                        MinimumHeightRequest="30"
                                                         WidthRequest="70"
                                                         Padding="0"
                                                         IsVisible="{Binding IsCancelButtonVisible}"

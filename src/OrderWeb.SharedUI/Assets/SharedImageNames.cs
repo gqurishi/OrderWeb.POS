@@ -6,9 +6,9 @@ namespace OrderWeb.SharedUI.Assets;
 /// </summary>
 public static class SharedImageNames
 {
-    public const string CompanyLogo = "companylogo.png";
+    public const string CompanyLogo = "mainlogo.png";
     public const string CompanyMark = "companymark.png";
-    public const string Home = "companymark.png";
+    public const string Home = "mainlogo.png";
     public const string Logout = "outred.png";
     public const string DefaultFood = "default_food.png";
     public const string DefaultTable = "table_1.png";

@@ -22,6 +22,9 @@ public class SharedClientDashboardPage : ContentPage
         Shell.SetNavBarIsVisible(this, false);
         BackgroundColor = Colors.White;
 
+        // Apply Mother-granted features from this login (UserSession wrappers used to drop them).
+        ClientHostAccess.ApplyFromSession(session);
+
         var capabilities = ClientCapabilityResolver.ForRole(session.Role, session.Permissions);
         var features = ClientHostAccess.FeaturesForRole(session.Role);
         var dashboardRoutes = ClientHostAccess.DashboardRoutesForRole(session.Role);
@@ -40,7 +43,7 @@ public class SharedClientDashboardPage : ContentPage
             PageTitle = title,
             MainContent = dashboard,
             RestaurantName = "Restaurant POS",
-            RestaurantLogo = "companymark.png",
+            RestaurantLogo = "mainlogo.png",
             UserName = session.UserName,
             UserRole = session.Role,
             TerminalName = "Client POS",
@@ -59,7 +62,31 @@ public class SharedClientDashboardPage : ContentPage
         _shell.NavigationRequested += async (_, e) => await NavigateRouteAsync(e.Route);
         _shell.LogoutRequested += async (_, _) => await Navigation.PopToRootAsync(false);
         _shell.MinimizeRequested += (_, _) => ClientWindowService.MinimizeMainWindow();
+        _shell.UpdateRequested += async (_, _) => await OnUpdateAllAsync();
         Content = _shell;
+    }
+
+    private async Task OnUpdateAllAsync()
+    {
+        try
+        {
+            var access = await new MotherAccessClient().RefreshAccessAsync();
+            if (access.Success)
+            {
+                await DisplayAlertAsync(
+                    "Update All",
+                    "Client access refreshed from Mother. Menus may appear or hide. Open Gift Cards again if it was already open.",
+                    "OK");
+            }
+            else
+            {
+                await DisplayAlertAsync("Update All", access.Message, "OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Update All", ex.Message, "OK");
+        }
     }
 
     private async Task NavigateRouteAsync(string route)
@@ -70,10 +97,20 @@ public class SharedClientDashboardPage : ContentPage
             return;
         }
 
-        if (string.Equals(route, "weborders", StringComparison.OrdinalIgnoreCase) ||
-            !ClientAccessPolicy.IsRouteAllowed(route) ||
+        if (string.Equals(route, "weborders", StringComparison.OrdinalIgnoreCase))
+        {
+            await DisplayAlertAsync(
+                "Rider",
+                "Rider board is on Mother POS. Open Rider there.",
+                "OK");
+            _shell.SelectedRoute = "dashboard";
+            return;
+        }
+
+        if (!ClientAccessPolicy.IsRouteAllowed(route) ||
             (!ClientHostAccess.Routes.Contains(route) &&
-             !string.Equals(route, "reservation", StringComparison.OrdinalIgnoreCase)))
+             !string.Equals(route, "reservation", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(route, "weborders", StringComparison.OrdinalIgnoreCase)))
         {
             _shell.SelectedRoute = "dashboard";
             return;

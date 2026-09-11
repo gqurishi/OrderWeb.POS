@@ -9,11 +9,13 @@
         <!-- Header -->
         <VerticalStackLayout Grid.Row="0" Spacing="8" Margin="0,0,0,12">
             <Label Text="Delivery Order"
+                   FontFamily="OpenSansSemibold"
                    FontSize="36"
                    FontAttributes="Bold"
                    HorizontalOptions="Center"
                    TextColor="#1A202C" />
             <Label Text="Customer Information"
+                   FontFamily="OpenSansSemibold"
                    FontSize="16"
                    HorizontalOptions="Center"
                    TextColor="#718096"
@@ -35,6 +37,7 @@
                 <!-- Customer Name -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Customer Name"
+                           FontFamily="OpenSansSemibold"
                            FontSize="15"
                            FontAttributes="Bold"
                            TextColor="#4A5568" />
@@ -64,6 +67,7 @@
                 <!-- Phone Number -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Phone Number"
+                           FontFamily="OpenSansSemibold"
                            FontSize="15"
                            FontAttributes="Bold"
                            TextColor="#4A5568" />
@@ -94,6 +98,7 @@
                 <!-- Delivery Address -->
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Delivery Address"
+                           FontFamily="OpenSansSemibold"
                            FontSize="15"
                            FontAttributes="Bold"
                            TextColor="#4A5568" />
@@ -127,6 +132,7 @@
                                 Text="Search"
                                 BackgroundColor="#10B981"
                                 TextColor="White"
+                                FontFamily="OpenSansSemibold"
                                 FontSize="15"
                                 FontAttributes="Bold"
                                 HeightRequest="56"
@@ -157,6 +163,7 @@
                                             MinimumHeightRequest="52"
                                             Margin="0,0,0,1">
                                         <Label Text="{Binding DisplayText}"
+                                               FontFamily="OpenSansSemibold"
                                                FontSize="15"
                                                FontAttributes="Bold"
                                                TextColor="#1A202C"
@@ -170,6 +177,7 @@
                     <VerticalStackLayout Spacing="16" Margin="0,16,0,0">
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Flat / House Number"
+                                   FontFamily="OpenSansSemibold"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1A202C" />
@@ -198,6 +206,7 @@
 
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Road Name"
+                                   FontFamily="OpenSansSemibold"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1A202C" />
@@ -226,6 +235,7 @@
 
                         <VerticalStackLayout Spacing="8">
                             <Label Text="City"
+                                   FontFamily="OpenSansSemibold"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1A202C" />
@@ -254,6 +264,7 @@
 
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Postcode"
+                                   FontFamily="OpenSansSemibold"
                                    FontSize="14"
                                    FontAttributes="Bold"
                                    TextColor="#1A202C" />
@@ -324,6 +335,7 @@
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                         <VerticalStackLayout Spacing="6">
                                             <Label Text="{Binding Name}"
+                                                   FontFamily="OpenSansSemibold"
                                                    FontSize="16"
                                                    FontAttributes="Bold"
                                                    TextColor="#1A202C" />
@@ -393,6 +405,7 @@
                     Text="Continue to Order"
                     BackgroundColor="#3B82F6"
                     TextColor="White"
+                    FontFamily="OpenSansSemibold"
                     FontSize="16"
                     FontAttributes="Bold"
                     HeightRequest="56"

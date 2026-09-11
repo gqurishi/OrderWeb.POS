@@ -108,6 +108,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        TopBar.SetPageTitle("Reservation");
         AttachReservationSyncHandler();
 
         if (!await SessionAccessGuard.RequireSignedInAsync(_authService))

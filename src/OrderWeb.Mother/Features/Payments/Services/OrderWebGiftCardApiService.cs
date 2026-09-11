@@ -59,12 +59,25 @@ public sealed class OrderWebGiftCardApiService
         request.Headers.Pragma.ParseAdd("no-cache");
 
         AppDiagnostics.Log("Gift card lookup requested");
-        HttpResponseMessage response;
-        string content;
         try
         {
-            response = await _orderWebApiClient.SendAsync(request);
-            content = await response.Content.ReadAsStringAsync();
+            using var response = await _orderWebApiClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            AppDiagnostics.Log($"Gift card lookup status: {(int)response.StatusCode} {response.StatusCode}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new GiftCardLookupResponse
+                {
+                    Success = false,
+                    Error = ParseGiftCardError(content, $"Gift card lookup failed: {response.StatusCode}"),
+                    CanQueueForRetry = IsRetryableStatusCode(response.StatusCode)
+                };
+            }
+
+            var result = ParseGiftCardLookupResponse(content);
+            return NormalizeLookupResult(result, normalizedPurpose)
+                ?? new GiftCardLookupResponse { Success = false, Error = "Invalid gift card lookup response.", CanQueueForRetry = true };
         }
         catch (Exception ex)
         {
@@ -76,22 +89,6 @@ public sealed class OrderWebGiftCardApiService
                 CanQueueForRetry = true
             };
         }
-
-        AppDiagnostics.Log($"Gift card lookup status: {(int)response.StatusCode} {response.StatusCode}");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return new GiftCardLookupResponse
-            {
-                Success = false,
-                Error = ParseGiftCardError(content, $"Gift card lookup failed: {response.StatusCode}"),
-                CanQueueForRetry = IsRetryableStatusCode(response.StatusCode)
-            };
-        }
-
-        var result = ParseGiftCardLookupResponse(content);
-        return NormalizeLookupResult(result, normalizedPurpose)
-            ?? new GiftCardLookupResponse { Success = false, Error = "Invalid gift card lookup response.", CanQueueForRetry = true };
     }
 
     public async Task<GiftCardTransactionResponse> ActivateAsync(GiftCardActivateRequest request, string? transactionId = null)
@@ -302,21 +299,33 @@ public sealed class OrderWebGiftCardApiService
             idempotencyKey);
 
         AppDiagnostics.Log("Gift card redeem requested");
-        var response = await _orderWebApiClient.SendAsync(httpRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        AppDiagnostics.Log($"Gift card redeem status: {(int)response.StatusCode} {response.StatusCode}");
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
+            using var response = await _orderWebApiClient.SendAsync(httpRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            AppDiagnostics.Log($"Gift card redeem status: {(int)response.StatusCode} {response.StatusCode}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new GiftCardRedeemResponse
+                {
+                    Success = false,
+                    Error = ParseGiftCardError(content, $"Failed to redeem gift card: {response.StatusCode}")
+                };
+            }
+
+            return ParseGiftCardRedeemResponse(content)
+                ?? new GiftCardRedeemResponse { Success = false, Error = "Invalid gift card redemption response." };
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Gift card redeem transport failed: {ex.Message}");
             return new GiftCardRedeemResponse
             {
                 Success = false,
-                Error = ParseGiftCardError(content, $"Failed to redeem gift card: {response.StatusCode}")
+                Error = $"Gift card redeem could not reach OrderWeb: {ex.Message}"
             };
         }
-
-        return ParseGiftCardRedeemResponse(content)
-            ?? new GiftCardRedeemResponse { Success = false, Error = "Invalid gift card redemption response." };
     }
 
     public async Task<GiftCardTransactionResponse> FlushActivationsAsync(
@@ -392,12 +401,24 @@ public sealed class OrderWebGiftCardApiService
         using var request = _orderWebApiClient.CreateRequest(config, HttpMethod.Post, path, payload, idempotencyKey);
 
         AppDiagnostics.Log("Gift card operation requested");
-        HttpResponseMessage response;
-        string content;
         try
         {
-            response = await _orderWebApiClient.SendAsync(request);
-            content = await response.Content.ReadAsStringAsync();
+            using var response = await _orderWebApiClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            AppDiagnostics.Log($"Gift card POST status: {(int)response.StatusCode} {response.StatusCode}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new GiftCardTransactionResponse
+                {
+                    Success = false,
+                    Error = ParseGiftCardError(content, $"Gift card operation failed: {response.StatusCode}"),
+                    CanQueueForRetry = IsRetryableStatusCode(response.StatusCode)
+                };
+            }
+
+            return ParseGiftCardTransactionResponse(content)
+                ?? new GiftCardTransactionResponse { Success = false, Error = "Invalid gift card operation response.", CanQueueForRetry = true };
         }
         catch (Exception ex)
         {
@@ -409,21 +430,6 @@ public sealed class OrderWebGiftCardApiService
                 CanQueueForRetry = true
             };
         }
-
-        AppDiagnostics.Log($"Gift card POST status: {(int)response.StatusCode} {response.StatusCode}");
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return new GiftCardTransactionResponse
-            {
-                Success = false,
-                Error = ParseGiftCardError(content, $"Gift card operation failed: {response.StatusCode}"),
-                CanQueueForRetry = IsRetryableStatusCode(response.StatusCode)
-            };
-        }
-
-        return ParseGiftCardTransactionResponse(content)
-            ?? new GiftCardTransactionResponse { Success = false, Error = "Invalid gift card operation response.", CanQueueForRetry = true };
     }
 
     private static GiftCardLookupResponse MissingConfigurationLookupResponse()

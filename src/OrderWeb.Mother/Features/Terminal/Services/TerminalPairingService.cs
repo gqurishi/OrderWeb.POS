@@ -123,7 +123,17 @@ public static class TerminalPairingService
             }
             else if (!reader.IsDBNull(reader.GetOrdinal("paired_at")))
             {
-                return new TerminalPairingResult(false, "This pairing code has already been used. Create a new code on the mother terminal.");
+                var storedCode = reader.IsDBNull(reader.GetOrdinal("pairing_code"))
+                    ? string.Empty
+                    : reader.GetString("pairing_code");
+                if (string.Equals(storedCode, cleanCode, StringComparison.Ordinal))
+                {
+                    // Permanent code — already paired; reconnect is allowed with the same code.
+                    return new TerminalPairingResult(true, "Client POS already paired. Reconnect allowed.");
+                }
+
+                failureReason = "already_paired";
+                failureMessage = "This terminal is already paired. Use the permanent code shown on Mother Terminal Health, or create a new code.";
             }
             else
             {
@@ -147,7 +157,6 @@ public static class TerminalPairingService
         const string activateSql = @"
             UPDATE terminal_pairings
             SET paired_at = NOW(),
-                pairing_code = NULL,
                 pairing_expires_at = NULL,
                 updated_at = NOW()
             WHERE terminal_name = @terminalName
@@ -288,9 +297,48 @@ public static class TerminalPairingService
 
         // Legacy rows may still have an expiry; codes are permanent until Delete.
         await using var clearExpiry = new MySqlCommand(
-            "UPDATE terminal_pairings SET pairing_expires_at = NULL WHERE paired_at IS NULL AND pairing_expires_at IS NOT NULL",
+            "UPDATE terminal_pairings SET pairing_expires_at = NULL WHERE pairing_expires_at IS NOT NULL",
             connection);
         await clearExpiry.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Restore permanent pairing codes for Client terminals that lost theirs after the old one-time clear.
+    /// </summary>
+    public static async Task EnsurePermanentPairingCodesAsync(MySqlConnection connection)
+    {
+        await EnsureTableAsync(connection);
+
+        const string selectSql = @"
+            SELECT terminal_name
+            FROM terminal_pairings
+            WHERE (pairing_code IS NULL OR TRIM(pairing_code) = '')
+              AND disabled_at IS NULL";
+
+        var missing = new List<string>();
+        await using (var selectCommand = new MySqlCommand(selectSql, connection))
+        await using (var reader = await selectCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                missing.Add(reader.GetString("terminal_name"));
+            }
+        }
+
+        foreach (var terminalName in missing)
+        {
+            var code = GeneratePairingCode();
+            await using var updateCommand = new MySqlCommand(@"
+                UPDATE terminal_pairings
+                SET pairing_code = @pairingCode,
+                    pairing_expires_at = NULL,
+                    updated_at = NOW()
+                WHERE terminal_name = @terminalName
+                  AND (pairing_code IS NULL OR TRIM(pairing_code) = '')", connection);
+            updateCommand.Parameters.AddWithValue("@pairingCode", code);
+            updateCommand.Parameters.AddWithValue("@terminalName", terminalName);
+            await updateCommand.ExecuteNonQueryAsync();
+        }
     }
 
     public static async Task ClearPairingAttemptsAsync(MySqlConnection connection, MySqlTransaction? transaction, string terminalName)

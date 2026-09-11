@@ -3,8 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Views.Layout.ClientTopBar">
+    <!-- Match Mother TopBar PosHeader chrome: connection dot + minimize. -->
     <shared:PosHeader x:Name="SharedHeader"
-                              ShowIdentity="False"
-                              MenuClicked="OnMenuClicked"
-                              LogoutClicked="OnLogoutClicked" />
+                      ShowIdentity="False"
+                      ShowMinimize="True"
+                      ShowConnection="True"
+                      MenuClicked="OnMenuClicked"
+                      MinimizeClicked="OnMinimizeClicked"
+                      LogoutClicked="OnLogoutClicked" />
 </ContentView>

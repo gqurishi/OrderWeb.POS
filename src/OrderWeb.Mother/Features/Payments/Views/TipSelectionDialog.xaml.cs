@@ -147,7 +147,7 @@ namespace POS_in_NET.Views
             _isCustomTipKeyboardOpen = true;
             try
             {
-                var keyboard = new NumericKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
                 var amount = await keyboard.ShowCurrencyAsync(_selectedTip > 0 ? _selectedTip : null);
                 if (amount.HasValue)
                 {

@@ -54,7 +54,7 @@ internal static class MotherDialogVisuals
         return border;
     }
 
-    public static Border IconCircle(string icon, string accentKey = "OwPrimary", double size = 74, double fontSize = 30)
+    public static Border IconCircle(string icon, string accentKey = "OwPrimary", double size = 74, double fontSize = 30, bool motherBlue = false)
     {
         var label = new Label
         {
@@ -63,7 +63,9 @@ internal static class MotherDialogVisuals
             FontAttributes = FontAttributes.Bold,
             TextColor = Colors.White,
             HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center
+            VerticalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
         };
         var border = new Border
         {
@@ -74,9 +76,18 @@ internal static class MotherDialogVisuals
             StrokeShape = new RoundRectangle { CornerRadius = size / 2 },
             Content = label,
             HorizontalOptions = LayoutOptions.Center,
-            Margin = new Thickness(0, 0, 0, 4)
+            Margin = new Thickness(0, 0, 0, motherBlue || size >= 80 ? 10 : 4)
         };
-        border.Use(Border.BackgroundColorProperty, accentKey);
+        if (motherBlue)
+        {
+            // Mother ModernActionSheet/Confirm hardcode #2563EB
+            border.BackgroundColor = Color.FromArgb("#2563EB");
+        }
+        else
+        {
+            border.Use(Border.BackgroundColorProperty, accentKey);
+        }
+
         return border;
     }
 
@@ -203,12 +214,22 @@ public sealed class OrderPlaceMoreOptionsDialog : ContentView
     }
 }
 
-/// <summary>Mother ModernActionSheetDialog parity: blue icon, title, stacked bordered options, Cancel.</summary>
+/// <summary>Mother ModernActionSheetDialog parity: blue "i", title, stacked bordered options, Cancel.</summary>
 public sealed class OrderPlaceActionSheetDialog : ContentView
 {
     private readonly VerticalStackLayout _options = new() { Spacing = 10 };
     private readonly Label _title = MotherDialogVisuals.Title();
-    private readonly SharedButton _cancel = new() { Text = "Cancel", Variant = ButtonVariant.Secondary };
+    private readonly Button _cancel = new()
+    {
+        Text = "Cancel",
+        Style = null,
+        BackgroundColor = Color.FromArgb("#E2E8F0"),
+        TextColor = Color.FromArgb("#334155"),
+        FontAttributes = FontAttributes.Bold,
+        CornerRadius = 14,
+        HeightRequest = 50,
+        FontSize = 16
+    };
     private TaskCompletionSource<string?>? _tcs;
 
     public OrderPlaceActionSheetDialog()
@@ -221,7 +242,7 @@ public sealed class OrderPlaceActionSheetDialog : ContentView
             Spacing = 20,
             Children =
             {
-                MotherDialogVisuals.IconCircle("i", size: 80),
+                MotherDialogVisuals.IconCircle("i", size: 80, motherBlue: true),
                 _title,
                 new ScrollView { MaximumHeightRequest = 420, Content = _options },
                 _cancel
@@ -249,6 +270,7 @@ public sealed class OrderPlaceActionSheetDialog : ContentView
             var button = new Button
             {
                 Text = text,
+                Style = null,
                 BackgroundColor = Color.FromArgb("#F8FAFC"),
                 TextColor = Color.FromArgb("#1E293B"),
                 FontSize = 16,
@@ -287,6 +309,7 @@ public sealed class OrderPlacePromptDialog : ContentView
     private ContentPage? _page;
     private bool _numericOnly;
     private bool _keyboardOpen;
+    private bool _preferNotesKeyboard;
 
     public OrderPlacePromptDialog()
     {
@@ -299,15 +322,22 @@ public sealed class OrderPlacePromptDialog : ContentView
         {
             Padding = new Thickness(14, 12),
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 14 },
-            Content = _entry
+            StrokeShape = new RoundRectangle { CornerRadius = 14 }
         };
         _entryBorder.Use(Border.BackgroundColorProperty, "OwBackground");
         _entryBorder.Use(Border.StrokeProperty, "OwInputBorder");
 
+        var hitOverlay = new BoxView
+        {
+            Color = Colors.Transparent,
+            HorizontalOptions = LayoutOptions.Fill,
+            VerticalOptions = LayoutOptions.Fill
+        };
         var tap = new TapGestureRecognizer();
         tap.Tapped += async (_, _) => await OpenVirtualKeyboardAsync();
+        hitOverlay.GestureRecognizers.Add(tap);
         _entryBorder.GestureRecognizers.Add(tap);
+        _entryBorder.Content = new Grid { Children = { _entry, hitOverlay } };
 
         _cancel.Clicked += (_, _) => _tcs?.TrySetResult(null);
         _accept.Clicked += (_, _) => _tcs?.TrySetResult(_entry.Text ?? string.Empty);
@@ -348,28 +378,32 @@ public sealed class OrderPlacePromptDialog : ContentView
         _accept.Text = accept;
         _cancel.Text = cancel;
         _entry.Placeholder = placeholder;
-        _entry.Text = initialText;
+        _entry.Text = initialText ?? string.Empty;
         _numericOnly = numericOnly;
+        _preferNotesKeyboard =
+            title.Contains("note", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("note", StringComparison.OrdinalIgnoreCase);
         _entry.Keyboard = numericOnly ? Keyboard.Numeric : Keyboard.Default;
         _keyboardOpen = false;
 
-        // Open keyboard after the modal is attached (Mother + Client touch POS).
-        _ = OpenKeyboardWhenReadyAsync();
-
-        return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
+        return ShowAttachedWithKeyboardAsync(page);
     }
 
-    private async Task OpenKeyboardWhenReadyAsync()
+    private async Task<string?> ShowAttachedWithKeyboardAsync(ContentPage page)
     {
+        // Presenter adds this dialog to the page synchronously before awaiting completion.
+        var presenterTask = OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs!);
         try
         {
-            await Task.Delay(120);
+            await Task.Delay(80);
             await OpenVirtualKeyboardAsync();
         }
         catch
         {
             // User can still tap the field.
         }
+
+        return await presenterTask;
     }
 
     private async Task OpenVirtualKeyboardAsync()
@@ -384,9 +418,31 @@ public sealed class OrderPlacePromptDialog : ContentView
         {
             var keyboard = new VirtualKeyboardDialog();
             keyboard.SetPrompt(_title.Text, string.IsNullOrWhiteSpace(_accept.Text) ? "DONE" : _accept.Text);
-            keyboard.SetNumericOnly(_numericOnly);
+            var descriptor = $"{_title.Text} {_message.Text} {_entry.Placeholder}".ToLowerInvariant();
+            if (_numericOnly && descriptor.Contains("phone"))
+            {
+                keyboard.SetTextMode(VirtualKeyboardTextMode.Phone);
+                keyboard.SetMaximumLength(16);
+            }
+            else if (_numericOnly)
+            {
+                var isPin = descriptor.Contains("pin");
+                var isPositiveNumber = descriptor.Contains("points") || descriptor.Contains("table") || descriptor.Contains("merge");
+                keyboard.SetNumericMode(
+                    isPin ? VirtualKeyboardNumericMode.LongDigits : VirtualKeyboardNumericMode.WholeNumber,
+                    minimum: isPositiveNumber ? 1m : 0m,
+                    maximum: isPin ? null : 999999999m);
+                keyboard.SetMaximumLength(isPin ? 4 : 9);
+                keyboard.SetRequired(true);
+            }
+            else if (_preferNotesKeyboard)
+            {
+                keyboard.SetTextMode(VirtualKeyboardTextMode.Notes);
+            }
+
             keyboard.SetInitialText(_entry.Text ?? string.Empty);
-            // Attach onto this dialog overlay so Mother page chrome cannot cover it.
+            keyboard.SetPlaceholder(_entry.Placeholder);
+            // Attach onto this dialog overlay so Mother/Client page chrome cannot cover it.
             var result = await keyboard.ShowOverAsync(_overlayRoot, _page);
             if (result is not null)
             {
@@ -400,13 +456,33 @@ public sealed class OrderPlacePromptDialog : ContentView
     }
 }
 
-/// <summary>Mother ModernConfirmDialog parity: icon, title, message, No/Yes.</summary>
+/// <summary>Mother ModernConfirmDialog parity: blue "!", title, message, Keep Open / Discard|Confirm.</summary>
 public sealed class OrderPlaceConfirmDialog : ContentView
 {
     private readonly Label _title = MotherDialogVisuals.Title();
     private readonly Label _message = MotherDialogVisuals.Message();
-    private readonly SharedButton _no = new() { Text = "No", Variant = ButtonVariant.Secondary };
-    private readonly SharedButton _yes = new() { Text = "Yes", Variant = ButtonVariant.Primary };
+    private readonly Button _no = new()
+    {
+        Text = "No",
+        Style = null,
+        BackgroundColor = Color.FromArgb("#E2E8F0"),
+        TextColor = Color.FromArgb("#334155"),
+        FontAttributes = FontAttributes.Bold,
+        CornerRadius = 14,
+        HeightRequest = 50,
+        FontSize = 16
+    };
+    private readonly Button _yes = new()
+    {
+        Text = "Yes",
+        Style = null,
+        BackgroundColor = Color.FromArgb("#2563EB"),
+        TextColor = Colors.White,
+        FontAttributes = FontAttributes.Bold,
+        CornerRadius = 14,
+        HeightRequest = 50,
+        FontSize = 16
+    };
     private TaskCompletionSource<bool>? _tcs;
 
     public OrderPlaceConfirmDialog()
@@ -426,7 +502,7 @@ public sealed class OrderPlaceConfirmDialog : ContentView
         var body = new VerticalStackLayout
         {
             Spacing = 20,
-            Children = { MotherDialogVisuals.IconCircle("!"), _title, _message, buttons }
+            Children = { MotherDialogVisuals.IconCircle("!", size: 80, motherBlue: true), _title, _message, buttons }
         };
 
         Content = MotherDialogVisuals.OverlayGrid(MotherDialogVisuals.Panel(450, 450, body));
@@ -440,10 +516,20 @@ public sealed class OrderPlaceConfirmDialog : ContentView
         _yes.Text = accept;
         _no.Text = cancel;
 
-        var lowered = $"{title} {accept}".ToLowerInvariant();
-        var destructive = lowered.Contains("danger") || lowered.Contains("delete") || lowered.Contains("void") ||
-                           lowered.Contains("discard") || lowered.Contains("remove") || lowered.Contains("cancel order");
-        _yes.Variant = destructive ? ButtonVariant.Danger : ButtonVariant.Primary;
+        // Same destructive rules as Mother ModernConfirmDialog.SetConfirm
+        // (Discard Unsent Items stays primary blue; Void Order - Danger is red).
+        var loweredTitle = title.ToLowerInvariant();
+        var loweredYes = accept.ToLowerInvariant();
+        var destructive =
+            loweredTitle.Contains("danger") ||
+            loweredTitle.Contains("delete") ||
+            loweredTitle.Contains("void") ||
+            loweredTitle.Contains("cancel") ||
+            loweredYes.Contains("delete") ||
+            loweredYes.Contains("void") ||
+            loweredYes.Contains("cancel");
+        _yes.BackgroundColor = destructive ? Color.FromArgb("#DC2626") : Color.FromArgb("#2563EB");
+        _yes.TextColor = Colors.White;
 
         return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
     }
@@ -503,8 +589,16 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         BackgroundColor = Color.FromArgb("#80000000");
         ZIndex = 5000;
 
-        _fixedButton.Clicked += (_, _) => SetFixed(true);
-        _percentButton.Clicked += (_, _) => SetFixed(false);
+        _fixedButton.Clicked += (_, _) =>
+        {
+            SetFixed(true);
+            _ = OpenAmountKeyboardAsync();
+        };
+        _percentButton.Clicked += (_, _) =>
+        {
+            SetFixed(false);
+            _ = OpenAmountKeyboardAsync();
+        };
         _amountEntry.TextChanged += (_, e) =>
         {
             _amountValue = decimal.TryParse(e.NewTextValue, out var value) ? value : 0m;
@@ -571,12 +665,20 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         typeGrid.Add(_fixedButton);
         typeGrid.Add(_percentButton, 1);
 
-        var amountBorder = new Border { StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 8 }, Content = _amountEntry };
+        var amountBorder = new Border { StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 8 } };
         amountBorder.Use(Border.BackgroundColorProperty, "OwSurface");
         amountBorder.Use(Border.StrokeProperty, "OwBorderStrong");
+        var amountHit = new BoxView
+        {
+            Color = Colors.Transparent,
+            HorizontalOptions = LayoutOptions.Fill,
+            VerticalOptions = LayoutOptions.Fill
+        };
         var amountTap = new TapGestureRecognizer();
         amountTap.Tapped += async (_, _) => await OpenAmountKeyboardAsync();
+        amountHit.GestureRecognizers.Add(amountTap);
         amountBorder.GestureRecognizers.Add(amountTap);
+        amountBorder.Content = new Grid { Children = { _amountEntry, amountHit } };
         var symbolBorder = new Border { WidthRequest = 50, StrokeThickness = 1, StrokeShape = new RoundRectangle { CornerRadius = 8 }, Content = _symbolLabel };
         symbolBorder.Use(Border.BackgroundColorProperty, "OwSurfaceMuted");
         symbolBorder.Use(Border.StrokeProperty, "OwBorderStrong");
@@ -686,12 +788,12 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         }
 
         SetFixed(true);
-        _ = OpenAmountKeyboardWhenReadyAsync();
-        return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
+        return ShowAttachedWithAmountKeyboardAsync(page);
     }
 
-    private async Task OpenAmountKeyboardWhenReadyAsync()
+    private async Task<OrderPlaceDiscountResult?> ShowAttachedWithAmountKeyboardAsync(ContentPage page)
     {
+        var presenterTask = OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs!);
         try
         {
             await Task.Delay(80);
@@ -699,12 +801,15 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         }
         catch
         {
+            // User can still tap Amount.
         }
+
+        return await presenterTask;
     }
 
     private Task OpenAmountKeyboardAsync() =>
         OpenFieldKeyboardAsync(
-            "Discount amount",
+            _isFixed ? "Discount amount (£)" : "Discount percent (%)",
             _amountEntry.Text ?? string.Empty,
             numericOnly: true,
             text =>
@@ -726,7 +831,19 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         {
             var keyboard = new VirtualKeyboardDialog();
             keyboard.SetPrompt(title, "DONE");
-            keyboard.SetNumericOnly(numericOnly);
+            if (numericOnly)
+            {
+                keyboard.SetNumericMode(
+                    _isFixed ? VirtualKeyboardNumericMode.Currency : VirtualKeyboardNumericMode.Decimal,
+                    minimum: 0m,
+                    maximum: _isFixed ? _subtotal : 100m);
+            }
+            else
+            {
+                keyboard.SetNumericOnly(false);
+                keyboard.SetTextMode(VirtualKeyboardTextMode.Notes);
+            }
+
             keyboard.SetInitialText(initial);
             var result = await keyboard.ShowOverAsync(_overlayRoot, _page);
             if (result is not null)
@@ -976,12 +1093,11 @@ public sealed class OrderPlaceTableTransferDialog : ContentView
     }
 }
 
-/// <summary>Mother FireCourseDialog parity: Starters/Mains/Desserts/(Drinks)/Fire All colored tiles.</summary>
+/// <summary>Mother FireCourseDialog parity: Starters / Mains / Desserts / Drinks + Fire All.</summary>
 public sealed class OrderPlaceFireCourseDialog : ContentView
 {
     private readonly Grid _coursesGrid = new() { ColumnSpacing = 12, RowSpacing = 12 };
     private TaskCompletionSource<string?>? _tcs;
-    private bool _includeDrinks;
 
     public OrderPlaceFireCourseDialog()
     {
@@ -1005,10 +1121,11 @@ public sealed class OrderPlaceFireCourseDialog : ContentView
         Content = MotherDialogVisuals.OverlayGrid(MotherDialogVisuals.Panel(450, 450, body));
     }
 
+    /// <param name="includeDrinks">Kept for callers; Drinks always shown (Mother parity).</param>
     public Task<string?> ShowAsync(ContentPage page, bool includeDrinks = true)
     {
+        _ = includeDrinks;
         _tcs = new TaskCompletionSource<string?>();
-        _includeDrinks = includeDrinks;
         BuildTiles();
         return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
     }
@@ -1026,21 +1143,12 @@ public sealed class OrderPlaceFireCourseDialog : ContentView
 
         AddTile("Starters", "#E0F2FE", "#0EA5E9", "#0369A1", 0, 0);
         AddTile("Mains", "#DBEAFE", "#3B82F6", "#1E40AF", 0, 1);
-
-        if (_includeDrinks)
-        {
-            AddTile("Desserts", "#E0E7FF", "#6366F1", "#4338CA", 1, 0);
-            AddTile("Drinks", "#CFFAFE", "#06B6D4", "#0E7490", 1, 1);
-        }
-        else
-        {
-            AddTile("Desserts", "#E0E7FF", "#6366F1", "#4338CA", 1, 0, colSpan: 2);
-        }
-
+        AddTile("Desserts", "#E0E7FF", "#6366F1", "#4338CA", 1, 0);
+        AddTile("Drinks", "#CFFAFE", "#06B6D4", "#0E7490", 1, 1);
         AddFireAllTile(2);
     }
 
-    private void AddTile(string text, string bg, string stroke, string textColor, int row, int col, int colSpan = 1)
+    private void AddTile(string text, string bg, string stroke, string textColor, int row, int col)
     {
         var label = new Label { Text = text, FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(textColor), HorizontalOptions = LayoutOptions.Center };
         var border = new Border
@@ -1058,11 +1166,6 @@ public sealed class OrderPlaceFireCourseDialog : ContentView
         border.GestureRecognizers.Add(tap);
         Grid.SetRow(border, row);
         Grid.SetColumn(border, col);
-        if (colSpan > 1)
-        {
-            Grid.SetColumnSpan(border, colSpan);
-        }
-
         _coursesGrid.Children.Add(border);
     }
 

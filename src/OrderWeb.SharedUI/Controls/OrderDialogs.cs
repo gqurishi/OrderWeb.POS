@@ -91,7 +91,9 @@ public sealed class OrderDiscountDialog : OrderDialogBase
     public OrderDiscountDialog() : base("%", "Apply Discount", "Mother validates the final discount and total.", "OwPrimary")
     {
         _type = new Picker { ItemsSource = new[] { "Fixed amount", "Percentage" }, SelectedIndex = 0 };
-        _amount = new Entry { Keyboard = Keyboard.Numeric, Placeholder = "0.00" };
+        _amount = new Entry { AutomationId = "DiscountAmount", Keyboard = Keyboard.Numeric, Placeholder = "0.00" };
+        _type.SelectedIndexChanged += (_, _) =>
+            _amount.AutomationId = IsPercentage ? "DiscountPercentage" : "DiscountAmount";
         Body.Children.Add(_type); Body.Children.Add(_amount);
     }
     public bool IsPercentage => _type.SelectedIndex == 1;

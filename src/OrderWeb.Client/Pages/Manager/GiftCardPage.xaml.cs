@@ -37,6 +37,8 @@ public partial class GiftCardPage : ContentPage
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
 
+        Gift.FlowChanged += (_, _) => TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
+        Gift.CloseRequested += async (_, _) => await Navigation.PopAsync(false);
         Gift.ActivateLookupRequested += async (_, _) => await OnActivateLookupAsync();
         Gift.ActivateRequested += async (_, _) => await OnActivateAsync();
         Gift.GenerateSellCardRequested += (_, _) => OnGenerateSellCard();
@@ -45,15 +47,23 @@ public partial class GiftCardPage : ContentPage
         Gift.TopUpRequested += async (_, _) => await OnTopUpAsync();
         Gift.RedeemLookupRequested += async (_, _) => await OnRedeemLookupAsync();
         Gift.RedeemRequested += async (_, _) => await OnRedeemAsync();
+
+        Gift.ShowFlow(GiftCardFlowKind.Redeem);
+        TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
-        if (!ClientHostAccess.Features.Contains(PosFeatureKeys.GiftCards) &&
-            !ClientHostAccess.CanOpenMenu("Gift Cards"))
+        // Mother Terminal Access can change while this till is still signed in.
+        // Refresh before gating so Save access applies without a new PIN login.
+        await RefreshAccessFromMotherAsync();
+        if (!HasGiftCardAccess())
         {
-            await DisplayAlert("Gift Cards", "This Client terminal is not allowed to use gift cards. Ask Mother to grant Gift cards access.", "OK");
+            await DisplayAlert(
+                "Gift Cards",
+                "This Client terminal is not allowed to use gift cards. On Mother: Terminal Health → Access → Gift cards ON → Save, then try again (or Update All).",
+                "OK");
             await Navigation.PopAsync(false);
         }
     }
@@ -286,18 +296,21 @@ public partial class GiftCardPage : ContentPage
         {
             _redeemCardNumber = null;
             _redeemBalance = null;
-            Gift.RedeemBalanceLabel.Text = "Balance: —";
-            Gift.RedeemCardStatusLabel.Text = string.Empty;
+            Gift.RedeemBalanceLabel.Text = "GBP 0.00";
+            Gift.RedeemCardStatusLabel.Text = "No card checked yet";
             Gift.RedeemActionButton.IsEnabled = false;
             return;
         }
 
         _redeemCardNumber = cardNumber;
         _redeemBalance = lookup.GiftCard.Balance;
-        Gift.RedeemBalanceLabel.Text = $"Balance: {FormatMoney(lookup.GiftCard.Balance)} ({lookup.GiftCard.CardNumberMasked})";
-        Gift.RedeemCardStatusLabel.Text = lookup.GiftCard.Status ?? string.Empty;
+        Gift.RedeemBalanceLabel.Text = FormatMoney(lookup.GiftCard.Balance);
+        Gift.RedeemCardStatusLabel.Text = string.IsNullOrWhiteSpace(lookup.GiftCard.Status)
+            ? (lookup.GiftCard.CardNumberMasked ?? cardNumber ?? string.Empty)
+            : $"{lookup.GiftCard.CardNumberMasked} · {lookup.GiftCard.Status}";
         Gift.RedeemActionButton.IsEnabled = lookup.GiftCard.CanUse;
         ApplySuggestedAmount(lookup, Gift.RedeemAmountEntry);
+        Gift.FocusRedeemAmountForKeypad();
     }
 
     private async Task OnRedeemAsync()
@@ -333,7 +346,8 @@ public partial class GiftCardPage : ContentPage
                 amount,
                 orderId,
                 "Client POS gift card redeem",
-                idempotencyKey);
+                idempotencyKey,
+                _redeemBalance);
             if (!result.Success)
             {
                 ClientGiftCardDiagnostics.Record("redeem", false, result.Error ?? result.Message, result.ErrorCode);
@@ -343,8 +357,8 @@ public partial class GiftCardPage : ContentPage
 
             _redeemBalance = result.RemainingBalance;
             Gift.RedeemBalanceLabel.Text = result.RemainingBalance.HasValue
-                ? $"Balance: {FormatMoney(result.RemainingBalance.Value)}"
-                : "Balance: —";
+                ? FormatMoney(result.RemainingBalance.Value)
+                : "GBP 0.00";
             var message = result.Message ?? $"Redeemed {FormatMoney(result.AmountRedeemed ?? amount)}. Remaining {FormatMoney(result.RemainingBalance ?? 0m)}.";
             ClientGiftCardDiagnostics.Record("redeem", true, message);
             GiftCardView.SetFlowStatus(Gift.RedeemStatusLabel, message, false);
@@ -403,12 +417,25 @@ public partial class GiftCardPage : ContentPage
         }
     }
 
+    private static bool HasGiftCardAccess() =>
+        ClientHostAccess.Features.Contains(PosFeatureKeys.GiftCards) ||
+        ClientHostAccess.CanOpenMenu("Gift Cards");
+
+    private async Task<MotherAccessRefreshResult> RefreshAccessFromMotherAsync()
+    {
+        var accessClient = new MotherAccessClient(_cache);
+        return await accessClient.RefreshAccessAsync();
+    }
+
     private async Task<bool> EnsureReadyAsync(Label statusLabel)
     {
-        if (!ClientHostAccess.Features.Contains(PosFeatureKeys.GiftCards) &&
-            !ClientHostAccess.CanOpenMenu("Gift Cards"))
+        var access = await RefreshAccessFromMotherAsync();
+        if (!HasGiftCardAccess())
         {
-            GiftCardView.SetFlowStatus(statusLabel, "Gift cards access is not granted for this Client terminal.", true);
+            var message = access.Success
+                ? "Gift cards access is not granted for this Client terminal. On Mother: Terminal Health → Access → Gift cards ON → Save, then try again."
+                : $"Could not refresh Client access from Mother. {access.Message}";
+            GiftCardView.SetFlowStatus(statusLabel, message, true);
             return false;
         }
 
@@ -569,28 +596,33 @@ public partial class GiftCardPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        if (ClientSidebarNavigation.IsDashboard(menu))
         {
             await Navigation.PopToRootAsync(false);
             return;
         }
 
-        if (!ClientHostAccess.CanOpenMenu(menu))
+        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
         {
             return;
         }
 
-        await Navigation.PushAsync(menu switch
+        if (ClientHostAccess.IsMenuRoute(menu, "giftcards") ||
+            !ClientHostAccess.CanOpenMenu(menu))
         {
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new RestaurantPage(),
-            "Collection" => new CollectionOrderPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Loyalty Points" => new LoyaltyPage(),
-            "Reservation" => new ReservationPage(),
-            "Order History" => new OrderHistoryPage(),
-            _ => new GiftCardPage()
-        }, false);
+            return;
+        }
+
+        if (ClientSidebarNavigation.IsCustomerSurface(menu))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        var page = ClientSidebarNavigation.CreatePage(menu);
+        if (page is not null)
+        {
+            await Navigation.PushAsync(page, false);
+        }
     }
 }

@@ -8,8 +8,10 @@ using OrderWeb.Client.Views.Printing;
 using Microsoft.Maui.Controls.Shapes;
 using Microsoft.Maui.Layouts;
 using OrderWeb.SharedUI.Controls;
+using OrderWeb.SharedUI.Payments;
 using OrderWeb.SharedUI.ViewModels;
 using OrderWeb.SharedUI.Views;
+using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Capabilities;
 using OrderWeb.Contracts.Dtos;
 using OrderWeb.Contracts.Features;
@@ -75,15 +77,11 @@ public partial class MainPage : ContentPage
     private CacheStatus? _cacheStatus;
     private int _guests = 4;
     private string? _pendingCustomerOrderId;
-    private string _pin = string.Empty;
-    private string? _loginStatusMessage;
-    private bool _loginMotherUnreachable;
     private bool _adminBlockedVisible;
     private string _connectionStatus = "Connected";
     private LoginSession? _currentSession;
     private Label? _timeLabel;
     private Label? _dateLabel;
-    private Label? _statusLabel;
     private bool _useLoginClockFormat;
     private bool _terminalDisabled;
     private string _terminalDisabledReason = "This Client POS has been disabled by the Mother POS.";
@@ -106,6 +104,10 @@ public partial class MainPage : ContentPage
     private ApplicationShellFrame? _activeApplicationFrame;
     private DashboardViewModel? _sharedDashboardViewModel;
     private RestaurantTablesView? _restaurantTablesView;
+    private LiveOrderBoardView? _liveOrderBoard;
+    private IReadOnlyList<MotherOrderState> _liveOrderCachedOrders = Array.Empty<MotherOrderState>();
+    private bool _suppressLiveOrderFilterEvent;
+    private string? _liveOrdersFingerprint;
     private readonly Label[] _cashierSummaryLabels = new Label[8];
     private Label? _cashierDataStatusLabel;
     private MotherCashierClient? _cashierClient;
@@ -248,9 +250,21 @@ public partial class MainPage : ContentPage
         var pairingRequired = requirePairingCode || !reconnectMode;
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
-        _motherIpEntry = new Entry { Placeholder = "Mother POS IP address", Text = SavedMotherAddress(), FontSize = 18, HeightRequest = 58, BackgroundColor = Color.FromArgb(PageBackground) };
+        _motherIpEntry = new Entry
+        {
+            AutomationId = "MotherIpAddress",
+            Placeholder = "Mother POS IP address",
+            Text = SavedMotherAddress(),
+            FontSize = 18,
+            HeightRequest = 58,
+            BackgroundColor = Color.FromArgb(PageBackground),
+            Keyboard = Keyboard.Numeric,
+            MaxLength = 45
+        };
         _pairingCodeEntry = new Entry
         {
+            AutomationId = "PairingCode",
+            MaxLength = 6,
             Placeholder = pairingRequired ? "6-digit code from Mother POS" : "Optional — only if Mother issued a new code",
             Text = reconnectMode ? string.Empty : Preferences.Get(LastPairingCodeKey, string.Empty),
             FontSize = 18,
@@ -258,7 +272,16 @@ public partial class MainPage : ContentPage
             BackgroundColor = Color.FromArgb(PageBackground),
             Keyboard = Keyboard.Numeric
         };
-        _terminalNameEntry = new Entry { Placeholder = "Terminal name", Text = LastTerminalName(), FontSize = 18, HeightRequest = 58, BackgroundColor = Color.FromArgb(PageBackground) };
+        _terminalNameEntry = new Entry
+        {
+            AutomationId = "TerminalName",
+            Placeholder = "Terminal name",
+            Text = LastTerminalName(),
+            FontSize = 18,
+            HeightRequest = 58,
+            BackgroundColor = Color.FromArgb(PageBackground),
+            Keyboard = Keyboard.Default
+        };
 
         var children = new List<IView>
         {
@@ -396,7 +419,6 @@ public partial class MainPage : ContentPage
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
         _currentSession = null;
-        _pin = string.Empty;
         _posSidebarOpen = false;
 
         Root.Children.Add(new Border
@@ -434,7 +456,6 @@ public partial class MainPage : ContentPage
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
             _currentSession = null;
-            _pin = string.Empty;
 
             if (string.Equals(e.EventType, "TERMINAL_DISABLED", StringComparison.OrdinalIgnoreCase))
             {
@@ -480,9 +501,10 @@ public partial class MainPage : ContentPage
             }
 
             // Debounce Live Order / Restaurant UI rebuilds under WS floods.
-            if (_posSelectedMenu is "Live Order" or "Restaurant")
+            if (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder") ||
+                ClientHostAccess.IsMenuRoute(_posSelectedMenu, "restaurant"))
             {
-                if (_posSelectedMenu == "Live Order")
+                if (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder"))
                 {
                     ScheduleLiveOrdersRefresh();
                 }
@@ -1310,7 +1332,7 @@ public partial class MainPage : ContentPage
         });
     }
 
-    private void ShowLogin(bool resetPin = true)
+    private void ShowLogin(bool clearAdminBlocked = true)
     {
         if (_terminalDisabled)
         {
@@ -1318,11 +1340,8 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (resetPin)
+        if (clearAdminBlocked)
         {
-            _pin = string.Empty;
-            _loginStatusMessage = null;
-            _loginMotherUnreachable = false;
             _adminBlockedVisible = false;
         }
 
@@ -1330,7 +1349,6 @@ public partial class MainPage : ContentPage
         Root.BackgroundColor = Colors.White;
         _useLoginClockFormat = false;
         StopLegacyClock();
-        _statusLabel = null;
 
         EnsureSharedLoginWired();
         _sharedLoginViewModel!.SetRestaurantName(CurrentRestaurantName());
@@ -1391,14 +1409,10 @@ public partial class MainPage : ContentPage
             ClientHostAccess.ApplyFromSession(login);
             _currentSession = login;
             StartIdleAutoLogout();
-            _pin = string.Empty;
-            _loginStatusMessage = null;
-            _loginMotherUnreachable = false;
             await FinishLoginWithOperationalSyncAsync(login);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _loginStatusMessage = ex.Message;
             ShowLogin(false);
         }
     }
@@ -1644,9 +1658,6 @@ public partial class MainPage : ContentPage
 
     private void ShowAdminBlockedLogin()
     {
-        _pin = string.Empty;
-        _loginStatusMessage = null;
-        _loginMotherUnreachable = false;
         _adminBlockedVisible = true;
         ShowLogin(false);
     }
@@ -1741,224 +1752,6 @@ public partial class MainPage : ContentPage
             }
         });
         return overlay;
-    }
-
-    private View BuildPinDots()
-    {
-        var dots = new HorizontalStackLayout { Spacing = 22, HorizontalOptions = LayoutOptions.Center };
-        for (var i = 0; i < 4; i++)
-        {
-            dots.Children.Add(new Border
-            {
-                WidthRequest = 18,
-                HeightRequest = 18,
-                StrokeShape = new RoundRectangle { CornerRadius = 9 },
-                BackgroundColor = i < _pin.Length ? Color.FromArgb(PrimaryAction) : Color.FromArgb(BorderLight),
-                StrokeThickness = 0
-            });
-        }
-
-        return dots;
-    }
-
-    private View BuildKeypad()
-    {
-        var grid = new Grid
-        {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(100),
-                new ColumnDefinition(100),
-                new ColumnDefinition(100)
-            },
-            RowDefinitions =
-            {
-                new RowDefinition(100),
-                new RowDefinition(100),
-                new RowDefinition(100),
-                new RowDefinition(100)
-            },
-            ColumnSpacing = 18,
-            RowSpacing = 18,
-            HorizontalOptions = LayoutOptions.Center
-        };
-
-        var values = new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "X" };
-        for (var i = 0; i < values.Length; i++)
-        {
-            var value = values[i];
-            var button = RoundKey(value, (_, _) => OnPinKey(value));
-            grid.Children.Add(button);
-            SetRow(button, i / 3);
-            SetColumn(button, i % 3);
-        }
-
-        return grid;
-    }
-
-    private Button RoundKey(string text, EventHandler click)
-    {
-        var button = new Button
-        {
-            Text = text,
-            BackgroundColor = Color.FromArgb(PageBackground),
-            TextColor = text == "X" ? Color.FromArgb(Danger) : Color.FromArgb(MainText),
-            BorderColor = Color.FromArgb("#252525"),
-            BorderWidth = 3,
-            CornerRadius = 50,
-            WidthRequest = 100,
-            HeightRequest = 100,
-            MinimumWidthRequest = 100,
-            MinimumHeightRequest = 100,
-            Padding = 0,
-            FontFamily = "OpenSansRegular",
-            FontAttributes = FontAttributes.None,
-            FontSize = text == "X" ? 32 : text.Length == 1 ? 36 : 18,
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.16f, Radius = 8, Offset = new Point(0, 4) }
-        };
-        button.Clicked += click;
-        return button;
-    }
-
-    private async void OnPinKey(string value)
-    {
-        _loginStatusMessage = null;
-        _loginMotherUnreachable = false;
-        if (value == "Clear")
-        {
-            _pin = string.Empty;
-        }
-        else if (value == "X")
-        {
-            _pin = _pin.Length > 0 ? _pin[..^1] : string.Empty;
-        }
-        else if (_pin.Length < 4)
-        {
-            _pin += value;
-        }
-
-        if (_pin.Length == 4)
-        {
-            await LoginAsync(new LoginRequest("PIN", _pin));
-            return;
-        }
-
-        ShowLogin(false);
-    }
-
-    private async Task LoginAsync(LoginRequest request)
-    {
-        try
-        {
-            if (_statusLabel != null)
-            {
-                _statusLabel.Text = "Checking PIN...";
-                _statusLabel.TextColor = Color.FromArgb(SecondaryText);
-                _statusLabel.IsVisible = true;
-            }
-
-            var session = await _authClient.LoginAsync(request);
-            if (IsMotherOnlyRole(session.Role))
-            {
-                ShowAdminBlockedLogin();
-                return;
-            }
-
-            if (session.Role == "Staff")
-            {
-                _pin = string.Empty;
-                _loginStatusMessage = "Staff PIN is for Clock In/Out only.";
-                _loginMotherUnreachable = false;
-                ShowLogin(false);
-                return;
-            }
-
-            if (string.Equals(session.Role, "Cashier", StringComparison.OrdinalIgnoreCase) && IsMotherUnavailable())
-            {
-                _pin = string.Empty;
-                _loginStatusMessage = "Cashier access requires a live connection to Mother POS.";
-                _loginMotherUnreachable = true;
-                ShowLogin(false);
-                return;
-            }
-
-            await _cache.SaveLoginSessionAsync(session);
-            ClientHostAccess.ApplyFromSession(session);
-            _currentSession = session;
-            StartIdleAutoLogout();
-            _pin = string.Empty;
-            await FinishLoginWithOperationalSyncAsync(session);
-        }
-        catch (LoginException ex)
-        {
-            _pin = string.Empty;
-            if (ex.IsPairingInvalid)
-            {
-                _loginStatusMessage = null;
-                _loginMotherUnreachable = false;
-                ShowConnect(
-                    "This terminal is no longer paired with Mother POS. Enter a new pairing code.",
-                    reconnectMode: true,
-                    requirePairingCode: true);
-                return;
-            }
-
-            if (string.Equals(ex.ErrorCode, "admin_mother_only", StringComparison.OrdinalIgnoreCase))
-            {
-                await _cache.ClearLoginSessionAsync();
-                ShowAdminBlockedLogin();
-                return;
-            }
-
-            _loginStatusMessage = string.IsNullOrWhiteSpace(ex.Message) ? "Wrong PIN" : ex.Message;
-            _loginMotherUnreachable = ex.IsMotherUnreachable;
-            ShowLogin(false);
-        }
-        catch (Exception ex)
-        {
-            _pin = string.Empty;
-            _loginStatusMessage = string.IsNullOrWhiteSpace(ex.Message) ? "Could not reach Mother POS." : ex.Message;
-            _loginMotherUnreachable = true;
-            ShowLogin(false);
-        }
-    }
-
-    private Button ChangeMotherLinkButton()
-    {
-        var button = new Button
-        {
-            Text = "Can't connect / Change Mother",
-            BackgroundColor = Colors.Transparent,
-            BorderColor = Colors.Transparent,
-            BorderWidth = 0,
-            TextColor = Color.FromArgb(AccentBlue),
-            FontSize = 15,
-            FontFamily = "OpenSansSemibold",
-            Padding = 0,
-            HeightRequest = 36
-        };
-        button.Clicked += (_, _) => OpenMotherReconnectFromLogin();
-        return button;
-    }
-
-    private void OpenMotherReconnectFromLogin()
-    {
-        _currentSession = null;
-        _pin = string.Empty;
-        _loginStatusMessage = null;
-        _loginMotherUnreachable = false;
-        if (_hasPairedMother)
-        {
-            var address = SavedMotherAddress();
-            ShowConnect(
-                string.IsNullOrWhiteSpace(address)
-                    ? "Update the Mother IP or pairing code if this terminal cannot connect."
-                    : $"Cannot reach Mother POS? Update the details for {address} or enter a new pairing code.",
-                reconnectMode: true);
-            return;
-        }
-
-        ShowConnect();
     }
 
     private async void ShowClockTimeModal()
@@ -2091,24 +1884,31 @@ public partial class MainPage : ContentPage
     private async Task OpenCashierDrawerAsync(Button button)
     {
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Cash drawer opening requires a live Mother POS connection.", "OK"); return; }
-        var reason = await new CashDrawerReasonDialogPage().ShowAsync(Navigation);
-        if (string.IsNullOrWhiteSpace(reason)) return;
-        CashDrawerFormResult? form = null;
-        if (reason is "Shopping" or "Delivery" or "Cash Count" or "Other")
-        {
-            form = reason switch
-            {
-                "Shopping" => await new CashDrawerFormDialogPage("Shopping", "Record cash taken from the till before opening the drawer.", "Take & Open", "#0F8278", "Shopping item or purpose", "Amount out").ShowAsync(Navigation),
-                "Delivery" => await new CashDrawerFormDialogPage("Delivery payout", "Record cash paid out for delivery before opening the drawer.", "Pay & Open", "#0F8278", null, "Amount out").ShowAsync(Navigation),
-                "Cash Count" => await new CashDrawerFormDialogPage("Cash count", "Enter the cash counted in the drawer.", "Record & Open", "#0F8278", null, "Counted cash").ShowAsync(Navigation),
-                _ => await new CashDrawerFormDialogPage("Other till expense", "Enter the reason for opening the cash drawer.", "Continue", "#2563EB", "Reason", "Amount out").ShowAsync(Navigation)
-            };
-            if (form is null) return;
-        }
-        form ??= new CashDrawerFormResult(null, null);
-        if (!await new CashDrawerConfirmDialogPage(reason).ShowAsync(Navigation)) return;
         button.IsEnabled = false;
-        try { var result = await _cashierClient!.OpenCashDrawerAsync(reason, form.Amount, form.Details); await DisplayAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
+        try
+        {
+            var reason = await new CashDrawerReasonDialogPage().ShowAsync(Navigation);
+            if (string.IsNullOrWhiteSpace(reason)) return;
+            CashDrawerFormResult? form = null;
+            if (reason is "Shopping" or "Delivery" or "Cash Count" or "Other")
+            {
+                form = reason switch
+                {
+                    "Shopping" => await new CashDrawerFormDialogPage("Shopping", "Record cash taken from the till before opening the drawer.", "Take & Open", "#0F8278", "Shopping item or purpose", "Amount out").ShowAsync(Navigation),
+                    "Delivery" => await new CashDrawerFormDialogPage("Delivery payout", "Record cash paid out for delivery before opening the drawer.", "Pay & Open", "#0F8278", null, "Amount out").ShowAsync(Navigation),
+                    "Cash Count" => await new CashDrawerFormDialogPage("Cash count", "Enter the cash counted in the drawer.", "Record & Open", "#0F8278", null, "Counted cash", allowZeroAmount: true).ShowAsync(Navigation),
+                    _ => await new CashDrawerFormDialogPage("Other till expense", "Enter the reason for opening the cash drawer.", "Continue", "#2563EB", "Reason", "Amount out").ShowAsync(Navigation)
+                };
+                if (form is null) return;
+            }
+            form ??= new CashDrawerFormResult(null, null);
+            if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Mother POS disconnected. No cash-drawer action was submitted.", "OK"); return; }
+            if (!await new CashDrawerConfirmDialogPage(reason).ShowAsync(Navigation)) return;
+            if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Mother POS disconnected. No cash-drawer action was submitted.", "OK"); return; }
+            var result = await _cashierClient!.OpenCashDrawerAsync(reason, form.Amount, form.Details);
+            await DisplayAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message, "OK");
+            await RefreshCashierDashboardAsync();
+        }
         finally { button.IsEnabled = CanRunCashierLiveAction(); }
     }
 
@@ -2142,9 +1942,6 @@ public partial class MainPage : ContentPage
         {
             _currentSession = null;
             ShowLogin();
-            _statusLabel!.Text = "Staff PIN is for Clock In/Out only.";
-            _statusLabel.TextColor = Color.FromArgb(Danger);
-            _statusLabel.IsVisible = true;
             return;
         }
 
@@ -2208,9 +2005,9 @@ public partial class MainPage : ContentPage
             case "restaurant": OnClientSidebarMenuSelected(this, "Restaurant"); break;
             case "collection": OnClientSidebarMenuSelected(this, "Collection"); break;
             case "delivery": OnClientSidebarMenuSelected(this, "Delivery"); break;
-            case "reservation": OnClientSidebarMenuSelected(this, "Reservation"); break;
-            case "liveorder": OnClientSidebarMenuSelected(this, "Live Order"); break;
-            case "openorders": OnClientSidebarMenuSelected(this, "Live Order"); break;
+            case "reservation": OnClientSidebarMenuSelected(this, "Reservations"); break;
+            case "liveorder": OnClientSidebarMenuSelected(this, "Live Orders"); break;
+            case "openorders": OnClientSidebarMenuSelected(this, "Live Orders"); break;
             case "customers": ShowSharedCustomerFlow(); break;
         }
     }
@@ -2690,12 +2487,13 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        switch (_posSelectedMenu)
+        var route = ClientHostAccess.RouteForTitle(_posSelectedMenu);
+        switch (route)
         {
-            case "Restaurant":
+            case "restaurant":
                 ShowRestaurantLayout();
                 break;
-            case "Live Order":
+            case "liveorder":
                 // Keep an open order on screen; list refresh must not wipe mid-edit.
                 if (_isViewingOrderScreen && _currentOrder is not null)
                 {
@@ -2704,13 +2502,15 @@ public partial class MainPage : ContentPage
 
                 ScheduleLiveOrdersRefresh();
                 break;
-            case "Collection":
-            case "Delivery":
-            case "Cash Drawer":
-            case "Gift Cards":
-            case "Loyalty Points":
-            case "Reservation":
-            case "Order History":
+            case "collection":
+            case "delivery":
+            case "cashdrawer":
+            case "giftcards":
+            case "loyalty":
+            case "reservation":
+            case "orderhistory":
+            case "customerdata":
+            case "customers":
                 // Pushed tool / customer-form pages must stay put on Mother sync.
                 // Re-opening them restarts the side-slide and clears in-progress input.
                 break;
@@ -2763,47 +2563,50 @@ public partial class MainPage : ContentPage
 
     private void OnClientSidebarMenuSelected(object? sender, string selectedMenu)
     {
-        if (!ClientHostAccess.CanOpenMenu(selectedMenu))
+        if (!ClientHostAccess.CanOpenMenu(selectedMenu, _currentSession?.Role))
         {
             return;
         }
 
-        switch (selectedMenu)
+        // Titles come from PosNavigationCatalog (Live Orders, Reservations, …).
+        switch (ClientHostAccess.RouteForTitle(selectedMenu))
         {
-            case "Dashboard":
+            case "dashboard":
                 RunFromPosSidebar(selectedMenu, ShowDashboard);
                 break;
-            case "Cash Drawer":
+            case "cashdrawer":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new CashDrawerPage()));
                 break;
-            case "Live Order":
+            case "liveorder":
                 RunFromPosSidebar(selectedMenu, ShowLiveOrders);
                 break;
-            case "Restaurant":
+            case "restaurant":
                 RunFromPosSidebar(selectedMenu, ShowRestaurantLayout);
                 break;
-            case "Collection":
+            case "collection":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()));
                 break;
-            case "Delivery":
+            case "delivery":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new Pages.Orders.DeliveryOrderPage()));
                 break;
-            case "Customers":
-                RunFromPosSidebar(selectedMenu, ShowSharedCustomerFlow);
+            case "weborders":
+                DismissPosSidebarForNavigation();
+                ShowToast("Rider board is on Mother POS. Open Rider there.");
                 break;
-            case "Gift Cards":
+            case "giftcards":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new GiftCardPage()));
                 break;
-            case "Loyalty Points":
+            case "loyalty":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new LoyaltyPage()));
                 break;
-            case "Reservation":
+            case "reservation":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new ReservationPage()));
                 break;
-            case "Recent Customers":
+            case "customerdata":
+            case "customers":
                 RunFromPosSidebar(selectedMenu, ShowSharedCustomerFlow);
                 break;
-            case "Order History":
+            case "orderhistory":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new OrderHistoryPage()));
                 break;
         }
@@ -2907,7 +2710,7 @@ public partial class MainPage : ContentPage
             HorizontalOptions = LayoutOptions.Center,
             Children =
             {
-                new Image { Source = "companylogo.png", WidthRequest = SidebarLogoSize, HeightRequest = SidebarLogoSize, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center },
+                new Image { Source = "mainlogo.png", WidthRequest = SidebarLogoSize, HeightRequest = SidebarLogoSize, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center },
                 new Label { Text = "Restaurant Management", FontSize = 16, FontFamily = "OpenSansRegular", TextColor = Color.FromArgb("#718096"), HorizontalTextAlignment = TextAlignment.Center }
             }
         };
@@ -3162,9 +2965,6 @@ public partial class MainPage : ContentPage
         _currentSession = null;
         _ = _cache.ClearLoginSessionAsync();
         ClientHostAccess.Clear();
-        _pin = string.Empty;
-        _loginStatusMessage = null;
-        _loginMotherUnreachable = false;
         _posSidebarOpen = false;
         ShowLogin();
     }
@@ -3265,7 +3065,7 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        if (_posSelectedMenu == "Live Order")
+        if (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder"))
         {
             _ = SoftRefreshLiveOrdersAsync();
         }
@@ -3973,6 +3773,8 @@ public partial class MainPage : ContentPage
 
         var otherGuestEntry = new Entry
         {
+            AutomationId = "GuestQuantity",
+            MaxLength = 3,
             Placeholder = "Other number...",
             FontSize = 15,
             FontFamily = "OpenSansRegular",
@@ -5418,12 +5220,12 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        _posSelectedMenu = "Customers";
+        _posSelectedMenu = "Recent Customers";
         var view = new CustomerFlowView();
         view.SearchRequested += async (_, term) => await SearchSharedCustomersAsync(view, term);
         view.SubmissionRequested += async (_, submission) => await SubmitSharedCustomerFlowAsync(view, submission);
         Root.Children.Clear();
-        Root.Children.Add(SharedAppFrame("Customers", view, "customers"));
+        Root.Children.Add(SharedAppFrame("Recent Customers", view, "customerdata"));
     }
 
     private async Task SearchSharedCustomersAsync(CustomerFlowView view, string term)
@@ -5525,6 +5327,8 @@ public partial class MainPage : ContentPage
         var selectedMethod = "Cash";
         var tenderedEntry = new Entry
         {
+            AutomationId = "PaymentAmount",
+            MaxLength = 9,
             Placeholder = "0.00",
             Text = total.ToString("F2"),
             Keyboard = Keyboard.Numeric,
@@ -5758,143 +5562,308 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var allowSplit = !IsCustomerHubOrderType(_currentOrder.OrderType);
-        var paymentService = new ClientPaymentService(_cache);
-        var viewModel = new PaymentViewModel
+        var isTakeaway = CustomerOrderHubRules.IsCollectionOrderType(_currentOrder.OrderType)
+            || CustomerOrderHubRules.IsDeliveryOrderType(_currentOrder.OrderType);
+        var billTotal = _currentOrder.Total;
+        decimal tip = 0m;
+        if (!isTakeaway && ShouldOfferTipForSharedPayment(_currentOrder))
         {
-            AmountDue = _currentOrder.Total,
-            AllowSplit = allowSplit
-        };
-        var paymentView = new PaymentView { ViewModel = viewModel };
-        paymentView.SubmissionRequested += async (_, submission) =>
-        {
-            if (_currentOrder is null)
+            var tipResult = await PaymentWizard.ShowTipAsync(billTotal, this);
+            if (tipResult is null)
             {
-                viewModel.ApplyAuthoritativeResult(false, "Payment requires a Mother-confirmed order.", false);
                 return;
             }
 
-            string? giftCardNumber = null;
-            string? loyaltyLookup = null;
-            int? loyaltyPoints = null;
-            var amount = submission.Amount;
-            var method = submission.Method;
-            if (string.Equals(NormalizePaymentMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase))
+            tip = Math.Max(0m, tipResult.Value);
+        }
+
+        var totalDue = billTotal + tip;
+        var remainingBalance = totalDue;
+        PaymentSplitPlan plan;
+        if (isTakeaway)
+        {
+            plan = PaymentSplitPlan.Full(totalDue);
+        }
+        else
+        {
+            var setup = await PaymentWizard.ShowSetupPlanAsync(
+                totalDue,
+                remainingBalance,
+                BuildSharedPayByItemsLines(_currentOrder),
+                _currentOrder.Subtotal,
+                _currentOrder.ServiceCharge,
+                GetSharedDeliveryFee(_currentOrder),
+                _currentOrder.Discount,
+                this);
+            if (setup is null)
             {
-                var dialog = new OrderWeb.Client.Dialogs.GiftCardOrderPaymentDialog(amount);
-                await Navigation.PushModalAsync(dialog, false);
-                var gift = await dialog.WaitAsync();
-                if (!gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber))
+                return;
+            }
+
+            plan = setup;
+        }
+
+        var paymentAmount = plan.GetThisPaymentAmount(remainingBalance);
+        if (paymentAmount <= 0m)
+        {
+            ShowToast("There is nothing left to pay on this order.");
+            return;
+        }
+
+        var tipThisAttempt = AllocateSharedTip(tip, paymentAmount, remainingBalance);
+        var remainingAfter = Math.Max(0m, remainingBalance - paymentAmount);
+
+        // Mother chrome: SELECT PAYMENT METHOD (same SharedUI dialog as Order Place).
+        var method = await PaymentWizard.ShowMethodAsync(
+            paymentAmount,
+            remainingAfter,
+            plan.GetPaymentTitle(),
+            showLoyalty: false,
+            hostPage: this);
+        if (method == PaymentMethodChoice.Cancelled)
+        {
+            return;
+        }
+
+        string? giftCardNumber = null;
+        string? loyaltyLookup = null;
+        int? loyaltyPoints = null;
+        var amount = paymentAmount;
+        string methodKey;
+        switch (method)
+        {
+            case PaymentMethodChoice.Cash:
+            {
+                methodKey = "cash";
+                var cash = await PaymentWizard.ShowCashAsync(amount, this);
+                if (!cash.Success)
                 {
-                    viewModel.ApplyAuthoritativeResult(false, gift.Message ?? "Gift card payment cancelled. No balance was changed.", false);
+                    return;
+                }
+
+                amount = cash.AmountPaid > 0 ? cash.AmountPaid : amount;
+                break;
+            }
+            case PaymentMethodChoice.Card:
+                // Mother parity: CARD records immediately (no terminal confirm dialog).
+                methodKey = "card";
+                break;
+            case PaymentMethodChoice.GiftCard:
+            {
+                methodKey = "gift_card";
+                var gift = await PaymentWizard.ShowGiftCardAsync(amount, LookupGiftCardForSharedPaymentAsync, this);
+                if (!gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber) || gift.AmountApplied <= 0)
+                {
+                    ShowToast(gift.Message ?? "Gift card payment cancelled. No balance was changed.");
                     return;
                 }
 
                 giftCardNumber = gift.CardNumber;
                 amount = gift.AmountApplied;
-                method = "gift_card";
-                viewModel.Message = "Redeeming gift card on Mother / OrderWeb…";
+                break;
             }
-            else if (string.Equals(NormalizePaymentMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase))
-            {
-                var dialog = new OrderWeb.Client.Dialogs.LoyaltyOrderPaymentDialog(amount);
-                await Navigation.PushModalAsync(dialog, false);
-                var loyalty = await dialog.WaitAsync();
+            case PaymentMethodChoice.Loyalty:
+                methodKey = "loyalty";
+                var loyaltyDialog = new OrderWeb.Client.Dialogs.LoyaltyOrderPaymentDialog(amount);
+                await Navigation.PushModalAsync(loyaltyDialog, false);
+                var loyalty = await loyaltyDialog.WaitAsync();
                 if (!loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
                 {
-                    viewModel.ApplyAuthoritativeResult(false, loyalty.Message ?? "Loyalty payment cancelled. No points were changed.", false);
+                    ShowToast(loyalty.Message ?? "Loyalty payment cancelled. No points were changed.");
                     return;
                 }
 
                 loyaltyLookup = loyalty.Lookup;
                 loyaltyPoints = loyalty.Points;
                 amount = loyalty.AmountApplied;
-                method = "loyalty";
-                viewModel.Message = "Redeeming loyalty points on Mother / OrderWeb…";
-            }
-
-            if (!allowSplit && amount + 0.009m < _currentOrder.Total &&
-                (string.Equals(NormalizePaymentMethod(method), "gift_card", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(NormalizePaymentMethod(method), "loyalty", StringComparison.OrdinalIgnoreCase)))
-            {
-                viewModel.ApplyAuthoritativeResult(
-                    false,
-                    "Collection and Delivery require payment of the full bill. Use a method that covers the full amount, or pay on Mother.",
-                    false);
+                break;
+            default:
                 return;
-            }
+        }
 
-            var result = await paymentService.TakePaymentAsync(
-                _currentOrder.OrderId,
-                method,
-                amount,
-                submission.RequestId,
-                expectedOrderRevision: _currentOrder.Version,
-                correlationId: submission.CorrelationId,
-                giftCardNumber: giftCardNumber,
-                giftCardIdempotencyKey: giftCardNumber == null
-                    ? null
-                    : $"gift-card:{_currentOrder.OrderId}:{giftCardNumber}:{amount:F2}",
-                loyaltyLookup: loyaltyLookup,
-                loyaltyPoints: loyaltyPoints,
-                loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
-                    ? null
-                    : $"loyalty:{_currentOrder.OrderId}:{loyaltyLookup}:{loyaltyPoints}");
-            viewModel.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
-            if (giftCardNumber != null)
-            {
-                ClientGiftCardDiagnostics.Record(
-                    "order-pay",
-                    result.Approved,
-                    result.Message,
-                    result.Approved ? null : (result.IsUnknown ? GiftCardErrorCodes.OfflineMother : GiftCardErrorCodes.Unknown));
-            }
-
-            if (loyaltyLookup != null)
-            {
-                var queued = !result.Approved &&
-                             result.Message?.Contains("queued", StringComparison.OrdinalIgnoreCase) == true;
-                ClientLoyaltyDiagnostics.Record(
-                    "order-pay",
-                    result.Approved,
-                    result.Message,
-                    result.Approved
-                        ? null
-                        : (result.IsUnknown
-                            ? LoyaltyErrorCodes.OfflineMother
-                            : queued
-                                ? LoyaltyErrorCodes.Queued
-                                : LoyaltyErrorCodes.Unknown),
-                    queued);
-            }
-
-            if (result.Approved)
-            {
-                try
-                {
-                    var refreshed = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
-                    await ApplyMotherOrderResultAsync(refreshed);
-                }
-                catch
-                {
-                    // Payment already succeeded; refresh is best-effort.
-                }
-
-                if (submission.PrintReceipt)
-                {
-                    await RequestPrintAsync("customer receipt", _currentOrder.OrderId, false);
-                }
-            }
-        };
-        viewModel.StatusCheckRequested += async (_, requestId) =>
+        if (_currentOrder is null)
         {
-            var result = await paymentService.GetPaymentStatusAsync(requestId);
-            viewModel.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
-        };
+            return;
+        }
 
-        Root.Children.Clear();
-        Root.Children.Add(SharedAppFrame("Payment", paymentView, "payments"));
+        var paymentService = new ClientPaymentService(_cache);
+        var result = await paymentService.TakePaymentAsync(
+            _currentOrder.OrderId,
+            methodKey,
+            amount,
+            expectedOrderRevision: _currentOrder.Version,
+            giftCardNumber: giftCardNumber,
+            giftCardIdempotencyKey: giftCardNumber == null
+                ? null
+                : $"gift-card:{_currentOrder.OrderId}:{giftCardNumber}:{amount:F2}",
+            loyaltyLookup: loyaltyLookup,
+            loyaltyPoints: loyaltyPoints,
+            loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
+                ? null
+                : $"loyalty:{_currentOrder.OrderId}:{loyaltyLookup}:{loyaltyPoints}",
+            tipAmount: tipThisAttempt,
+            tipTotal: tip);
+
+        if (giftCardNumber != null)
+        {
+            ClientGiftCardDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved ? null : (result.IsUnknown ? GiftCardErrorCodes.OfflineMother : GiftCardErrorCodes.Unknown));
+        }
+
+        if (loyaltyLookup != null)
+        {
+            var queued = !result.Approved &&
+                         result.Message?.Contains("queued", StringComparison.OrdinalIgnoreCase) == true;
+            ClientLoyaltyDiagnostics.Record(
+                "order-pay",
+                result.Approved,
+                result.Message,
+                result.Approved
+                    ? null
+                    : (result.IsUnknown
+                        ? LoyaltyErrorCodes.OfflineMother
+                        : queued
+                            ? LoyaltyErrorCodes.Queued
+                            : LoyaltyErrorCodes.Unknown),
+                queued);
+        }
+
+        if (!result.Approved)
+        {
+            ShowToast(result.Message);
+            return;
+        }
+
+        var fullyPaid = remainingAfter <= 0.009m && amount + 0.009m >= paymentAmount;
+        var paidByLabel = methodKey switch
+        {
+            "card" => "Paid by card",
+            "cash" => "Paid by cash",
+            "gift_card" => "Paid by gift card",
+            "loyalty" => "Paid by loyalty",
+            _ => "Payment approved"
+        };
+        ShowToast(fullyPaid
+            ? $"{paidByLabel} — £{amount:F2}. Printing receipt…"
+            : result.Message);
+
+        if (fullyPaid)
+        {
+            // Mother completes order + prints; clear local order view.
+            _currentOrder = null;
+            ShowDashboard();
+            return;
+        }
+
+        try
+        {
+            var refreshed = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
+            await ApplyMotherOrderResultAsync(refreshed);
+        }
+        catch
+        {
+            // Payment already succeeded; refresh is best-effort.
+        }
     }
+    private static async Task<PaymentGiftCardLookupResult> LookupGiftCardForSharedPaymentAsync(
+        string cardNumber,
+        CancellationToken cancellationToken)
+    {
+        var giftCards = new MotherGiftCardClient();
+        var lookup = await giftCards.LookupAsync(cardNumber, GiftCardLookupPurposes.Redeem, cancellationToken);
+        if (!lookup.Success || lookup.GiftCard == null || !lookup.CanProceed)
+        {
+            return new PaymentGiftCardLookupResult
+            {
+                Success = false,
+                CanUse = false,
+                Message = lookup.Error ?? lookup.Message ?? "Gift card not found."
+            };
+        }
+
+        var card = lookup.GiftCard;
+        return new PaymentGiftCardLookupResult
+        {
+            Success = true,
+            CanUse = card.CanUse,
+            CardNumber = string.IsNullOrWhiteSpace(card.CardNumber) ? cardNumber : card.CardNumber,
+            Balance = card.Balance,
+            Message = card.CanUse
+                ? (lookup.Message ?? "Gift card verified.")
+                : $"Gift card cannot be used: {card.Status}"
+        };
+    }
+
+    private static bool ShouldOfferTipForSharedPayment(MotherOrderState order)
+    {
+        if (CustomerOrderHubRules.IsCollectionOrderType(order.OrderType)
+            || CustomerOrderHubRules.IsDeliveryOrderType(order.OrderType))
+        {
+            return false;
+        }
+
+        var status = (order.ServiceChargeStatus ?? "not_configured").Trim().ToLowerInvariant();
+        return status is "not_configured" or "" or "none"
+            && order.ServiceChargePercent <= 0m
+            && order.ServiceCharge <= 0m;
+    }
+
+    private static decimal AllocateSharedTip(decimal tipRemaining, decimal paymentAmount, decimal remainingBalance)
+    {
+        if (tipRemaining <= 0m || paymentAmount <= 0m || remainingBalance <= 0m)
+        {
+            return 0m;
+        }
+
+        if (paymentAmount >= remainingBalance - 0.009m)
+        {
+            return tipRemaining;
+        }
+
+        return Math.Min(
+            tipRemaining,
+            decimal.Round(tipRemaining * paymentAmount / remainingBalance, 2, MidpointRounding.AwayFromZero));
+    }
+
+    private static decimal GetSharedDeliveryFee(MotherOrderState order) =>
+        order.Lines
+            .Where(line => string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                || line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
+            .Sum(line => line.UnitPrice * line.Quantity);
+
+    private static IReadOnlyList<PaymentPayByItemsLine> BuildSharedPayByItemsLines(MotherOrderState order) =>
+        order.Lines
+            .Where(line => line.Quantity > 0
+                && !string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase)
+                && !line.Name.Contains("delivery fee", StringComparison.OrdinalIgnoreCase))
+            .Select(line =>
+            {
+                var detailParts = new List<string>();
+                if (line.Modifiers is { Count: > 0 })
+                {
+                    detailParts.Add(string.Join(", ", line.Modifiers));
+                }
+
+                if (!string.IsNullOrWhiteSpace(line.Notes))
+                {
+                    detailParts.Add(line.Notes!);
+                }
+
+                var unit = Math.Round(Math.Max(0m, line.UnitPrice), 2, MidpointRounding.AwayFromZero);
+                return new PaymentPayByItemsLine
+                {
+                    ItemId = line.Id,
+                    Name = line.Name,
+                    Detail = detailParts.Count == 0 ? null : string.Join(" · ", detailParts),
+                    Quantity = line.Quantity,
+                    UnitAmount = unit
+                };
+            })
+            .Where(line => line.UnitAmount > 0)
+            .ToList();
 
     private async Task CompletePaymentAsync(string method)
     {
@@ -5963,7 +5932,7 @@ public partial class MainPage : ContentPage
             await Task.Delay(400, token);
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                if (_posSelectedMenu == "Live Order" && !_isViewingOrderScreen)
+                if (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder") && !_isViewingOrderScreen)
                 {
                     _ = SoftRefreshLiveOrdersAsync();
                 }
@@ -5980,9 +5949,9 @@ public partial class MainPage : ContentPage
 
     private async void ShowLiveOrders(string selectedFilter)
     {
-        _posSelectedMenu = "Live Order";
+        _posSelectedMenu = "Live Orders";
         _isViewingOrderScreen = false;
-        selectedFilter = NormalizeLiveOrderType(selectedFilter);
+        selectedFilter = ClientLiveOrderPresentation.NormalizeType(selectedFilter);
         _liveOrderFilter = selectedFilter;
 
         // Cache-first paint — don't wait on Mother before showing cards.
@@ -6013,7 +5982,7 @@ public partial class MainPage : ContentPage
             var openOrders = await _cache.GetOpenOrderStatesAsync();
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                if (_posSelectedMenu != "Live Order" || _isViewingOrderScreen)
+                if (!ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder") || _isViewingOrderScreen)
                 {
                     return;
                 }
@@ -6032,24 +6001,40 @@ public partial class MainPage : ContentPage
         }
     }
 
-    private string? _liveOrdersFingerprint;
-
     private void RenderLiveOrdersPage(IReadOnlyList<MotherOrderState> openOrders, string selectedFilter, bool force)
     {
-        var fingerprint = BuildLiveOrdersFingerprint(openOrders, selectedFilter);
+        selectedFilter = ClientLiveOrderPresentation.NormalizeType(selectedFilter);
+        _liveOrderFilter = selectedFilter;
+        _liveOrderCachedOrders = ClientLiveOrderPresentation.OpenOrdersOnly(openOrders);
+
+        var fingerprint = ClientLiveOrderPresentation.Fingerprint(_liveOrderCachedOrders, selectedFilter);
         if (!force &&
             string.Equals(fingerprint, _liveOrdersFingerprint, StringComparison.Ordinal) &&
-            _posSelectedMenu == "Live Order")
+            ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder") &&
+            _liveOrderBoard is not null)
         {
             return;
         }
 
         _liveOrdersFingerprint = fingerprint;
-        Root.Children.Clear();
 
-        var cards = BuildLiveOrderCards(openOrders)
-            .Where(card => selectedFilter == "All" || card.Type == selectedFilter)
-            .ToList();
+        if (force || _liveOrderBoard is null || !IsLiveOrderBoardHosted())
+        {
+            EnsureLiveOrderBoardHost();
+        }
+
+        ApplyLiveOrderBoardCards(selectedFilter);
+    }
+
+    private bool IsLiveOrderBoardHosted() =>
+        _liveOrderBoard is not null
+        && Root.Children.OfType<Grid>().Any(grid => grid.Children.Contains(_liveOrderBoard));
+
+    private void EnsureLiveOrderBoardHost()
+    {
+        _liveOrderBoard = new LiveOrderBoardView();
+        _liveOrderBoard.FilterChanged += OnLiveOrderBoardFilterChanged;
+        _liveOrderBoard.CardTapped += OnLiveOrderBoardCardTapped;
 
         var page = new Grid
         {
@@ -6057,275 +6042,129 @@ public partial class MainPage : ContentPage
             RowDefinitions =
             {
                 new RowDefinition(150),
-                new RowDefinition(98),
                 new RowDefinition(GridLength.Star)
             }
         };
 
-        page.Children.Add(RestaurantHeader("Live Order"));
+        page.Children.Add(RestaurantHeader("Live Orders"));
+        Grid.SetRow(_liveOrderBoard, 1);
+        page.Children.Add(_liveOrderBoard);
 
-        var filters = new HorizontalStackLayout
-        {
-            Spacing = 12,
-            HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions = LayoutOptions.Center,
-            Children =
-            {
-                LiveOrderFilterButton("All", selectedFilter),
-                LiveOrderFilterButton("Collection", selectedFilter),
-                LiveOrderFilterButton("Delivery", selectedFilter),
-                LiveOrderFilterButton("Table", selectedFilter)
-            }
-        };
-
-        var filterBar = new Border
-        {
-            BackgroundColor = Color.FromArgb(PageBackground),
-            Stroke = Color.FromArgb(BorderLight),
-            StrokeThickness = 1,
-            Content = filters
-        };
-        page.Children.Add(filterBar);
-        SetRow(filterBar, 1);
-
-        if (cards.Count == 0)
-        {
-            var emptyText = selectedFilter switch
-            {
-                "Collection" => "No unpaid collection orders",
-                "Delivery" => "No unpaid delivery orders",
-                "Table" => "No active table sessions",
-                _ => "No open local orders"
-            };
-
-            var empty = new Label
-            {
-                Text = emptyText,
-                FontSize = 16,
-                TextColor = Color.FromArgb("#9CA3AF"),
-                HorizontalOptions = LayoutOptions.Center,
-                VerticalOptions = LayoutOptions.Start,
-                Margin = new Thickness(0, 220, 0, 0)
-            };
-            page.Children.Add(empty);
-            SetRow(empty, 2);
-            Root.Children.Add(page);
-            return;
-        }
-
-        var orderGrid = new FlexLayout
-        {
-            Direction = FlexDirection.Row,
-            Wrap = FlexWrap.Wrap,
-            AlignItems = FlexAlignItems.Start,
-            JustifyContent = FlexJustify.Start,
-            Padding = new Thickness(24, 36, 24, 24)
-        };
-
-        foreach (var card in cards)
-        {
-            orderGrid.Children.Add(LiveOrderCardView(card));
-        }
-
-        var scroll = new ScrollView { Content = orderGrid };
-        page.Children.Add(scroll);
-        SetRow(scroll, 2);
+        Root.Children.Clear();
         Root.Children.Add(page);
     }
 
-    private static string BuildLiveOrdersFingerprint(IReadOnlyList<MotherOrderState> openOrders, string selectedFilter)
+    private void OnLiveOrderBoardFilterChanged(object? sender, LiveOrderFilterChangedEventArgs e)
     {
-        var parts = openOrders
-            .Where(order => !string.Equals(order.Status, "Closed", StringComparison.OrdinalIgnoreCase))
-            .Select(order =>
-            {
-                var type = NormalizeLiveOrderType(order.OrderType);
-                if (selectedFilter != "All" && type != selectedFilter)
-                {
-                    return null;
-                }
-
-                return $"{order.OrderId}:{order.Version}:{order.Status}:{order.Total:F2}:{order.UpdatedUtc}";
-            })
-            .Where(part => part is not null)
-            .OrderBy(part => part, StringComparer.Ordinal);
-        return selectedFilter + "#" + string.Join("|", parts);
-    }
-
-    private Button LiveOrderFilterButton(string text, string selectedFilter)
-    {
-        var selected = NormalizeLiveOrderType(text) == selectedFilter;
-        var button = new Button
+        if (_suppressLiveOrderFilterEvent)
         {
-            Text = text,
-            FontSize = 15,
-            FontFamily = "OpenSansBold",
-            TextColor = selected ? Colors.White : Color.FromArgb(MutedText),
-            BackgroundColor = selected ? Color.FromArgb("#10B981") : Color.FromArgb("#F5F5F5"),
-            CornerRadius = 8,
-            HeightRequest = 50,
-            WidthRequest = text == "All" ? 84 : 132,
-            Padding = new Thickness(0),
-            BorderWidth = 0
-        };
-        button.Clicked += (_, _) => ShowLiveOrders(text);
-        return button;
-    }
-
-    private IReadOnlyList<LiveOrderCardModel> BuildLiveOrderCards(
-        IReadOnlyList<MotherOrderState> openOrders)
-    {
-        var cards = new List<LiveOrderCardModel>();
-
-        foreach (var order in openOrders.Where(order => !string.Equals(order.Status, "Closed", StringComparison.OrdinalIgnoreCase)))
-        {
-            var type = NormalizeLiveOrderType(order.OrderType);
-            var tableDisplay = !string.IsNullOrWhiteSpace(order.TableNumber) ? $"Table {order.TableNumber}" : "Table";
-            var subtitle = type == "Table" ? tableDisplay : order.Status;
-            var accent = type == "Table" ? Danger : "#10B981";
-
-            cards.Add(new LiveOrderCardModel(
-                Type: type,
-                Title: type,
-                OrderNumber: FormatLiveOrderNumber(order.OrderNumber, order.OrderId),
-                Subtitle: subtitle,
-                Total: order.Total,
-                TimeText: FormatLiveOrderTime(order.UpdatedUtc),
-                AccentColor: accent,
-                OpenAsync: async () =>
-                {
-                    if (type is "Collection" or "Delivery" or "Table")
-                    {
-                        var decision = _offlinePolicy.Evaluate(
-                            ClientOperation.OpenCollectionOrder,
-                            await _offlinePolicy.IsMotherOnlineAsync());
-                        if (!decision.Allowed)
-                        {
-                            ShowToast(decision.Message);
-                            return;
-                        }
-
-                        try
-                        {
-                            _connectionStatus = "Syncing";
-                            var opened = await _orderClient.OpenOrderForEditAsync(order.OrderId);
-                            _currentOrder = opened.State;
-                            _selectedCachedTable = opened.State.TableId.HasValue
-                                ? _cachedFloors.SelectMany(floor => floor.Tables)
-                                    .FirstOrDefault(table => table.Id == opened.State.TableId.Value)
-                                : null;
-                            _guests = Math.Max(_currentOrder.Guests, 1);
-                            await _cache.SaveOrderStateAsync(_currentOrder);
-                            _connectionStatus = "Connected";
-                            ShowToast(opened.Message);
-                            _isViewingOrderScreen = false;
-                            var page = new OrderPage(
-                                opened.State,
-                                opened.State.CustomerName,
-                                opened.State.CustomerPhone);
-                            ClientPageChrome.HideSystemBackChrome(page);
-                            await Navigation.PushAsync(page, false);
-                        }
-                        catch (Exception ex)
-                        {
-                            _connectionStatus = "Connected";
-                            ShowToast(ex.Message);
-                        }
-
-                        return;
-                    }
-
-                    _currentOrder = order;
-                    _selectedCachedTable = order.TableId.HasValue
-                        ? _cachedFloors.SelectMany(floor => floor.Tables).FirstOrDefault(table => table.Id == order.TableId.Value)
-                        : null;
-                    _guests = Math.Max(order.Guests, 1);
-                    await _cache.SaveOrderStateAsync(order);
-                    _isViewingOrderScreen = false;
-                    var fallbackPage = new OrderPage(order, order.CustomerName, order.CustomerPhone);
-                    ClientPageChrome.HideSystemBackChrome(fallbackPage);
-                    await Navigation.PushAsync(fallbackPage, false);
-                }));
+            return;
         }
 
-        return cards
-            .OrderByDescending(card => card.Type == "Table")
-            .ThenBy(card => card.TimeText)
-            .ToList();
+        _liveOrderFilter = ClientLiveOrderPresentation.FromFilter(e.Filter);
+        _liveOrdersFingerprint = null;
+        ApplyLiveOrderBoardCards(_liveOrderFilter);
     }
 
-    private Border LiveOrderCardView(LiveOrderCardModel card)
+    private async void OnLiveOrderBoardCardTapped(object? sender, LiveOrderCardTappedEventArgs e)
     {
-        var accent = Color.FromArgb(card.AccentColor);
-        var border = new Border
+        try
         {
-            BackgroundColor = Colors.White,
-            Stroke = accent,
-            StrokeThickness = 2,
-            Padding = new Thickness(16, 14),
-            Margin = new Thickness(0, 0, 14, 14),
-            WidthRequest = 220,
-            MinimumHeightRequest = 132,
-            StrokeShape = new RoundRectangle { CornerRadius = 14 },
-            Shadow = new Shadow
+            var order = _liveOrderCachedOrders.FirstOrDefault(o =>
+                string.Equals(o.OrderId, e.Card.Key, StringComparison.OrdinalIgnoreCase));
+            if (order is null)
             {
-                Brush = Colors.Black,
-                Offset = new Point(0, 2),
-                Radius = 8,
-                Opacity = 0.08f
+                return;
             }
-        };
 
-        border.Content = new VerticalStackLayout
+            await OpenLiveOrderAsync(order);
+        }
+        catch (Exception ex)
         {
-            Spacing = 4,
-            Children =
-            {
-                new Label
-                {
-                    Text = card.Title,
-                    FontSize = 22,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb("#1E293B"),
-                    LineBreakMode = LineBreakMode.TailTruncation
-                },
-                new Label
-                {
-                    Text = card.OrderNumber,
-                    FontSize = 12,
-                    TextColor = Color.FromArgb("#94A3B8"),
-                    LineBreakMode = LineBreakMode.TailTruncation
-                },
-                new Label
-                {
-                    Text = card.Subtitle,
-                    FontSize = 15,
-                    TextColor = Color.FromArgb("#475569"),
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    MaxLines = 2,
-                    Margin = new Thickness(0, 2, 0, 0)
-                },
-                new Label
-                {
-                    Text = Money(card.Total),
-                    FontSize = 24,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = accent,
-                    Margin = new Thickness(0, 6, 0, 0)
-                },
-                new Label
-                {
-                    Text = card.TimeText,
-                    FontSize = 12,
-                    TextColor = Color.FromArgb("#94A3B8")
-                }
-            }
-        };
+            ShowToast(ex.Message);
+        }
+    }
 
-        var tap = new TapGestureRecognizer();
-        tap.Tapped += async (_, _) => await card.OpenAsync();
-        border.GestureRecognizers.Add(tap);
-        return border;
+    private void ApplyLiveOrderBoardCards(string selectedFilter)
+    {
+        if (_liveOrderBoard is null)
+        {
+            return;
+        }
+
+        var filter = ClientLiveOrderPresentation.ToFilter(selectedFilter);
+        if (_liveOrderBoard.SelectedFilter != filter)
+        {
+            _suppressLiveOrderFilterEvent = true;
+            try
+            {
+                _liveOrderBoard.SelectedFilter = filter;
+            }
+            finally
+            {
+                _suppressLiveOrderFilterEvent = false;
+            }
+        }
+
+        _liveOrderBoard.SetCards(
+            ClientLiveOrderPresentation.Map(_liveOrderCachedOrders, filter),
+            ClientLiveOrderPresentation.EmptyText(filter));
+    }
+
+    private async Task OpenLiveOrderAsync(MotherOrderState order)
+    {
+        var type = ClientLiveOrderPresentation.NormalizeType(order.OrderType);
+        if (type is "Collection" or "Delivery" or "Table")
+        {
+            var decision = _offlinePolicy.Evaluate(
+                ClientOperation.OpenCollectionOrder,
+                await _offlinePolicy.IsMotherOnlineAsync());
+            if (!decision.Allowed)
+            {
+                ShowToast(decision.Message);
+                return;
+            }
+
+            try
+            {
+                _connectionStatus = "Syncing";
+                var opened = await _orderClient.OpenOrderForEditAsync(order.OrderId);
+                _currentOrder = opened.State;
+                _selectedCachedTable = opened.State.TableId.HasValue
+                    ? _cachedFloors.SelectMany(floor => floor.Tables)
+                        .FirstOrDefault(table => table.Id == opened.State.TableId.Value)
+                    : null;
+                _guests = Math.Max(_currentOrder.Guests, 1);
+                await _cache.SaveOrderStateAsync(_currentOrder);
+                _connectionStatus = "Connected";
+                ShowToast(opened.Message);
+                _isViewingOrderScreen = false;
+                var page = new OrderPage(
+                    opened.State,
+                    opened.State.CustomerName,
+                    opened.State.CustomerPhone);
+                ClientPageChrome.HideSystemBackChrome(page);
+                await Navigation.PushAsync(page, false);
+            }
+            catch (Exception ex)
+            {
+                _connectionStatus = "Connected";
+                ShowToast(ex.Message);
+            }
+
+            return;
+        }
+
+        _currentOrder = order;
+        _selectedCachedTable = order.TableId.HasValue
+            ? _cachedFloors.SelectMany(floor => floor.Tables).FirstOrDefault(table => table.Id == order.TableId.Value)
+            : null;
+        _guests = Math.Max(order.Guests, 1);
+        await _cache.SaveOrderStateAsync(order);
+        _isViewingOrderScreen = false;
+        var fallbackPage = new OrderPage(order, order.CustomerName, order.CustomerPhone);
+        ClientPageChrome.HideSystemBackChrome(fallbackPage);
+        await Navigation.PushAsync(fallbackPage, false);
     }
 
     private static string NormalizePaymentMethod(string? method) =>
@@ -6338,48 +6177,6 @@ public partial class MainPage : ContentPage
             "split" => "split",
             var other => other
         };
-
-    private static string NormalizeLiveOrderType(string? orderType)
-    {
-        return (orderType ?? string.Empty).Trim().ToLowerInvariant() switch
-        {
-            "all" => "All",
-            "delivery" or "del" => "Delivery",
-            "table" or "tbl" or "dine_in" or "dine-in" => "Table",
-            _ => "Collection"
-        };
-    }
-
-    private static string FormatLiveOrderNumber(string? orderNumber, string? fallbackId)
-    {
-        var value = !string.IsNullOrWhiteSpace(orderNumber) ? orderNumber.Trim() : fallbackId?.Trim();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "Order";
-        }
-
-        return value.StartsWith("#", StringComparison.Ordinal) ? value : $"#{value}";
-    }
-
-    private static string FormatLiveOrderTime(string? value)
-    {
-        if (DateTimeOffset.TryParse(value, out var timestamp))
-        {
-            return timestamp.ToLocalTime().ToString("HH:mm · dd/MM");
-        }
-
-        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-    }
-
-    private sealed record LiveOrderCardModel(
-        string Type,
-        string Title,
-        string OrderNumber,
-        string Subtitle,
-        decimal Total,
-        string TimeText,
-        string AccentColor,
-        Func<Task> OpenAsync);
 
     private View AppFrame(string title, View content, bool showSidebar)
     {
@@ -6406,7 +6203,7 @@ public partial class MainPage : ContentPage
             PageTitle = title,
             MainContent = content,
             RestaurantName = CurrentRestaurantName(),
-            RestaurantLogo = "companymark.png",
+            RestaurantLogo = "mainlogo.png",
             UserName = _currentSession?.UserName ?? "No user",
             UserRole = role ?? "User",
             TerminalName = LastTerminalName(),
@@ -6454,33 +6251,24 @@ public partial class MainPage : ContentPage
 
     private IReadOnlyList<ApplicationNavigationItem> ClientNavigationItems() =>
     [
-        new("dashboard", "Dashboard", "dashboard.png", "User", "Manager"),
+                new("dashboard", "Dashboard", "dashboard.png", "User", "Manager"),
         new("cashdrawer", "Cash Drawer", "giftcard.png", "Manager"),
-        new("liveorder", "Live Order", "liveorder.png", "User", "Manager"),
+        new("liveorder", "Live Orders", "liveorder.png", "User", "Manager"),
         new("restaurant", "Restaurant", "restaurant.png", "User", "Manager"),
         new("collection", "Collection", "collection.png", "User", "Manager"),
         new("delivery", "Delivery", "delivery.png", "User", "Manager"),
         new("giftcards", "Gift Cards", "giftcards.png", "Manager"),
         new("loyalty", "Loyalty Points", "loyalty.png", "Manager"),
-        new("reservation", "Reservation", "reservation.png", "User", "Manager"),
-        new("orderhistory", "Order History", "orderhistory.png", "Manager")
+        new("reservation", "Reservations", "reservation.png", "User", "Manager"),
+        new("orderhistory", "Order History", "orderhistory.png", "Manager"),
+        new("customerdata", "Recent Customers", "customers.png", "Manager")
     ];
 
-    private static string RouteForTitle(string title) => title.Trim().ToLowerInvariant() switch
+    private static string RouteForTitle(string title)
     {
-        "manager dashboard" => "dashboard",
-        "cash drawer" => "cashdrawer",
-        "live order" => "liveorder",
-        "restaurant" => "restaurant",
-        "collection" => "collection",
-        "delivery" => "delivery",
-        "gift cards" => "giftcards",
-        "loyalty points" => "loyalty",
-        "reservation" => "reservation",
-        "order history" => "orderhistory",
-        "payment" => "payment",
-        _ => "dashboard"
-    };
+        var route = ClientHostAccess.RouteForTitle(title);
+        return string.IsNullOrWhiteSpace(route) ? "dashboard" : route;
+    }
 
     private View Sidebar()
     {

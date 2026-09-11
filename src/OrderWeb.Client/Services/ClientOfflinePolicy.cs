@@ -60,7 +60,7 @@ public sealed class ClientOfflinePolicy
         ClientOperation.VoidCollectionOrder => OnlineOnly(motherOnline, "Voiding this order requires Mother POS. No void was created."),
         ClientOperation.PrintCollectionOrder => OnlineOnly(motherOnline, "Printing is confirmed only by Mother POS. No print was recorded."),
         ClientOperation.SubmitFinalOrder => OnlineOnly(motherOnline, "Final orders require Mother confirmation. No order was submitted."),
-        ClientOperation.CardPayment => OnlineOnly(motherOnline, "Card payment requires Mother and the payment provider. No payment was taken."),
+        ClientOperation.CardPayment => OnlineOnly(motherOnline, "Card payment requires Mother POS. No payment was taken."),
         ClientOperation.GiftCard => OnlineOnly(motherOnline, "Gift-card operations require Mother POS. No gift-card balance was changed."),
         ClientOperation.Loyalty => OnlineOnly(motherOnline, "Loyalty operations require Mother POS. No points were changed."),
         ClientOperation.PrintAsSuccess => OnlineOnly(motherOnline, "Printing is confirmed only by Mother POS. No print was recorded."),

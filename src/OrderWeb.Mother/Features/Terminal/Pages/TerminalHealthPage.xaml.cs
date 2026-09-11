@@ -304,7 +304,8 @@ public partial class TerminalHealthPage : ContentPage
             "Enter a unique Client POS name, e.g. Floor 1, Bar, Counter 2.",
             "Floor 1",
             Keyboard.Text,
-            "Floor 1");
+            "Floor 1",
+            useVirtualKeyboard: true);
         terminalPrompt.SetOkText("Create Code");
         terminalPrompt.SetCancelText("Cancel");
 
@@ -328,7 +329,7 @@ public partial class TerminalHealthPage : ContentPage
             await LoadAsync();
             await AppAlertService.ShowAlertAsync(
                 "Client POS Pairing Code",
-                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\n\nThis code stays active until you delete the terminal.\n\nUse this on each Client POS:\nMother IP: {motherIp}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing Code: {result.PairingCode}");
+                $"Terminal: {terminalName.Trim()}\nCode: {result.PairingCode}\n\nThis code never expires and stays on Terminal Health.\nReuse it anytime to connect or reconnect Client POS.\n\nMother IP: {motherIp}\nAPI Port: {ClientWebSocketBroadcastService.DefaultPort}\nPairing Code: {result.PairingCode}");
         }
         catch (Exception ex)
         {
@@ -486,7 +487,7 @@ public partial class TerminalHealthPage : ContentPage
             await _clientApiService.PublishDataChangedAsync("features.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
             await AppAlertService.ShowAlertAsync(
                 "Client Access Saved",
-                $"{terminal.TerminalName} will use this list at the next PIN login. Reservations are on by default so Client matches Mother.");
+                $"{terminal.TerminalName} will pick this up on Update All, when opening Gift Cards/Loyalty, or at the next PIN login. Reservations stay on by default so Client matches Mother.");
         }
         catch (Exception ex)
         {
@@ -507,7 +508,8 @@ public partial class TerminalHealthPage : ContentPage
             "Enter the new Client terminal name.",
             terminal.TerminalName,
             Keyboard.Text,
-            terminal.TerminalName);
+            terminal.TerminalName,
+            useVirtualKeyboard: true);
         prompt.SetOkText("Rename");
         prompt.SetCancelText("Cancel");
 

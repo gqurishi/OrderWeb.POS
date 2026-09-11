@@ -1,5 +1,4 @@
 using Microsoft.Maui.Controls;
-using Microsoft.Maui.Controls.Shapes;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using System;
@@ -8,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MySqlConnector;
+using OrderWeb.SharedUI.Views;
 
 namespace POS_in_NET.Pages
 {
@@ -34,9 +34,9 @@ namespace POS_in_NET.Pages
         private List<Order> _collectionOrders = new();
         private List<Order> _deliveryOrders = new();
         private List<TableSession> _tableSessions = new();
+        private LiveOrderFilter _selectedFilter = LiveOrderFilter.All;
+        private string? _boardFingerprint;
 
-        private const double CardWidth = 220;
-        private const double CardMinHeight = 132;
         private const string LocalSourceFilter = @"
                       (
                         LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'
@@ -99,7 +99,10 @@ namespace POS_in_NET.Pages
             _tableSessionService = ServiceHelper.GetService<TableSessionService>() ?? new TableSessionService();
             
             TopBar.SetPageTitle("Live Order");
-            OnAllTabClicked(this, EventArgs.Empty);
+            Board.FilterChanged += OnBoardFilterChanged;
+            Board.CardTapped += OnBoardCardTapped;
+            Board.SelectedFilter = LiveOrderFilter.All;
+            ApplyBoardCards();
         }
 
         protected override void OnAppearing()
@@ -261,287 +264,175 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private void RebuildAllGrids()
+        private void RebuildAllGrids() => ApplyBoardCards();
+
+        private void OnBoardFilterChanged(object? sender, LiveOrderFilterChangedEventArgs e)
         {
-            RebuildOrderGrid(AllOrdersGrid, _allOrders, NavigateToOrderAsync);
-            AllEmptyLabel.IsVisible = _allOrders.Count == 0;
-
-            RebuildOrderGrid(CollectionOrdersGrid, _collectionOrders, NavigateToOrderAsync);
-            CollectionEmptyLabel.IsVisible = _collectionOrders.Count == 0;
-
-            RebuildOrderGrid(DeliveryOrdersGrid, _deliveryOrders, NavigateToOrderAsync);
-            DeliveryEmptyLabel.IsVisible = _deliveryOrders.Count == 0;
-
-            RebuildTableGrid();
-            TableEmptyLabel.IsVisible = _tableSessions.Count == 0;
+            _selectedFilter = e.Filter;
+            _boardFingerprint = null;
+            ApplyBoardCards();
         }
 
-        private void RebuildOrderGrid(FlexLayout grid, IReadOnlyList<Order> orders, Func<Order, Task> onTap)
+        private async void OnBoardCardTapped(object? sender, LiveOrderCardTappedEventArgs e)
         {
-            var cards = orders
-                .Select(order => CreateOrderCard(order, onTap))
-                .ToList();
-
-            RemoveLayoutChildrenSafely(grid);
-
-            foreach (var card in cards)
+            try
             {
-                grid.Children.Add(card);
-            }
-        }
-
-        private void RebuildTableGrid()
-        {
-            var cards = _tableSessions
-                .Select(CreateTableCard)
-                .ToList();
-
-            RemoveLayoutChildrenSafely(TableOrdersGrid);
-
-            foreach (var card in cards)
-            {
-                TableOrdersGrid.Children.Add(card);
-            }
-        }
-
-        private static void RemoveLayoutChildrenSafely(FlexLayout layout)
-        {
-            // FlexLayout.Children.Clear() maps to WinUI UIElementCollection.Clear(),
-            // which can terminate the process with 0xC0000005 during page transitions.
-            // Removing one child at a time uses the stable native removal path instead.
-            for (var index = layout.Children.Count - 1; index >= 0; index--)
-            {
-                layout.Children.RemoveAt(index);
-            }
-        }
-
-        private Border CreateOrderCard(Order order, Func<Order, Task> onTap)
-        {
-            var accentColor = order.IsStaleDraft ? Color.FromArgb("#DC2626") : Color.FromArgb("#10B981");
-
-            var border = new Border
-            {
-                BackgroundColor = Colors.White,
-                Stroke = accentColor,
-                StrokeThickness = 2,
-                Padding = new Thickness(16, 14),
-                Margin = new Thickness(0, 0, 14, 14),
-                WidthRequest = CardWidth,
-                MinimumHeightRequest = CardMinHeight,
-                StrokeShape = new RoundRectangle { CornerRadius = 14 },
-                Shadow = new Shadow
+                if (e.Card.Kind == LiveOrderCardKind.TableSession)
                 {
-                    Brush = Colors.Black,
-                    Offset = new Point(0, 2),
-                    Radius = 8,
-                    Opacity = 0.08f
+                    var session = FindSessionByKey(e.Card.Key);
+                    if (session != null)
+                    {
+                        await NavigateToTableAsync(session);
+                    }
+
+                    return;
                 }
-            };
 
-            var stack = new VerticalStackLayout { Spacing = 4 };
-
-            var badges = BuildOrderBadges(order);
-            if (badges.Count > 0)
-            {
-                stack.Children.Add(CreateBadgeRow(badges));
-            }
-
-            stack.Children.Add(new Label
-            {
-                Text = FormatOrderTypeLabel(order.OrderType),
-                FontSize = 22,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#1E293B"),
-                LineBreakMode = LineBreakMode.TailTruncation
-            });
-
-            stack.Children.Add(new Label
-            {
-                Text = FormatOrderNumber(order.OrderNumber, order.OrderId),
-                FontSize = 12,
-                TextColor = Color.FromArgb("#94A3B8"),
-                LineBreakMode = LineBreakMode.TailTruncation
-            });
-
-            if (HasCustomerName(order.CustomerName))
-            {
-                stack.Children.Add(new Label
+                var order = FindOrderByKey(e.Card.Key);
+                if (order != null)
                 {
-                    Text = order.CustomerName.Trim(),
-                    FontSize = 15,
-                    TextColor = Color.FromArgb("#475569"),
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    MaxLines = 2,
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
+                    await NavigateToOrderAsync(order);
+                }
             }
-
-            stack.Children.Add(new Label
+            catch (Exception ex)
             {
-                Text = $"£{order.TotalAmount:F2}",
-                FontSize = 24,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = accentColor,
-                Margin = new Thickness(0, 6, 0, 0)
-            });
-
-            stack.Children.Add(new Label
-            {
-                Text = order.CreatedAt.ToString("HH:mm · dd/MM"),
-                FontSize = 12,
-                TextColor = Color.FromArgb("#94A3B8")
-            });
-
-            border.Content = stack;
-
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += async (_, _) => await onTap(order);
-            border.GestureRecognizers.Add(tap);
-
-            return border;
+                System.Diagnostics.Debug.WriteLine($"[LiveOrder] Card tap failed: {ex.Message}");
+            }
         }
 
-        private static List<OrderBadge> BuildOrderBadges(Order order)
+        private void ApplyBoardCards()
         {
-            var badges = new List<OrderBadge>();
+            IReadOnlyList<LiveOrderCardPresentation> cards;
+            string empty = LiveOrderSampleData.EmptyTextFor(_selectedFilter);
+
+            switch (_selectedFilter)
+            {
+                case LiveOrderFilter.Collection:
+                    cards = MapOrders(_collectionOrders);
+                    break;
+                case LiveOrderFilter.Delivery:
+                    cards = MapOrders(_deliveryOrders);
+                    break;
+                case LiveOrderFilter.Table:
+                    cards = MapSessions(_tableSessions);
+                    break;
+                default:
+                    cards = MapOrders(_allOrders);
+                    break;
+            }
+
+            var fingerprint = BuildBoardFingerprint(_selectedFilter, cards);
+            if (string.Equals(fingerprint, _boardFingerprint, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _boardFingerprint = fingerprint;
+            Board.SetCards(cards, empty);
+        }
+
+        private static string BuildBoardFingerprint(
+            LiveOrderFilter filter,
+            IReadOnlyList<LiveOrderCardPresentation> cards)
+        {
+            var parts = cards.Select(card =>
+            {
+                var badges = card.Badges is { Count: > 0 }
+                    ? string.Join(",", card.Badges.Select(b => b.Text))
+                    : string.Empty;
+                return $"{card.Key}:{card.Kind}:{card.TotalText}:{card.TimeText}:{card.AccentColorHex}:{badges}";
+            });
+            return filter + "#" + string.Join("|", parts);
+        }
+
+        private static IReadOnlyList<LiveOrderCardPresentation> MapOrders(IReadOnlyList<Order> orders) =>
+            orders.Select(MapOrder).ToList();
+
+        private static LiveOrderCardPresentation MapOrder(Order order)
+        {
+            var accent = order.IsStaleDraft ? "#DC2626" : "#10B981";
+            return new LiveOrderCardPresentation(
+                Key: OrderKey(order),
+                Kind: LiveOrderCardKind.Order,
+                Title: FormatOrderTypeLabel(order.OrderType),
+                OrderNumber: FormatOrderNumber(order.OrderNumber, order.OrderId),
+                Subtitle: HasCustomerName(order.CustomerName) ? order.CustomerName.Trim() : null,
+                TotalText: $"£{order.TotalAmount:F2}",
+                TimeText: order.CreatedAt.ToString("HH:mm · dd/MM"),
+                AccentColorHex: accent,
+                Badges: BuildOrderBadges(order));
+        }
+
+        private static IReadOnlyList<LiveOrderCardPresentation> MapSessions(IReadOnlyList<TableSession> sessions) =>
+            sessions.Select(MapSession).ToList();
+
+        private static LiveOrderCardPresentation MapSession(TableSession session)
+        {
+            var accent = session.LinkedOrderIsStaleDraft || !session.HasLinkedOpenOrder
+                ? "#F59E0B"
+                : "#10B981";
+
+            string? subtitle = null;
+            if (!string.IsNullOrWhiteSpace(session.TableDisplay))
+            {
+                subtitle = session.TableDisplay.StartsWith("Table ", StringComparison.OrdinalIgnoreCase)
+                    ? session.TableDisplay
+                    : $"Table {session.TableDisplay}";
+            }
+
+            return new LiveOrderCardPresentation(
+                Key: SessionKey(session),
+                Kind: LiveOrderCardKind.TableSession,
+                Title: "Table",
+                OrderNumber: session.HasLinkedOpenOrder
+                    ? FormatOrderNumber(session.LinkedOrderNumber, session.LinkedOrderId)
+                    : string.Empty,
+                Subtitle: subtitle,
+                TotalText: session.LinkedOrderTotalAmount.HasValue
+                    ? $"£{session.LinkedOrderTotalAmount.Value:F2}"
+                    : "£0.00",
+                TimeText: $"{session.PartySize} guest{(session.PartySize == 1 ? string.Empty : "s")} · {session.TimeDisplay}",
+                AccentColorHex: accent);
+        }
+
+        private static string OrderKey(Order order) =>
+            !string.IsNullOrWhiteSpace(order.OrderId) ? order.OrderId.Trim() : $"id:{order.Id}";
+
+        private static string SessionKey(TableSession session) => $"session:{session.Id}";
+
+        private Order? FindOrderByKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            return _allOrders.Concat(_collectionOrders).Concat(_deliveryOrders)
+                .FirstOrDefault(o => string.Equals(OrderKey(o), key, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private TableSession? FindSessionByKey(string key) =>
+            _tableSessions.FirstOrDefault(s => string.Equals(SessionKey(s), key, StringComparison.OrdinalIgnoreCase));
+
+        private static List<LiveOrderBadgePresentation> BuildOrderBadges(Order order)
+        {
+            var badges = new List<LiveOrderBadgePresentation>();
             if (!IsWebOrder(order))
             {
                 return badges;
             }
 
-            badges.Add(new OrderBadge("WEB", "#DBEAFE", "#1D4ED8"));
-            badges.Add(new OrderBadge(FormatOrderTypeLabel(order.OrderType).ToUpperInvariant(), "#E0F2FE", "#0369A1"));
+            badges.Add(new LiveOrderBadgePresentation("WEB", "#DBEAFE", "#1D4ED8"));
+            badges.Add(new LiveOrderBadgePresentation(FormatOrderTypeLabel(order.OrderType).ToUpperInvariant(), "#E0F2FE", "#0369A1"));
 
             if (OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
                 && order.LocalLifecycleState != LocalLifecycleState.Paid
                 && order.LocalLifecycleState != LocalLifecycleState.Voided)
             {
-                badges.Add(new OrderBadge("CASH DUE", "#FEF3C7", "#B45309"));
+                badges.Add(new LiveOrderBadgePresentation("CASH DUE", "#FEF3C7", "#B45309"));
             }
 
             return badges;
-        }
-
-        private static HorizontalStackLayout CreateBadgeRow(IReadOnlyList<OrderBadge> badges)
-        {
-            var row = new HorizontalStackLayout
-            {
-                Spacing = 4,
-                Margin = new Thickness(0, 0, 0, 4)
-            };
-
-            foreach (var badge in badges)
-            {
-                row.Children.Add(CreateBadge(badge));
-            }
-
-            return row;
-        }
-
-        private static Border CreateBadge(OrderBadge badge)
-        {
-            return new Border
-            {
-                BackgroundColor = Color.FromArgb(badge.BackgroundColor),
-                StrokeThickness = 0,
-                Padding = new Thickness(6, 4),
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Content = new Label
-                {
-                    Text = badge.Text,
-                    FontSize = 9,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb(badge.TextColor),
-                    LineBreakMode = LineBreakMode.NoWrap
-                }
-            };
-        }
-
-        private Border CreateTableCard(TableSession session)
-        {
-            var accentColor = session.LinkedOrderIsStaleDraft || !session.HasLinkedOpenOrder
-                ? Color.FromArgb("#F59E0B")
-                : Color.FromArgb("#10B981");
-
-            var border = new Border
-            {
-                BackgroundColor = Colors.White,
-                Stroke = accentColor,
-                StrokeThickness = 2,
-                Padding = new Thickness(16, 14),
-                Margin = new Thickness(0, 0, 14, 14),
-                WidthRequest = CardWidth,
-                MinimumHeightRequest = CardMinHeight,
-                StrokeShape = new RoundRectangle { CornerRadius = 14 },
-                Shadow = new Shadow
-                {
-                    Brush = Colors.Black,
-                    Offset = new Point(0, 2),
-                    Radius = 8,
-                    Opacity = 0.08f
-                }
-            };
-
-            var stack = new VerticalStackLayout { Spacing = 4 };
-
-            stack.Children.Add(new Label
-            {
-                Text = "Table",
-                FontSize = 22,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#1E293B")
-            });
-
-            if (!string.IsNullOrWhiteSpace(session.TableDisplay))
-            {
-                stack.Children.Add(new Label
-                {
-                    Text = session.TableDisplay.StartsWith("Table ", StringComparison.OrdinalIgnoreCase)
-                        ? session.TableDisplay
-                        : $"Table {session.TableDisplay}",
-                    FontSize = 15,
-                    TextColor = Color.FromArgb("#475569"),
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
-            }
-
-            if (session.HasLinkedOpenOrder)
-            {
-                stack.Children.Add(new Label
-                {
-                    Text = FormatOrderNumber(session.LinkedOrderNumber, session.LinkedOrderId),
-                    FontSize = 12,
-                    TextColor = Color.FromArgb("#94A3B8"),
-                    LineBreakMode = LineBreakMode.TailTruncation
-                });
-            }
-
-            stack.Children.Add(new Label
-            {
-                Text = session.LinkedOrderTotalAmount.HasValue
-                    ? $"£{session.LinkedOrderTotalAmount.Value:F2}"
-                    : "£0.00",
-                FontSize = 24,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = accentColor,
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-
-            stack.Children.Add(new Label
-            {
-                Text = $"{session.PartySize} guest{(session.PartySize == 1 ? string.Empty : "s")} · {session.TimeDisplay}",
-                FontSize = 12,
-                TextColor = Color.FromArgb("#94A3B8")
-            });
-
-            border.Content = stack;
-
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += async (_, _) => await NavigateToTableAsync(session);
-            border.GestureRecognizers.Add(tap);
-
-            return border;
         }
 
         private static string FormatOrderNumber(string? orderNumber, string? orderId)
@@ -1167,8 +1058,6 @@ namespace POS_in_NET.Pages
             }
         }
 
-        private sealed record OrderBadge(string Text, string BackgroundColor, string TextColor);
-
         private static string? ExtractTableNumber(string? customerName)
         {
             if (string.IsNullOrWhiteSpace(customerName))
@@ -1181,70 +1070,6 @@ namespace POS_in_NET.Pages
             return value.StartsWith(tablePrefix, StringComparison.OrdinalIgnoreCase)
                 ? value[tablePrefix.Length..].Trim()
                 : value;
-        }
-
-        private void ResetTabStyles()
-        {
-            var inactiveBackground = Color.FromArgb("#F5F5F5");
-            var inactiveText = Color.FromArgb("#6B7280");
-
-            AllTabBorder.BackgroundColor = inactiveBackground;
-            CollectionTabBorder.BackgroundColor = inactiveBackground;
-            DeliveryTabBorder.BackgroundColor = inactiveBackground;
-            TableTabBorder.BackgroundColor = inactiveBackground;
-
-            AllTabLabel.TextColor = inactiveText;
-            CollectionTabLabel.TextColor = inactiveText;
-            DeliveryTabLabel.TextColor = inactiveText;
-            TableTabLabel.TextColor = inactiveText;
-        }
-
-        private void OnAllTabClicked(object? sender, EventArgs e)
-        {
-            ResetTabStyles();
-            AllTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-            AllTabLabel.TextColor = Colors.White;
-
-            AllOrdersLayout.IsVisible = true;
-            CollectionOrdersLayout.IsVisible = false;
-            DeliveryOrdersLayout.IsVisible = false;
-            TableOrdersLayout.IsVisible = false;
-        }
-
-        private void OnCollectionTabClicked(object? sender, EventArgs e)
-        {
-            ResetTabStyles();
-            CollectionTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-            CollectionTabLabel.TextColor = Colors.White;
-
-            AllOrdersLayout.IsVisible = false;
-            CollectionOrdersLayout.IsVisible = true;
-            DeliveryOrdersLayout.IsVisible = false;
-            TableOrdersLayout.IsVisible = false;
-        }
-
-        private void OnDeliveryTabClicked(object? sender, EventArgs e)
-        {
-            ResetTabStyles();
-            DeliveryTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-            DeliveryTabLabel.TextColor = Colors.White;
-
-            AllOrdersLayout.IsVisible = false;
-            CollectionOrdersLayout.IsVisible = false;
-            DeliveryOrdersLayout.IsVisible = true;
-            TableOrdersLayout.IsVisible = false;
-        }
-
-        private void OnTableTabClicked(object? sender, EventArgs e)
-        {
-            ResetTabStyles();
-            TableTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-            TableTabLabel.TextColor = Colors.White;
-
-            AllOrdersLayout.IsVisible = false;
-            CollectionOrdersLayout.IsVisible = false;
-            DeliveryOrdersLayout.IsVisible = false;
-            TableOrdersLayout.IsVisible = true;
         }
     }
 }

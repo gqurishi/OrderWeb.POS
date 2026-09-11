@@ -1,3 +1,4 @@
+using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Dashboards;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Dtos;
@@ -30,10 +31,28 @@ public partial class LoginPage : ContentPage
             return;
         }
 
-        Page page = session.User.Role switch
+        // Persist Mother features/routes from PIN login (UserSession alone drops them).
+        var login = _auth.LastSuccessfulLogin;
+        if (login is not null)
         {
-            "Manager" => new ManagerDashboardPage(session),
-            _ => new UserDashboardPage(session)
+            await new ClientCacheService().SaveLoginSessionAsync(login);
+            ClientHostAccess.ApplyFromSession(login);
+        }
+        else
+        {
+            login = new LoginSession(
+                session.User.UserId,
+                session.User.DisplayName,
+                session.User.Role,
+                session.User.Permissions.ToList(),
+                session.SessionId,
+                session.ExpiresAtUtc);
+        }
+
+        Page page = login.Role switch
+        {
+            "Manager" => new ManagerDashboardPage(login),
+            _ => new UserDashboardPage(login)
         };
         await Navigation.PushAsync(page, false);
     }

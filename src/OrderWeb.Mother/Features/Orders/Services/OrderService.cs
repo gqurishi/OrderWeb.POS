@@ -1011,6 +1011,36 @@ public class OrderService
         }
     }
 
+    /// <summary>
+    /// Open website orders still in progress (not paid/voided/cancelled).
+    /// Used by Admin Dashboard header badge.
+    /// </summary>
+    public async Task<int> GetIncomingWebOrderCountAsync()
+    {
+        try
+        {
+            using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            await EnsureSourceChannelSchemaAsync(connection);
+            await EnsureLifecycleSchemaAsync(connection);
+
+            await using var command = new MySqlCommand(@"
+                SELECT COUNT(*)
+                FROM orders
+                WHERE LOWER(COALESCE(source_channel, '')) = 'web'
+                  AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'voided', 'completed')
+                  AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided')", connection);
+
+            var result = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(result ?? 0);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"GetIncomingWebOrderCountAsync error: {ex.Message}");
+            return 0;
+        }
+    }
+
     public async Task<List<Order>> GetOrdersAsync()
     {
         using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());

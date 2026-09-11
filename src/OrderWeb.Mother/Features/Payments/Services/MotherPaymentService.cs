@@ -36,9 +36,8 @@ public sealed class MotherPaymentService : IPaymentService
         }
 
         var method = NormalizeMethod(request.Method);
-        if (method is not ("cash" or "gift_card" or "loyalty"))
+        if (method is not ("cash" or "card" or "gift_card" or "loyalty"))
         {
-            // Card remains provider-backed and unavailable on Client→Mother until configured.
             return Failure(OperationErrorCode.ServerError, $"{request.Method} payments are not configured on Mother POS.");
         }
 
@@ -187,11 +186,14 @@ public sealed class MotherPaymentService : IPaymentService
             loyaltyRedeemMessage = redeem.Message;
         }
 
+        var tipAmount = Math.Max(0m, request.TipAmount);
+        var tipTotal = Math.Max(tipAmount, Math.Max(0m, request.TipTotal));
         var recorded = await _orders.RecordPaymentLineAsync(
             request.OrderId,
             method,
             request.Amount,
             "approved",
+            tipAmount: tipAmount,
             reference: reference,
             createdBy: request.TerminalId,
             metadata: new
@@ -209,9 +211,12 @@ public sealed class MotherPaymentService : IPaymentService
                 loyaltyPoints = loyaltyPointsRedeemed,
                 loyaltyPointsRemaining,
                 loyaltyCustomerName,
-                loyaltyIdempotencyKey = request.LoyaltyIdempotencyKey
+                loyaltyIdempotencyKey = request.LoyaltyIdempotencyKey,
+                tipAmount,
+                tipTotal
             },
-            maximumApprovedTotal: order.TotalAmount);
+            // Mother UI allows approved amounts up to bill + tip (tip lives in amount + tip_amount column).
+            maximumApprovedTotal: order.TotalAmount + tipTotal);
 
         if (!recorded)
         {
@@ -237,6 +242,10 @@ public sealed class MotherPaymentService : IPaymentService
                 loyaltyPointsRedeemed ?? 0,
                 request.Amount,
                 loyaltyPointsRemaining);
+        }
+        else if (method is "cash" or "card")
+        {
+            await TryUpdateOrderTenderMethodAsync(order, method);
         }
 
         await TryCompleteTableOrderAfterPaymentAsync(order);
@@ -329,6 +338,31 @@ public sealed class MotherPaymentService : IPaymentService
         }
     }
 
+    private async Task TryUpdateOrderTenderMethodAsync(Order order, string method)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(order.PaymentMethod) ||
+                string.Equals(order.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(order.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(order.PaymentMethod, "partial", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(order.PaymentMethod, "split", StringComparison.OrdinalIgnoreCase))
+            {
+                order.PaymentMethod = method;
+            }
+            else if (!order.PaymentMethod.Contains(method, StringComparison.OrdinalIgnoreCase))
+            {
+                order.PaymentMethod = $"{order.PaymentMethod}+{method}";
+            }
+
+            await _orders.UpdateOrderAsync(order);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MotherPayment] Tender method update failed: {ex.Message}");
+        }
+    }
+
     private async Task TryCompleteTableOrderAfterPaymentAsync(Order order)
     {
         try
@@ -351,10 +385,36 @@ public sealed class MotherPaymentService : IPaymentService
                     "paid",
                     "Client POS");
             }
+
+            // Mother UI prints receipt after full pay — same for Client→Mother payments.
+            await TryPrintCustomerReceiptAsync(order);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[MotherPayment] Table session release after pay failed: {ex.Message}");
+        }
+    }
+
+    private static async Task TryPrintCustomerReceiptAsync(Order order)
+    {
+        try
+        {
+            var receiptService = ServiceHelper.GetService<ReceiptService>();
+            if (receiptService is null)
+            {
+                System.Diagnostics.Debug.WriteLine("[MotherPayment] Receipt service unavailable after Client payment.");
+                return;
+            }
+
+            var printed = await receiptService.PrintFullCustomerReceiptAsync(order);
+            System.Diagnostics.Debug.WriteLine(
+                printed
+                    ? $"[MotherPayment] Customer receipt queued for order {order.OrderId}."
+                    : $"[MotherPayment] Customer receipt failed for order {order.OrderId}.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MotherPayment] Receipt print after pay failed: {ex.Message}");
         }
     }
 

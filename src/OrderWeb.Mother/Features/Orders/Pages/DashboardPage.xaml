@@ -212,10 +212,19 @@
                                 </VerticalStackLayout>
                             </Border>
 
-                            <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" BackgroundColor="#ECFDF5" Stroke="#A7F3D0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
+                            <Border Grid.Row="3" Grid.Column="0" BackgroundColor="#ECFDF5" Stroke="#A7F3D0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
                                 <VerticalStackLayout Spacing="2">
                                     <Label Text="Expected Cash in Till" FontSize="11" TextColor="#047857" />
                                     <Label x:Name="ZReportExpectedCashLabel" Text="£0.00" FontSize="16" FontAttributes="Bold" TextColor="#065F46" />
+                                </VerticalStackLayout>
+                            </Border>
+                            <Border Grid.Row="3" Grid.Column="1" BackgroundColor="#EFF6FF" Stroke="#BFDBFE" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnViewWebOrdersClicked" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="Total Web Orders" FontSize="11" TextColor="#1D4ED8" />
+                                    <Label x:Name="ZReportWebOrdersLabel" Text="0" FontSize="16" FontAttributes="Bold" TextColor="#1E3A8A" />
                                 </VerticalStackLayout>
                             </Border>
                             <Border Grid.Row="3" Grid.Column="2" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">

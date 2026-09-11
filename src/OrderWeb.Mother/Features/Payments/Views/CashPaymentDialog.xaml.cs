@@ -169,7 +169,7 @@ namespace POS_in_NET.Views
             try
             {
                 AmountReceivedEntry.Unfocus();
-                var keyboard = new NumericKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
                 var value = await keyboard.ShowCurrencyAsync(
                     _amountReceived > 0 ? _amountReceived : null,
                     "Amount received");

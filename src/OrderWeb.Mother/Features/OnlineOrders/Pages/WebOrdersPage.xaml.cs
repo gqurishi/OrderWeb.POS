@@ -1066,7 +1066,10 @@ namespace POS_in_NET.Pages
             {
                 GlobalSearchEntry?.Unfocus();
 
-                var keyboard = new VirtualKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+                keyboard.SetPrompt("Search web orders", "Search");
+                keyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Text);
+                keyboard.SetPlaceholder(GlobalSearchEntry?.Placeholder);
                 keyboard.SetInitialText(_searchText);
 
                 var result = await keyboard.ShowAsync(this);

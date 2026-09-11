@@ -106,7 +106,7 @@ public partial class TillShoppingSettleDialog : ContentView
         _keyboardOpen = true;
         try
         {
-            var keyboard = new NumericKeyboardDialog();
+            var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
             var value = await keyboard.ShowCurrencyAsync(ParseExistingAmount(), "Actual spent");
             if (value.HasValue)
             {

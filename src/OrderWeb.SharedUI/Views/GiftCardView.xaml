@@ -3,23 +3,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="OrderWeb.SharedUI.Views.GiftCardView">
 
+    <Grid x:Name="RootOverlay"
+          BackgroundColor="{DynamicResource OwBackground}">
     <Grid BackgroundColor="{DynamicResource OwBackground}"
           RowDefinitions="Auto,*"
           Padding="20,16"
           MaximumWidthRequest="1280"
           HorizontalOptions="Center">
 
-        <!-- Flow tabs -->
-        <Grid ColumnDefinitions="*,*,*"
+        <!-- Flow tabs: Redeem → Sell & top-up → Activate (+ Close) — Mother + Client -->
+        <Grid ColumnDefinitions="*,*,*,Auto"
               ColumnSpacing="8"
               Margin="0,0,0,14">
-            <Button x:Name="ActivateFlowButton"
-                    Text="Activate"
+            <Button x:Name="RedeemFlowButton"
+                    Text="Redeem card"
                     HeightRequest="42"
                     CornerRadius="10"
                     FontAttributes="Bold"
                     FontSize="13"
-                    Clicked="OnActivateFlowClicked" />
+                    Clicked="OnRedeemFlowClicked" />
             <Button x:Name="SellTopUpFlowButton"
                     Grid.Column="1"
                     Text="Sell &amp; top-up"
@@ -28,14 +30,29 @@
                     FontAttributes="Bold"
                     FontSize="13"
                     Clicked="OnSellTopUpFlowClicked" />
-            <Button x:Name="RedeemFlowButton"
+            <Button x:Name="ActivateFlowButton"
                     Grid.Column="2"
-                    Text="Redeem card"
+                    Text="Activate"
                     HeightRequest="42"
                     CornerRadius="10"
                     FontAttributes="Bold"
                     FontSize="13"
-                    Clicked="OnRedeemFlowClicked" />
+                    Clicked="OnActivateFlowClicked" />
+            <Button x:Name="CloseFlowButton"
+                    Grid.Column="3"
+                    Text="Close"
+                    BackgroundColor="#FEF2F2"
+                    BorderColor="#FCA5A5"
+                    BorderWidth="1"
+                    TextColor="#DC2626"
+                    FontAttributes="Bold"
+                    FontSize="14"
+                    WidthRequest="72"
+                    HeightRequest="42"
+                    CornerRadius="12"
+                    Padding="0"
+                    VerticalOptions="Center"
+                    Clicked="OnCloseFlowClicked" />
         </Grid>
 
         <ScrollView Grid.Row="1">
@@ -54,6 +71,16 @@
                                    FontSize="22"
                                    FontAttributes="Bold"
                                    TextColor="{DynamicResource OwTextStrong}" />
+                            <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
+                                    Stroke="{DynamicResource OwPrimarySoftBorder}"
+                                    StrokeThickness="1"
+                                    Padding="12,10"
+                                    StrokeShape="RoundRectangle 10">
+                                <Label Text="Admin note: Use Activate only for blank stock cards already in the drawer. Look up the card number, take payment, then turn the card on. Day-to-day work stays on Redeem and Sell &amp; top-up."
+                                       FontSize="12"
+                                       TextColor="{DynamicResource OwInfoText}"
+                                       LineBreakMode="WordWrap" />
+                            </Border>
                             <Label Text="Look up a stock card, then take payment to activate it."
                                    FontSize="13"
                                    TextColor="{DynamicResource OwTextMuted}" />
@@ -62,10 +89,17 @@
                                     StrokeThickness="1"
                                     Padding="12,4"
                                     StrokeShape="RoundRectangle 12">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnActivateCardEntryTapped" />
+                                </Border.GestureRecognizers>
                                 <Entry x:Name="ActivateCardEntryControl"
+                                       AutomationId="GiftCardNumber"
+                                       MaxLength="24"
                                        Placeholder="Stock card number"
+                                       Keyboard="Default"
                                        FontSize="16"
                                        BackgroundColor="Transparent"
+                                       InputTransparent="True"
                                        Completed="OnActivateLookupClicked" />
                             </Border>
                             <Button x:Name="ActivateLookupButtonControl"
@@ -83,57 +117,114 @@
                                    LineBreakMode="WordWrap" />
                         </VerticalStackLayout>
 
-                        <VerticalStackLayout Grid.Column="1" Spacing="12">
-                            <Label Text="Activation payment"
-                                   FontSize="18"
-                                   FontAttributes="Bold"
-                                   TextColor="{DynamicResource OwTextStrong}" />
-                            <Border BackgroundColor="{DynamicResource OwBackground}"
-                                    Stroke="{DynamicResource OwInputBorder}"
-                                    StrokeThickness="1"
-                                    Padding="12,4"
-                                    StrokeShape="RoundRectangle 12">
-                                <Entry x:Name="ActivateAmountEntryControl"
-                                       Placeholder="Amount"
-                                       Keyboard="Numeric"
-                                       FontSize="16"
-                                       BackgroundColor="Transparent" />
-                            </Border>
-                            <Border BackgroundColor="{DynamicResource OwBackground}"
-                                    Stroke="{DynamicResource OwInputBorder}"
-                                    StrokeThickness="1"
-                                    Padding="12,4"
-                                    StrokeShape="RoundRectangle 12">
-                                <Picker x:Name="ActivatePaymentMethodPickerControl"
-                                        Title="Payment method"
+                        <Border Grid.Column="1"
+                                BackgroundColor="{DynamicResource OwSuccessSoft}"
+                                Stroke="{DynamicResource OwSuccessSoftBorder}"
+                                StrokeThickness="1"
+                                Padding="18"
+                                StrokeShape="RoundRectangle 14"
+                                VerticalOptions="Start">
+                            <VerticalStackLayout Spacing="14">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="ACTIVATION PAYMENT"
+                                           FontSize="11"
+                                           FontAttributes="Bold"
+                                           CharacterSpacing="0.7"
+                                           TextColor="{DynamicResource OwSuccessText}" />
+                                    <Label Text="Take payment, then activate"
+                                           FontSize="18"
+                                           FontAttributes="Bold"
+                                           TextColor="{DynamicResource OwTextStrong}" />
+                                    <Label Text="Choose cash or card, then confirm the amount."
+                                           FontSize="12"
+                                           TextColor="{DynamicResource OwTextMuted}" />
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Amount (GBP)"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="{DynamicResource OwTextSecondary}" />
+                                    <Border BackgroundColor="{DynamicResource OwSurface}"
+                                            Stroke="{DynamicResource OwInputBorder}"
+                                            StrokeThickness="1"
+                                            Padding="12,4"
+                                            StrokeShape="RoundRectangle 12"
+                                            HeightRequest="48">
+                                        <Entry x:Name="ActivateAmountEntryControl"
+                                       AutomationId="GiftCardAmount"
+                                       MaxLength="9"
+                                               Placeholder="0.00"
+                                               Keyboard="Numeric"
+                                               FontSize="18"
+                                               FontAttributes="Bold"
+                                               VerticalOptions="Center"
+                                               BackgroundColor="Transparent" />
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Payment method"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="{DynamicResource OwTextSecondary}" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                        <Button x:Name="ActivateCashButton"
+                                                Text="Cash"
+                                                HeightRequest="44"
+                                                CornerRadius="12"
+                                                FontAttributes="Bold"
+                                                FontSize="14"
+                                                Clicked="OnActivateCashClicked" />
+                                        <Button x:Name="ActivateCardButton"
+                                                Grid.Column="1"
+                                                Text="Card"
+                                                HeightRequest="44"
+                                                CornerRadius="12"
+                                                FontAttributes="Bold"
+                                                FontSize="14"
+                                                Clicked="OnActivateCardPayClicked" />
+                                    </Grid>
+                                    <Picker x:Name="ActivatePaymentMethodPickerControl"
+                                            IsVisible="False"
+                                            Title="Payment method" />
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Till order ID"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="{DynamicResource OwTextSecondary}" />
+                                    <Border BackgroundColor="{DynamicResource OwSurface}"
+                                            Stroke="{DynamicResource OwInputBorder}"
+                                            StrokeThickness="1"
+                                            Padding="12,4"
+                                            StrokeShape="RoundRectangle 12"
+                                            HeightRequest="44">
+                                        <Entry x:Name="ActivateOrderIdEntryControl"
+                                               Placeholder="Leave blank to auto-create"
+                                               FontSize="14"
+                                               VerticalOptions="Center"
+                                               BackgroundColor="Transparent" />
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <Button x:Name="ActivateActionButtonControl"
+                                        Text="Take payment and activate"
+                                        BackgroundColor="{DynamicResource OwSuccess}"
+                                        TextColor="{DynamicResource OwTextOnPrimary}"
+                                        FontAttributes="Bold"
                                         FontSize="15"
-                                        BackgroundColor="Transparent" />
-                            </Border>
-                            <Border BackgroundColor="{DynamicResource OwBackground}"
-                                    Stroke="{DynamicResource OwInputBorder}"
-                                    StrokeThickness="1"
-                                    Padding="12,4"
-                                    StrokeShape="RoundRectangle 12">
-                                <Entry x:Name="ActivateOrderIdEntryControl"
-                                       Placeholder="Till order ID"
-                                       FontSize="15"
-                                       BackgroundColor="Transparent" />
-                            </Border>
-                            <Button x:Name="ActivateActionButtonControl"
-                                    Text="Take payment and activate"
-                                    BackgroundColor="{DynamicResource OwSuccess}"
-                                    TextColor="{DynamicResource OwTextOnPrimary}"
-                                    FontAttributes="Bold"
-                                    FontSize="15"
-                                    HeightRequest="48"
-                                    CornerRadius="12"
-                                    IsEnabled="False"
-                                    Clicked="OnActivateCardClicked" />
-                            <Label x:Name="ActivateReceiptLabelControl"
-                                   FontSize="12"
-                                   TextColor="{DynamicResource OwTextSecondary}"
-                                   LineBreakMode="WordWrap" />
-                        </VerticalStackLayout>
+                                        HeightRequest="50"
+                                        CornerRadius="12"
+                                        IsEnabled="False"
+                                        Clicked="OnActivateCardClicked" />
+                                <Label x:Name="ActivateReceiptLabelControl"
+                                       FontSize="12"
+                                       TextColor="{DynamicResource OwTextSecondary}"
+                                       LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Border>
                     </Grid>
                 </Border>
 
@@ -203,11 +294,18 @@
                                                     Padding="10,2"
                                                     StrokeShape="RoundRectangle 10"
                                                     HeightRequest="42">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Tapped="OnSellCardEntryTapped" />
+                                                </Border.GestureRecognizers>
                                                 <Entry x:Name="SellCardEntryControl"
+                                                       AutomationId="GiftCardNumber"
+                                                       MaxLength="24"
                                                        Placeholder="Scan or enter card number"
+                                                       Keyboard="Default"
                                                        FontSize="14"
                                                        VerticalOptions="Center"
-                                                       BackgroundColor="Transparent" />
+                                                       BackgroundColor="Transparent"
+                                                       InputTransparent="True" />
                                             </Border>
                                             <Button Grid.Column="1"
                                                     Text="Generate"
@@ -248,6 +346,8 @@
                                                     StrokeShape="RoundRectangle 10"
                                                     HeightRequest="42">
                                                 <Entry x:Name="SellAmountEntryControl"
+                                                       AutomationId="GiftCardAmount"
+                                                       MaxLength="9"
                                                        Placeholder="0.00"
                                                        Keyboard="Numeric"
                                                        FontSize="16"
@@ -369,11 +469,18 @@
                                                 Padding="10,2"
                                                 StrokeShape="RoundRectangle 10"
                                                 HeightRequest="42">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnTopUpCardEntryTapped" />
+                                            </Border.GestureRecognizers>
                                             <Entry x:Name="TopUpCardEntryControl"
+                                                   AutomationId="GiftCardNumber"
+                                                   MaxLength="24"
                                                    Placeholder="Scan or enter gift card number"
+                                                   Keyboard="Default"
                                                    FontSize="14"
                                                    VerticalOptions="Center"
                                                    BackgroundColor="Transparent"
+                                                   InputTransparent="True"
                                                    Completed="OnTopUpLookupClicked" />
                                         </Border>
                                         <Button x:Name="TopUpLookupButtonControl"
@@ -427,6 +534,8 @@
                                                 StrokeShape="RoundRectangle 10"
                                                 HeightRequest="42">
                                             <Entry x:Name="TopUpAmountEntryControl"
+                                                   AutomationId="GiftCardAmount"
+                                                   MaxLength="9"
                                                    Placeholder="0.00"
                                                    Keyboard="Numeric"
                                                    FontSize="16"
@@ -499,72 +608,155 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- Redeem -->
+                <!-- Redeem: card + amount side by side; Check + Redeem side by side (no till order ID in UI) -->
                 <Border x:Name="RedeemScreen"
                         BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="32"
+                        Padding="28"
                         StrokeShape="RoundRectangle 18"
                         IsVisible="False"
                         VerticalOptions="Start">
-                    <Grid ColumnDefinitions="1.15*,0.85*"
-                          ColumnSpacing="28">
+                    <VerticalStackLayout Spacing="16"
+                                         MaximumWidthRequest="920"
+                                         HorizontalOptions="Fill">
 
-                        <VerticalStackLayout Spacing="18">
-                            <VerticalStackLayout Spacing="4">
-                                <Label Text="Redeem gift card"
-                                       FontSize="24"
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Redeem gift card"
+                                   FontSize="24"
+                                   FontAttributes="Bold"
+                                   TextColor="{DynamicResource OwTextStrong}" />
+                            <Label Text="Enter card number and amount, check balance, then redeem."
+                                   FontSize="13"
+                                   TextColor="{DynamicResource OwTextMuted}"
+                                   LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+
+                        <!-- Hidden: till order ID is auto-created on redeem (not shown to staff) -->
+                        <Entry x:Name="RedeemOrderIdEntryControl"
+                               IsVisible="False"
+                               HeightRequest="0"
+                               Opacity="0"
+                               InputTransparent="True" />
+
+                        <Grid ColumnDefinitions="*,*"
+                              ColumnSpacing="16"
+                              RowDefinitions="Auto,Auto"
+                              RowSpacing="12">
+
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="GIFT CARD NUMBER"
+                                       FontSize="11"
                                        FontAttributes="Bold"
-                                       TextColor="{DynamicResource OwTextStrong}" />
-                                <Label Text="Look up the card balance, then redeem an amount against an order."
-                                       FontSize="13"
-                                       TextColor="{DynamicResource OwTextMuted}"
-                                       LineBreakMode="WordWrap" />
+                                       CharacterSpacing="0.7"
+                                       TextColor="{DynamicResource OwTextMuted}" />
+                                <Border BackgroundColor="{DynamicResource OwBackground}"
+                                        Stroke="{DynamicResource OwInputBorder}"
+                                        StrokeThickness="1"
+                                        Padding="14,6"
+                                        StrokeShape="RoundRectangle 12"
+                                        HeightRequest="52">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnRedeemCardEntryTapped" />
+                                    </Border.GestureRecognizers>
+                                    <Entry x:Name="RedeemCardEntryControl"
+                                               AutomationId="GiftCardNumber"
+                                               MaxLength="24"
+                                           Placeholder="Gift card number"
+                                           Keyboard="Default"
+                                           FontSize="16"
+                                           VerticalOptions="Center"
+                                           BackgroundColor="Transparent"
+                                           InputTransparent="True"
+                                           Completed="OnRedeemLookupClicked" />
+                                </Border>
                             </VerticalStackLayout>
 
-                            <Border BackgroundColor="{DynamicResource OwBackground}"
-                                    Stroke="{DynamicResource OwBorder}"
-                                    StrokeThickness="1"
-                                    Padding="18"
-                                    StrokeShape="RoundRectangle 14">
-                                <VerticalStackLayout Spacing="10">
-                                    <Label Text="CARD NUMBER"
-                                           FontSize="11"
+                            <VerticalStackLayout Grid.Column="1"
+                                                 Spacing="8">
+                                <Label Text="AMOUNT (GBP)"
+                                       FontSize="11"
+                                       FontAttributes="Bold"
+                                       CharacterSpacing="0.7"
+                                       TextColor="{DynamicResource OwTextMuted}" />
+                                <Border BackgroundColor="{DynamicResource OwBackground}"
+                                        Stroke="{DynamicResource OwInputBorder}"
+                                        StrokeThickness="1"
+                                        Padding="14,6"
+                                        StrokeShape="RoundRectangle 12"
+                                        HeightRequest="52">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnRedeemAmountEntryTapped" />
+                                    </Border.GestureRecognizers>
+                                    <Entry x:Name="RedeemAmountEntryControl"
+                                               AutomationId="GiftCardAmount"
+                                               MaxLength="9"
+                                           Placeholder="Amount"
+                                           Keyboard="Numeric"
+                                           FontSize="18"
                                            FontAttributes="Bold"
-                                           CharacterSpacing="0.7"
-                                           TextColor="{DynamicResource OwTextMuted}" />
-                                    <Border BackgroundColor="{DynamicResource OwSurface}"
-                                            Stroke="{DynamicResource OwInputBorder}"
-                                            StrokeThickness="1"
-                                            Padding="14,6"
-                                            StrokeShape="RoundRectangle 12"
-                                            HeightRequest="52">
-                                        <Entry x:Name="RedeemCardEntryControl"
-                                               Placeholder="Scan or enter gift card number"
-                                               FontSize="16"
-                                               VerticalOptions="Center"
-                                               BackgroundColor="Transparent"
-                                               Completed="OnRedeemLookupClicked" />
-                                    </Border>
-                                    <Button x:Name="RedeemLookupButtonControl"
-                                            Text="Lookup for redemption"
-                                            BackgroundColor="{DynamicResource OwPrimary}"
-                                            TextColor="{DynamicResource OwTextOnPrimary}"
-                                            FontAttributes="Bold"
-                                            FontSize="15"
-                                            HeightRequest="50"
-                                            CornerRadius="12"
-                                            Clicked="OnRedeemLookupClicked" />
-                                </VerticalStackLayout>
-                            </Border>
+                                           VerticalOptions="Center"
+                                           BackgroundColor="Transparent"
+                                           InputTransparent="True" />
+                                </Border>
+                            </VerticalStackLayout>
 
-                            <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
-                                    Stroke="{DynamicResource OwPrimarySoftBorder}"
-                                    StrokeThickness="1"
-                                    Padding="20"
-                                    StrokeShape="RoundRectangle 14">
-                                <VerticalStackLayout Spacing="6">
+                            <Button x:Name="RedeemLookupButtonControl"
+                                    Grid.Row="1"
+                                    Text="Check balance"
+                                    BackgroundColor="{DynamicResource OwPrimary}"
+                                    TextColor="{DynamicResource OwTextOnPrimary}"
+                                    FontAttributes="Bold"
+                                    FontSize="15"
+                                    HeightRequest="50"
+                                    CornerRadius="12"
+                                    Clicked="OnRedeemLookupClicked" />
+
+                            <!-- Mother look: keep emerald green even when disabled (not platform grey). -->
+                            <Button x:Name="RedeemActionButtonControl"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Text="Redeem card"
+                                    BackgroundColor="{DynamicResource OwSuccess}"
+                                    TextColor="{DynamicResource OwTextOnPrimary}"
+                                    FontAttributes="Bold"
+                                    FontSize="15"
+                                    HeightRequest="50"
+                                    CornerRadius="12"
+                                    IsEnabled="False"
+                                    Clicked="OnRedeemCardClicked">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroupList>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal">
+                                                <VisualState.Setters>
+                                                    <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                    <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                    <Setter Property="Opacity" Value="1" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled">
+                                                <VisualState.Setters>
+                                                    <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                    <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                    <Setter Property="Opacity" Value="0.55" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateGroupList>
+                                </VisualStateManager.VisualStateGroups>
+                            </Button>
+                        </Grid>
+
+                        <Border BackgroundColor="{DynamicResource OwPrimarySoft}"
+                                Stroke="{DynamicResource OwPrimarySoftBorder}"
+                                StrokeThickness="1"
+                                Padding="18,14"
+                                StrokeShape="RoundRectangle 14">
+                            <Grid ColumnDefinitions="Auto,*"
+                                  ColumnSpacing="16">
+                                <VerticalStackLayout Spacing="2"
+                                                     VerticalOptions="Center">
                                     <Label Text="CURRENT BALANCE"
                                            FontSize="11"
                                            FontAttributes="Bold"
@@ -572,106 +764,34 @@
                                            TextColor="{DynamicResource OwInfoText}" />
                                     <Label x:Name="RedeemBalanceLabelControl"
                                            Text="GBP 0.00"
-                                           FontSize="34"
+                                           FontSize="28"
                                            FontAttributes="Bold"
                                            TextColor="{DynamicResource OwPrimary}" />
-                                    <Label x:Name="RedeemCardStatusLabelControl"
-                                           Text="No card selected"
-                                           FontSize="13"
-                                           TextColor="{DynamicResource OwTextSecondary}"
-                                           LineBreakMode="WordWrap" />
                                 </VerticalStackLayout>
-                            </Border>
-                        </VerticalStackLayout>
-
-                        <Border BackgroundColor="{DynamicResource OwSuccessSoft}"
-                                Stroke="{DynamicResource OwSuccessSoftBorder}"
-                                StrokeThickness="1"
-                                Padding="22"
-                                StrokeShape="RoundRectangle 16"
-                                VerticalOptions="Start">
-                            <VerticalStackLayout Spacing="16">
-                                <VerticalStackLayout Spacing="4">
-                                    <Label Text="REDEMPTION"
-                                           FontSize="11"
-                                           FontAttributes="Bold"
-                                           CharacterSpacing="0.7"
-                                           TextColor="{DynamicResource OwSuccessText}" />
-                                    <Label Text="Redeem details"
-                                           FontSize="20"
-                                           FontAttributes="Bold"
-                                           TextColor="{DynamicResource OwTextStrong}" />
-                                    <Label Text="Apply balance to a till order after confirming the amount."
-                                           FontSize="12"
-                                           TextColor="{DynamicResource OwTextMuted}" />
-                                </VerticalStackLayout>
-
-                                <VerticalStackLayout Spacing="8">
-                                    <Label Text="Amount (GBP)"
-                                           FontSize="13"
-                                           FontAttributes="Bold"
-                                           TextColor="{DynamicResource OwTextSecondary}" />
-                                    <Border BackgroundColor="{DynamicResource OwSurface}"
-                                            Stroke="{DynamicResource OwInputBorder}"
-                                            StrokeThickness="1"
-                                            Padding="14,6"
-                                            StrokeShape="RoundRectangle 12"
-                                            HeightRequest="52">
-                                        <Entry x:Name="RedeemAmountEntryControl"
-                                               Placeholder="0.00"
-                                               Keyboard="Numeric"
-                                               FontSize="18"
-                                               FontAttributes="Bold"
-                                               VerticalOptions="Center"
-                                               BackgroundColor="Transparent" />
-                                    </Border>
-                                </VerticalStackLayout>
-
-                                <VerticalStackLayout Spacing="8">
-                                    <Label Text="Till order ID"
-                                           FontSize="13"
-                                           FontAttributes="Bold"
-                                           TextColor="{DynamicResource OwTextSecondary}" />
-                                    <Border BackgroundColor="{DynamicResource OwSurface}"
-                                            Stroke="{DynamicResource OwInputBorder}"
-                                            StrokeThickness="1"
-                                            Padding="14,6"
-                                            StrokeShape="RoundRectangle 12"
-                                            HeightRequest="52">
-                                        <Entry x:Name="RedeemOrderIdEntryControl"
-                                               Placeholder="Leave blank to auto-create"
-                                               FontSize="15"
-                                               VerticalOptions="Center"
-                                               BackgroundColor="Transparent" />
-                                    </Border>
-                                </VerticalStackLayout>
-
-                                <Button x:Name="RedeemActionButtonControl"
-                                        Text="Redeem card"
-                                        BackgroundColor="{DynamicResource OwSuccess}"
-                                        TextColor="{DynamicResource OwTextOnPrimary}"
-                                        FontAttributes="Bold"
-                                        FontSize="16"
-                                        HeightRequest="54"
-                                        CornerRadius="14"
-                                        IsEnabled="False"
-                                        Clicked="OnRedeemCardClicked" />
-
-                                <Border BackgroundColor="{DynamicResource OwSurface}"
-                                        Stroke="{DynamicResource OwBorder}"
-                                        StrokeThickness="1"
-                                        Padding="14"
-                                        StrokeShape="RoundRectangle 12">
-                                    <Label x:Name="RedeemStatusLabelControl"
-                                           FontSize="12"
-                                           TextColor="{DynamicResource OwTextSecondary}"
-                                           LineBreakMode="WordWrap" />
-                                </Border>
-                            </VerticalStackLayout>
+                                <Label x:Name="RedeemCardStatusLabelControl"
+                                       Grid.Column="1"
+                                       Text="No card checked yet"
+                                       FontSize="13"
+                                       TextColor="{DynamicResource OwTextSecondary}"
+                                       VerticalOptions="Center"
+                                       LineBreakMode="WordWrap" />
+                            </Grid>
                         </Border>
-                    </Grid>
+
+                        <Border BackgroundColor="{DynamicResource OwBackground}"
+                                Stroke="{DynamicResource OwBorder}"
+                                StrokeThickness="1"
+                                Padding="14"
+                                StrokeShape="RoundRectangle 12">
+                            <Label x:Name="RedeemStatusLabelControl"
+                                   FontSize="12"
+                                   TextColor="{DynamicResource OwTextSecondary}"
+                                   LineBreakMode="WordWrap" />
+                        </Border>
+                    </VerticalStackLayout>
                 </Border>
             </Grid>
         </ScrollView>
+    </Grid>
     </Grid>
 </ContentView>

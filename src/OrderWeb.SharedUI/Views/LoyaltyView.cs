@@ -46,10 +46,14 @@ public sealed class LoyaltyView : ContentView
     private readonly SharedButton _searchButton;
     private readonly SharedButton _addPointsButton;
     private readonly SharedButton _redeemPointsButton;
+    private readonly Grid _rootOverlay;
+    private bool _phonePadOpen;
 
     public LoyaltyView()
     {
         _phoneSearch = Field("Phone number", Keyboard.Telephone);
+        _phoneSearch.AutomationId = "LoyaltyPhone";
+        _phoneSearch.MaxLength = 16;
         _phoneSearch.Completed += (_, _) => SearchRequested?.Invoke(this, EventArgs.Empty);
 
         _searchButton = new SharedButton { Text = "Search", HeightRequest = 52, FontSize = 16 };
@@ -89,7 +93,7 @@ public sealed class LoyaltyView : ContentView
                 Spacing = 18,
                 Children =
                 {
-                    LabeledField("Phone number", _phoneSearch),
+                    LabeledPhoneField("Phone number", _phoneSearch, "Enter phone number"),
                     actions,
                     _diagnosticsButton,
                     InfoNote(
@@ -109,6 +113,8 @@ public sealed class LoyaltyView : ContentView
         _statusBadge = new StatusBadge { Text = "Active", Kind = StatusKind.Success, ShowDot = true };
 
         _points = Field("Points", Keyboard.Numeric);
+        _points.AutomationId = "LoyaltyPoints";
+        _points.MaxLength = 9;
         _notes = Field("Reason / note");
 
         _addPointsButton = new SharedButton { Text = "Add Points", Variant = ButtonVariant.Success, HeightRequest = 50, FontSize = 15 };
@@ -245,7 +251,7 @@ public sealed class LoyaltyView : ContentView
                 Spacing = 18,
                 Children =
                 {
-                    LabeledField("Phone number", _newPhone, required: true),
+                    LabeledPhoneField("Phone number", _newPhone, "Enter phone number", required: true),
                     LabeledField("Customer name", _newName, required: true),
                     LabeledField("Email address", _newEmail),
                     InfoNote("A loyalty card number is assigned automatically. The customer can earn points immediately."),
@@ -259,12 +265,12 @@ public sealed class LoyaltyView : ContentView
             },
             maxWidth: 560);
 
-        var root = new Grid();
-        root.Use(Grid.BackgroundColorProperty, "OwBackground");
-        root.Add(new ScrollView { Content = content });
-        root.Add(_historyOverlay);
-        root.Add(_newCustomerOverlay);
-        Content = root;
+        _rootOverlay = new Grid();
+        _rootOverlay.Use(Grid.BackgroundColorProperty, "OwBackground");
+        _rootOverlay.Add(new ScrollView { Content = content });
+        _rootOverlay.Add(_historyOverlay);
+        _rootOverlay.Add(_newCustomerOverlay);
+        Content = _rootOverlay;
     }
 
     public event EventHandler? SearchRequested;
@@ -598,6 +604,87 @@ public sealed class LoyaltyView : ContentView
         note.Use(Border.BackgroundColorProperty, "OwInfoSoft");
         note.Use(Border.StrokeProperty, "OwPrimarySoftBorder");
         return note;
+    }
+
+    private View LabeledPhoneField(string label, Entry entry, string title, bool required = false)
+    {
+        // Windows Entry often swallows taps; put the gesture on the shell and make the entry pass-through.
+        entry.IsReadOnly = true;
+        entry.InputTransparent = true;
+
+        var caption = SectionLabel(required ? $"{label} *" : label);
+        var shell = new Border
+        {
+            Padding = new Thickness(14, 4),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Content = entry
+        };
+        shell.Use(Border.BackgroundColorProperty, "OwBackground");
+        shell.Use(Border.StrokeProperty, "OwInputBorder");
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) => await OpenPhoneNumberPadAsync(entry, title);
+        shell.GestureRecognizers.Add(tap);
+
+        return new VerticalStackLayout { Spacing = 8, Children = { caption, shell } };
+    }
+
+    private async Task OpenPhoneNumberPadAsync(Entry entry, string title)
+    {
+        if (_phonePadOpen)
+        {
+            return;
+        }
+
+        _phonePadOpen = true;
+        try
+        {
+            entry.Unfocus();
+
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetPlaceholder("Tap the number keys");
+            keyboard.SetMaximumLength(16);
+            keyboard.SetRequired(false);
+            keyboard.SetInitialText(entry.Text ?? string.Empty);
+            keyboard.SetTextMode(VirtualKeyboardTextMode.Phone);
+
+            var hostPage = FindHostPage();
+            var value = await keyboard.ShowOverAsync(_rootOverlay, hostPage);
+
+            if (value is null)
+            {
+                return;
+            }
+
+            entry.Text = value.Trim();
+            if (ReferenceEquals(entry, _phoneSearch) && !string.IsNullOrWhiteSpace(entry.Text))
+            {
+                SearchRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        finally
+        {
+            _phonePadOpen = false;
+        }
+    }
+
+    private ContentPage? FindHostPage()
+    {
+        Element? current = this;
+        while (current is not null)
+        {
+            if (current is ContentPage page)
+            {
+                return page;
+            }
+
+            current = current.Parent;
+        }
+
+        return Shell.Current?.CurrentPage as ContentPage
+               ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
     }
 
     private static View LabeledField(string label, Entry entry, bool required = false)

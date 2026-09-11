@@ -107,7 +107,7 @@
                         <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="6">
                             <Label Text="Covers" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
                             <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
-                                <Entry x:Name="CoversEntry" Keyboard="Numeric" Text="2" FontSize="16" BackgroundColor="Transparent" />
+                                <Entry x:Name="CoversEntry" AutomationId="ReservationCovers" Keyboard="Numeric" MaxLength="3" Text="2" FontSize="16" BackgroundColor="Transparent" />
                             </Border>
                         </VerticalStackLayout>
 

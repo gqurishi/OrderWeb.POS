@@ -91,8 +91,12 @@ public partial class CollectionCustomerEntryView : ContentView
             }
 
             var keyboard = new VirtualKeyboardDialog();
-            keyboard.SetNumericOnly(numericOnly);
+            keyboard.SetTextMode(numericOnly
+                ? VirtualKeyboardTextMode.Phone
+                : VirtualKeyboardTextMode.Name);
             keyboard.SetPrompt(title, "DONE");
+            keyboard.SetPlaceholder(entry.Placeholder);
+            keyboard.SetMaximumLength(entry.MaxLength == int.MaxValue ? 0 : entry.MaxLength);
             keyboard.SetInitialText(entry.Text ?? string.Empty);
 
             var result = await keyboard.ShowAsync(hostPage);

@@ -30,9 +30,16 @@ public sealed class ClientPaymentService
         string? giftCardIdempotencyKey = null,
         string? loyaltyLookup = null,
         int? loyaltyPoints = null,
-        string? loyaltyIdempotencyKey = null)
+        string? loyaltyIdempotencyKey = null,
+        decimal tipAmount = 0m,
+        decimal tipTotal = 0m)
     {
         var normalizedMethod = NormalizeMethod(method);
+        if (amount <= 0m)
+        {
+            return new ClientPaymentResult(false, "Enter an amount greater than zero. No payment was submitted.", null, IsUnknown: false);
+        }
+
         var offline = new ClientOfflinePolicy(_cache);
         var motherOnline = await offline.IsMotherOnlineAsync();
         var operation = normalizedMethod switch
@@ -103,6 +110,8 @@ public sealed class ClientPaymentService
                     loyaltyLookup,
                     loyaltyPoints,
                     loyaltyIdempotencyKey,
+                    tipAmount = Math.Max(0m, tipAmount),
+                    tipTotal = Math.Max(Math.Max(0m, tipAmount), Math.Max(0m, tipTotal)),
                     sessionToken = session.SessionToken
                 },
                 JsonOptions);

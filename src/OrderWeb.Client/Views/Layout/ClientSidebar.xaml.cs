@@ -1,5 +1,4 @@
 using OrderWeb.Client.Services;
-using OrderWeb.Contracts.Access;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Navigation;
 
@@ -53,12 +52,14 @@ public partial class ClientSidebar : ContentView
         SharedSidebar.CurrentRole = Role;
         SharedSidebar.SelectedRoute = RouteForTitle(SelectedMenu);
         SharedSidebar.ShowUpdateButton = ShowFooter;
+        // Match Mother AppShell: set capabilities/features so Rebuild does not
+        // hide every catalog item that declares RequiredCapabilities.
         var capabilities = ClientCapabilityResolver.ForRole(Role);
+        var features = ClientHostAccess.FeaturesForRole(Role);
         var routes = ClientHostAccess.RoutesForRole(Role);
-        SharedSidebar.ItemsSource = PosNavigationCatalog.Filter(
-            capabilities,
-            ClientHostAccess.FeaturesForRole(Role),
-            routes);
+        SharedSidebar.AvailableCapabilities = capabilities;
+        SharedSidebar.AvailableFeatures = features;
+        SharedSidebar.ItemsSource = PosNavigationCatalog.Filter(capabilities, features, routes);
     }
     private void OnSharedNavigationRequested(object? sender, NavigationRequestedEventArgs e)
     {

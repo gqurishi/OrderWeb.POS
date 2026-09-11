@@ -33,6 +33,9 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         ClientPageChrome.HideSystemBackChrome(this);
         BindingContext = this;
         _motherReservations = new MotherReservationClient(_cache);
+        TopBar.SetPageTitle("Reservation");
+        TopBar.ShowConnectionStatus = true;
+        TopBar.ConnectionStatus = "Connected";
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
         TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
@@ -126,6 +129,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     {
         base.OnAppearing();
         ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Reservation");
         // Mother may revoke reservations for this terminal at any time. Fail
         // closed before subscribing, loading cache, or presenting bookings.
         if (!ClientHostAccess.CanOpenMenu("Reservation"))
@@ -384,29 +388,34 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        if (ClientSidebarNavigation.IsDashboard(menu))
         {
             await Navigation.PopToRootAsync(false);
             return;
         }
 
-        if (!ClientHostAccess.CanOpenMenu(menu))
+        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
         {
             return;
         }
 
-        await Navigation.PushAsync(menu switch
+        if (ClientHostAccess.IsMenuRoute(menu, "reservation") ||
+            !ClientHostAccess.CanOpenMenu(menu))
         {
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new RestaurantPage(),
-            "Collection" => new CollectionOrderPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Gift Cards" => new GiftCardPage(),
-            "Loyalty Points" => new LoyaltyPage(),
-            "Order History" => new OrderHistoryPage(),
-            _ => new ReservationPage()
-        }, false);
+            return;
+        }
+
+        if (ClientSidebarNavigation.IsCustomerSurface(menu))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        var page = ClientSidebarNavigation.CreatePage(menu);
+        if (page is not null)
+        {
+            await Navigation.PushAsync(page, false);
+        }
     }
 
     private void RefreshView()

@@ -16,25 +16,7 @@
                                     ZIndex="2000"
                                     InputTransparent="True"/>
 
-        <Button Grid.Row="1"
-                Text="Close"
-                BackgroundColor="#FEF2F2"
-                BorderColor="#FCA5A5"
-                BorderWidth="1"
-                TextColor="#DC2626"
-                FontAttributes="Bold"
-                FontSize="14"
-                WidthRequest="72"
-                HeightRequest="40"
-                CornerRadius="12"
-                Padding="0"
-                Margin="0,20,32,0"
-                HorizontalOptions="End"
-                VerticalOptions="Start"
-                ZIndex="10"
-                ToolTipProperties.Text="Close"
-                Clicked="OnCloseClicked" />
-
+        <!-- SharedUI owns tabs + Close + Redeem chrome (Mother look). -->
         <sharedViews:GiftCardView x:Name="Gift" Grid.Row="1" />
     </Grid>
 </ContentPage>

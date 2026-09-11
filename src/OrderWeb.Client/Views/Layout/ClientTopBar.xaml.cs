@@ -22,7 +22,7 @@ public partial class ClientTopBar : ContentView
         nameof(ShowConnectionStatus),
         typeof(bool),
         typeof(ClientTopBar),
-        false,
+        true,
         propertyChanged: OnShowConnectionStatusChanged);
 
     public ClientTopBar()
@@ -31,15 +31,19 @@ public partial class ClientTopBar : ContentView
         SharedHeader.Title = RestaurantName;
         SharedHeader.ConnectionStatus = ConnectionStatus;
         SharedHeader.ShowConnection = ShowConnectionStatus;
+        SharedHeader.ShowMinimize = true;
     }
 
     public event EventHandler? MenuClicked;
     public event EventHandler? LogoutClicked;
     public event EventHandler? MinimizeClicked;
 
-    /// <summary>Mother TopBar.SetPageTitle — page chrome title (e.g. Collection Order).</summary>
+    /// <summary>Mother TopBar.SetPageTitle — page chrome title (e.g. Reservation).</summary>
     public void SetPageTitle(string title)
     {
+        SharedHeader.ShowWelcomeBrand = false;
+        SharedHeader.ShowMinimize = true;
+        SharedHeader.ShowConnection = ShowConnectionStatus;
         SharedHeader.Title = string.IsNullOrWhiteSpace(title) ? "Order" : title.Trim();
     }
 
@@ -49,6 +53,8 @@ public partial class ClientTopBar : ContentView
         string? terminalName = null,
         string connectionStatus = "Connected")
     {
+        ShowConnectionStatus = true;
+        ConnectionStatus = connectionStatus;
         SetPageTitle(title);
         SharedHeader.ShowBackButton = false;
         SharedHeader.ShowIdentity = true;

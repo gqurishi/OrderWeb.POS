@@ -5,6 +5,7 @@
              xmlns:converters="clr-namespace:POS_in_NET.Converters"
              xmlns:helpers="clr-namespace:POS_in_NET.Helpers"
              xmlns:sharedThemes="clr-namespace:OrderWeb.SharedUI.Themes;assembly=OrderWeb.SharedUI"
+             xmlns:sharedControls="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.App">
     <Application.Resources>
         <ResourceDictionary>
@@ -50,9 +51,11 @@
             </Style>
             <Style TargetType="Entry" ApplyToDerivedTypes="True">
                 <Setter Property="FontFamily" Value="OpenSansRegular" />
+                <Setter Property="sharedControls:SharedTouchKeyboard.Enabled" Value="True" />
             </Style>
             <Style TargetType="Editor" ApplyToDerivedTypes="True">
                 <Setter Property="FontFamily" Value="OpenSansRegular" />
+                <Setter Property="sharedControls:SharedTouchKeyboard.Enabled" Value="True" />
             </Style>
             <Style TargetType="Picker" ApplyToDerivedTypes="True">
                 <Setter Property="FontFamily" Value="OpenSansRegular" />

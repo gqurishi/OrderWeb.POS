@@ -32,7 +32,7 @@ public sealed class OrderWebApiClient
     {
         _databaseService = databaseService;
         _offlineQueueService = offlineQueueService;
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
     }
 
     public async Task<TerminalRoleCheck> CanRunCloudJobsAsync()

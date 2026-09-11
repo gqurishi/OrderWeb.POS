@@ -109,7 +109,7 @@ namespace POS_in_NET.Views
             try
             {
                 GiftCardNumberEntry.Unfocus();
-                var keyboard = new NumericKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
                 var value = await keyboard.ShowDigitsAsync(
                     GiftCardNumberEntry.Text,
                     "Gift card number",
@@ -149,7 +149,7 @@ namespace POS_in_NET.Views
             {
                 ApplyAmountEntry.Unfocus();
                 decimal? initial = TryParseGiftCardAmount(ApplyAmountEntry.Text, out var parsed) ? parsed : null;
-                var keyboard = new NumericKeyboardDialog();
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
                 var value = await keyboard.ShowCurrencyAsync(initial, "Amount to apply");
                 if (value.HasValue)
                 {

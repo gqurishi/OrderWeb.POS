@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace POS_in_NET.Pages
-{
+    namespace POS_in_NET.Pages
+    {
     public partial class DashboardPage : ContentPage
     {
         private readonly AuthenticationService _authService;
@@ -45,6 +45,7 @@ namespace POS_in_NET.Pages
             _navigationCoordinator = ServiceHelper.GetService<NavigationCoordinator>() ?? NavigationCoordinator.Shared;
             
             TopBar.SetPageTitle("Dashboard");
+            TopBar.SetContextActions(null);
         }
 
         protected override async void OnAppearing()
@@ -69,6 +70,7 @@ namespace POS_in_NET.Pages
                 UpdateZReportTerminalHint();
                 _ = LoadDashboardDataSafely();
                 _ = LoadZReportSummaryAsync(DateTime.Today);
+                _ = RefreshIncomingWebOrderBadgeAsync();
                 System.Diagnostics.Debug.WriteLine(" Dashboard initialization complete");
             }
             catch (Exception ex)
@@ -163,6 +165,7 @@ namespace POS_in_NET.Pages
             finally
             {
                 _isDashboardLoading = false;
+                _ = RefreshIncomingWebOrderBadgeAsync();
             }
         }
 
@@ -333,6 +336,7 @@ namespace POS_in_NET.Pages
         private async void OnZReportRefreshClicked(object sender, EventArgs e)
         {
             await LoadZReportSummaryAsync(DateTime.Today);
+            _ = RefreshIncomingWebOrderBadgeAsync();
         }
 
         private async void OnZReportShortcutClicked(object sender, EventArgs e)
@@ -475,16 +479,40 @@ namespace POS_in_NET.Pages
             NavigationCoordinator.PruneTemporaryPages();
         }
 
-        private async void OnViewWebOrdersClicked(object sender, EventArgs e)
+        private async Task RefreshIncomingWebOrderBadgeAsync()
         {
             try
             {
-                await _navigationCoordinator.NavigateShellAsync("weborders", source: sender as VisualElement);
+                var count = await _orderService.GetIncomingWebOrderCountAsync();
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (ZReportWebOrdersLabel != null)
+                    {
+                        ZReportWebOrdersLabel.Text = Math.Max(0, count).ToString();
+                    }
+                });
             }
             catch (Exception ex)
             {
-                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to navigate to web orders: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($" Web order badge refresh error: {ex.Message}");
             }
+        }
+
+        private async Task OpenWebOrdersAsync()
+        {
+            try
+            {
+                await _navigationCoordinator.NavigateShellAsync("weborders", source: this);
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Failed to open web orders: {ex.Message}");
+            }
+        }
+
+        private async void OnViewWebOrdersClicked(object sender, EventArgs e)
+        {
+            await OpenWebOrdersAsync();
         }
 
         private async void OnCloudSettingsClicked(object sender, EventArgs e)

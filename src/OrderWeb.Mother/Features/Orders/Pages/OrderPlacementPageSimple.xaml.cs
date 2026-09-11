@@ -4,6 +4,7 @@ using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
+using OrderWeb.SharedUI.Payments;
 using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
@@ -4488,15 +4489,13 @@ namespace POS_in_NET.Pages
             // A removed configured charge still suppresses tipping for this table order.
             if (tip <= 0m && ShouldOfferTip() && _currentOrder.TotalPaid <= 0m)
             {
-                var tipDialog = new TipSelectionDialog();
-                tipDialog.SetOrderTotal(_currentOrder.Total);
-                tip = await tipDialog.ShowAsync();
-                
-                if (tip == -1) // Cancelled
+                var tipResult = await PaymentWizard.ShowTipAsync(_currentOrder.Total, this);
+                if (tipResult is null)
                 {
                     return;
                 }
-                
+
+                tip = tipResult.Value;
                 totalDue = _currentOrder.Total + tip;
                 _currentOrder.TipAmount = tip;
             }
@@ -4529,10 +4528,10 @@ namespace POS_in_NET.Pages
 
             // Collection and delivery are single-bill takeaway orders. Send
             // them directly to full payment; split, item and custom partial
-            // payment choices remain available for table orders only.
+            // payment choices remain available for table orders only (SharedUI wizard).
             var splitPlan = IsTakeawayStyleOrder()
                 ? PaymentSplitPlan.Full(totalDue)
-                : await ShowPaymentSplitPlanDialog(totalDue, remainingBalance);
+                : await ShowSharedPaymentSetupPlanAsync(totalDue, remainingBalance);
             if (splitPlan == null)
             {
                 return;
@@ -4575,7 +4574,7 @@ namespace POS_in_NET.Pages
                 }
 
                 // Step 2: Show payment method selection
-                var methodDialog = new PaymentMethodDialog();
+                var methodDialog = new POS_in_NET.Views.PaymentMethodDialog();
                 methodDialog.SetAmountDue(
                     paymentAmount,
                     Math.Max(0, remainingBalance - paymentAmount),
@@ -4809,167 +4808,44 @@ namespace POS_in_NET.Pages
             await CompletePaymentFromLedgerAsync(totalDue, tip);
         }
 
-        private async Task<PaymentSplitPlan?> ShowPaymentSplitPlanDialog(decimal totalDue, decimal remainingBalance)
-        {
-            while (true)
-            {
-                var setupDialog = new ModernActionSheetDialog();
-                setupDialog.SetActionSheetGrid(
-                    "Payment Setup",
-                    new List<string> { "Pay Full", "Split Evenly", "Pay By Items", "Custom Amount" },
-                    "£",
-                    "#059669"
-                );
-                setupDialog.SetCancelText("Back");
-                setupDialog.HighlightGridOption("Pay Full", "#DCFCE7", "#065F46", "#10B981");
-
-                var selected = await setupDialog.ShowAsync();
-                if (selected == null)
-                {
-                    return null;
-                }
-
-                if (selected == "Pay Full")
-                {
-                    return PaymentSplitPlan.Full(totalDue);
-                }
-
-                if (selected == "Custom Amount")
-                {
-                    var customPlan = await ShowCustomPaymentAmountDialog(totalDue, remainingBalance);
-                    if (customPlan != null)
-                    {
-                        return customPlan;
-                    }
-
-                    continue;
-                }
-
-                if (selected == "Pay By Items")
-                {
-                    var itemPlan = await ShowPayByItemsDialog(totalDue, remainingBalance);
-                    if (itemPlan != null)
-                    {
-                        return itemPlan;
-                    }
-
-                    continue;
-                }
-
-                if (selected == "Split Evenly")
-                {
-                    var splitPlan = await ShowEvenSplitPlanDialog(remainingBalance);
-                    if (splitPlan != null)
-                    {
-                        return splitPlan;
-                    }
-                }
-            }
-        }
-
-        private async Task<PaymentSplitPlan?> ShowEvenSplitPlanDialog(decimal remainingBalance)
-        {
-            var splitDialog = new ModernActionSheetDialog();
-            splitDialog.SetActionSheetGrid(
-                "Split Evenly",
-                new List<string> { "Split by 2", "Split by 3", "Split by 4", "Split by 5", "Split by 6", "Custom Split" },
-                "÷",
-                "#2563EB"
-            );
-            splitDialog.SetCancelText("Back");
-
-            var selected = await splitDialog.ShowAsync();
-            if (selected == null)
-            {
-                return null;
-            }
-
-            if (selected == "Custom Split")
-            {
-                var prompt = new StyledPromptDialog();
-                prompt.SetDialog(
-                    "Custom Split",
-                    "How many ways do you want to split this bill?",
-                    "e.g., 3",
-                    Keyboard.Numeric,
-                    string.Empty,
-                    true
-                );
-                prompt.SetCancelText("Back");
-
-                var value = await prompt.ShowAsync();
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return null;
-                }
-
-                if (!int.TryParse(value.Trim(), out var customParts) || customParts < 2 || customParts > 20)
-                {
-                    var alert = new ModernAlertDialog();
-                    alert.SetAlert("Invalid Split", "Enter a split number between 2 and 20.", "!", "#EF4444", "White");
-                    await alert.ShowAsync();
-                    return null;
-                }
-
-                return PaymentSplitPlan.Equal(remainingBalance, customParts);
-            }
-
-            var splitCount = selected switch
-            {
-                "Split by 2" => 2,
-                "Split by 3" => 3,
-                "Split by 4" => 4,
-                "Split by 5" => 5,
-                "Split by 6" => 6,
-                _ => 1
-            };
-
-            return splitCount <= 1
-                ? PaymentSplitPlan.Full(remainingBalance)
-                : PaymentSplitPlan.Equal(remainingBalance, splitCount);
-        }
-
-        private async Task<PaymentSplitPlan?> ShowCustomPaymentAmountDialog(decimal totalDue, decimal remainingBalance)
-        {
-            var keyboard = new NumericKeyboardDialog();
-            var value = await keyboard.ShowCurrencyAsync(null, "Custom Amount");
-            if (!value.HasValue)
-            {
-                return null;
-            }
-
-            var customAmount = value.Value;
-            if (customAmount <= 0 || customAmount > remainingBalance + 0.009m)
-            {
-                var alert = new ModernAlertDialog();
-                alert.SetAlert("Invalid Amount", $"Enter an amount between £0.01 and £{remainingBalance:F2}.", "!", "#EF4444", "White");
-                await alert.ShowAsync();
-                return null;
-            }
-
-            return PaymentSplitPlan.Custom(totalDue, Math.Min(customAmount, remainingBalance));
-        }
-
-        private async Task<PaymentSplitPlan?> ShowPayByItemsDialog(decimal totalDue, decimal remainingBalance)
+        private async Task<PaymentSplitPlan?> ShowSharedPaymentSetupPlanAsync(
+            decimal totalDue,
+            decimal remainingBalance)
         {
             _currentOrder.RecalculateAll();
-
-            var dialog = new PayByItemsDialog();
-            dialog.SetOrder(
-                _currentOrder.Items.Where(item => !IsTastingMenuCourseItem(item)).ToList(),
+            return await PaymentWizard.ShowSetupPlanAsync(
+                totalDue,
+                remainingBalance,
+                BuildPaymentPayByItemsLines(),
                 _currentOrder.Subtotal,
                 _currentOrder.ServiceCharge,
                 _currentOrder.DeliveryFee,
                 _currentOrder.Discount,
-                remainingBalance);
+                this);
+        }
 
-            var result = await dialog.ShowAsync();
-            if (!result.Success || result.Amount <= 0)
-            {
-                return null;
-            }
-
-            return PaymentSplitPlan.PayByItems(totalDue, Math.Min(result.Amount, remainingBalance), result.SelectedItems);
+        private IReadOnlyList<PaymentPayByItemsLine> BuildPaymentPayByItemsLines()
+        {
+            return _currentOrder.Items
+                .Where(item => !item.IsVoided && item.Quantity > 0 && !IsTastingMenuCourseItem(item))
+                .Select(item =>
+                {
+                    var lineTotal = item.TotalPriceWithVat > 0 ? item.TotalPriceWithVat : item.TotalPrice;
+                    var unit = item.Quantity <= 0
+                        ? 0m
+                        : Math.Round(lineTotal / item.Quantity, 2, MidpointRounding.AwayFromZero);
+                    return new PaymentPayByItemsLine
+                    {
+                        ItemId = item.Id,
+                        Name = item.Name,
+                        Detail = string.IsNullOrWhiteSpace(item.ModifiersDisplay)
+                            ? item.Notes
+                            : item.ModifiersDisplay,
+                        Quantity = item.Quantity,
+                        UnitAmount = unit
+                    };
+                })
+                .ToList();
         }
 
         private static bool TryParsePaymentAmount(string input, out decimal amount)
@@ -5049,133 +4925,6 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"Error saving partial payment order: {ex.Message}");
             }
         }
-
-        private sealed class PaymentSplitPlan
-        {
-            private PaymentSplitPlan(
-                decimal totalAmount,
-                int totalParts,
-                PaymentSplitMode mode,
-                decimal customAmount = 0,
-                IReadOnlyList<PayByItemsSelection>? selectedItems = null)
-            {
-                TotalAmount = totalAmount;
-                TotalParts = Math.Max(1, totalParts);
-                CurrentPart = 1;
-                Mode = mode;
-                CustomAmount = customAmount;
-                SelectedItems = selectedItems ?? Array.Empty<PayByItemsSelection>();
-                AmountPerPart = TotalParts <= 1
-                    ? totalAmount
-                    : Math.Round(totalAmount / TotalParts, 2, MidpointRounding.AwayFromZero);
-            }
-
-            public PaymentSplitMode Mode { get; }
-            public decimal TotalAmount { get; }
-            public int TotalParts { get; }
-            public int CurrentPart { get; private set; }
-            public decimal AmountPerPart { get; }
-            public decimal CustomAmount { get; }
-            public IReadOnlyList<PayByItemsSelection> SelectedItems { get; }
-            public bool IsSplit => Mode == PaymentSplitMode.EqualSplit;
-            public bool IsCustomAmount => Mode == PaymentSplitMode.CustomAmount;
-            public bool IsPayByItems => Mode == PaymentSplitMode.PayByItems;
-            public bool RequiresPaymentLine => Mode != PaymentSplitMode.Full;
-            public bool TracksPartRemaining => Mode == PaymentSplitMode.EqualSplit;
-            public bool StopsAfterOnePartialPayment => Mode is PaymentSplitMode.CustomAmount or PaymentSplitMode.PayByItems;
-
-            public static PaymentSplitPlan Full(decimal totalAmount) => new(totalAmount, 1, PaymentSplitMode.Full);
-
-            public static PaymentSplitPlan Equal(decimal totalAmount, int totalParts) => new(totalAmount, totalParts, PaymentSplitMode.EqualSplit);
-
-            public static PaymentSplitPlan Custom(decimal totalAmount, decimal customAmount) => new(totalAmount, 1, PaymentSplitMode.CustomAmount, customAmount);
-
-            public static PaymentSplitPlan PayByItems(decimal totalAmount, decimal amount, IReadOnlyList<PayByItemsSelection> selectedItems)
-                => new(totalAmount, 1, PaymentSplitMode.PayByItems, amount, selectedItems);
-
-            public decimal GetNextAmount(decimal remainingBalance)
-            {
-                if (Mode is PaymentSplitMode.CustomAmount or PaymentSplitMode.PayByItems)
-                {
-                    return Math.Min(CustomAmount, remainingBalance);
-                }
-
-                if (Mode == PaymentSplitMode.Full)
-                {
-                    return remainingBalance;
-                }
-
-                var remainingParts = TotalParts - CurrentPart + 1;
-                return remainingParts <= 1
-                    ? remainingBalance
-                    : Math.Min(remainingBalance, AmountPerPart);
-            }
-
-            public void MarkPartComplete()
-            {
-                if (Mode == PaymentSplitMode.EqualSplit && CurrentPart < TotalParts)
-                {
-                    CurrentPart++;
-                }
-            }
-
-            public void ApplyExistingPaid(decimal totalPaid)
-            {
-                if (Mode != PaymentSplitMode.EqualSplit || totalPaid <= 0 || AmountPerPart <= 0)
-                {
-                    return;
-                }
-
-                var paidRemaining = totalPaid;
-                CurrentPart = 1;
-                while (CurrentPart < TotalParts && paidRemaining >= AmountPerPart - 0.009m)
-                {
-                    paidRemaining -= AmountPerPart;
-                    CurrentPart++;
-                }
-            }
-
-            public string GetPaymentTitle()
-            {
-                return Mode switch
-                {
-                    PaymentSplitMode.EqualSplit => $"SPLIT PAYMENT {CurrentPart} OF {TotalParts}",
-                    PaymentSplitMode.CustomAmount => "CUSTOM PAYMENT",
-                    PaymentSplitMode.PayByItems => "PAY BY ITEMS",
-                    _ => "SELECT PAYMENT METHOD"
-                };
-            }
-
-            public object ToMetadata()
-            {
-                return new
-                {
-                    isSplit = IsSplit,
-                    mode = Mode.ToString(),
-                    totalParts = TotalParts,
-                    currentPart = CurrentPart,
-                    amountPerPart = AmountPerPart,
-                    customAmount = CustomAmount,
-                    selectedItems = SelectedItems.Select(item => new
-                    {
-                        item.ItemId,
-                        item.ItemName,
-                        item.Quantity,
-                        item.Amount
-                    }).ToList(),
-                    totalAmount = TotalAmount
-                };
-            }
-        }
-
-        private enum PaymentSplitMode
-        {
-            Full,
-            EqualSplit,
-            CustomAmount,
-            PayByItems
-        }
-
         private async Task<CashPaymentResult> ProcessCashPayment(decimal amountDue)
         {
             var cashDialog = new CashPaymentDialog();
@@ -6693,14 +6442,13 @@ namespace POS_in_NET.Pages
             {
                 await _loyaltyService.ReinitializeAsync();
 
-                var customerNumber = await DisplayPromptAsync(
-                    "Loyalty Points",
-                    "Enter customer phone number or loyalty card number:",
-                    "Continue",
-                    "Cancel",
-                    "e.g. 07123 456 789",
-                    maxLength: 32,
-                    keyboard: Keyboard.Telephone);
+                var customerKeyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+                customerKeyboard.SetPrompt("Customer phone or loyalty card number", "Continue");
+                customerKeyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Phone);
+                customerKeyboard.SetPlaceholder("e.g. 07123 456 789");
+                customerKeyboard.SetMaximumLength(32);
+                customerKeyboard.SetRequired(true);
+                var customerNumber = await customerKeyboard.ShowAsync(this);
 
                 if (string.IsNullOrWhiteSpace(customerNumber))
                 {
@@ -6743,17 +6491,12 @@ namespace POS_in_NET.Pages
                     return;
                 }
 
-                var pointsText = await DisplayPromptAsync(
-                    "Redeem Loyalty Points",
-                    $"Available balance: {availablePoints:N0} pts\n" +
-                    $"Bill limit: {maxBillPoints:N0} pts\n" +
-                    $"1 point = £0.01\n\n" +
-                    $"Enter points to redeem (max {maxRedeemablePoints:N0}):",
-                    "Apply",
-                    "Cancel",
-                    $"{maxRedeemablePoints}",
-                    maxLength: 8,
-                    keyboard: Keyboard.Numeric);
+                var pointsKeyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+                var pointsText = await pointsKeyboard.ShowDigitsAsync(
+                    initialValue: $"{maxRedeemablePoints}",
+                    title: $"Redeem loyalty points (max {maxRedeemablePoints:N0})",
+                    maxDigits: 8,
+                    hostPage: this);
 
                 if (string.IsNullOrWhiteSpace(pointsText))
                 {

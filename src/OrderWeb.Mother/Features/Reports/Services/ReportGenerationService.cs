@@ -783,10 +783,12 @@ public sealed class ReportGenerationService
         public DateTime? PaidAt { get; set; }
         public bool HasApprovedPayment { get; set; }
 
-        public bool IsCancelled => string.Equals(Status, "cancelled", StringComparison.OrdinalIgnoreCase);
-        public bool IsVoided => !IsCancelled
-            && (string.Equals(Status, "voided", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(LifecycleState, "voided", StringComparison.OrdinalIgnoreCase));
+        public bool IsCancelled =>
+            string.Equals(Status, "cancelled", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(LifecycleState, "voided", StringComparison.OrdinalIgnoreCase);
+        public bool IsVoided =>
+            string.Equals(LifecycleState, "voided", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Status, "voided", StringComparison.OrdinalIgnoreCase);
         public bool IsPaid => string.Equals(LifecycleState, "paid", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Status, "completed", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Status, "paid", StringComparison.OrdinalIgnoreCase)

@@ -1,0 +1,22 @@
+---
+description: UI updates go through SharedUI first — Mother + Client thin hosts
+alwaysApply: true
+---
+
+# SharedUI first (remember)
+
+From now on, **UI updates for screens used by Mother and/or Client go in `OrderWeb.SharedUI`**, not as one-off Mother-only or Client-only chrome.
+
+## Rule
+- Build or change the **look + interaction chrome** in SharedUI (`Views` / `Controls`).
+- Mother and Client stay **thin hosts**: data load, API/DB, navigation, header/shell.
+- Pattern: `LiveOrderBoardView`, `RestaurantTablesView`, `LoyaltyView`, `PaymentView`.
+- Do **not** copy-paste a second card/tab/filter UI on Client when Mother already has the design — extract to SharedUI, then both host it.
+- Host-specific chrome (Mother `TopBar`, Client `RestaurantHeader` / MainPage shell) stays in the host unless the user asks to share it.
+
+## When Client-only work
+Still prefer SharedUI if the surface could be shared later or already exists in SharedUI. Avoid growing a parallel Client-only visual for the same feature.
+
+## Non-goals
+- Do not put MySQL / Client HTTP / business rules inside SharedUI.
+- Do not redesign host headers into SharedUI unless asked.

@@ -255,14 +255,25 @@ public class ApplicationShellFrame : ContentView
     private void ApplyIdentity()
     {
         if (_header == null || _sidebar == null) return;
-        _header.UserName = UserName; _header.TerminalName = TerminalName; _header.ConnectionStatus = ConnectionStatus; _header.RestaurantName = RestaurantName; _header.RestaurantLogo = RestaurantLogo;
-        _sidebar.UserName = UserName; _sidebar.TerminalName = TerminalName; _sidebar.ConnectionStatus = ConnectionStatus; _sidebar.CurrentRole = UserRole; _sidebar.RestaurantName = "Order Web"; _sidebar.RestaurantLogo = RestaurantLogo;
+        _header.UserName = UserName;
+        _header.TerminalName = TerminalName;
+        _header.ConnectionStatus = ConnectionStatus;
+        // Page chrome matches Mother TopBar: brand text/logo only on dashboard welcome header.
+        _header.RestaurantName = ShowWelcomeBrand ? RestaurantName : string.Empty;
+        _header.RestaurantLogo = ShowWelcomeBrand ? RestaurantLogo : null;
+        _sidebar.UserName = UserName;
+        _sidebar.TerminalName = TerminalName;
+        _sidebar.ConnectionStatus = ConnectionStatus;
+        _sidebar.CurrentRole = UserRole;
+        _sidebar.RestaurantName = "Order Web";
+        _sidebar.RestaurantLogo = RestaurantLogo;
     }
 
     private void ApplyWelcomeBrandLayout()
     {
         if (_header == null || _appGrid == null) return;
         _header.ShowWelcomeBrand = ShowWelcomeBrand;
+        ApplyIdentity();
         var height = _header.PreferredHeight;
         if (_appGrid.RowDefinitions.Count > 0)
         {

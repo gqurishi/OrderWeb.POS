@@ -46,11 +46,12 @@ public partial class LoyaltyPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        await RefreshAccessFromMotherAsync();
         if (!HasLoyaltyAccess())
         {
             await DisplayAlert(
                 "Loyalty",
-                "This Client terminal is not allowed to use Loyalty. Ask Mother to grant Loyalty (customer points) access.",
+                "This Client terminal is not allowed to use Loyalty. On Mother: Terminal Health → Access → Loyalty ON → Save, then try again (or Update All).",
                 "OK");
             await Navigation.PopAsync(false);
         }
@@ -60,6 +61,12 @@ public partial class LoyaltyPage : ContentPage
         ClientHostAccess.Features.Contains(PosFeatureKeys.CustomerPoints) ||
         ClientHostAccess.CanOpenMenu("Loyalty Points") ||
         ClientHostAccess.CanOpenMenu("Loyalty");
+
+    private async Task RefreshAccessFromMotherAsync()
+    {
+        var accessClient = new MotherAccessClient(_cache);
+        await accessClient.RefreshAccessAsync();
+    }
 
     private async Task OnSearchAsync()
     {
@@ -400,9 +407,13 @@ public partial class LoyaltyPage : ContentPage
 
     private async Task<bool> EnsureReadyAsync()
     {
+        var access = await new MotherAccessClient(_cache).RefreshAccessAsync();
         if (!HasLoyaltyAccess())
         {
-            await DisplayAlert("Loyalty", "This Client terminal is not allowed to use Loyalty.", "OK");
+            var message = access.Success
+                ? "This Client terminal is not allowed to use Loyalty. On Mother: Terminal Health → Access → Loyalty ON → Save, then try again."
+                : $"Could not refresh Client access from Mother. {access.Message}";
+            await DisplayAlert("Loyalty", message, "OK");
             return false;
         }
 
@@ -550,28 +561,33 @@ public partial class LoyaltyPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        if (ClientSidebarNavigation.IsDashboard(menu))
         {
             await Navigation.PopToRootAsync(false);
             return;
         }
 
-        if (!ClientHostAccess.CanOpenMenu(menu))
+        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
         {
             return;
         }
 
-        await Navigation.PushAsync(menu switch
+        if (ClientHostAccess.IsMenuRoute(menu, "loyalty") ||
+            !ClientHostAccess.CanOpenMenu(menu))
         {
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new RestaurantPage(),
-            "Collection" => new CollectionOrderPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Gift Cards" => new GiftCardPage(),
-            "Reservation" => new ReservationPage(),
-            "Order History" => new OrderHistoryPage(),
-            _ => new LoyaltyPage()
-        }, false);
+            return;
+        }
+
+        if (ClientSidebarNavigation.IsCustomerSurface(menu))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        var page = ClientSidebarNavigation.CreatePage(menu);
+        if (page is not null)
+        {
+            await Navigation.PushAsync(page, false);
+        }
     }
 }

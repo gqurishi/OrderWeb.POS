@@ -97,7 +97,7 @@ public partial class TillShoppingTakeDialog : ContentView
         _keyboardOpen = true;
         try
         {
-            var keyboard = new NumericKeyboardDialog();
+            var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
             var amount = await keyboard.ShowCurrencyAsync(ParseAmount(AmountEntry.Text), "Amount taken");
             if (amount.HasValue)
             {
@@ -120,8 +120,11 @@ public partial class TillShoppingTakeDialog : ContentView
         _keyboardOpen = true;
         try
         {
-            var keyboard = new VirtualKeyboardDialog();
+            var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
             keyboard.SetPrompt(title, "Done");
+            keyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes);
+            keyboard.SetPlaceholder(entry.Placeholder);
+            keyboard.SetMaximumLength(entry.MaxLength == int.MaxValue ? 0 : entry.MaxLength);
             keyboard.SetInitialText(entry.Text ?? string.Empty);
             var value = await keyboard.ShowAsync(_hostPage);
             if (value != null)

@@ -1,4 +1,5 @@
 using System.Collections;
+using OrderWeb.SharedUI.Assets;
 
 namespace OrderWeb.SharedUI.Controls;
 
@@ -28,7 +29,7 @@ public class ApplicationSidebar : ContentView
     public ApplicationSidebar()
     {
         WidthRequest = 280;
-        _logo = new Image { Source = "companymark.png", WidthRequest = 48, HeightRequest = 48, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
+        _logo = new Image { Source = SharedImageNames.CompanyLogo, WidthRequest = 48, HeightRequest = 48, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center };
         _brand = new Label { Text = "Order Web", FontSize = 17, FontAttributes = FontAttributes.Bold, CharacterSpacing = .3, HorizontalTextAlignment = TextAlignment.Center };
         _brand.TextColor = Color.FromArgb("#0F2F5F");
         var subtitle = new Label { Text = "Restaurant Management", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = .5, HorizontalTextAlignment = TextAlignment.Center };

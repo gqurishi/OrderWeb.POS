@@ -782,13 +782,17 @@ public sealed partial class ClientPosOperationalService
             ? approval.User.Username
             : approval.User.Name;
 
+        // Match Mother Order Place void: keep DB UpdatedAt as the concurrency token.
+        // Stamping DateTime.Now here caused false "Order changed on another terminal" failures.
+        var expectedUpdatedAt = existing.UpdatedAt == default ? (DateTime?)null : existing.UpdatedAt;
+
         existing.LocalLifecycleState = LocalLifecycleState.Voided;
         existing.Status = OrderStatus.Cancelled;
         existing.IsOpen = false;
         existing.VoidReason = voidReason;
         existing.VoidedAt = DateTime.Now;
         existing.VoidedBy = approverName;
-        existing.UpdatedAt = DateTime.Now;
+        existing.ExpectedUpdatedAt = expectedUpdatedAt;
 
         var save = await _orderService.SaveOrderAsync(existing);
         if (!save.Success)
@@ -796,17 +800,48 @@ public sealed partial class ClientPosOperationalService
             return ClientOrderUpsertResult.Fail(422, save.Message ?? "Mother POS could not void this order.");
         }
 
+        await _orderService.LogOrderEventAsync(
+            existing.OrderId,
+            "voided",
+            actorType: "user",
+            actorId: approval.User.Id.ToString(),
+            actorName: approverName,
+            payload: new
+            {
+                reason = voidReason,
+                amount = existing.TotalAmount,
+                itemCount = existing.Items?.Count ?? 0,
+                source = "client_pos"
+            });
+
+        // Match Mother EnsureTableReleasedAfterFinalizeAsync: close session, then force-release.
+        var voidSessions = new TableSessionService();
+        var voidTableId = tableId;
+        if ((voidTableId is null or <= 0) && existing.TableSessionId is > 0)
+        {
+            var linkedSession = await voidSessions.GetSessionByIdAsync(existing.TableSessionId.Value);
+            if (linkedSession?.TableId > 0)
+            {
+                voidTableId = linkedSession.TableId;
+            }
+        }
+
+        var tableReleased = false;
         if (existing.TableSessionId is > 0)
         {
-            await new TableSessionService().CloseSessionForOrderAsync(
+            var close = await voidSessions.CloseSessionForOrderAsync(
                 existing.TableSessionId.Value,
                 "voided",
                 approverName);
+            tableReleased = close.success;
         }
-        else if (tableId is > 0)
+
+        if (!tableReleased && voidTableId is > 0)
         {
-            await new TableSessionService().ForceReleaseTableAsync(tableId.Value, "voided", approverName);
+            await voidSessions.ForceReleaseTableAsync(voidTableId.Value, "voided", approverName);
         }
+
+        AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
 
         var persisted = await _orderService.GetOrderByExternalIdAsync(existing.OrderId);
         if (persisted == null)

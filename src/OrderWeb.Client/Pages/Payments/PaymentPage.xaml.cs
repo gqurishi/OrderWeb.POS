@@ -1,6 +1,7 @@
 using OrderWeb.Client.Dialogs;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Dtos;
+using OrderWeb.SharedUI.Payments;
 using OrderWeb.SharedUI.ViewModels;
 using OrderWeb.SharedUI.Views;
 
@@ -11,6 +12,8 @@ public partial class PaymentPage : ContentPage
     private readonly decimal _totalDue;
     private readonly string? _orderId;
     private readonly long? _expectedOrderRevision;
+    private readonly decimal _tipAmount;
+    private readonly decimal _tipTotal;
     private readonly ClientPaymentService _paymentService = new();
     private PaymentViewModel? _sharedPayment;
     private string _selectedMethod = "Cash";
@@ -20,19 +23,27 @@ public partial class PaymentPage : ContentPage
     {
     }
 
-    public PaymentPage(decimal totalDue, string? orderId = null, long? expectedOrderRevision = null, bool allowSplit = true)
+    public PaymentPage(
+        decimal totalDue,
+        string? orderId = null,
+        long? expectedOrderRevision = null,
+        bool allowSplit = true,
+        decimal tipAmount = 0m,
+        decimal tipTotal = 0m)
     {
         _totalDue = totalDue;
         _orderId = orderId;
         _expectedOrderRevision = expectedOrderRevision;
+        _tipAmount = Math.Max(0m, tipAmount);
+        _tipTotal = Math.Max(_tipAmount, Math.Max(0m, tipTotal));
         InitializeComponent();
-        _sharedPayment = new PaymentViewModel
-        {
-            AmountDue = _totalDue,
-            AllowSplit = allowSplit
-        };
+        // Wizard already chose the amount for Table; COL/DEL are full-bill only.
+        var (sharedPayment, viewModel) = PaymentTenderSurface.Create(
+            _totalDue,
+            allowSplit: allowSplit,
+            showLoyalty: true);
+        _sharedPayment = viewModel;
         _sharedPayment.StatusCheckRequested += OnSharedPaymentStatusCheckRequested;
-        var sharedPayment = new PaymentView { ViewModel = _sharedPayment };
         sharedPayment.SubmissionRequested += OnSharedPaymentRequested;
         Content = sharedPayment;
     }
@@ -111,7 +122,9 @@ public partial class PaymentPage : ContentPage
             loyaltyPoints: loyaltyPoints,
             loyaltyIdempotencyKey: loyaltyLookup == null || loyaltyPoints is null
                 ? null
-                : $"loyalty:{_orderId}:{loyaltyLookup}:{loyaltyPoints}");
+                : $"loyalty:{_orderId}:{loyaltyLookup}:{loyaltyPoints}",
+            tipAmount: _tipAmount,
+            tipTotal: _tipTotal);
         _sharedPayment.ApplyAuthoritativeResult(result.Approved, result.Message, result.IsUnknown);
         if (giftCardNumber != null)
         {
@@ -143,9 +156,52 @@ public partial class PaymentPage : ContentPage
 
     private async Task<GiftCardOrderPaymentResult?> PromptGiftCardAsync(decimal amountDue)
     {
-        var dialog = new GiftCardOrderPaymentDialog(amountDue);
-        await Navigation.PushModalAsync(dialog, false);
-        return await dialog.WaitAsync();
+        var gift = await PaymentWizard.ShowGiftCardAsync(amountDue, LookupGiftCardAsync, this);
+        if (!gift.Success || string.IsNullOrWhiteSpace(gift.CardNumber) || gift.AmountApplied <= 0)
+        {
+            return new GiftCardOrderPaymentResult
+            {
+                Success = false,
+                Message = gift.Message ?? "Gift card payment cancelled. No balance was changed."
+            };
+        }
+
+        return new GiftCardOrderPaymentResult
+        {
+            Success = true,
+            CardNumber = gift.CardNumber,
+            AmountApplied = gift.AmountApplied,
+            Message = gift.Message
+        };
+    }
+
+    private static async Task<PaymentGiftCardLookupResult> LookupGiftCardAsync(
+        string cardNumber,
+        CancellationToken cancellationToken)
+    {
+        var giftCards = new MotherGiftCardClient();
+        var lookup = await giftCards.LookupAsync(cardNumber, GiftCardLookupPurposes.Redeem, cancellationToken);
+        if (!lookup.Success || lookup.GiftCard == null || !lookup.CanProceed)
+        {
+            return new PaymentGiftCardLookupResult
+            {
+                Success = false,
+                CanUse = false,
+                Message = lookup.Error ?? lookup.Message ?? "Gift card not found."
+            };
+        }
+
+        var card = lookup.GiftCard;
+        return new PaymentGiftCardLookupResult
+        {
+            Success = true,
+            CanUse = card.CanUse,
+            CardNumber = string.IsNullOrWhiteSpace(card.CardNumber) ? cardNumber : card.CardNumber,
+            Balance = card.Balance,
+            Message = card.CanUse
+                ? (lookup.Message ?? "Gift card verified.")
+                : $"Gift card cannot be used: {card.Status}"
+        };
     }
 
     private async Task<LoyaltyOrderPaymentResult?> PromptLoyaltyAsync(decimal amountDue)
@@ -259,7 +315,9 @@ public partial class PaymentPage : ContentPage
                 amount,
                 giftCardNumber: giftCardNumber,
                 loyaltyLookup: loyaltyLookup,
-                loyaltyPoints: loyaltyPoints);
+                loyaltyPoints: loyaltyPoints,
+                tipAmount: _tipAmount,
+                tipTotal: _tipTotal);
             if (!result.Approved)
             {
                 PrintStatus.SetStatus("failed", result.Message);

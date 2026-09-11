@@ -143,7 +143,13 @@ public partial class TopBar : ContentView
 
     public void SetPageTitle(string title)
     {
-        SharedHeader.Title = title;
+        SharedHeader.ShowWelcomeBrand = false;
+        SharedHeader.Title = string.IsNullOrWhiteSpace(title) ? "Order" : title.Trim();
+    }
+
+    public void SetContextActions(IEnumerable<OrderWeb.SharedUI.Controls.HeaderAction>? actions)
+    {
+        SharedHeader.ContextActions = actions;
     }
 
     public void SetCustomContent(View? content)

@@ -62,14 +62,51 @@ public sealed class TerminalHealthStatus
         : LastSeenAt <= DateTime.MinValue.AddDays(1)
             ? "Never"
             : LastSeenAt.ToString("dd MMM yyyy HH:mm:ss");
-    public string PairingDisplay => IsPendingPairing || IsExpiredPairing
-        ? string.IsNullOrWhiteSpace(PairingCode) ? "No active code" : PairingCode
-        : PairedAt.HasValue ? $"Paired {PairedAt.Value:dd MMM HH:mm}" : "Not paired";
-    public string PairingCodeHint => IsPendingPairing || IsExpiredPairing
-        ? "Active until deleted"
-        : string.Empty;
+    public string PairingDisplay
+    {
+        get
+        {
+            if (IsMother)
+            {
+                return "Mother hub";
+            }
+
+            if (!string.IsNullOrWhiteSpace(PairingCode))
+            {
+                return PairingCode.Trim();
+            }
+
+            if (IsPendingPairing || IsExpiredPairing)
+            {
+                return "No active code";
+            }
+
+            return PairedAt.HasValue ? $"Paired {PairedAt.Value:dd MMM HH:mm}" : "Not paired";
+        }
+    }
+
+    public string PairingCodeHint
+    {
+        get
+        {
+            if (IsMother)
+            {
+                return "Add Client POS to create a code";
+            }
+
+            if (!string.IsNullOrWhiteSpace(PairingCode))
+            {
+                return PairedAt.HasValue
+                    ? "Never expires · reuse to reconnect"
+                    : "Never expires · use on Client setup";
+            }
+
+            return PairedAt.HasValue ? "Code missing — recreate from Add Client" : string.Empty;
+        }
+    }
+
     public bool HasPairingCodeHighlight =>
-        (IsPendingPairing || IsExpiredPairing) && !string.IsNullOrWhiteSpace(PairingCode);
+        !IsMother && !string.IsNullOrWhiteSpace(PairingCode);
     public string DeviceDisplay => string.Join(" / ", new[] { DeviceType, Platform, AppVersion }
         .Where(value => !string.IsNullOrWhiteSpace(value)));
     public string DetailDisplay => IsPendingPairing || IsExpiredPairing

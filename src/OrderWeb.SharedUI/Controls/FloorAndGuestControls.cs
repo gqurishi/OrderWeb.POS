@@ -165,6 +165,7 @@ public class GuestCountControl : ContentView
 
         _otherEntry = new Entry
         {
+            AutomationId = "GuestQuantity",
             Placeholder = "Other number...",
             FontSize = 15,
             FontFamily = "OpenSansRegular",

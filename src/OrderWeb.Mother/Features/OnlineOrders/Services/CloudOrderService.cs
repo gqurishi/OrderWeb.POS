@@ -704,6 +704,15 @@ public class CloudOrderService
             Items = new List<Models.OrderItem>()
         };
 
+        // Keep kitchen lifecycle active, but persist prepaid so dashboard Online Sales counts them.
+        if (OnlineOrderPaymentHelper.IsPaidFromSource(cloudOrder.PaymentMethod, cloudOrder.PaymentStatus))
+        {
+            localOrder.PaymentStatusRaw = "paid";
+            localOrder.PaymentStatus = PaymentStatus.Paid;
+            localOrder.PaidAt ??= cloudOrder.CreatedAt == default ? DateTime.Now : cloudOrder.CreatedAt;
+            localOrder.AmountPaid ??= total;
+        }
+
         // DEBUG: Log payment method value received from API
         System.Diagnostics.Debug.WriteLine($" Order {cloudOrder.OrderNumber} - PaymentMethod: '{cloudOrder.PaymentMethod}', PaymentStatus: '{cloudOrder.PaymentStatus}', VoucherCode: '{cloudOrder.VoucherCode}'");
         System.Diagnostics.Debug.WriteLine($" Final saved payment method: '{localOrder.PaymentMethod}'");
@@ -2776,6 +2785,14 @@ public class CloudOrderService
             
             Items = new List<Models.OrderItem>()
         };
+
+        if (OnlineOrderPaymentHelper.IsPaidFromSource(dto.Payment?.Method, dto.Payment?.Status))
+        {
+            order.PaymentStatusRaw = "paid";
+            order.PaymentStatus = PaymentStatus.Paid;
+            order.PaidAt ??= order.CreatedAt;
+            order.AmountPaid ??= order.TotalAmount;
+        }
 
         // Convert order items
         if (dto.Items != null)

@@ -25,7 +25,6 @@ public class RoleAccessService
         "liveorder",
         "foodmenu",
         "settings",
-        "chefloader",
         "loyalty",
         "report",
         "dashboard",
@@ -65,7 +64,7 @@ public class RoleAccessService
                 "login", "dashboard", "managerdashboard", "userdashboard", "restaurant",
                 "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
-                "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings", "chefloader",
+                "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings",
                 "terminalhealth", "customerdata", "staffclock"
             }
         };

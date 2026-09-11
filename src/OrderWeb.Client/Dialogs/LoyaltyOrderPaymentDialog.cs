@@ -24,8 +24,8 @@ public sealed class LoyaltyOrderPaymentDialog : ContentPage
 
     private readonly decimal _amountDue;
     private readonly MotherLoyaltyClient _loyalty = new();
-    private readonly Entry _lookupEntry = new() { Placeholder = "Phone or loyalty card", FontSize = 18, Keyboard = Keyboard.Telephone };
-    private readonly Entry _pointsEntry = new() { Keyboard = Keyboard.Numeric, FontSize = 18, Placeholder = "0" };
+    private readonly Entry _lookupEntry = new() { AutomationId = "LoyaltyLookup", Placeholder = "Phone or loyalty card", FontSize = 18, Keyboard = Keyboard.Telephone, MaxLength = 24 };
+    private readonly Entry _pointsEntry = new() { AutomationId = "LoyaltyPoints", Keyboard = Keyboard.Numeric, FontSize = 18, Placeholder = "0", MaxLength = 9 };
     private readonly Label _statusLabel = new() { FontSize = 14, TextColor = Color.FromArgb("#64748B") };
     private readonly Label _customerLabel = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, Text = "Customer: —" };
     private readonly Label _balanceLabel = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, Text = "Points: —" };
@@ -48,6 +48,7 @@ public sealed class LoyaltyOrderPaymentDialog : ContentPage
         _useFullButton.Clicked += (_, _) => UseMax();
         _applyButton.Clicked += OnApplyClicked;
         _pointsEntry.TextChanged += (_, _) => UpdateApplyEnabled();
+        BindPhoneNumberPad(_lookupEntry);
 
         var cancelButton = new Button
         {
@@ -112,6 +113,61 @@ public sealed class LoyaltyOrderPaymentDialog : ContentPage
                 }
             }
         };
+    }
+
+    private bool _phonePadOpen;
+
+    private void BindPhoneNumberPad(Entry entry)
+    {
+        entry.IsReadOnly = true;
+        entry.Focused += async (_, args) =>
+        {
+            if (!args.IsFocused || _phonePadOpen)
+            {
+                return;
+            }
+
+            entry.Unfocus();
+            await OpenPhoneNumberPadAsync(entry);
+        };
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) =>
+        {
+            if (!_phonePadOpen)
+            {
+                await OpenPhoneNumberPadAsync(entry);
+            }
+        };
+        entry.GestureRecognizers.Add(tap);
+    }
+
+    private async Task OpenPhoneNumberPadAsync(Entry entry)
+    {
+        if (_phonePadOpen)
+        {
+            return;
+        }
+
+        _phonePadOpen = true;
+        try
+        {
+            entry.Unfocus();
+            var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+            var value = await keyboard.ShowDigitsAsync(
+                entry.Text,
+                title: "Enter phone number",
+                maxDigits: 16,
+                hostPage: this);
+            if (value is not null)
+            {
+                entry.Text = value.Trim();
+            }
+        }
+        finally
+        {
+            _phonePadOpen = false;
+        }
     }
 
     private Label CreateAmountLabel()

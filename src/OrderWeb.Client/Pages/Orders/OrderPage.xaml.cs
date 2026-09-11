@@ -4,6 +4,7 @@ using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
+using OrderWeb.Contracts.Dtos;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
@@ -155,7 +156,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     public Task<bool> ConfirmAsync(string title, string message, string accept, string cancel) =>
         new OrderPlaceConfirmDialog().ShowAsync(this, title, message, accept, cancel);
 
-    public Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder)
+    public Task<string?> PromptAsync(string title, string message, string accept, string cancel, string placeholder, string? initialText = null)
     {
         var numericOnly =
             title.Contains("PIN", StringComparison.OrdinalIgnoreCase) ||
@@ -167,7 +168,15 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             message.Contains("points to redeem", StringComparison.OrdinalIgnoreCase) ||
             placeholder.Contains("07123", StringComparison.OrdinalIgnoreCase) ||
             placeholder.Contains("e.g. 12", StringComparison.OrdinalIgnoreCase);
-        return new OrderPlacePromptDialog().ShowAsync(this, title, message, accept, cancel, placeholder, numericOnly: numericOnly);
+        return new OrderPlacePromptDialog().ShowAsync(
+            this,
+            title,
+            message,
+            accept,
+            cancel,
+            placeholder,
+            initialText ?? string.Empty,
+            numericOnly: numericOnly);
     }
 
     public Task<string?> PickActionAsync(string title, params string[] options) =>
@@ -182,7 +191,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     public Task<OrderPlaceTableOption?> ShowTableTransferAsync(string currentTableLabel, IReadOnlyList<OrderPlaceTableOption> availableTables) =>
         new OrderPlaceTableTransferDialog().ShowAsync(this, currentTableLabel, availableTables);
 
-    public Task<string?> ShowFireCourseAsync(bool includeDrinks = false) =>
+    public Task<string?> ShowFireCourseAsync(bool includeDrinks = true) =>
         new OrderPlaceFireCourseDialog().ShowAsync(this, includeDrinks);
 
     public Task<OrderPlaceVariantChoice?> PickVariantAsync(
@@ -206,14 +215,98 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
         IReadOnlyList<string> choices) =>
         new OrderPlaceMealDealDialog().ShowAsync(this, dealName, pickCount, choices);
 
-    public Task NavigateToPaymentAsync(decimal total, string orderId, int version, bool allowSplit = true) =>
-        Navigation.PushAsync(new PaymentPage(total, orderId, version, allowSplit), false);
+    public Task NavigateToPaymentAsync(
+        decimal total,
+        string orderId,
+        int version,
+        bool allowSplit = true,
+        decimal tipAmount = 0m,
+        decimal tipTotal = 0m) =>
+        Navigation.PushAsync(new PaymentPage(total, orderId, version, allowSplit, tipAmount, tipTotal), false);
+
+    public Task<decimal?> ShowPaymentTipAsync(decimal orderTotal) =>
+        OrderWeb.SharedUI.Payments.PaymentWizard.ShowTipAsync(orderTotal, this);
+
+    public Task<OrderWeb.SharedUI.Payments.PaymentSplitPlan?> ShowPaymentSetupPlanAsync(
+        decimal totalDue,
+        decimal remainingBalance,
+        IReadOnlyList<OrderWeb.SharedUI.Payments.PaymentPayByItemsLine> payByItemsLines,
+        decimal orderSubtotal,
+        decimal serviceCharge,
+        decimal deliveryFee,
+        decimal discount) =>
+        OrderWeb.SharedUI.Payments.PaymentWizard.ShowSetupPlanAsync(
+            totalDue,
+            remainingBalance,
+            payByItemsLines,
+            orderSubtotal,
+            serviceCharge,
+            deliveryFee,
+            discount,
+            this);
+
+    public Task<OrderWeb.SharedUI.Payments.PaymentMethodChoice> ShowPaymentMethodAsync(
+        decimal amountDue,
+        decimal remainingAfterThisPayment = 0,
+        string? title = null) =>
+        OrderWeb.SharedUI.Payments.PaymentWizard.ShowMethodAsync(
+            amountDue,
+            remainingAfterThisPayment,
+            title,
+            showLoyalty: false,
+            hostPage: this);
+
+    public Task<OrderWeb.SharedUI.Payments.PaymentCashResult> ShowPaymentCashAsync(decimal amountDue) =>
+        OrderWeb.SharedUI.Payments.PaymentWizard.ShowCashAsync(amountDue, this);
+
+    public Task<OrderWeb.SharedUI.Payments.PaymentGiftCardResult> ShowPaymentGiftCardAsync(decimal amountDue) =>
+        OrderWeb.SharedUI.Payments.PaymentWizard.ShowGiftCardAsync(
+            amountDue,
+            LookupGiftCardForPaymentAsync,
+            this);
+
+    private static async Task<OrderWeb.SharedUI.Payments.PaymentGiftCardLookupResult> LookupGiftCardForPaymentAsync(
+        string cardNumber,
+        CancellationToken cancellationToken)
+    {
+        var giftCards = new MotherGiftCardClient();
+        var lookup = await giftCards.LookupAsync(cardNumber, GiftCardLookupPurposes.Redeem, cancellationToken);
+        if (!lookup.Success || lookup.GiftCard == null || !lookup.CanProceed)
+        {
+            return new OrderWeb.SharedUI.Payments.PaymentGiftCardLookupResult
+            {
+                Success = false,
+                CanUse = false,
+                Message = lookup.Error ?? lookup.Message ?? "Gift card not found."
+            };
+        }
+
+        var card = lookup.GiftCard;
+        return new OrderWeb.SharedUI.Payments.PaymentGiftCardLookupResult
+        {
+            Success = true,
+            CanUse = card.CanUse,
+            CardNumber = string.IsNullOrWhiteSpace(card.CardNumber) ? cardNumber : card.CardNumber,
+            Balance = card.Balance,
+            Message = card.CanUse
+                ? (lookup.Message ?? "Gift card verified.")
+                : $"Gift card cannot be used: {card.Status}"
+        };
+    }
+
+    public async Task<OrderWeb.Client.Dialogs.LoyaltyOrderPaymentResult?> PromptLoyaltyPaymentAsync(decimal amountDue)
+    {
+        var dialog = new OrderWeb.Client.Dialogs.LoyaltyOrderPaymentDialog(amountDue);
+        await Navigation.PushModalAsync(dialog, false);
+        return await dialog.WaitAsync();
+    }
 
     public async Task CloseOrderPageAsync()
     {
+        // Match Mother finalize: leave Order Place entirely (table → home/restaurant stack root).
         if (Navigation.NavigationStack.Count > 1)
         {
-            await Navigation.PopAsync(false);
+            await Navigation.PopToRootAsync(false);
         }
     }
 
@@ -406,7 +499,18 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     {
         await CloseSidebarAsync();
 
-        if (string.Equals(menu, "Dashboard", StringComparison.OrdinalIgnoreCase))
+        if (ClientSidebarNavigation.IsDashboard(menu))
+        {
+            await Navigation.PopToRootAsync(false);
+            return;
+        }
+
+        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
+        {
+            return;
+        }
+
+        if (ClientSidebarNavigation.IsCustomerSurface(menu))
         {
             await Navigation.PopToRootAsync(false);
             return;
@@ -417,21 +521,14 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             return;
         }
 
-        Page page = menu switch
+        var page = ClientSidebarNavigation.CreatePage(menu);
+        if (page is null)
         {
-            "Cash Drawer" => new CashDrawerPage(),
-            "Restaurant" => new RestaurantPage(),
-            "Collection" => new CollectionOrderPage(),
-            "Delivery" => new DeliveryOrderPage(),
-            "Live Order" => new LiveOrderPage(),
-            "Gift Cards" => new GiftCardPage(),
-            "Loyalty Points" => new LoyaltyPage(),
-            "Reservation" => new ReservationPage(),
-            "Order History" => new OrderHistoryPage(),
-            _ => new LiveOrderPage()
-        };
+            return;
+        }
 
-        if (menu is "Collection" or "Delivery")
+        if (ClientHostAccess.IsMenuRoute(menu, "collection") ||
+            ClientHostAccess.IsMenuRoute(menu, "delivery"))
         {
             await ClientSideNavigation.PushFromSideAsync(Navigation, page);
             return;

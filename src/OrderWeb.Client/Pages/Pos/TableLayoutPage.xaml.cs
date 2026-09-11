@@ -367,6 +367,8 @@ public partial class TableLayoutPage : ContentPage
 
         var otherGuestEntry = new Entry
         {
+            AutomationId = "GuestQuantity",
+            MaxLength = 3,
             Placeholder = "Other number...",
             FontSize = 15,
             FontFamily = "OpenSansRegular",
