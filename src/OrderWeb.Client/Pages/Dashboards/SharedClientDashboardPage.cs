@@ -60,7 +60,7 @@ public class SharedClientDashboardPage : ContentPage
             ShowMinimize = true
         };
         _shell.NavigationRequested += async (_, e) => await NavigateRouteAsync(e.Route);
-        _shell.LogoutRequested += async (_, _) => await Navigation.PopToRootAsync(false);
+        _shell.LogoutRequested += async (_, _) => await ClientSignOut.RequestAsync(this);
         _shell.MinimizeRequested += (_, _) => ClientWindowService.MinimizeMainWindow();
         _shell.UpdateRequested += async (_, _) => await OnUpdateAllAsync();
         Content = _shell;
@@ -116,6 +116,13 @@ public class SharedClientDashboardPage : ContentPage
             return;
         }
 
+        if (string.Equals(route, "cashdrawer", StringComparison.OrdinalIgnoreCase))
+        {
+            _shell.SelectedRoute = "dashboard";
+            await ClientCashDrawerOpen.RunAsync(this, new ClientCacheService(), cashier: false);
+            return;
+        }
+
         Page? page = route.ToLowerInvariant() switch
         {
             "restaurant" => new RestaurantPage(),
@@ -125,8 +132,10 @@ public class SharedClientDashboardPage : ContentPage
             "reservation" => new ReservationPage(),
             "giftcards" => new GiftCardPage(),
             "loyalty" => new LoyaltyPage(),
-            "cashdrawer" => new CashDrawerPage(),
+            "cashdrawer" => null,
             "orderhistory" => new OrderHistoryPage(),
+            "customerdata" => new RecentCustomersPage(),
+            "customers" => new RecentCustomersPage(),
             _ => null
         };
 
@@ -137,6 +146,11 @@ public class SharedClientDashboardPage : ContentPage
         }
 
         ClientPageChrome.HideSystemBackChrome(page);
+
+        if (Navigation.NavigationStack.Count > 1)
+        {
+            await Navigation.PopToRootAsync(false);
+        }
 
         if (page is CollectionOrderPage or DeliveryOrderPage)
         {

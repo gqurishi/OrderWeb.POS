@@ -11,7 +11,7 @@
           MaximumWidthRequest="1280"
           HorizontalOptions="Center">
 
-        <!-- Flow tabs: Redeem → Sell & top-up → Activate (+ Close) — Mother + Client -->
+        <!-- Flow tabs: Redeem → Top-up → Activate (+ Close) — Mother + Client -->
         <Grid ColumnDefinitions="*,*,*,Auto"
               ColumnSpacing="8"
               Margin="0,0,0,14">
@@ -22,14 +22,14 @@
                     FontAttributes="Bold"
                     FontSize="13"
                     Clicked="OnRedeemFlowClicked" />
-            <Button x:Name="SellTopUpFlowButton"
+            <Button x:Name="TopUpFlowButton"
                     Grid.Column="1"
-                    Text="Sell &amp; top-up"
+                    Text="Top-up"
                     HeightRequest="42"
                     CornerRadius="10"
                     FontAttributes="Bold"
                     FontSize="13"
-                    Clicked="OnSellTopUpFlowClicked" />
+                    Clicked="OnTopUpFlowClicked" />
             <Button x:Name="ActivateFlowButton"
                     Grid.Column="2"
                     Text="Activate"
@@ -76,7 +76,7 @@
                                     StrokeThickness="1"
                                     Padding="12,10"
                                     StrokeShape="RoundRectangle 10">
-                                <Label Text="Admin note: Use Activate only for blank stock cards already in the drawer. Look up the card number, take payment, then turn the card on. Day-to-day work stays on Redeem and Sell &amp; top-up."
+                                <Label Text="Admin note: Use Activate only for blank stock cards already in the drawer. Look up the card number, take payment, then turn the card on. Day-to-day work stays on Redeem and Top-up. Website sales stay on OrderWeb."
                                        FontSize="12"
                                        TextColor="{DynamicResource OwInfoText}"
                                        LineBreakMode="WordWrap" />
@@ -151,6 +151,9 @@
                                             Padding="12,4"
                                             StrokeShape="RoundRectangle 12"
                                             HeightRequest="48">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnActivateAmountEntryTapped" />
+                                        </Border.GestureRecognizers>
                                         <Entry x:Name="ActivateAmountEntryControl"
                                        AutomationId="GiftCardAmount"
                                        MaxLength="9"
@@ -159,7 +162,8 @@
                                                FontSize="18"
                                                FontAttributes="Bold"
                                                VerticalOptions="Center"
-                                               BackgroundColor="Transparent" />
+                                               BackgroundColor="Transparent"
+                                               InputTransparent="True" />
                                     </Border>
                                 </VerticalStackLayout>
 
@@ -218,7 +222,29 @@
                                         HeightRequest="50"
                                         CornerRadius="12"
                                         IsEnabled="False"
-                                        Clicked="OnActivateCardClicked" />
+                                        Clicked="OnActivateCardClicked">
+                                    <!-- Keep Mother mint green on Client (global Button Disabled is grey). -->
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroupList>
+                                            <VisualStateGroup x:Name="CommonStates">
+                                                <VisualState x:Name="Normal">
+                                                    <VisualState.Setters>
+                                                        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                        <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                        <Setter Property="Opacity" Value="1" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                                <VisualState x:Name="Disabled">
+                                                    <VisualState.Setters>
+                                                        <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                        <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                        <Setter Property="Opacity" Value="0.55" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                            </VisualStateGroup>
+                                        </VisualStateGroupList>
+                                    </VisualStateManager.VisualStateGroups>
+                                </Button>
                                 <Label x:Name="ActivateReceiptLabelControl"
                                        FontSize="12"
                                        TextColor="{DynamicResource OwTextSecondary}"
@@ -228,8 +254,8 @@
                     </Grid>
                 </Border>
 
-                <!-- Sell & top-up (merged) -->
-                <Border x:Name="SellTopUpScreen"
+                <!-- Top-up existing card -->
+                <Border x:Name="TopUpScreen"
                         BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
@@ -238,219 +264,19 @@
                         IsVisible="False"
                         VerticalOptions="Start">
                     <VerticalStackLayout Spacing="14">
-                        <VerticalStackLayout Spacing="8">
-                            <VerticalStackLayout Spacing="2">
-                                <Label Text="Sell &amp; top-up"
-                                       FontSize="20"
-                                       FontAttributes="Bold"
-                                       TextColor="{DynamicResource OwTextStrong}" />
-                                <Label Text="Choose sell for a new card, or top-up to add balance to an existing card."
-                                       FontSize="12"
-                                       TextColor="{DynamicResource OwTextMuted}"
-                                       LineBreakMode="WordWrap" />
-                            </VerticalStackLayout>
-
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="8"
-                                  MaximumWidthRequest="360">
-                                <Button x:Name="SellModeButton"
-                                        Text="Sell new card"
-                                        HeightRequest="38"
-                                        CornerRadius="10"
-                                        FontAttributes="Bold"
-                                        FontSize="13"
-                                        Clicked="OnSellModeClicked" />
-                                <Button x:Name="TopUpModeButton"
-                                        Grid.Column="1"
-                                        Text="Top-up existing"
-                                        HeightRequest="38"
-                                        CornerRadius="10"
-                                        FontAttributes="Bold"
-                                        FontSize="13"
-                                        Clicked="OnTopUpModeClicked" />
-                            </Grid>
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Top-up gift card"
+                                   FontSize="20"
+                                   FontAttributes="Bold"
+                                   TextColor="{DynamicResource OwTextStrong}" />
+                            <Label Text="Look up an existing card, take payment, then add balance."
+                                   FontSize="12"
+                                   TextColor="{DynamicResource OwTextMuted}"
+                                   LineBreakMode="WordWrap" />
                         </VerticalStackLayout>
 
-                        <Grid x:Name="SellScreen"
-                              ColumnDefinitions="1.15*,0.85*"
-                              ColumnSpacing="18"
-                              IsVisible="True">
-                            <VerticalStackLayout Spacing="12">
-                                <Border BackgroundColor="{DynamicResource OwBackground}"
-                                        Stroke="{DynamicResource OwBorder}"
-                                        StrokeThickness="1"
-                                        Padding="14"
-                                        StrokeShape="RoundRectangle 12">
-                                    <VerticalStackLayout Spacing="8">
-                                        <Label Text="CARD NUMBER"
-                                               FontSize="10"
-                                               FontAttributes="Bold"
-                                               CharacterSpacing="0.6"
-                                               TextColor="{DynamicResource OwTextMuted}" />
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                            <Border BackgroundColor="{DynamicResource OwSurface}"
-                                                    Stroke="{DynamicResource OwInputBorder}"
-                                                    StrokeThickness="1"
-                                                    Padding="10,2"
-                                                    StrokeShape="RoundRectangle 10"
-                                                    HeightRequest="42">
-                                                <Border.GestureRecognizers>
-                                                    <TapGestureRecognizer Tapped="OnSellCardEntryTapped" />
-                                                </Border.GestureRecognizers>
-                                                <Entry x:Name="SellCardEntryControl"
-                                                       AutomationId="GiftCardNumber"
-                                                       MaxLength="24"
-                                                       Placeholder="Scan or enter card number"
-                                                       Keyboard="Default"
-                                                       FontSize="14"
-                                                       VerticalOptions="Center"
-                                                       BackgroundColor="Transparent"
-                                                       InputTransparent="True" />
-                                            </Border>
-                                            <Button Grid.Column="1"
-                                                    Text="Generate"
-                                                    BackgroundColor="{DynamicResource OwPrimarySoft}"
-                                                    TextColor="{DynamicResource OwPrimary}"
-                                                    BorderColor="{DynamicResource OwPrimarySoftBorder}"
-                                                    BorderWidth="1"
-                                                    FontAttributes="Bold"
-                                                    FontSize="13"
-                                                    HeightRequest="42"
-                                                    CornerRadius="10"
-                                                    Padding="14,0"
-                                                    Clicked="OnGenerateSellCardClicked" />
-                                        </Grid>
-                                    </VerticalStackLayout>
-                                </Border>
-
-                                <Border BackgroundColor="{DynamicResource OwBackground}"
-                                        Stroke="{DynamicResource OwBorder}"
-                                        StrokeThickness="1"
-                                        Padding="14"
-                                        StrokeShape="RoundRectangle 12">
-                                    <VerticalStackLayout Spacing="10">
-                                        <Label Text="SALE VALUE"
-                                               FontSize="10"
-                                               FontAttributes="Bold"
-                                               CharacterSpacing="0.6"
-                                               TextColor="{DynamicResource OwTextMuted}" />
-                                        <VerticalStackLayout Spacing="6">
-                                            <Label Text="Amount (GBP)"
-                                                   FontSize="12"
-                                                   FontAttributes="Bold"
-                                                   TextColor="{DynamicResource OwTextSecondary}" />
-                                            <Border BackgroundColor="{DynamicResource OwSurface}"
-                                                    Stroke="{DynamicResource OwInputBorder}"
-                                                    StrokeThickness="1"
-                                                    Padding="10,2"
-                                                    StrokeShape="RoundRectangle 10"
-                                                    HeightRequest="42">
-                                                <Entry x:Name="SellAmountEntryControl"
-                                                       AutomationId="GiftCardAmount"
-                                                       MaxLength="9"
-                                                       Placeholder="0.00"
-                                                       Keyboard="Numeric"
-                                                       FontSize="16"
-                                                       FontAttributes="Bold"
-                                                       VerticalOptions="Center"
-                                                       BackgroundColor="Transparent" />
-                                            </Border>
-                                        </VerticalStackLayout>
-                                        <VerticalStackLayout Spacing="6">
-                                            <Label Text="Payment method"
-                                                   FontSize="12"
-                                                   FontAttributes="Bold"
-                                                   TextColor="{DynamicResource OwTextSecondary}" />
-                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                                <Button x:Name="SellCashButton"
-                                                        Text="Cash"
-                                                        HeightRequest="40"
-                                                        CornerRadius="10"
-                                                        FontAttributes="Bold"
-                                                        FontSize="13"
-                                                        Clicked="OnSellCashClicked" />
-                                                <Button x:Name="SellCardButton"
-                                                        Grid.Column="1"
-                                                        Text="Card"
-                                                        HeightRequest="40"
-                                                        CornerRadius="10"
-                                                        FontAttributes="Bold"
-                                                        FontSize="13"
-                                                        Clicked="OnSellCardPayClicked" />
-                                            </Grid>
-                                            <Picker x:Name="SellPaymentMethodPickerControl"
-                                                    IsVisible="False"
-                                                    Title="Payment method" />
-                                        </VerticalStackLayout>
-                                    </VerticalStackLayout>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <Border Grid.Column="1"
-                                    BackgroundColor="{DynamicResource OwPrimarySoft}"
-                                    Stroke="{DynamicResource OwPrimarySoftBorder}"
-                                    StrokeThickness="1"
-                                    Padding="16"
-                                    StrokeShape="RoundRectangle 12"
-                                    VerticalOptions="Start">
-                                <VerticalStackLayout Spacing="12">
-                                    <VerticalStackLayout Spacing="2">
-                                        <Label Text="CHECKOUT"
-                                               FontSize="10"
-                                               FontAttributes="Bold"
-                                               CharacterSpacing="0.6"
-                                               TextColor="{DynamicResource OwInfoText}" />
-                                        <Label Text="Sale details"
-                                               FontSize="17"
-                                               FontAttributes="Bold"
-                                               TextColor="{DynamicResource OwTextStrong}" />
-                                        <Label Text="Optional till order reference for this sale."
-                                               FontSize="11"
-                                               TextColor="{DynamicResource OwTextMuted}" />
-                                    </VerticalStackLayout>
-                                    <VerticalStackLayout Spacing="6">
-                                        <Label Text="Till order ID"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="{DynamicResource OwTextSecondary}" />
-                                        <Border BackgroundColor="{DynamicResource OwSurface}"
-                                                Stroke="{DynamicResource OwInputBorder}"
-                                                StrokeThickness="1"
-                                                Padding="10,2"
-                                                StrokeShape="RoundRectangle 10"
-                                                HeightRequest="42">
-                                            <Entry x:Name="SellOrderIdEntryControl"
-                                                   Placeholder="Leave blank to auto-create"
-                                                   FontSize="13"
-                                                   VerticalOptions="Center"
-                                                   BackgroundColor="Transparent" />
-                                        </Border>
-                                    </VerticalStackLayout>
-                                    <Button x:Name="SellActionButtonControl"
-                                            Text="Take payment and sell"
-                                            BackgroundColor="{DynamicResource OwPrimary}"
-                                            TextColor="{DynamicResource OwTextOnPrimary}"
-                                            FontAttributes="Bold"
-                                            FontSize="14"
-                                            HeightRequest="46"
-                                            CornerRadius="12"
-                                            Clicked="OnSellCardClicked" />
-                                    <Label x:Name="SellStatusLabelControl"
-                                           FontSize="12"
-                                           TextColor="{DynamicResource OwTextMuted}"
-                                           LineBreakMode="WordWrap" />
-                                    <Label x:Name="SellReceiptLabelControl"
-                                           FontSize="11"
-                                           TextColor="{DynamicResource OwTextSecondary}"
-                                           LineBreakMode="WordWrap" />
-                                </VerticalStackLayout>
-                            </Border>
-                        </Grid>
-
-                        <Grid x:Name="TopUpScreen"
-                              ColumnDefinitions="1.15*,0.85*"
-                              ColumnSpacing="18"
-                              IsVisible="False">
+                        <Grid ColumnDefinitions="1.15*,0.85*"
+                              ColumnSpacing="18">
                             <VerticalStackLayout Spacing="12">
                                 <Border BackgroundColor="{DynamicResource OwBackground}"
                                         Stroke="{DynamicResource OwBorder}"
@@ -533,6 +359,9 @@
                                                 Padding="10,2"
                                                 StrokeShape="RoundRectangle 10"
                                                 HeightRequest="42">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnTopUpAmountEntryTapped" />
+                                            </Border.GestureRecognizers>
                                             <Entry x:Name="TopUpAmountEntryControl"
                                                    AutomationId="GiftCardAmount"
                                                    MaxLength="9"
@@ -541,7 +370,8 @@
                                                    FontSize="16"
                                                    FontAttributes="Bold"
                                                    VerticalOptions="Center"
-                                                   BackgroundColor="Transparent" />
+                                                   BackgroundColor="Transparent"
+                                                   InputTransparent="True" />
                                         </Border>
                                     </VerticalStackLayout>
                                     <VerticalStackLayout Spacing="6">
@@ -597,7 +427,29 @@
                                             HeightRequest="46"
                                             CornerRadius="12"
                                             IsEnabled="False"
-                                            Clicked="OnTopUpCardClicked" />
+                                            Clicked="OnTopUpCardClicked">
+                                        <!-- Keep Mother mint green on Client (global Button Disabled is grey). -->
+                                        <VisualStateManager.VisualStateGroups>
+                                            <VisualStateGroupList>
+                                                <VisualStateGroup x:Name="CommonStates">
+                                                    <VisualState x:Name="Normal">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                            <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                            <Setter Property="Opacity" Value="1" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="Disabled">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="{DynamicResource OwSuccess}" />
+                                                            <Setter Property="TextColor" Value="{DynamicResource OwTextOnPrimary}" />
+                                                            <Setter Property="Opacity" Value="0.55" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                </VisualStateGroup>
+                                            </VisualStateGroupList>
+                                        </VisualStateManager.VisualStateGroups>
+                                    </Button>
                                     <Label x:Name="TopUpReceiptLabelControl"
                                            FontSize="11"
                                            TextColor="{DynamicResource OwTextSecondary}"

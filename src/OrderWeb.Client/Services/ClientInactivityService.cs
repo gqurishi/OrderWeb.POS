@@ -1,24 +1,32 @@
 namespace OrderWeb.Client.Services;
 
 /// <summary>
-/// Client idle auto-logout. Staff / Manager / User / Cashier → 3 minutes.
-/// Uses a one-shot timer rescheduled on activity (no heavy 1 Hz work).
+/// Client idle, same plan as Mother: 60s back to the role dashboard, then 3 minutes logout.
+/// Staff / Manager / User / Cashier log out at 3 minutes. User / Manager / Cashier also
+/// return home at 60s. Uses a one-shot timer rescheduled on activity.
 /// </summary>
 public sealed class ClientInactivityService
 {
+    private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan StaffManagerUserLogoutTimeout = TimeSpan.FromMinutes(3);
     private readonly object _sync = new();
     private IDispatcherTimer? _timer;
     private DateTime _lastActivityAt = DateTime.Now;
+    private DateTime _suppressActivityResetUntil = DateTime.MinValue;
     private bool _isHandling;
+    private bool _hasReturnedToDashboard;
     private Func<string?>? _getRole;
     private Action? _logout;
+    private Func<Task>? _returnToDashboard;
+    private Func<bool>? _isBusy;
     private bool _windowsHooked;
 
-    public void Start(Func<string?> getRole, Action logout)
+    public void Start(Func<string?> getRole, Action logout, Func<Task>? returnToDashboard = null, Func<bool>? isBusy = null)
     {
         _getRole = getRole ?? throw new ArgumentNullException(nameof(getRole));
         _logout = logout ?? throw new ArgumentNullException(nameof(logout));
+        _returnToDashboard = returnToDashboard;
+        _isBusy = isBusy;
         ResetActivity();
 
         if (_timer is null)
@@ -44,7 +52,10 @@ public sealed class ClientInactivityService
         {
             _getRole = null;
             _logout = null;
+            _returnToDashboard = null;
+            _isBusy = null;
             _isHandling = false;
+            _hasReturnedToDashboard = false;
         }
     }
 
@@ -52,8 +63,13 @@ public sealed class ClientInactivityService
     {
         lock (_sync)
         {
+            if (_isHandling || DateTime.Now < _suppressActivityResetUntil)
+            {
+                return;
+            }
+
             _lastActivityAt = DateTime.Now;
-            _isHandling = false;
+            _hasReturnedToDashboard = false;
         }
 
         ScheduleNextCheck();
@@ -100,7 +116,16 @@ public sealed class ClientInactivityService
             }
 
             role = _getRole.Invoke();
-            remaining = StaffManagerUserLogoutTimeout - (DateTime.Now - _lastActivityAt);
+            var elapsed = DateTime.Now - _lastActivityAt;
+            remaining = StaffManagerUserLogoutTimeout - elapsed;
+            if (IsDashboardReturnRole(role) && !_hasReturnedToDashboard)
+            {
+                var untilHome = DashboardReturnTimeout - elapsed;
+                if (untilHome < remaining)
+                {
+                    remaining = untilHome;
+                }
+            }
         }
 
         if (!IsAutoLogoutRole(role))
@@ -122,16 +147,25 @@ public sealed class ClientInactivityService
         _timer.Start();
     }
 
-    private void OnTick(object? sender, EventArgs e)
+    private async void OnTick(object? sender, EventArgs e)
     {
         string? role;
         TimeSpan elapsed;
         Action? logout;
+        Func<Task>? returnHome;
+
+        if (_isBusy?.Invoke() == true)
+        {
+            // Payment / dialog is open — don't jump home or log out underneath it.
+            ResetActivity();
+            return;
+        }
 
         lock (_sync)
         {
             role = _getRole?.Invoke();
             logout = _logout;
+            returnHome = _returnToDashboard;
             elapsed = DateTime.Now - _lastActivityAt;
             if (_isHandling || logout is null)
             {
@@ -144,24 +178,58 @@ public sealed class ClientInactivityService
                 return;
             }
 
-            if (elapsed < StaffManagerUserLogoutTimeout)
+            if (elapsed >= StaffManagerUserLogoutTimeout)
+            {
+                _isHandling = true;
+                returnHome = null;
+            }
+            else if (IsDashboardReturnRole(role) && !_hasReturnedToDashboard && elapsed >= DashboardReturnTimeout)
+            {
+                _isHandling = true;
+                _suppressActivityResetUntil = DateTime.Now.AddSeconds(2);
+                logout = null;
+            }
+            else
             {
                 ScheduleNextCheck();
                 return;
             }
-
-            _isHandling = true;
         }
 
+        var loggedOut = false;
         try
         {
-            logout.Invoke();
+            if (logout is not null)
+            {
+                loggedOut = true;
+                logout.Invoke();
+                return;
+            }
+
+            if (returnHome is not null)
+            {
+                await returnHome.Invoke();
+            }
+
+            lock (_sync)
+            {
+                _hasReturnedToDashboard = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Idle dashboard return failed: {ex.Message}");
         }
         finally
         {
             lock (_sync)
             {
                 _isHandling = false;
+            }
+
+            if (!loggedOut)
+            {
+                ScheduleNextCheck();
             }
         }
     }
@@ -175,6 +243,18 @@ public sealed class ClientInactivityService
 
         return role.Equals("Staff", StringComparison.OrdinalIgnoreCase)
                || role.Equals("Manager", StringComparison.OrdinalIgnoreCase)
+               || role.Equals("User", StringComparison.OrdinalIgnoreCase)
+               || role.Equals("Cashier", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDashboardReturnRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return false;
+        }
+
+        return role.Equals("Manager", StringComparison.OrdinalIgnoreCase)
                || role.Equals("User", StringComparison.OrdinalIgnoreCase)
                || role.Equals("Cashier", StringComparison.OrdinalIgnoreCase);
     }

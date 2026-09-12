@@ -349,7 +349,10 @@ public partial class VirtualKeyboardDialog : ContentView
         Grid.SetColumn(this, 0);
         overlayHost.Children.Add(this);
 
-        ZIndex = 20000;
+        HorizontalOptions = LayoutOptions.Fill;
+        VerticalOptions = LayoutOptions.Fill;
+        // Above cash-drawer and other SharedUI overlays (those use 20000).
+        ZIndex = 30000;
         InputTransparent = false;
         Opacity = 1;
         IsVisible = true;
@@ -399,7 +402,7 @@ public partial class VirtualKeyboardDialog : ContentView
             _wrappedHostContent = true;
         }
 
-        ZIndex = 10000;
+        ZIndex = 30000;
         InputTransparent = false;
         Opacity = 1;
         IsVisible = true;

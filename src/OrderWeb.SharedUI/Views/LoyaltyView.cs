@@ -56,10 +56,10 @@ public sealed class LoyaltyView : ContentView
         _phoneSearch.MaxLength = 16;
         _phoneSearch.Completed += (_, _) => SearchRequested?.Invoke(this, EventArgs.Empty);
 
-        _searchButton = new SharedButton { Text = "Search", HeightRequest = 52, FontSize = 16 };
+        _searchButton = new SharedButton { Text = "Search", HeightRequest = 52, FontSize = 16, FontAttributes = FontAttributes.None };
         _searchButton.Clicked += (_, _) => SearchRequested?.Invoke(this, EventArgs.Empty);
 
-        var newCustomerButton = new SharedButton { Text = "New Customer", Variant = ButtonVariant.Secondary, HeightRequest = 52, FontSize = 16 };
+        var newCustomerButton = new SharedButton { Text = "New Customer", Variant = ButtonVariant.Secondary, HeightRequest = 52, FontSize = 16, FontAttributes = FontAttributes.None };
         newCustomerButton.Clicked += (_, _) => NewCustomerRequested?.Invoke(this, EventArgs.Empty);
 
         var actions = new Grid
@@ -75,7 +75,8 @@ public sealed class LoyaltyView : ContentView
             Text = "Test API Connection",
             Variant = ButtonVariant.Secondary,
             HeightRequest = 46,
-            FontSize = 14
+            FontSize = 14,
+            FontAttributes = FontAttributes.None
         };
         testButton.Clicked += (_, _) => TestConnectionRequested?.Invoke(this, EventArgs.Empty);
         _diagnosticsButton = new Border
@@ -97,7 +98,9 @@ public sealed class LoyaltyView : ContentView
                     actions,
                     _diagnosticsButton,
                     InfoNote(
-                        "Customer data syncs from OrderWeb.net. 100 points equals £1 discount.")
+                        "Customer data syncs from OrderWeb.net." + Environment.NewLine +
+                        "Give points: £1 spent = 1 point." + Environment.NewLine +
+                        "Redeem points: 100 points = £1 discount.")
                 }
             });
 
@@ -117,9 +120,9 @@ public sealed class LoyaltyView : ContentView
         _points.MaxLength = 9;
         _notes = Field("Reason / note");
 
-        _addPointsButton = new SharedButton { Text = "Add Points", Variant = ButtonVariant.Success, HeightRequest = 50, FontSize = 15 };
+        _addPointsButton = new SharedButton { Text = "Add Points", Variant = ButtonVariant.Success, HeightRequest = 50, FontSize = 15, FontAttributes = FontAttributes.None };
         _addPointsButton.Clicked += (_, _) => AddPointsRequested?.Invoke(this, EventArgs.Empty);
-        _redeemPointsButton = new SharedButton { Text = "Redeem Points", Variant = ButtonVariant.Danger, HeightRequest = 50, FontSize = 15 };
+        _redeemPointsButton = new SharedButton { Text = "Redeem Points", Variant = ButtonVariant.Danger, HeightRequest = 50, FontSize = 15, FontAttributes = FontAttributes.None };
         _redeemPointsButton.Clicked += (_, _) => RedeemPointsRequested?.Invoke(this, EventArgs.Empty);
 
         var historyButton = OutlineButton("View History");
@@ -439,7 +442,7 @@ public sealed class LoyaltyView : ContentView
         {
             Text = "Close",
             FontSize = 14,
-            FontAttributes = FontAttributes.Bold,
+            FontAttributes = FontAttributes.None,
             Padding = new Thickness(14, 8),
             BackgroundColor = Colors.Transparent,
             BorderWidth = 0
@@ -724,7 +727,8 @@ public sealed class LoyaltyView : ContentView
             Text = text,
             Variant = ButtonVariant.Secondary,
             HeightRequest = 48,
-            FontSize = 14
+            FontSize = 14,
+            FontAttributes = FontAttributes.None
         };
         return button;
     }
@@ -738,11 +742,12 @@ public sealed class LoyaltyView : ContentView
 
     private static Label StrongLabel(string text, double size)
     {
+        // Mother Loyalty chrome uses regular weight titles (not Bold).
         var label = new Label
         {
             Text = text,
             FontSize = size,
-            FontAttributes = FontAttributes.Bold,
+            FontAttributes = FontAttributes.None,
             LineBreakMode = LineBreakMode.WordWrap
         };
         label.Use(Label.TextColorProperty, "OwTextStrong");
@@ -767,7 +772,7 @@ public sealed class LoyaltyView : ContentView
         {
             Text = text.ToUpperInvariant(),
             FontSize = 12,
-            FontAttributes = FontAttributes.Bold,
+            FontAttributes = FontAttributes.None,
             CharacterSpacing = 0.6,
             HorizontalTextAlignment = center ? TextAlignment.Center : TextAlignment.Start
         };

@@ -64,3 +64,10 @@ Wrapper: `ClientPosLoyaltyService` → `LoyaltyService`. Gate: session + `pos.cu
 - `GET /api/client/access` + Update All / `features.updated` already refresh Loyalty menu without reinstall
 
 **Done when:** restart Mother+Client; change Terminal Access Loyalty; Update All or wait for features.updated; Loyalty appears/hides; retries reuse keys.
+
+## Order Place → Add points (new track)
+See `.cursor\rules/order-place-loyalty-add.mdc` — Phases 0–7 done (Phase 7 = explicit defer).  
+**More → Loyalty Points** = **add** for current bill (not redeem).  
+**Payment → Loyalty redeem** = keep existing PaymentPage path; Order Place tender Loyalty button deferred (`OrderPlacePaymentLoyaltyEnabled = false`). Do not delete redeem code.  
+**No auto-earn** on Send/Print.
+

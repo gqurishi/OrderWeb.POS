@@ -201,7 +201,9 @@ public sealed class MotherOrderClient
 
     public async Task<(bool Success, string Message)> OpenOrderPlaceCashDrawerAsync(
         MotherOrderState? state,
-        string? reason)
+        string? reason,
+        decimal? amount = null,
+        string? details = null)
     {
         var auth = await GetAuthAsync();
         if (auth is null)
@@ -216,7 +218,9 @@ public sealed class MotherOrderClient
             {
                 reason,
                 orderId = state?.OrderId,
-                orderNumber = state?.OrderNumber
+                orderNumber = state?.OrderNumber,
+                amount,
+                details
             },
             JsonOptions);
         var json = await response.Content.ReadAsStringAsync();
@@ -534,7 +538,9 @@ public sealed class MotherOrderClient
                 return (null, envelope?.Message ?? "Mother POS returned an empty open-orders response.");
             }
 
-            return ((envelope.Orders ?? []).Select(ToState).ToList(), null);
+            // Mother list is kitchen-sent only. Stamp so drafts saved locally stay off the board
+            // and a later cache read still treats these rows as Live Orders.
+            return ((envelope.Orders ?? []).Select(order => ClientLiveOrderPresentation.AsKitchenBoardOrder(ToState(order))).ToList(), null);
         }
         catch (Exception ex)
         {
@@ -743,7 +749,8 @@ public sealed class MotherOrderClient
             order.Discount,
             order.ServiceCharge,
             order.ServiceChargeStatus,
-            order.ServiceChargePercent);
+            order.ServiceChargePercent,
+            order.LoyaltyPointsEarned);
 
     public Task<MotherCommandResult> SetOrderNotesAsync(MotherOrderState state, string? notes) =>
         UpsertOrderAsync(state with { Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim() });
@@ -927,7 +934,8 @@ public sealed class MotherOrderClient
         decimal Discount = 0m,
         decimal ServiceCharge = 0m,
         string? ServiceChargeStatus = null,
-        decimal ServiceChargePercent = 0m);
+        decimal ServiceChargePercent = 0m,
+        int LoyaltyPointsEarned = 0);
 
     private sealed record OrderLineDto(
         string Id,

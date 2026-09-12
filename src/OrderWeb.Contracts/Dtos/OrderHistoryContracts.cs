@@ -42,7 +42,7 @@ public sealed record ClientOrderHistoryResponseDto(
     IReadOnlyList<ClientOrderHistoryItemDto>? Voided = null,
     bool HasNextPage = false,
     int Page = 1,
-    int PageSize = 50,
+    int PageSize = 20,
     bool FromCache = false);
 
 /// <summary>Read-only closed/open history order for Client View. No pay/edit/reopen.</summary>

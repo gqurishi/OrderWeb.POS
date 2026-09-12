@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:layout="clr-namespace:OrderWeb.Client.Views.Layout"
+             xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
+             x:Class="OrderWeb.Client.Pages.Manager.RecentCustomersPage"
+             Shell.NavBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             NavigationPage.HasBackButton="False"
+             BackgroundColor="#F8FAFC"
+             Title="Recent Customers">
+    <Shell.BackButtonBehavior>
+        <BackButtonBehavior IsVisible="False" IsEnabled="False" />
+    </Shell.BackButtonBehavior>
+    <Grid RowDefinitions="Auto,*" BackgroundColor="#F8FAFC">
+        <layout:ClientTopBar x:Name="TopBar" />
+
+        <!-- Same SharedUI board as Mother Recent Customers. -->
+        <sharedViews:RecentCustomersBoardView x:Name="Board" Grid.Row="1" />
+
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+            <BoxView BackgroundColor="Transparent">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackdropTapped" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <layout:ClientSidebar x:Name="Sidebar"
+                                  HorizontalOptions="Start"
+                                  TranslationX="-280"
+                                  Role="Manager"
+                                  SelectedMenu="Recent Customers"
+                                  ShowFooter="True" />
+        </Grid>
+    </Grid>
+</ContentPage>

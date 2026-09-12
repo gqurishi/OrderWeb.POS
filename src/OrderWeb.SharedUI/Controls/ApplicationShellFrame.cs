@@ -189,7 +189,7 @@ public class ApplicationShellFrame : ContentView
             BackgroundColor = Colors.White,
             RowDefinitions =
             {
-                new RowDefinition(64),
+                new RowDefinition(52),
                 new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Star)
             }

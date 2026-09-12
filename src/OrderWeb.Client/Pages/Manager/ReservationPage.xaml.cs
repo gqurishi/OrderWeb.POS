@@ -37,7 +37,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
         TopBar.ShowConnectionStatus = true;
         TopBar.ConnectionStatus = "Connected";
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
         WireSharedReservationView();
         SizeChanged += (_, _) => Reservation.ApplyResponsiveCalendarWidth(Width);
@@ -388,34 +388,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "reservation") ||
-            !ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, menu, currentRoute: "reservation");
     }
 
     private void RefreshView()

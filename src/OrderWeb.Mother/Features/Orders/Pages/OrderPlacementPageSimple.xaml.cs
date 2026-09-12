@@ -2,6 +2,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Controls.Shapes;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
+using OrderWeb.Contracts.Dtos;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
 using OrderWeb.SharedUI.Payments;
@@ -70,6 +71,9 @@ namespace POS_in_NET.Pages
         private MenuCategory? _selectedSubCategory;
         private FoodMenuItem? _modifierPopupItem;
         private bool _isCourseFireInProgress;
+        private bool _loyaltyAddBusy;
+        private string? _loyaltyAddIdempotencyKey;
+        private string? _loyaltyAddIdempotencyFingerprint;
 
         // Session/Order State  
         private string? _pendingOrderId;
@@ -1666,6 +1670,11 @@ namespace POS_in_NET.Pages
             _currentOrder.OrderMode = IsTableOrderType(loadedOrder.OrderType) ? "dine_in" : "takeaway";
             _currentOrder.Discount = loadedOrder.DiscountAmount;
             _currentOrder.DeliveryFee = loadedOrder.DeliveryFee;
+            _currentOrder.LoyaltyPointsEarned = loadedOrder.LoyaltyPointsEarned;
+            _currentOrder.LoyaltyPointsRedeemed = loadedOrder.LoyaltyPointsRedeemed;
+            _currentOrder.DeclaredLoyaltyPointsEarned = loadedOrder.LoyaltyPointsEarned;
+            _currentOrder.DeclaredLoyaltyPointsDiscount = loadedOrder.LoyaltyPointsDiscount;
+            _currentOrder.DeclaredLoyaltyBalanceAfter = loadedOrder.LoyaltyBalanceAfter;
             _currentOrder.ServiceChargePercent = loadedOrder.ServiceChargePercentage;
             _currentOrder.ServiceChargeClassification = ParseServiceChargeClassification(loadedOrder.ServiceChargeClassification);
             _currentOrder.ServiceChargeStatus = ParseServiceChargeStatus(loadedOrder.ServiceChargeStatus);
@@ -2254,6 +2263,10 @@ namespace POS_in_NET.Pages
                 SourceChannel = _orderSourceChannel,
                 TableSessionId = _tableSessionId,
                 PaymentMethod = BuildPersistentPaymentMethod(lifecycleState),
+                LoyaltyPointsEarned = _currentOrder.LoyaltyPointsEarned,
+                LoyaltyPointsRedeemed = _currentOrder.LoyaltyPointsRedeemed,
+                LoyaltyPointsDiscount = _currentOrder.DeclaredLoyaltyPointsDiscount,
+                LoyaltyBalanceAfter = _currentOrder.DeclaredLoyaltyBalanceAfter,
                 SpecialInstructions = _currentOrder.Notes,
                 LocalLifecycleState = lifecycleState,
                 IsOpen = lifecycleState != LocalLifecycleState.Paid && lifecycleState != LocalLifecycleState.Voided,
@@ -2439,8 +2452,11 @@ namespace POS_in_NET.Pages
 
         private string ResolveCourseType(FoodMenuItem item)
         {
+            // Fire Course targets the top-level Category (e.g. Main / starter / drink),
+            // not the Sub-Category shelf name (e.g. soft / veg - main).
             var categoryId = item.CategoryId;
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MenuCategory? root = null;
             while (!string.IsNullOrWhiteSpace(categoryId) && visited.Add(categoryId))
             {
                 var category = _allCategories.FirstOrDefault(candidate =>
@@ -2450,13 +2466,17 @@ namespace POS_in_NET.Pages
                     break;
                 }
 
-                var course = NormalizeCourseType(category.Name);
+                root = category;
+                categoryId = category.ParentId;
+            }
+
+            if (root != null)
+            {
+                var course = NormalizeCourseType(root.Name);
                 if (course != null)
                 {
                     return course;
                 }
-
-                categoryId = category.ParentId;
             }
 
             return string.Equals(item.ItemType, "Drink", StringComparison.OrdinalIgnoreCase)
@@ -4233,7 +4253,13 @@ namespace POS_in_NET.Pages
                 options.Add(("Fire Course", "", _currentOrder.Items.Count > 0, false));
             }
 
-            options.Add(("Loyalty Points", "", true, false));
+            options.Add((
+                "Add Loyalty Points",
+                "",
+                _currentOrder.Items.Count > 0
+                    && _currentOrder.Total > 0m
+                    && _currentOrder.LoyaltyPointsEarned <= 0,
+                false));
             options.Add(("Cash Drawer", "", currentUser != null, false));
 
             // Service charge remove/restore is table-only (CanChangeServiceCharge already gates type).
@@ -4278,6 +4304,7 @@ namespace POS_in_NET.Pages
                     case "Previous Orders":
                         await ShowPreviousOrdersDialogAsync();
                         break;
+                    case "Add Loyalty Points":
                     case "Loyalty Points":
                         await ShowLoyaltyPointsDialog();
                         break;
@@ -6042,9 +6069,11 @@ namespace POS_in_NET.Pages
 
             if (!int.TryParse(picked.Id, out var destinationTableId))
             {
-                var errorDialog = new ModernAlertDialog();
-                errorDialog.SetAlert("Transfer Failed", "Could not resolve the selected table.", "", "#EF4444", "White");
-                await errorDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Transfer Failed",
+                    "Could not resolve the selected table.",
+                    tone: OrderPlaceAlertTone.Error);
                 return;
             }
 
@@ -6052,9 +6081,11 @@ namespace POS_in_NET.Pages
                 .FirstOrDefault(t => t.Id == destinationTableId);
             if (selectedTable is null)
             {
-                var errorDialog = new ModernAlertDialog();
-                errorDialog.SetAlert("Transfer Failed", "Selected table is no longer available.", "", "#EF4444", "White");
-                await errorDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Transfer Failed",
+                    "Selected table is no longer available.",
+                    tone: OrderPlaceAlertTone.Error);
                 return;
             }
 
@@ -6067,9 +6098,11 @@ namespace POS_in_NET.Pages
 
             if (!transferSuccess)
             {
-                var errorDialog = new ModernAlertDialog();
-                errorDialog.SetAlert("Transfer Failed", transferMessage, "", "#EF4444", "White");
-                await errorDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Transfer Failed",
+                    transferMessage,
+                    tone: OrderPlaceAlertTone.Error);
                 return;
             }
 
@@ -6079,14 +6112,11 @@ namespace POS_in_NET.Pages
             UpdateDisplay();
             await MarkCurrentOrderChangedAsync();
 
-            var alert = new ModernAlertDialog();
-            alert.SetAlert(
+            await new OrderPlaceAlertDialog().ShowAsync(
+                this,
                 "Transfer Complete",
                 $"Order transferred from Table {oldTableNumber} to Table {selectedTable.TableNumber}",
-                "",
-                "#4CAF50",
-                "White");
-            await alert.ShowAsync();
+                tone: OrderPlaceAlertTone.Success);
 
             await _navigationCoordinator.NavigateShellAsync("visuallayout", animated: false);
         }
@@ -6314,9 +6344,9 @@ namespace POS_in_NET.Pages
             }
 
             foreach (var item in _currentOrder.Items
-                         .Where(item => !IsTastingMenuOrderItem(item) && !IsTastingMenuCourseItem(item))
-                         .Where(item => string.IsNullOrWhiteSpace(item.CourseType)))
+                         .Where(item => !IsTastingMenuOrderItem(item) && !IsTastingMenuCourseItem(item)))
             {
+                // Always refresh from top-level Category so Fire Course ignores Sub-Category names.
                 item.CourseType = ResolveCourseType(item.MenuItemId) ?? "Mains";
             }
 
@@ -6422,188 +6452,179 @@ namespace POS_in_NET.Pages
 
         private async Task ShowLoyaltyPointsDialog()
         {
+            if (_loyaltyAddBusy)
+            {
+                return;
+            }
+
             if (_currentOrder.Items.Count == 0)
             {
-                var noItemsDialog = new ModernAlertDialog();
-                noItemsDialog.SetAlert("No Items", "Add items before redeeming loyalty points.", "i");
-                await noItemsDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Add Loyalty Points",
+                    "Add items before adding loyalty points.",
+                    tone: OrderPlaceAlertTone.Info);
                 return;
             }
 
             if (_currentOrder.Total <= 0)
             {
-                var noTotalDialog = new ModernAlertDialog();
-                noTotalDialog.SetAlert("No Bill", "There is no bill amount to offset with loyalty points.", "i");
-                await noTotalDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Add Loyalty Points",
+                    "There is no bill amount to earn loyalty points on.",
+                    tone: OrderPlaceAlertTone.Info);
                 return;
             }
 
+            if (_currentOrder.LoyaltyPointsEarned > 0)
+            {
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Already Added",
+                    $"Loyalty points were already added for this order ({_currentOrder.LoyaltyPointsEarned:N0} pts).",
+                    tone: OrderPlaceAlertTone.Warning);
+                return;
+            }
+
+            var pointsPreview = OrderPlaceLoyaltyEarnRules.ComputePointsFromBillTotal(_currentOrder.Total);
+            if (pointsPreview <= 0)
+            {
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Add Loyalty Points",
+                    "Bill total is under £1 — no points to add.",
+                    tone: OrderPlaceAlertTone.Info);
+                return;
+            }
+
+            _loyaltyAddBusy = true;
             try
             {
+                EnsureCurrentOrderIdentity();
+                await PersistDraftAsync(force: true, lifecycleOverride: GetSendLifecycleState());
+
                 await _loyaltyService.ReinitializeAsync();
+                var database = ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService();
+                var operational = new ClientPosOperationalService(database);
+                var actor = ResolveCurrentActor();
+                int? actorUserId = int.TryParse(actor.ActorId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var uid)
+                    ? uid
+                    : null;
+                var orderId = _currentOrder.Id;
 
-                var customerKeyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
-                customerKeyboard.SetPrompt("Customer phone or loyalty card number", "Continue");
-                customerKeyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Phone);
-                customerKeyboard.SetPlaceholder("e.g. 07123 456 789");
-                customerKeyboard.SetMaximumLength(32);
-                customerKeyboard.SetRequired(true);
-                var customerNumber = await customerKeyboard.ShowAsync(this);
-
-                if (string.IsNullOrWhiteSpace(customerNumber))
-                {
-                    return;
-                }
-
-                var lookup = await _loyaltyService.SearchCustomerAsync(customerNumber);
-                if (!lookup.Success || lookup.Customer == null)
-                {
-                    var errorDialog = new ModernAlertDialog();
-                    errorDialog.SetAlert("Loyalty Lookup Failed", lookup.Error ?? "Customer not found.", "", "#EF4444", "White");
-                    await errorDialog.ShowAsync();
-                    return;
-                }
-
-                var customer = lookup.Customer;
-                var availablePoints = customer.PointsBalance;
-                var maxBillPoints = (int)Math.Floor(_currentOrder.Total * 100m);
-                var maxRedeemablePoints = Math.Min(availablePoints, maxBillPoints);
-
-                var balanceDialog = new ModernAlertDialog();
-                balanceDialog.SetAlert(
-                    "Loyalty Balance",
-                    $"Customer: {customer.CustomerName}\n" +
-                    $"Phone: {customer.DisplayPhone}\n" +
-                    $"Card: {customer.LoyaltyCardNumber}\n" +
-                    $"Available points: {availablePoints:N0}\n" +
-                    $"Current bill: £{_currentOrder.Total:F2}\n" +
-                    $"Max redeemable: {maxRedeemablePoints:N0} points",
-                    "⭐",
-                    "#3B82F6",
-                    "White");
-                await balanceDialog.ShowAsync();
-
-                if (maxRedeemablePoints <= 0)
-                {
-                    var noRedeemDialog = new ModernAlertDialog();
-                    noRedeemDialog.SetAlert("Nothing to Redeem", "There are no points available to apply to this bill.", "i");
-                    await noRedeemDialog.ShowAsync();
-                    return;
-                }
-
-                var pointsKeyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
-                var pointsText = await pointsKeyboard.ShowDigitsAsync(
-                    initialValue: $"{maxRedeemablePoints}",
-                    title: $"Redeem loyalty points (max {maxRedeemablePoints:N0})",
-                    maxDigits: 8,
-                    hostPage: this);
-
-                if (string.IsNullOrWhiteSpace(pointsText))
-                {
-                    return;
-                }
-
-                if (!int.TryParse(pointsText, out var pointsToRedeem) || pointsToRedeem <= 0)
-                {
-                    var invalidDialog = new ModernAlertDialog();
-                    invalidDialog.SetAlert("Invalid Points", "Enter a valid number of points.", "", "#EF4444", "White");
-                    await invalidDialog.ShowAsync();
-                    return;
-                }
-
-                if (pointsToRedeem > maxRedeemablePoints)
-                {
-                    var limitDialog = new ModernAlertDialog();
-                    limitDialog.SetAlert("Points Too High", $"You can only redeem up to {maxRedeemablePoints:N0} points on this bill.", "", "#EF4444", "White");
-                    await limitDialog.ShowAsync();
-                    return;
-                }
-
-                var discountAmount = Math.Round(pointsToRedeem / 100m, 2, MidpointRounding.AwayFromZero);
-                var remainingTotal = Math.Max(0m, _currentOrder.Total - discountAmount);
-                var confirm = await DisplayAlert(
-                    "Confirm Loyalty Redemption",
-                    $"Redeem {pointsToRedeem:N0} points for £{discountAmount:F2}?\n\n" +
-                    $"New bill total: £{remainingTotal:F2}",
-                    "Redeem",
-                    "Cancel");
-
-                if (!confirm)
-                {
-                    return;
-                }
-
-                var reason = $"Loyalty redemption - {customer.CustomerName}";
-                var loyaltyTransactionId = $"{GetReceiptOrderReference()}:loyalty-redeem:{customer.LoyaltyCardNumber}:{pointsToRedeem}";
-                var result = await _loyaltyService.RedeemPointsAsync(
-                    customer.Phone,
-                    pointsToRedeem,
-                    reason,
-                    loyaltyTransactionId);
-
-                if (!result.Success || result.Customer == null)
-                {
-                    var redeemErrorDialog = new ModernAlertDialog();
-                    redeemErrorDialog.SetAlert("Redemption Failed", result.Error ?? "Unable to redeem loyalty points.", "", "#EF4444", "White");
-                    await redeemErrorDialog.ShowAsync();
-                    return;
-                }
-
-                var previousDiscount = _currentOrder.Discount;
-                _currentOrder.CustomerName = customer.CustomerName;
-                _currentOrder.CustomerPhone = customer.Phone;
-                _currentOrder.LoyaltyCardNumber = customer.LoyaltyCardNumber;
-                _currentOrder.LoyaltyPointsRedeemed += pointsToRedeem;
-                _currentOrder.Discount = previousDiscount + discountAmount;
-                _currentOrder.DiscountReason = string.IsNullOrWhiteSpace(_currentOrder.DiscountReason)
-                    ? reason
-                    : $"{_currentOrder.DiscountReason}; {reason}";
-
-                UpdateDisplay();
-                await MarkCurrentOrderChangedAsync();
-
-                try
-                {
-                    await _discountAuditService.LogAsync(new DiscountAuditRequest
+                var outcome = await new OrderPlaceLoyaltyAddDialog().ShowAsync(
+                    this,
+                    _currentOrder.Total,
+                    async lookup =>
                     {
-                        OrderId = _currentOrder.Id,
-                        OrderNumber = string.IsNullOrWhiteSpace(_persistentOrderNumber) ? _currentOrder.OrderNumber : _persistentOrderNumber,
-                        TableSessionId = _tableSessionId,
-                        TableNumber = _currentOrder.TableNumber > 0 ? _currentOrder.TableNumber.ToString() : null,
-                        Action = previousDiscount > 0 ? "updated" : "applied",
-                        DiscountType = "loyalty",
-                        SubtotalAmount = _currentOrder.Subtotal,
-                        PreviousDiscountAmount = previousDiscount,
-                        DiscountAmount = _currentOrder.Discount,
-                        DiscountPercent = 0,
-                        TotalAfterDiscount = _currentOrder.Total,
-                        Reason = reason,
-                        SourceArea = "order_loyalty",
-                        ApprovalRequired = false
-                    });
-                }
-                catch (Exception ex)
+                        var search = await _loyaltyService.SearchCustomerAsync(lookup);
+                        if (!search.Success || search.Customer is null)
+                        {
+                            return (false, search.Error ?? "Customer not found.", null);
+                        }
+
+                        var name = string.IsNullOrWhiteSpace(search.Customer.CustomerName)
+                            ? (search.Customer.Name ?? "Customer")
+                            : search.Customer.CustomerName;
+                        return (true, null, new OrderPlaceLoyaltyAddCustomer(
+                            Lookup: lookup,
+                            Name: name,
+                            Phone: search.Customer.Phone,
+                            PointsBalance: search.Customer.PointsBalance));
+                    },
+                    async (lookup, points, key) =>
+                    {
+                        var result = await operational.ApplyLoyaltyAddForOrderAsync(
+                            orderId,
+                            lookup,
+                            points,
+                            key,
+                            actorUserId,
+                            actor.ActorName);
+                        return new OrderPlaceLoyaltyAddOutcome(
+                            Success: result.Success,
+                            Message: result.Message,
+                            PointsAdded: result.PointsAdded,
+                            PointsBalance: result.PointsBalance,
+                            ErrorCode: result.ErrorCode);
+                    },
+                    (lookup, points) => GetStickyLoyaltyAddKey(orderId, lookup, points));
+
+                if (outcome is null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[OrderPlacement] Loyalty discount audit failed: {ex.Message}");
+                    return;
                 }
 
-                var successDialog = new ModernAlertDialog();
-                successDialog.SetAlert(
-                    "Loyalty Applied",
-                    $"Redeemed {pointsToRedeem:N0} points for £{discountAmount:F2}.\n" +
-                    $"Remaining balance: {result.Customer.PointsBalance:N0} pts\n" +
-                    $"New bill total: £{_currentOrder.Total:F2}",
-                    "",
-                    "#10B981",
-                    "White");
-                await successDialog.ShowAsync();
+                if (!outcome.Success)
+                {
+                    await new OrderPlaceAlertDialog().ShowAsync(
+                        this,
+                        "Add Loyalty Points",
+                        outcome.Message,
+                        tone: OrderPlaceAlertTone.Error);
+                    return;
+                }
+
+                ClearStickyLoyaltyAddKey();
+
+                var latest = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id);
+                if (latest != null)
+                {
+                    await ApplyLoadedOrderAsync(latest);
+                    _hasLoadedPersistentOrder = true;
+                    _draftDirty = false;
+                }
+                else
+                {
+                    _currentOrder.LoyaltyPointsEarned = outcome.PointsAdded ?? pointsPreview;
+                    _currentOrder.DeclaredLoyaltyPointsEarned = _currentOrder.LoyaltyPointsEarned;
+                    if (outcome.PointsBalance is int balance)
+                    {
+                        _currentOrder.DeclaredLoyaltyBalanceAfter = balance;
+                    }
+
+                    UpdateDisplay();
+                }
+
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Loyalty Points Added",
+                    outcome.Message,
+                    tone: OrderPlaceAlertTone.Success);
             }
             catch (Exception ex)
             {
-                var errorDialog = new ModernAlertDialog();
-                errorDialog.SetAlert("Loyalty Error", $"Unable to process loyalty redemption: {ex.Message}", "", "#EF4444", "White");
-                await errorDialog.ShowAsync();
+                await new OrderPlaceAlertDialog().ShowAsync(
+                    this,
+                    "Add Loyalty Points",
+                    $"Unable to add loyalty points: {ex.Message}",
+                    tone: OrderPlaceAlertTone.Error);
             }
+            finally
+            {
+                _loyaltyAddBusy = false;
+            }
+        }
+
+        private string GetStickyLoyaltyAddKey(string orderId, string lookup, int points)
+        {
+            var fingerprint = $"{orderId}|{lookup.Trim()}|{points}";
+            if (!string.Equals(_loyaltyAddIdempotencyFingerprint, fingerprint, StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(_loyaltyAddIdempotencyKey))
+            {
+                _loyaltyAddIdempotencyFingerprint = fingerprint;
+                _loyaltyAddIdempotencyKey =
+                    $"mother-order-loyalty-add:{orderId}:{lookup.Trim()}:{points}:{Guid.NewGuid():N}";
+            }
+
+            return _loyaltyAddIdempotencyKey;
+        }
+
+        private void ClearStickyLoyaltyAddKey()
+        {
+            _loyaltyAddIdempotencyKey = null;
+            _loyaltyAddIdempotencyFingerprint = null;
         }
 
         private async Task ShowPriceOverrideDialog()

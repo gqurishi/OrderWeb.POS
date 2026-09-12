@@ -417,8 +417,28 @@ public sealed class OrderWebGiftCardApiService
                 };
             }
 
-            return ParseGiftCardTransactionResponse(content)
-                ?? new GiftCardTransactionResponse { Success = false, Error = "Invalid gift card operation response.", CanQueueForRetry = true };
+            try
+            {
+                return ParseGiftCardTransactionResponse(content)
+                    ?? new GiftCardTransactionResponse
+                    {
+                        Success = false,
+                        Error = "Invalid gift card operation response.",
+                        CanQueueForRetry = true
+                    };
+            }
+            catch (Exception parseEx)
+            {
+                // Never treat a parse bug as "cloud unreachable" — the POST may already have succeeded.
+                AppDiagnostics.Log($"Gift card POST parse failed: {parseEx.Message}");
+                return BuildTransactionSuccessFromRawJson(content)
+                    ?? new GiftCardTransactionResponse
+                    {
+                        Success = true,
+                        Message = "Gift card updated on OrderWeb. Receipt could not be read.",
+                        Error = null
+                    };
+            }
         }
         catch (Exception ex)
         {
@@ -429,6 +449,45 @@ public sealed class OrderWebGiftCardApiService
                 Error = $"Gift card operation could not reach OrderWeb: {ex.Message}",
                 CanQueueForRetry = true
             };
+        }
+    }
+
+    /// <summary>Best-effort success when JSON shape is unexpected but HTTP 200 was returned.</summary>
+    private static GiftCardTransactionResponse? BuildTransactionSuccessFromRawJson(string content)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            var data = TryGetProperty(root, out var dataElement, "data", "result") ? dataElement : root;
+            var card = FindGiftCardElement(root);
+            var success = GetBool(root, "success") ?? GetBool(data, "success") ?? true;
+            if (success == false && !string.IsNullOrWhiteSpace(GetString(root, "error") ?? GetString(data, "error")))
+            {
+                return new GiftCardTransactionResponse
+                {
+                    Success = false,
+                    Error = GetString(root, "error") ?? GetString(data, "error")
+                };
+            }
+
+            return new GiftCardTransactionResponse
+            {
+                Success = true,
+                Message = GetString(root, "message") ?? GetString(data, "message") ?? "Gift card updated on OrderWeb.",
+                TransactionId = GetString(root, "transaction_id", "transactionId", "id")
+                    ?? GetString(data, "transaction_id", "transactionId", "id"),
+                RemainingBalance = GetNullableDecimal(root, "remaining_balance", "remainingBalance", "balance")
+                    ?? GetNullableDecimal(data, "remaining_balance", "remainingBalance", "balance"),
+                NewBalance = GetNullableDecimal(root, "new_balance", "newBalance")
+                    ?? GetNullableDecimal(data, "new_balance", "newBalance"),
+                GiftCard = card.ValueKind == JsonValueKind.Undefined ? null : ParseGiftCard(card, null, null),
+                Receipt = ParseReceipt(root) ?? ParseReceipt(data)
+            };
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -643,25 +702,35 @@ public sealed class OrderWebGiftCardApiService
             return null;
         }
 
-        var result = JsonSerializer.Deserialize<GiftCardTransactionResponse>(content, JsonOptions);
+        // Do not JsonSerializer.Deserialize the full DTO — OrderWeb receipt.lines may be
+        // objects and that used to abort top-up/sell after the cloud write already succeeded.
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
         var data = TryGetProperty(root, out var dataElement, "data", "result") ? dataElement : root;
         var card = FindGiftCardElement(root);
 
-        result ??= new GiftCardTransactionResponse();
-        result.Success = GetBool(root, "success") ?? result.Success;
-        result.Error ??= GetString(root, "error") ?? GetString(data, "error");
-        result.Message ??= GetString(root, "message") ?? GetString(data, "message");
-        result.TransactionId ??= GetString(root, "transaction_id", "transactionId", "id")
-            ?? GetString(data, "transaction_id", "transactionId", "id");
-        result.RemainingBalance ??= GetNullableDecimal(root, "remaining_balance", "remainingBalance", "balance")
-            ?? GetNullableDecimal(data, "remaining_balance", "remainingBalance", "balance")
-            ?? GetNullableDecimal(card, "remaining_balance", "remainingBalance", "balance");
-        result.NewBalance ??= GetNullableDecimal(root, "new_balance", "newBalance")
-            ?? GetNullableDecimal(data, "new_balance", "newBalance");
-        result.GiftCard ??= card.ValueKind == JsonValueKind.Undefined ? null : ParseGiftCard(card, null, null);
-        result.Receipt ??= ParseReceipt(root) ?? ParseReceipt(data);
+        var result = new GiftCardTransactionResponse
+        {
+            Success = GetBool(root, "success") ?? GetBool(data, "success") ?? false,
+            Error = GetString(root, "error") ?? GetString(data, "error"),
+            Message = GetString(root, "message") ?? GetString(data, "message"),
+            TransactionId = GetString(root, "transaction_id", "transactionId", "id")
+                ?? GetString(data, "transaction_id", "transactionId", "id"),
+            RemainingBalance = GetNullableDecimal(root, "remaining_balance", "remainingBalance", "balance")
+                ?? GetNullableDecimal(data, "remaining_balance", "remainingBalance", "balance")
+                ?? GetNullableDecimal(card, "remaining_balance", "remainingBalance", "balance"),
+            NewBalance = GetNullableDecimal(root, "new_balance", "newBalance")
+                ?? GetNullableDecimal(data, "new_balance", "newBalance"),
+            GiftCard = card.ValueKind == JsonValueKind.Undefined ? null : ParseGiftCard(card, null, null),
+            Receipt = ParseReceipt(root) ?? ParseReceipt(data)
+        };
+
+        if (!result.Success &&
+            string.IsNullOrWhiteSpace(result.Error) &&
+            (result.GiftCard != null || result.NewBalance.HasValue || result.RemainingBalance.HasValue || result.Receipt != null))
+        {
+            result.Success = true;
+        }
 
         return result;
     }
@@ -678,9 +747,19 @@ public sealed class OrderWebGiftCardApiService
         {
             foreach (var line in linesElement.EnumerateArray())
             {
-                if (line.ValueKind == JsonValueKind.String)
+                var text = line.ValueKind switch
                 {
-                    receipt.Lines.Add(line.GetString() ?? string.Empty);
+                    JsonValueKind.String => line.GetString(),
+                    JsonValueKind.Number => line.ToString(),
+                    JsonValueKind.Object =>
+                        GetString(line, "text", "line", "content", "value", "message", "label")
+                        ?? line.GetRawText(),
+                    _ => null
+                };
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    receipt.Lines.Add(text);
                 }
             }
         }

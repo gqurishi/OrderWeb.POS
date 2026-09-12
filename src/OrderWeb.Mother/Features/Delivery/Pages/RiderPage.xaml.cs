@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 
@@ -9,13 +9,11 @@ public partial class RiderPage : ContentPage
     private readonly RiderOperationsService _riderService;
     private readonly AuthenticationService _authenticationService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
-    private readonly ObservableCollection<RiderOperation> _visibleOrders = new();
-    private List<RiderOperation> _allOrders = new();
     private CancellationTokenSource? _pageCts;
     private IDispatcherTimer? _refreshTimer;
-    private string _filter = "all";
     private bool _subscribed;
     private bool _pendingReload;
+    private List<RiderOperation> _allOrders = new();
 
     public RiderPage()
     {
@@ -23,8 +21,9 @@ public partial class RiderPage : ContentPage
         _riderService = ServiceHelper.GetService<RiderOperationsService>()
             ?? throw new InvalidOperationException("Rider operations service is unavailable.");
         _authenticationService = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
-        RiderOrdersCollection.ItemsSource = _visibleOrders;
         TopBar.SetPageTitle("Rider");
+        Board.RefreshRequested += async (_, _) => await LoadAsync(showSpinner: true);
+        Board.ActionRequested += async (_, e) => await OnActionAsync(e.Card);
     }
 
     protected override void OnAppearing()
@@ -36,9 +35,9 @@ public partial class RiderPage : ContentPage
             AppDataRefreshService.DataChanged += OnDataChanged;
             _subscribed = true;
         }
-        ConfigureBusinessDayLabel();
+        Board.SetDayText(FormatDay(DateTime.Now));
         StartTimer();
-        _ = LoadAsync(showSpinner: _visibleOrders.Count == 0);
+        _ = LoadAsync(showSpinner: true);
     }
 
     protected override void OnDisappearing()
@@ -46,7 +45,7 @@ public partial class RiderPage : ContentPage
         _pageCts?.Cancel();
         _pageCts?.Dispose();
         _pageCts = null;
-        if (_refreshTimer != null) _refreshTimer.Stop();
+        _refreshTimer?.Stop();
         if (_subscribed)
         {
             AppDataRefreshService.DataChanged -= OnDataChanged;
@@ -68,14 +67,10 @@ public partial class RiderPage : ContentPage
 
     private void OnDataChanged(object? sender, AppDataChangedEventArgs e)
     {
-        if (e.HasKind(AppDataChangeKind.Orders)) _ = LoadAsync(showSpinner: false);
-    }
-
-    private void ConfigureBusinessDayLabel()
-    {
-        var start = RiderOperationPolicy.GetDayStart(DateTime.Now);
-        var end = RiderOperationPolicy.GetDayEnd(DateTime.Now);
-        BusinessDayLabel.Text = $"Operational day · {start:ddd d MMM, 2:00 tt} to {end:ddd d MMM, 1:59 tt}";
+        if (e.HasKind(AppDataChangeKind.Orders))
+        {
+            _ = LoadAsync(showSpinner: false);
+        }
     }
 
     private async Task LoadAsync(bool showSpinner)
@@ -91,23 +86,26 @@ public partial class RiderPage : ContentPage
         {
             if (showSpinner)
             {
-                LoadingIndicator.IsLoading = true;
+                Board.SetLoading(true);
             }
+
             await _riderService.RefreshActiveDispatchesAsync(token);
             _allOrders = (await _riderService.GetBoardAsync(DateTime.Now, token)).ToList();
-            ApplyFilter();
-            ConfigureBusinessDayLabel();
+            Board.SetDayText(FormatDay(DateTime.Now));
+            Board.SetCards(_allOrders.Select(RiderBoardMapping.ToCard).ToList());
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Rider board load failed: {ex.Message}");
             if (showSpinner)
+            {
                 await AppAlertService.ShowAlertAsync("Rider Board", "Delivery operations could not be loaded. Check that the latest database update has been installed.");
+            }
         }
         finally
         {
-            LoadingIndicator.IsLoading = false;
+            Board.SetLoading(false);
             _loadGate.Release();
             if (_pendingReload)
             {
@@ -117,114 +115,23 @@ public partial class RiderPage : ContentPage
         }
     }
 
-    private void ApplyFilter()
+    private async Task OnActionAsync(RiderBoardCard card)
     {
-        IEnumerable<RiderOperation> rows = _filter switch
+        if (!int.TryParse(card.Id, out var orderDbId))
         {
-            "kitchen" => _allOrders.Where(o => o.OperationStatusDisplay == "Awaiting kitchen"),
-            "ready" => _allOrders.Where(o => o.OperationStatusDisplay == "Ready for rider"),
-            "quote" => _allOrders.Where(o => o.OperationStatusDisplay is "Quote available" or "Requesting quote"),
-            "active" => _allOrders.Where(o => o.OperationStatusDisplay is "Finding rider" or "Rider assigned" or "Collected" or "Delivering"),
-            "delivered" => _allOrders.Where(o => o.OperationStatusDisplay == "Delivered"),
-            "problems" => _allOrders.Where(o => o.HasProblem),
-            _ => _allOrders
-        };
-
-        SyncVisibleOrders(rows.ToList());
-        UpdateFilterButtons();
-    }
-
-    private void SyncVisibleOrders(List<RiderOperation> next)
-    {
-        var nextIds = next.Select(row => row.OrderDbId).ToHashSet();
-        for (var i = _visibleOrders.Count - 1; i >= 0; i--)
-        {
-            if (!nextIds.Contains(_visibleOrders[i].OrderDbId))
-            {
-                _visibleOrders.RemoveAt(i);
-            }
+            return;
         }
 
-        for (var i = 0; i < next.Count; i++)
+        var operation = _allOrders.FirstOrDefault(row => row.OrderDbId == orderDbId);
+        if (operation == null || operation.IsBusy)
         {
-            var row = next[i];
-            var existingIndex = -1;
-            for (var j = 0; j < _visibleOrders.Count; j++)
-            {
-                if (_visibleOrders[j].OrderDbId == row.OrderDbId)
-                {
-                    existingIndex = j;
-                    break;
-                }
-            }
-
-            if (existingIndex < 0)
-            {
-                _visibleOrders.Insert(Math.Min(i, _visibleOrders.Count), row);
-                continue;
-            }
-
-            if (existingIndex != i)
-            {
-                _visibleOrders.RemoveAt(existingIndex);
-                _visibleOrders.Insert(Math.Min(i, _visibleOrders.Count), row);
-                continue;
-            }
-
-            var current = _visibleOrders[i];
-            if (!string.Equals(current.OperationStatusDisplay, row.OperationStatusDisplay, StringComparison.Ordinal)
-                || current.IsBusy != row.IsBusy
-                || current.QuoteAmount != row.QuoteAmount
-                || !string.Equals(current.RiderName, row.RiderName, StringComparison.Ordinal))
-            {
-                _visibleOrders[i] = row;
-            }
+            return;
         }
-    }
 
-    private void UpdateFilterButtons()
-    {
-        foreach (var button in FilterTabs.Children.OfType<Button>())
-        {
-            var key = button.CommandParameter?.ToString() ?? "all";
-            var count = key switch
-            {
-                "kitchen" => _allOrders.Count(o => o.OperationStatusDisplay == "Awaiting kitchen"),
-                "ready" => _allOrders.Count(o => o.OperationStatusDisplay == "Ready for rider"),
-                "quote" => _allOrders.Count(o => o.OperationStatusDisplay is "Quote available" or "Requesting quote"),
-                "active" => _allOrders.Count(o => o.OperationStatusDisplay is "Finding rider" or "Rider assigned" or "Collected" or "Delivering"),
-                "delivered" => _allOrders.Count(o => o.OperationStatusDisplay == "Delivered"),
-                "problems" => _allOrders.Count(o => o.HasProblem),
-                _ => _allOrders.Count
-            };
-            var title = key switch
-            {
-                "kitchen" => "Kitchen", "ready" => "Ready", "quote" => "Quote",
-                "active" => "Active rider", "delivered" => "Delivered", "problems" => "Problems", _ => "All"
-            };
-            button.Text = $"{title}  {count}";
-            var active = key == _filter;
-            button.BackgroundColor = Color.FromArgb(active ? "#0F766E" : "#E2E8F0");
-            button.TextColor = Color.FromArgb(active ? "#FFFFFF" : "#334155");
-        }
-    }
-
-    private async void OnRefreshClicked(object sender, EventArgs e) => await LoadAsync(showSpinner: true);
-
-    private void OnFilterClicked(object sender, EventArgs e)
-    {
-        if (sender is not Button selected) return;
-        _filter = selected.CommandParameter?.ToString() ?? "all";
-        ApplyFilter();
-    }
-
-    private async void OnPrimaryActionClicked(object sender, EventArgs e)
-    {
-        if (sender is not Button { BindingContext: RiderOperation operation } || operation.IsBusy) return;
         operation.IsBusy = true;
         try
         {
-            if (operation.HasQuote)
+            if (card.IsConfirm)
             {
                 var collectionText = operation.CashCollectionAmount > 0
                     ? $"The rider must collect £{operation.CashCollectionAmount:0.00}."
@@ -234,15 +141,21 @@ public partial class RiderPage : ContentPage
                     $"Confirm {operation.QuoteCurrency} {operation.QuoteAmount:0.00} for {operation.DisplayOrderNumber}?\n\n{collectionText}",
                     "Confirm Rider",
                     "Back");
-                if (!confirmed) return;
+                if (!confirmed)
+                {
+                    return;
+                }
 
-                var result = await _riderService.ConfirmDispatchAsync(operation.OrderDbId, _authenticationService.CurrentUser, _pageCts?.Token ?? CancellationToken.None);
+                var result = await _riderService.ConfirmDispatchAsync(orderDbId, _authenticationService.CurrentUser, _pageCts?.Token ?? CancellationToken.None);
                 await AppAlertService.ShowAlertAsync(result.Success ? "Rider Confirmed" : "Rider Request", result.Message);
             }
             else
             {
-                var result = await _riderService.RequestQuoteAsync(operation.OrderDbId, _authenticationService.CurrentUser, _pageCts?.Token ?? CancellationToken.None);
-                if (!result.Success) await AppAlertService.ShowAlertAsync("Rider Quote", result.Message);
+                var result = await _riderService.RequestQuoteAsync(orderDbId, _authenticationService.CurrentUser, _pageCts?.Token ?? CancellationToken.None);
+                if (!result.Success)
+                {
+                    await AppAlertService.ShowAlertAsync("Rider Quote", result.Message);
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -252,4 +165,39 @@ public partial class RiderPage : ContentPage
             await LoadAsync(showSpinner: false);
         }
     }
+
+    internal static string FormatDay(DateTime now)
+    {
+        var start = RiderOperationPolicy.GetDayStart(now);
+        var end = RiderOperationPolicy.GetDayEnd(now);
+        return $"Operational day · {start:ddd d MMM, h:mm tt} to {end.AddMinutes(-1):ddd d MMM, h:mm tt}";
+    }
+}
+
+internal static class RiderBoardMapping
+{
+    public static RiderBoardCard ToCard(RiderOperation operation) => new()
+    {
+        Id = operation.OrderDbId.ToString(),
+        OrderNumber = operation.DisplayOrderNumber,
+        Source = operation.SourceDisplay,
+        TimeText = operation.TimeDisplay,
+        StatusText = operation.OperationStatusDisplay,
+        StatusColor = operation.StatusColor,
+        CustomerName = operation.CustomerDisplay,
+        Phone = operation.CustomerPhone,
+        Address = operation.CustomerAddress,
+        TotalText = operation.TotalDisplay,
+        PaymentText = operation.PaymentDisplay,
+        CollectText = operation.CashCollectionDisplay,
+        QuoteText = operation.QuoteDisplay,
+        HasRider = operation.HasRider,
+        RiderName = operation.RiderName,
+        RiderPhone = operation.RiderPhone,
+        ErrorText = operation.LastError,
+        ActionText = operation.IsBusy ? "Please wait…" : operation.PrimaryActionText,
+        ActionEnabled = operation.HasQuote ? operation.CanConfirmQuote : operation.CanRequestQuote,
+        IsConfirm = operation.HasQuote,
+        IsProblem = operation.HasProblem
+    };
 }

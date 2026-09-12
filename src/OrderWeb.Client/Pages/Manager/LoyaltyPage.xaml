@@ -5,10 +5,36 @@
              xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Manager.LoyaltyPage"
              Shell.NavBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             NavigationPage.HasBackButton="False"
              BackgroundColor="#F8FAFC"
              Title="Loyalty Points">
-    <Grid RowDefinitions="90,*" BackgroundColor="#F8FAFC">
-        <layout:ClientTopBar x:Name="TopBar" RestaurantName="Restaurant POS" />
+    <Shell.BackButtonBehavior>
+        <BackButtonBehavior IsVisible="False" IsEnabled="False" />
+    </Shell.BackButtonBehavior>
+    <Grid RowDefinitions="Auto,*" BackgroundColor="#F8FAFC">
+        <!-- Same PosHeader page-title chrome as Mother Loyalty Points. -->
+        <layout:ClientTopBar x:Name="TopBar" />
+
+        <!-- Mother Close (top-right) — return to dashboard. -->
+        <Button Grid.Row="1"
+                Text="Close"
+                BackgroundColor="#FEF2F2"
+                BorderColor="#FCA5A5"
+                BorderWidth="1"
+                TextColor="#DC2626"
+                FontAttributes="None"
+                FontSize="14"
+                WidthRequest="72"
+                HeightRequest="40"
+                CornerRadius="12"
+                Padding="0"
+                Margin="0,20,32,0"
+                HorizontalOptions="End"
+                VerticalOptions="Start"
+                ZIndex="10"
+                ToolTipProperties.Text="Close"
+                Clicked="OnCloseClicked" />
 
         <sharedViews:LoyaltyView x:Name="Loyalty" Grid.Row="1" />
 

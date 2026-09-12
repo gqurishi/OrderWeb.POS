@@ -74,7 +74,7 @@ public static class ClientAccessPolicy
         "restaurant",
         "collection",
         "delivery",
-        // Sidebar label "Rider" (Mother parity). Board stays Mother-only; Client shows a notice on tap.
+        // Not shown on the Client sidebar. Kept grantable so older sessions still parse. Board stays on Mother.
         "weborders",
         "liveorder",
         "reservation",
@@ -197,7 +197,7 @@ public static class ClientAccessPolicy
 
     /// <summary>
     /// Routes Mother will allow a Client to show for the granted feature list.
-    /// Dashboard is always included. Rider (weborders) is added by ClientHostAccess for Manager sidebar parity.
+    /// Dashboard is always included. Client hides Rider even if an older session still lists it.
     /// </summary>
     public static IReadOnlySet<string> RoutesForFeatures(IEnumerable<string>? features)
     {

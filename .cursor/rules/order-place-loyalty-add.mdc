@@ -1,0 +1,107 @@
+---
+description: Order Place Loyalty Points = Add for bill (Mother+Client) — Phase 0 locked
+alwaysApply: true
+---
+
+# Order Place → Loyalty Add (remember)
+
+## Goal
+On Order Place (**Mother + Client**), staff tap **More → Loyalty Points** → enter phone/card → confirm → **points are added** to that customer for the **current bill**, via **Client → Mother → OrderWeb cloud** (never Client→cloud).
+
+## Phase 0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Earn rate | **£1 spent = 1 point** (floor of bill total in pounds). Redeem stays **100 pts = £1** (Payment later). |
+| What amount earns | **Current order total** (open bill) for v1 — not “paid only”. |
+| One earn per order | **Yes** — same order cannot earn twice (`loyalty_points_earned` / order flag). |
+| Online only | **Yes** — Mother or cloud offline → refuse; no local fake points. |
+| Access | Same as Loyalty: **`pos.customer_points`** / Terminal Access **Loyalty**. |
+| More → Loyalty Points | **Add only** — remove redeem/discount from this button. |
+| Payment → Loyalty | **Redeem / pay with points** — **deferred** (do later). |
+
+### Earn formula (v1)
+`points = floor(order.Total)` in whole pounds (e.g. £15.80 → 15 points).  
+If total ≤ 0 or no items → cannot add.
+
+### Explicit non-goals (this feature)
+- Do **not** auto-earn on Send/Print.
+- Do **not** redeem or reduce the bill from More → Loyalty.
+- Do **not** Client→cloud or offline SQLite points ledger.
+
+## Build order
+0. **Phase 0** — lock rules ✅
+1. **Mother** — order-aware loyalty-add API ✅
+2. **Contracts** — DTOs + error codes ✅
+3. **SharedUI** — Add-points dialog ✅
+4. **Client Order Place** — More → Add ✅
+5. **Mother Order Place host** — same UX + persist earned ✅
+6. **Reliability & Access** ✅
+7. **Explicitly defer** (Payment redeem polish + no auto-earn) ✅
+8. **QA** — checklist ← next
+
+## Phase 7 — Explicitly defer (done / locked)
+
+| Deferred item | Status |
+|--|--|
+| Payment → Loyalty → redeem / pay with points (Order Place tender button) | **Deferred** — `OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled = false` |
+| Existing PaymentPage / Mother payment loyalty redeem | **Keep** — do not delete; polish later as its own pass |
+| Auto-earn on every Send / Print | **Off** — `AutoEarnOnSendOrPrint = false` (conflicts with manual More → Add) |
+
+**Done when:** plan + flags record the defer; payment loyalty code remains; Send/Print never call loyalty-add.
+
+## Phase 6 — Reliability & Access (done)
+- Sticky idempotency per `orderId|lookup|points` (host); clear only on success; dialog busy on confirm
+- Access: Client More disabled + refuse if `pos.customer_points` / Loyalty menu off; Update All / `features.updated` refreshes `ClientHostAccess`
+- Sync diagnostics: `order_loyalty_add` via `ClientLoyaltyDiagnostics` (Mother vs cloud)
+- WS: Mother publishes `order.updated` + `loyalty.updated`; Client Order Place reloads on both
+
+**Done when:** restart, toggle Access, retry, no double earn.
+
+## Phase 5 — Mother Order Place host (done)
+- SharedUI `OrderPlaceLoyaltyAddDialog` (same as Client); More label **Add Loyalty Points** (no redeem)
+- Same earn rules via `ApplyLoyaltyAddForOrderAsync` / `OrderPlaceLoyaltyEarnRules`
+- Persist: load/save `LoyaltyPointsEarned` on draft snapshot so later Mother saves do not wipe DB
+- ClientOperationalOrder + Client `MotherOrderState` carry `LoyaltyPointsEarned` so both tills respect already-earned
+
+**Done when:** Mother till behaviour matches Client.
+
+## Phase 4 — Client host wiring (done)
+- More → **Add Loyalty Points** → `MotherLoyaltyClient.AddPointsForOrderAsync` (no redeem/discount)
+- `FlushMotherPersistAsync` before dialog (real order id + total)
+- Online-only via `ClientOperation.Loyalty` (+ button disabled offline)
+- Success: refresh order from Mother, session publish, till-local earned guard, diagnostics
+- No Client→cloud; no SQLite points ledger
+
+**Done when:** Client till adds points on table/collection/delivery via Mother.
+
+## Phase 3 — Order Place UX (done)
+- More label: **Add Loyalty Points**
+- SharedUI dialog: lookup → bill £X / Y pts → Add Points (no redeem UI)
+- Client + Mother hosts wired; Mother uses `ApplyLoyaltyAddForOrderAsync`
+- Sticky idempotency + busy guards in dialog
+
+**Done when:** tapping the button never redeems; only adds.
+
+## Phase 1 — Mother API (done)
+- `POST /api/client/orders/loyalty-add` — `{ orderId, lookup, points?, idempotencyKey?, sessionToken? }`
+- Gate: session + `pos.customer_points` + order-type feature
+- Compute points: `OrderPlaceLoyaltyEarnRules` (£1 = 1 pt); optional override
+- Fail if customer not found (no auto-create)
+- Cloud add via `LoyaltyService`; queue message if cloud unreachable
+- Block if `loyalty_points_earned > 0`
+- Persist earn on order; audit `client_order_loyalty_add`; WS `loyalty.updated`
+- Response: message + `pointsAdded` + `pointsBalance` + customer + order
+
+**Done when:** test tool hits Mother and cloud balance increases for a real order.
+
+## Phase 2 — Contracts (done)
+- `ClientOrderLoyaltyAddRequestDto` / `ClientOrderLoyaltyAddResponseDto`
+- `LoyaltyErrorCodes.AlreadyEarned` (+ existing offline/cloud/not found/access/validation/queued)
+- `OrderPlaceLoyaltyEarnRules` — rate + one-earn notes + `ComputePointsFromBillTotal`
+- Client `MotherLoyaltyClient.AddPointsForOrderAsync` uses shared DTOs
+
+**Done when:** Mother + Client share one DTO package for this call.
+
+## Architecture reminder
+Cloud owns balances. Mother is hub. Client online-only for loyalty.

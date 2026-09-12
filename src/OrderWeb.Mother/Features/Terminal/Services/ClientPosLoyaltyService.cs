@@ -164,6 +164,11 @@ public sealed class ClientPosLoyaltyService
             return LoyaltyErrorCodes.InsufficientPoints;
         }
 
+        if (text.Contains("already") && (text.Contains("added") || text.Contains("earn")))
+        {
+            return LoyaltyErrorCodes.AlreadyEarned;
+        }
+
         if (text.Contains("enter a") ||
             text.Contains("required") ||
             text.Contains("valid") ||

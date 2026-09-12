@@ -103,6 +103,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/orders/merge-tables", HandleOrderMergeTablesAsync);
             app.MapPost("/api/client/orders/fire-course", HandleOrderFireCourseAsync);
             app.MapPost("/api/client/orders/loyalty-redeem", HandleOrderLoyaltyRedeemAsync);
+            app.MapPost("/api/client/orders/loyalty-add", HandleOrderLoyaltyAddAsync);
             app.MapGet("/api/client/orders/previous", HandleOrderPreviousAsync);
             app.MapPost("/api/client/orders/cash-drawer/open", HandleOrderPlaceCashDrawerOpenAsync);
             app.MapGet("/api/client/order-history", HandleOrderHistoryAsync);
@@ -118,8 +119,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/cashier/z-report/preview", HandleCashierZReportPreviewAsync);
             app.MapPost("/api/client/cashier/z-report/print", HandleCashierZReportPrintAsync);
             app.MapPost("/api/client/cashier/cash-drawer/open", HandleCashierCashDrawerOpenAsync);
+            app.MapPost("/api/client/cashier/cash-drawer/pending-shopping", HandleCashierPendingShoppingAsync);
+            app.MapPost("/api/client/cashier/cash-drawer/settle-shopping", HandleCashierSettleShoppingAsync);
             app.MapGet("/api/client/customers/search", HandleCustomerSearchAsync);
+            app.MapGet("/api/client/customers/recent", HandleRecentCustomersAsync);
             app.MapPost("/api/client/customers/upsert", HandleCustomerUpsertAsync);
+            app.MapPost("/api/client/customers/retry-sync", HandleRecentCustomersRetrySyncAsync);
+            app.MapPost("/api/client/customers/delete-cache", HandleRecentCustomersDeleteCacheAsync);
             app.MapPost("/api/client/payments", HandlePaymentAsync);
             app.MapGet("/api/client/payments/{requestId}", HandlePaymentStatusAsync);
             app.MapPost("/api/client/gift-cards/lookup", HandleGiftCardLookupAsync);
@@ -1215,6 +1221,113 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
     }
 
+    private async Task HandleOrderLoyaltyAddAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "order-loyalty-add", 12, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new ClientOrderLoyaltyAddResponseDto(
+                Success: false,
+                Message: session.Message,
+                Error: session.Message,
+                ErrorCode: LoyaltyErrorCodes.AccessDenied));
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.CustomerPoints))
+        {
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientOrderLoyaltyAddRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.OrderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientOrderLoyaltyAddResponseDto(
+                Success: false,
+                Message: "A Mother order id is required.",
+                Error: "A Mother order id is required.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Lookup))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientOrderLoyaltyAddResponseDto(
+                Success: false,
+                Message: "Enter a customer phone number or loyalty card number.",
+                Error: "Enter a customer phone number or loyalty card number.",
+                ErrorCode: LoyaltyErrorCodes.Validation));
+            return;
+        }
+
+        try
+        {
+            var existing = await new OrderService().GetOrderByExternalIdAsync(request.OrderId.Trim());
+            var feature = FeatureForOrderType(existing?.OrderType) ?? PosFeatureKeys.Collection;
+            if (!await EnsureFeatureAsync(context, session, feature))
+            {
+                return;
+            }
+
+            var result = await _operational.ApplyLoyaltyAddForOrderAsync(
+                request.OrderId,
+                request.Lookup,
+                request.Points,
+                request.IdempotencyKey,
+                session.UserId,
+                await ResolveSessionUserNameAsync(session.UserId));
+
+            if (!result.Success || result.Order is null)
+            {
+                await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new ClientOrderLoyaltyAddResponseDto(
+                    Success: false,
+                    Message: result.Message,
+                    Error: result.Message,
+                    ErrorCode: result.ErrorCode ?? LoyaltyErrorCodes.Unknown));
+                await AuditSensitiveOperationAsync(
+                    session.TerminalId,
+                    session.UserId,
+                    "client_order_loyalty_add",
+                    result.ErrorCode == LoyaltyErrorCodes.AlreadyEarned ? "already_earned" : "denied");
+                return;
+            }
+
+            NotifyMotherUiOfClientOrderChange(result.Order.Id, result.Order.OrderNumber, session.TerminalId);
+            // Shared contract fields + order for Client basket sync (extra `order` ignored by DTO deserialize).
+            await WriteJsonAsync(context, HttpStatusCode.OK, new
+            {
+                success = true,
+                message = result.Message,
+                orderId = result.Order.Id,
+                billTotal = result.BillTotal,
+                pointsAdded = result.PointsAdded,
+                pointsBalance = result.PointsBalance,
+                customer = result.Customer,
+                order = result.Order,
+                errorCode = (string?)null
+            });
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_order_loyalty_add", "success");
+            await PublishDataChangedAsync("order.updated", result.Order.Id);
+            await PublishDataChangedAsync("loyalty.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client order loyalty add failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientOrderLoyaltyAddResponseDto(
+                Success: false,
+                Message: "Mother POS could not add loyalty points for this order.",
+                Error: "Mother POS could not add loyalty points for this order.",
+                ErrorCode: LoyaltyErrorCodes.CloudDown));
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_order_loyalty_add", "error");
+        }
+    }
+
     private async Task HandleOrderPreviousAsync(HttpContext context)
     {
         var session = await ValidateClientSessionAsync(context);
@@ -1268,13 +1381,60 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         try
         {
             var role = await ResolveSessionUserRoleAsync(session.UserId);
+            int? expenseId = null;
+            var till = ServiceHelper.GetService<TillExpenseService>();
+            var source = $"client_pos:{session.TerminalId}";
+            if (till is not null && request.Amount.HasValue)
+            {
+                if (request.Reason == "Shopping")
+                {
+                    expenseId = (await till.CreateShoppingTakeAsync(new ShoppingTakeRequest
+                    {
+                        ItemName = request.Details ?? "Shopping",
+                        AmountTaken = request.Amount.Value,
+                        SourceArea = source,
+                        OrderId = request.OrderId,
+                        OrderNumber = request.OrderNumber
+                    })).Id;
+                }
+                else if (request.Reason == "Delivery")
+                {
+                    expenseId = (await till.CreateDeliveryPayoutAsync(new DeliveryPayoutRequest
+                    {
+                        Amount = request.Amount.Value,
+                        SourceArea = source,
+                        OrderId = request.OrderId,
+                        OrderNumber = request.OrderNumber
+                    })).Id;
+                }
+                else if (request.Reason == "Cash Count")
+                {
+                    expenseId = (await till.CreateCashCountAsync(new CashCountRequest
+                    {
+                        CountedCash = request.Amount.Value,
+                        SourceArea = source
+                    })).Id;
+                }
+                else if (request.Reason == "Other" && request.Amount.Value > 0)
+                {
+                    expenseId = (await till.CreateOtherExpenseAsync(new OtherTillExpenseRequest
+                    {
+                        Reason = request.Details ?? "Other",
+                        AmountOut = request.Amount.Value,
+                        SourceArea = source
+                    }))?.Id;
+                }
+            }
+
+            var drawerReason = ComposeClientDrawerReason(request.Reason, request.Amount, request.Details);
             var result = await _operational.OpenOrderPlaceCashDrawerAsync(
-                request.Reason,
+                drawerReason,
                 request.OrderId,
                 request.OrderNumber,
                 session.UserId,
                 await ResolveSessionUserNameAsync(session.UserId),
-                role);
+                role,
+                expenseId);
             await WriteJsonAsync(context, (HttpStatusCode)result.StatusCode, new
             {
                 success = result.Success,
@@ -2058,6 +2218,163 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             success = true,
             customers = customers.Select(ToClientCustomer).ToList()
         });
+    }
+
+    private async Task HandleRecentCustomersAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new ClientRecentCustomersResponseDto(
+                false,
+                session.Message,
+                session.Message,
+                RecentCustomersErrorCodes.OfflineMother));
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.ViewCustomers) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Customers))
+        {
+            return;
+        }
+
+        try
+        {
+            var search = context.Request.Query["search"].ToString();
+            var orderType = context.Request.Query["orderType"].ToString();
+            if (string.IsNullOrWhiteSpace(orderType))
+            {
+                orderType = "all";
+            }
+
+            var customerService = new CustomerDataService();
+            await customerService.PurgeExpiredCacheAsync();
+            var summary = await customerService.GetSyncSummaryAsync();
+            var records = await customerService.GetAllAsync(search, orderType);
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new ClientRecentCustomersResponseDto(
+                true,
+                Customers: records.Select(ToRecentCustomerItem).ToList(),
+                Summary: new ClientRecentCustomersSummaryDto(
+                    summary.TotalRecent,
+                    summary.SyncedCount,
+                    summary.PendingCount,
+                    summary.FailedCount,
+                    summary.QueueCount,
+                    summary.LastCloudSyncDisplay)));
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client recent-customers failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientRecentCustomersResponseDto(
+                false,
+                "Mother POS could not load recent customers.",
+                "Mother POS could not load recent customers.",
+                RecentCustomersErrorCodes.Unknown));
+        }
+    }
+
+    private async Task HandleRecentCustomersRetrySyncAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<ClientRecentCustomerMutateRequestDto>(context);
+        var session = await ValidateClientSessionAsync(context, request?.SessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new ClientRecentCustomerMutateResponseDto(
+                false,
+                session.Message,
+                session.Message,
+                RecentCustomersErrorCodes.OfflineMother));
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.ManageCustomers) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Customers))
+        {
+            return;
+        }
+
+        try
+        {
+            var customerService = new CustomerDataService();
+            var result = await customerService.RetrySyncAsync();
+            await WriteJsonAsync(context, HttpStatusCode.OK, new ClientRecentCustomerMutateResponseDto(
+                true,
+                result.Message ?? "Sync complete.",
+                Synced: result.Synced,
+                Failed: result.Failed));
+            await PublishDataChangedAsync("customer.updated", DateTime.UtcNow.Ticks.ToString());
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client recent-customers retry-sync failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientRecentCustomerMutateResponseDto(
+                false,
+                "Mother POS could not retry customer sync.",
+                "Mother POS could not retry customer sync.",
+                RecentCustomersErrorCodes.Unknown));
+        }
+    }
+
+    private async Task HandleRecentCustomersDeleteCacheAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<ClientRecentCustomerDeleteCacheRequestDto>(context);
+        if (request is null || request.Id <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientRecentCustomerMutateResponseDto(
+                false,
+                "A valid customer cache id is required.",
+                "A valid customer cache id is required.",
+                RecentCustomersErrorCodes.Validation));
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context, request.SessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new ClientRecentCustomerMutateResponseDto(
+                false,
+                session.Message,
+                session.Message,
+                RecentCustomersErrorCodes.OfflineMother));
+            return;
+        }
+
+        if (!await EnsureCapabilityAsync(context, session, PosCapabilityKeys.ManageCustomers) ||
+            !await EnsureFeatureAsync(context, session, PosFeatureKeys.Customers))
+        {
+            return;
+        }
+
+        try
+        {
+            var customerService = new CustomerDataService();
+            var deleted = await customerService.DeleteLocalCacheAsync(request.Id);
+            if (!deleted)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.NotFound, new ClientRecentCustomerMutateResponseDto(
+                    false,
+                    "That cache row was not found.",
+                    "That cache row was not found.",
+                    RecentCustomersErrorCodes.NotFound));
+                return;
+            }
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new ClientRecentCustomerMutateResponseDto(
+                true,
+                "Local cache row removed."));
+            await PublishDataChangedAsync("customer.updated", request.Id.ToString());
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client recent-customers delete-cache failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new ClientRecentCustomerMutateResponseDto(
+                false,
+                "Mother POS could not remove that cache row.",
+                "Mother POS could not remove that cache row.",
+                RecentCustomersErrorCodes.Unknown));
+        }
     }
 
     private async Task HandleCustomerUpsertAsync(HttpContext context)
@@ -4169,7 +4486,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
         var result = await drawer.OpenAsync(new CashDrawerOpenRequest
         {
-            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Client Cashier request" : request.Reason.Trim(),
+            Reason = ComposeClientDrawerReason(request.Reason, request.Amount, request.Details),
             SourceArea = source,
             TillExpenseId = expenseId,
             RequestedByUserId = session.UserId,
@@ -4178,6 +4495,120 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         });
         await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cash_drawer_opened", result.Success ? "success" : "failed");
         await WriteJsonAsync(context, result.Success ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new { success = result.Success, printerName = result.PrinterName, message = result.Message, auditId = result.AuditId, openedUtc = DateTimeOffset.UtcNow });
+    }
+
+    private async Task HandleCashierPendingShoppingAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<CashierActionRequest>(context) ?? new CashierActionRequest(null);
+        var session = await ValidateClientSessionAsync(context, request.SessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.OpenCashDrawer))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments))
+        {
+            return;
+        }
+
+        var till = ServiceHelper.GetService<TillExpenseService>();
+        if (till is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, message = "Mother cash drawer service is unavailable." });
+            return;
+        }
+
+        var pending = await till.GetPendingShoppingAsync();
+        await WriteJsonAsync(context, HttpStatusCode.OK, new
+        {
+            success = true,
+            trips = pending.Select(trip => new
+            {
+                id = trip.Id,
+                description = trip.Description,
+                amountTaken = trip.AmountTaken,
+                recordedByName = trip.RecordedByName,
+                pickerLabel = $"{trip.Description} · £{trip.AmountTaken:F2} out",
+                summary = $"{trip.Description} · £{trip.AmountTaken:F2} taken · by {trip.RecordedByName}"
+            })
+        });
+    }
+
+    private async Task HandleCashierSettleShoppingAsync(HttpContext context)
+    {
+        var request = await ReadJsonAsync<CashierSettleShoppingRequest>(context);
+        if (request is null || string.IsNullOrWhiteSpace(request.RequestId) || request.TillExpenseId <= 0)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = "A shopping settle request is required." });
+            return;
+        }
+
+        var session = await ValidateClientSessionAsync(context, request.SessionToken);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new { success = false, errorCode = "session_invalid", message = session.Message });
+            return;
+        }
+
+        if (!await EnsureAnyCapabilityAsync(context, session, PosCapabilityKeys.OpenCashDrawer))
+        {
+            return;
+        }
+
+        if (!await EnsureFeatureAsync(context, session, PosFeatureKeys.Payments))
+        {
+            return;
+        }
+
+        var key = $"drawer-settle:{session.TerminalId}:{request.RequestId.Trim()}";
+        if (!_cashierRequestIds.TryAdd(key, new object()))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.Conflict, new { success = false, message = "This shopping settle request was already processed." });
+            return;
+        }
+
+        var till = ServiceHelper.GetService<TillExpenseService>();
+        var drawer = ServiceHelper.GetService<CashDrawerService>();
+        if (till is null || drawer is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, message = "Mother cash drawer service is unavailable." });
+            return;
+        }
+
+        try
+        {
+            var expense = await till.SettleShoppingAsync(new ShoppingSettleRequest
+            {
+                TillExpenseId = request.TillExpenseId,
+                AmountSpent = request.AmountSpent
+            });
+            var change = expense.AmountReturned ?? 0;
+            var result = await drawer.OpenAsync(new CashDrawerOpenRequest
+            {
+                Reason = $"Shopping settle · {expense.Description} · spent £{expense.AmountSpent:F2} · return £{change:F2}",
+                SourceArea = $"client_cashier:{session.TerminalId}",
+                TillExpenseId = expense.Id,
+                RequestedByUserId = session.UserId,
+                RequestedByName = "Client POS",
+                RequestedByRole = await ResolveSessionUserRoleAsync(session.UserId) ?? "User"
+            });
+            await WriteJsonAsync(context, result.Success ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new
+            {
+                success = result.Success,
+                printerName = result.PrinterName,
+                message = result.Success ? $"Cash drawer opened on {result.PrinterName}." : result.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new { success = false, message = ex.Message });
+        }
     }
 
     private async Task<bool> EnsureFeatureAsync(HttpContext context, ClientSessionValidation session, string feature)
@@ -4232,6 +4663,20 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         postcode = customer.Postcode,
         loyaltyPoints = customer.PointsBalance
     };
+
+    private static ClientRecentCustomerItemDto ToRecentCustomerItem(CustomerDataRecord customer) =>
+        new(
+            customer.Id,
+            customer.Name,
+            customer.PhoneNumber,
+            customer.ContactDetail,
+            customer.OrderTypes,
+            customer.SyncStatus,
+            customer.ShowCollectionBadge,
+            customer.ShowDeliveryBadge,
+            customer.ShowSyncedBadge,
+            customer.ShowPendingSyncBadge,
+            customer.ShowFailedSyncBadge);
 
     private async Task UpdateHeartbeatAsync(string terminalId, ClientHeartbeatRequest request, string? remoteIp)
     {
@@ -4717,6 +5162,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string? SessionToken = null);
 
     private sealed record CashierActionRequest(string? RequestId, string? SessionToken = null, string? Reason = null, string? PrinterTarget = null, decimal? Amount = null, string? Details = null);
+    private sealed record CashierSettleShoppingRequest(string? RequestId, string? SessionToken, int TillExpenseId, decimal AmountSpent);
 
     private sealed record ClientPrintAudit(string PrintJobId, string OrderId, string DocumentType, string Status, string? Message);
 
@@ -4884,10 +5330,27 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string? IdempotencyKey = null,
         string? SessionToken = null);
 
+    private static string ComposeClientDrawerReason(string? reason, decimal? amount, string? details)
+    {
+        var name = (reason ?? string.Empty).Trim();
+        var note = details?.Trim();
+        return name switch
+        {
+            "Shopping" when amount is > 0 => $"Shopping take · {note ?? "Shopping"} · £{amount:F2}",
+            "Delivery" when amount is > 0 => $"Delivery · £{amount:F2}",
+            "Cash Count" when amount is >= 0 => $"Cash count · £{amount:F2}",
+            "Other" when !string.IsNullOrWhiteSpace(note) && amount is > 0 => $"Other · {note} · £{amount:F2}",
+            "Other" when !string.IsNullOrWhiteSpace(note) => $"Other · {note}",
+            _ => string.IsNullOrWhiteSpace(name) ? "Client Cash Drawer" : name
+        };
+    }
+
     private sealed record ClientOrderCashDrawerHttpRequest(
         string? Reason,
         string? OrderId,
-        string? OrderNumber);
+        string? OrderNumber,
+        decimal? Amount = null,
+        string? Details = null);
 
     private sealed record ClientOrderLineHttpRequest(
         string? Id,

@@ -707,6 +707,11 @@ public sealed class ClientCacheService
         await _database.RunInTransactionAsync(connection =>
         {
             var now = DateTimeOffset.UtcNow.ToString("O");
+
+            // Open order lines keep product_id FKs into products. Clear them first so a menu
+            // replace cannot fail with "FOREIGN KEY constraint failed" while Tables/Orders stay OK.
+            connection.Execute("UPDATE order_items SET product_id = NULL");
+
             connection.Execute("DELETE FROM tasting_menu_choices");
             connection.Execute("DELETE FROM tasting_menu_courses");
             connection.Execute("DELETE FROM tasting_menu_options");
@@ -723,8 +728,9 @@ public sealed class ClientCacheService
             connection.Execute("DELETE FROM modifier_groups");
             connection.Execute("DELETE FROM categories");
 
+            // Only treat products that were actually inserted as valid FK targets.
             var categoryIds = stabilized.Categories.Select(category => category.Id).ToHashSet();
-            var productIds = stabilized.Products.Select(product => product.Id).ToHashSet();
+            var insertedProductIds = new HashSet<int>();
             var modifierGroupIds = stabilized.ModifierGroups.Select(group => group.Id).ToHashSet();
             var mealDealIds = stabilized.MealDeals.Select(deal => deal.Id).ToHashSet();
             var tastingMenuIds = stabilized.TastingMenus.Select(menu => menu.Id).ToHashSet();
@@ -761,13 +767,22 @@ public sealed class ClientCacheService
                     product.Sku,
                     product.IsActive ? 1 : 0,
                     now);
+                insertedProductIds.Add(product.Id);
             }
 
             foreach (var price in stabilized.Prices)
             {
-                if (!productIds.Contains(price.ProductId))
+                if (!insertedProductIds.Contains(price.ProductId))
                 {
                     continue;
+                }
+
+                // Menu snapshot does not refresh tax_rates; never write a dangling tax_rate_id FK.
+                int? taxRateId = null;
+                if (price.TaxRateId is int candidateTaxRateId &&
+                    connection.ExecuteScalar<int>("SELECT COUNT(1) FROM tax_rates WHERE id = ?", candidateTaxRateId) > 0)
+                {
+                    taxRateId = candidateTaxRateId;
                 }
 
                 connection.Execute(
@@ -777,7 +792,7 @@ public sealed class ClientCacheService
                     price.PriceType,
                     price.Amount,
                     price.Currency,
-                    price.TaxRateId,
+                    taxRateId,
                     now);
             }
 
@@ -814,7 +829,7 @@ public sealed class ClientCacheService
 
             foreach (var productModifier in stabilized.ProductModifiers)
             {
-                if (!productIds.Contains(productModifier.ProductId) || !modifierGroupIds.Contains(productModifier.ModifierGroupId))
+                if (!insertedProductIds.Contains(productModifier.ProductId) || !modifierGroupIds.Contains(productModifier.ModifierGroupId))
                 {
                     continue;
                 }
@@ -829,7 +844,7 @@ public sealed class ClientCacheService
 
             foreach (var variant in stabilized.Variants)
             {
-                if (!productIds.Contains(variant.ProductId))
+                if (!insertedProductIds.Contains(variant.ProductId))
                 {
                     continue;
                 }
@@ -850,7 +865,7 @@ public sealed class ClientCacheService
 
             foreach (var note in stabilized.QuickNotes)
             {
-                if (!productIds.Contains(note.ProductId) || string.IsNullOrWhiteSpace(note.NoteText))
+                if (!insertedProductIds.Contains(note.ProductId) || string.IsNullOrWhiteSpace(note.NoteText))
                 {
                     continue;
                 }
@@ -1052,7 +1067,12 @@ public sealed class ClientCacheService
         {
             var type = (order.OrderType ?? string.Empty).Trim().ToLowerInvariant();
             var isCustomerOrder = type is "collection" or "pickup" or "col" or "takeaway" or "delivery" or "del";
-            if (isCustomerOrder && !keepIds.Contains(order.OrderId))
+            var isTable = type is "table" or "tbl" or "dine_in" or "dine-in";
+            // Drop Collection/Delivery missing from Mother's kitchen list.
+            // Drop Table rows that were already sent if Mother no longer lists them (paid/voided).
+            // Leave unsent table drafts in cache so Order Place can resume — they stay off Live Orders.
+            var dropKitchenTable = isTable && ClientLiveOrderPresentation.IsKitchenBoardStatus(order.Status);
+            if ((isCustomerOrder || dropKitchenTable) && !keepIds.Contains(order.OrderId))
             {
                 await _database.ExecuteAsync("DELETE FROM order_items WHERE order_id = ?", order.OrderId);
                 await _database.ExecuteAsync("DELETE FROM open_orders WHERE id = ?", order.OrderId);
@@ -1299,9 +1319,34 @@ public sealed class ClientCacheService
         return states;
     }
 
+    /// <summary>
+    /// A later Mother save can overwrite status with a customer name. Keep the kitchen-board
+    /// flag so Live Orders stays visible after Send to Kitchen (same as Mother).
+    /// </summary>
+    private async Task<MotherOrderState> PreserveKitchenBoardStatusAsync(MotherOrderState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.OrderId) ||
+            ClientLiveOrderPresentation.IsKitchenBoardStatus(state.Status) ||
+            ClientLiveOrderPresentation.IsTerminalOrderStatus(state.Status))
+        {
+            return state;
+        }
+
+        var previous = await ExecuteScalarAsync<string>(
+            "SELECT status FROM open_orders WHERE id = ? LIMIT 1",
+            state.OrderId);
+        if (!ClientLiveOrderPresentation.IsKitchenBoardStatus(previous))
+        {
+            return state;
+        }
+
+        return state with { Status = previous! };
+    }
+
     public async Task SaveOrderStateAsync(MotherOrderState state)
     {
         await InitializeAsync();
+        state = await PreserveKitchenBoardStatusAsync(state);
         var now = DateTimeOffset.UtcNow.ToString("O");
         var tableId = state.TableId.HasValue && await RowExistsByIdAsync("tables", state.TableId.Value)
             ? state.TableId
@@ -1375,7 +1420,7 @@ public sealed class ClientCacheService
                 state.OrderId,
                 state.Guests,
                 state.ServerName,
-                state.Status == "sent_to_kitchen" ? "FoodServed" : "Ordering",
+                    ClientLiveOrderPresentation.IsKitchenBoardStatus(state.Status) ? "FoodServed" : "Ordering",
                 state.Version,
                 now,
                 tableId.Value);

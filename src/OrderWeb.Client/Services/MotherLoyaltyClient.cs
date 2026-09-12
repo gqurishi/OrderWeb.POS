@@ -81,6 +81,59 @@ public sealed class MotherLoyaltyClient
         CancellationToken cancellationToken = default) =>
         SendMutateAsync("/api/client/loyalty/redeem", lookup, points, reason, idempotencyKey, cancellationToken);
 
+    /// <summary>
+    /// Order Place earn — <c>POST /api/client/orders/loyalty-add</c>.
+    /// Uses shared <see cref="ClientOrderLoyaltyAddRequestDto"/> / <see cref="ClientOrderLoyaltyAddResponseDto"/>.
+    /// </summary>
+    public async Task<ClientOrderLoyaltyAddResponseDto> AddPointsForOrderAsync(
+        string orderId,
+        string lookup,
+        int? points = null,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var gate = await EnsureOnlineAsync();
+        if (gate != null)
+        {
+            return OfflineOrderAdd(gate);
+        }
+
+        var auth = await GetAuthAsync();
+        if (auth is null)
+        {
+            return AccessDeniedOrderAdd("Sign in and pair with Mother POS before using loyalty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(orderId) || string.IsNullOrWhiteSpace(lookup))
+        {
+            return new ClientOrderLoyaltyAddResponseDto(
+                Success: false,
+                Message: "Order id and customer lookup are required.",
+                Error: "Order id and customer lookup are required.",
+                ErrorCode: LoyaltyErrorCodes.Validation);
+        }
+
+        try
+        {
+            using var client = CreateClient(auth);
+            using var response = await client.PostAsJsonAsync(
+                $"{auth.Settings.ApiBaseUrl.TrimEnd('/')}/api/client/orders/loyalty-add",
+                new ClientOrderLoyaltyAddRequestDto(
+                    OrderId: orderId.Trim(),
+                    Lookup: lookup.Trim(),
+                    Points: points,
+                    IdempotencyKey: idempotencyKey,
+                    SessionToken: auth.Session.SessionToken),
+                JsonOptions,
+                cancellationToken);
+            return await ReadOrderAddResponseAsync(response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return OfflineOrderAdd($"Could not reach Mother POS: {ex.Message}");
+        }
+    }
+
     public async Task<ClientLoyaltyTestResponseDto> TestConnectionAsync(
         string? lookup,
         CancellationToken cancellationToken = default)
@@ -233,6 +286,38 @@ public sealed class MotherLoyaltyClient
             ErrorCode: MapHttpErrorCode(response.StatusCode, null));
     }
 
+    private static async Task<ClientOrderLoyaltyAddResponseDto> ReadOrderAddResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var dto = JsonSerializer.Deserialize<ClientOrderLoyaltyAddResponseDto>(json, JsonOptions);
+        if (dto != null)
+        {
+            var code = string.IsNullOrWhiteSpace(dto.ErrorCode)
+                ? MapHttpErrorCode(response.StatusCode, dto.Error ?? dto.Message)
+                : dto.ErrorCode;
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+            {
+                code = LoyaltyErrorCodes.AccessDenied;
+            }
+
+            return dto with
+            {
+                Success = response.IsSuccessStatusCode && dto.Success,
+                ErrorCode = response.IsSuccessStatusCode ? null : code,
+                Error = response.IsSuccessStatusCode ? null : (dto.Error ?? dto.Message)
+            };
+        }
+
+        var fallback = $"Mother POS order loyalty-add failed ({(int)response.StatusCode}).";
+        return new ClientOrderLoyaltyAddResponseDto(
+            Success: false,
+            Message: fallback,
+            Error: fallback,
+            ErrorCode: MapHttpErrorCode(response.StatusCode, fallback));
+    }
+
     private async Task<string?> EnsureOnlineAsync()
     {
         var online = await _offlinePolicy.IsMotherOnlineAsync();
@@ -275,7 +360,21 @@ public sealed class MotherLoyaltyClient
             Error: message,
             ErrorCode: LoyaltyErrorCodes.OfflineMother);
 
+    private static ClientOrderLoyaltyAddResponseDto OfflineOrderAdd(string message) =>
+        new(
+            Success: false,
+            Message: message,
+            Error: message,
+            ErrorCode: LoyaltyErrorCodes.OfflineMother);
+
     private static ClientLoyaltyLookupResponseDto AccessDeniedLookup(string message) =>
+        new(
+            Success: false,
+            Message: message,
+            Error: message,
+            ErrorCode: LoyaltyErrorCodes.AccessDenied);
+
+    private static ClientOrderLoyaltyAddResponseDto AccessDeniedOrderAdd(string message) =>
         new(
             Success: false,
             Message: message,
@@ -294,10 +393,25 @@ public sealed class MotherLoyaltyClient
             return LoyaltyErrorCodes.CloudDown;
         }
 
+        if (status == HttpStatusCode.Conflict)
+        {
+            return LoyaltyErrorCodes.AlreadyEarned;
+        }
+
+        if (status == HttpStatusCode.NotFound)
+        {
+            return LoyaltyErrorCodes.CustomerNotFound;
+        }
+
         var text = (message ?? string.Empty).ToLowerInvariant();
         if (text.Contains("queued") && text.Contains("retry"))
         {
             return LoyaltyErrorCodes.Queued;
+        }
+
+        if (text.Contains("already") && (text.Contains("added") || text.Contains("earn")))
+        {
+            return LoyaltyErrorCodes.AlreadyEarned;
         }
 
         if (text.Contains("not found") || text.Contains("no customer"))

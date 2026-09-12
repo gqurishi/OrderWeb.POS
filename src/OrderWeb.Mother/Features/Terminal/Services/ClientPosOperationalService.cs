@@ -2,6 +2,7 @@ using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using MySqlConnector;
 using OrderWeb.Contracts.Access;
+using OrderWeb.Contracts.Dtos;
 using OrderWeb.Contracts.Synchronization;
 using POS_in_NET.Models;
 
@@ -1211,7 +1212,8 @@ public sealed partial class ClientPosOperationalService
             order.DiscountAmount,
             order.ServiceChargeAmount,
             order.ServiceChargeStatus,
-            order.ServiceChargePercentage);
+            order.ServiceChargePercentage,
+            order.LoyaltyPointsEarned);
     }
 
     private static string? ResolveTastingMenuId(string menuItemId)
@@ -1697,7 +1699,8 @@ public sealed record ClientOperationalOrder(
     decimal Discount = 0m,
     decimal ServiceCharge = 0m,
     string? ServiceChargeStatus = null,
-    decimal ServiceChargePercent = 0m);
+    decimal ServiceChargePercent = 0m,
+    int LoyaltyPointsEarned = 0);
 
 public sealed record ClientOperationalOrderLine(
     string Id,
@@ -1728,4 +1731,29 @@ public sealed record ClientOrderUpsertResult(bool Success, int StatusCode, strin
 
     public static ClientOrderUpsertResult Fail(int statusCode, string message) =>
         new(false, statusCode, message, null);
+}
+
+/// <summary>Order Place loyalty earn (add points for bill) result for Client API.</summary>
+public sealed record ClientOrderLoyaltyAddResult(
+    bool Success,
+    int StatusCode,
+    string Message,
+    string? ErrorCode,
+    ClientOperationalOrder? Order,
+    decimal? BillTotal,
+    int PointsAdded,
+    int? PointsBalance,
+    ClientLoyaltyCustomerDto? Customer)
+{
+    public static ClientOrderLoyaltyAddResult Ok(
+        ClientOperationalOrder order,
+        string message,
+        decimal billTotal,
+        int pointsAdded,
+        int pointsBalance,
+        ClientLoyaltyCustomerDto customer) =>
+        new(true, 200, message, null, order, billTotal, pointsAdded, pointsBalance, customer);
+
+    public static ClientOrderLoyaltyAddResult Fail(int statusCode, string message, string? errorCode) =>
+        new(false, statusCode, message, errorCode, null, null, 0, null, null);
 }

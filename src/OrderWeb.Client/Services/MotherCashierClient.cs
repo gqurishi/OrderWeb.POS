@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OrderWeb.Client.Models;
+using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.Client.Services;
 
@@ -67,6 +68,79 @@ public sealed class MotherCashierClient
     public Task<CashierActionResult> PrintZReportAsync() => SendActionAsync("/api/client/cashier/z-report/print");
     public Task<CashierActionResult> OpenCashDrawerAsync(string? reason, decimal? amount = null, string? details = null) => SendActionAsync("/api/client/cashier/cash-drawer/open", reason, amount, details);
 
+    public async Task<IReadOnlyList<CashDrawerPendingTrip>> GetPendingShoppingAsync()
+    {
+        var settings = await _cache.GetMotherConnectionAsync();
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        if (settings is null || session is null)
+        {
+            return Array.Empty<CashDrawerPendingTrip>();
+        }
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            ClientCompatibilityHeaders.Apply(client);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Session-Token", session.SessionToken);
+            using var response = await client.PostAsJsonAsync(
+                $"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/cashier/cash-drawer/pending-shopping",
+                new { requestId = Guid.NewGuid().ToString("N"), sessionToken = session.SessionToken });
+            if (!response.IsSuccessStatusCode)
+            {
+                return Array.Empty<CashDrawerPendingTrip>();
+            }
+
+            var envelope = await response.Content.ReadFromJsonAsync<PendingShoppingEnvelope>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return envelope?.Trips?.Select(trip => new CashDrawerPendingTrip(
+                trip.Id,
+                trip.PickerLabel ?? $"{trip.Description} · £{trip.AmountTaken:F2} out",
+                trip.Summary ?? $"{trip.Description} · £{trip.AmountTaken:F2} taken · by {trip.RecordedByName}",
+                trip.AmountTaken,
+                trip.Description ?? "Shopping")).ToList()
+                ?? (IReadOnlyList<CashDrawerPendingTrip>)Array.Empty<CashDrawerPendingTrip>();
+        }
+        catch
+        {
+            return Array.Empty<CashDrawerPendingTrip>();
+        }
+    }
+
+    public async Task<CashierActionResult> SettleShoppingAsync(int tillExpenseId, decimal amountSpent)
+    {
+        var settings = await _cache.GetMotherConnectionAsync();
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        if (settings is null || session is null)
+        {
+            return new(false, "Sign in to Mother POS first.", null, null);
+        }
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            ClientCompatibilityHeaders.Apply(client);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Id", settings.TerminalId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Terminal-Token", settings.TerminalToken);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Session-Token", session.SessionToken);
+            using var response = await client.PostAsJsonAsync(
+                $"{settings.ApiBaseUrl.TrimEnd('/')}/api/client/cashier/cash-drawer/settle-shopping",
+                new
+                {
+                    requestId = Guid.NewGuid().ToString("N"),
+                    sessionToken = session.SessionToken,
+                    tillExpenseId,
+                    amountSpent
+                });
+            var result = await response.Content.ReadFromJsonAsync<CashierActionResult>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return result ?? new(false, "Mother returned an invalid action response.", null, null);
+        }
+        catch
+        {
+            return new(false, "Mother POS is unavailable. This action requires a live connection.", null, null);
+        }
+    }
+
     private async Task<CashierActionResult> SendActionAsync(string path, string? reason = null, decimal? amount = null, string? details = null)
     {
         var settings = await _cache.GetMotherConnectionAsync(); var session = await _cache.GetCurrentLoginSessionAsync();
@@ -83,6 +157,8 @@ public sealed class MotherCashierClient
     }
 
     private sealed record CashierDashboardEnvelope(bool Success, DateTime BusinessDate, int TotalOrders, decimal TotalSales, decimal CashTotal, decimal CardTotal, decimal OtherPaymentTotal, int VoidCount, decimal VoidAmount, decimal DiscountTotal, decimal ExpectedCash, decimal? CountedCash, decimal? Variance, string TerminalName, DateTimeOffset GeneratedUtc, string Version);
+    private sealed record PendingShoppingEnvelope(bool Success, List<PendingShoppingTrip>? Trips);
+    private sealed record PendingShoppingTrip(int Id, string? Description, decimal AmountTaken, string? RecordedByName, string? PickerLabel, string? Summary);
 }
 
 public sealed record CashierDashboardSummary(DateTime BusinessDate, int TotalOrders, decimal TotalSales, decimal CashTotal, decimal CardTotal, decimal OtherPaymentTotal, int VoidCount, decimal VoidAmount, decimal DiscountTotal, decimal ExpectedCash, decimal? CountedCash, decimal? Variance, string TerminalName, DateTimeOffset GeneratedUtc, string Version);

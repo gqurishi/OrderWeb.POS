@@ -98,27 +98,26 @@ public class FlexibleDecimalListConverter : JsonConverter<List<decimal>>
     public override List<decimal> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var values = new List<decimal>();
-
         if (reader.TokenType != JsonTokenType.StartArray)
         {
+            reader.Skip();
             return values;
         }
 
-        while (reader.Read())
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            if (reader.TokenType == JsonTokenType.EndArray)
-            {
-                return values;
-            }
-
             if (reader.TokenType == JsonTokenType.Number && reader.TryGetDecimal(out var number))
             {
                 values.Add(number);
             }
-            else if (reader.TokenType == JsonTokenType.String
-                && decimal.TryParse(reader.GetString(), out var parsed))
+            else if (reader.TokenType == JsonTokenType.String &&
+                     decimal.TryParse(reader.GetString(), out var parsed))
             {
                 values.Add(parsed);
+            }
+            else
+            {
+                reader.Skip();
             }
         }
 
@@ -128,12 +127,112 @@ public class FlexibleDecimalListConverter : JsonConverter<List<decimal>>
     public override void Write(Utf8JsonWriter writer, List<decimal> value, JsonSerializerOptions options)
     {
         writer.WriteStartArray();
-        foreach (var amount in value)
+        foreach (var item in value)
         {
-            writer.WriteNumberValue(amount);
+            writer.WriteNumberValue(item);
+        }
+        writer.WriteEndArray();
+    }
+}
+
+/// <summary>
+/// OrderWeb receipt.lines may be plain strings or objects ({ text / line / content }).
+/// Strict List&lt;string&gt; deserialization was failing top-up/sell after a successful cloud write.
+/// </summary>
+public class FlexibleReceiptLinesConverter : JsonConverter<List<string>>
+{
+    public override List<string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var lines = new List<string>();
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return lines;
         }
 
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            var single = ReadLineToken(ref reader);
+            if (!string.IsNullOrWhiteSpace(single))
+            {
+                lines.Add(single);
+            }
+
+            return lines;
+        }
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            var line = ReadLineToken(ref reader);
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                lines.Add(line);
+            }
+        }
+
+        return lines;
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        foreach (var line in value)
+        {
+            writer.WriteStringValue(line);
+        }
         writer.WriteEndArray();
+    }
+
+    private static string? ReadLineToken(ref Utf8JsonReader reader)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.String:
+                return reader.GetString();
+            case JsonTokenType.Number:
+                return reader.TryGetDecimal(out var number) ? number.ToString("0.##") : reader.GetDouble().ToString("0.##");
+            case JsonTokenType.True:
+                return "true";
+            case JsonTokenType.False:
+                return "false";
+            case JsonTokenType.StartObject:
+                using (var doc = JsonDocument.ParseValue(ref reader))
+                {
+                    return ExtractLineFromObject(doc.RootElement);
+                }
+            case JsonTokenType.StartArray:
+                reader.Skip();
+                return null;
+            default:
+                reader.Skip();
+                return null;
+        }
+    }
+
+    private static string? ExtractLineFromObject(JsonElement element)
+    {
+        foreach (var name in new[] { "text", "line", "content", "value", "message", "label" })
+        {
+            foreach (var prop in element.EnumerateObject())
+            {
+                if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (prop.Value.ValueKind == JsonValueKind.String)
+                {
+                    return prop.Value.GetString();
+                }
+
+                if (prop.Value.ValueKind == JsonValueKind.Number)
+                {
+                    return prop.Value.ToString();
+                }
+            }
+        }
+
+        // Last resort: compact JSON so we never throw on unknown receipt shapes.
+        return element.GetRawText();
     }
 }
 
@@ -434,7 +533,8 @@ public class GiftCardTransactionResponse
     [JsonPropertyName("gift_card")]
     public GiftCard? GiftCard { get; set; }
 
-    [JsonPropertyName("receipt")]
+    /// <summary>Parsed manually — OrderWeb may return object-shaped receipt lines.</summary>
+    [JsonIgnore]
     public GiftCardReceipt? Receipt { get; set; }
 
     [JsonPropertyName("transaction_id")]
@@ -458,6 +558,7 @@ public class GiftCardTransactionResponse
 public class GiftCardReceipt
 {
     [JsonPropertyName("lines")]
+    [JsonConverter(typeof(FlexibleReceiptLinesConverter))]
     public List<string> Lines { get; set; } = new();
 }
 

@@ -12,6 +12,8 @@ public enum ClientOperation
     Refund, ChangePermissions, UpdateMenu, ViewCachedOpenOrders,
     /// <summary>Fresh order history from Mother. Requires Mother online.</summary>
     OrderHistory,
+    /// <summary>Recent customers cache board from Mother. Requires Mother online.</summary>
+    RecentCustomers,
     /// <summary>Read last cached day snapshot of order history while Mother is offline.</summary>
     ViewCachedOrderHistory,
     /// <summary>Reopen an existing Mother Collection/Delivery order for edit. Requires Mother online.</summary>
@@ -53,6 +55,7 @@ public sealed class ClientOfflinePolicy
         ClientOperation.ViewCachedOpenOrders => new(true, false, !motherOnline, motherOnline ? "Open orders current" : "Mother offline — open orders may be outdated."),
         ClientOperation.ViewCachedOrderHistory => new(true, false, !motherOnline, motherOnline ? "Order history current" : "Mother offline — showing last saved day snapshot if available."),
         ClientOperation.OrderHistory => OnlineOnly(motherOnline, "Order history requires Mother POS. No live history was loaded."),
+        ClientOperation.RecentCustomers => OnlineOnly(motherOnline, "Recent customers require Mother POS. No cache was loaded."),
         // Collection/Delivery multi-terminal: mutations and open-for-edit require Mother.
         ClientOperation.OpenCollectionOrder => OnlineOnly(motherOnline, "Opening this order for edit requires Mother POS. Cached list view only is allowed offline."),
         ClientOperation.EditCollectionOrder => OnlineOnly(motherOnline, "Editing this order requires Mother POS. No change was saved."),

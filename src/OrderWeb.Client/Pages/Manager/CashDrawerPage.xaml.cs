@@ -4,18 +4,18 @@ using OrderWeb.Client.Models;
 using OrderWeb.Client.Pages.Orders;
 using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
+using OrderWeb.SharedUI.Views;
 
 public partial class CashDrawerPage : ContentPage
 {
     private readonly ClientCacheService _cache = new();
-    private readonly MotherPrintClient _printClient = new();
     private LoginSession? _session;
 
     public CashDrawerPage()
     {
         InitializeComponent();
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
         Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllAsync();
     }
@@ -38,32 +38,68 @@ public partial class CashDrawerPage : ContentPage
 
         OpenDrawerButton.IsEnabled = false;
         OpenDrawerButton.Text = "Opening...";
-        SetStatus("Syncing", "#EFF6FF", "#2563EB");
 
         try
         {
-            var request = await _printClient.RequestPrintAsync("cash drawer open", null, _session);
-            await _cache.SavePrintRequestAsync(request);
-
-            if (request.Status is "queued")
+            var choice = await CashDrawerDialogFlow.CollectAsync(this);
+            if (choice is null)
             {
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
-            }
-            else if (request.Status is "printer offline")
-            {
-                request = await _printClient.AdvanceStatusAsync(request);
-                await _cache.SavePrintRequestAsync(request);
+                return;
             }
 
-            SetStatus(request.Status, BadgeBackground(request.Status), BadgeText(request.Status));
+            if (choice.Kind == CashDrawerUiKind.ShoppingSettle)
+            {
+                var settled = await ClientCashDrawerOpen.SettleShoppingAsync(this, _cache);
+                if (settled is null)
+                {
+                    return;
+                }
+
+                await CashDrawerDialogFlow.ShowNoticeAsync(
+                    this,
+                    settled.Success ? "Cash Drawer" : "Cash Drawer Failed",
+                    settled.Message,
+                    settled.Success ? "OK" : "!",
+                    settled.Success ? "#10B981" : "#EF4444");
+                return;
+            }
+
+            var online = await new ClientOfflinePolicy().IsMotherOnlineAsync();
+            if (!online)
+            {
+                await CashDrawerDialogFlow.ShowNoticeAsync(this, "Cash Drawer Failed", "Cash drawer opening requires a live Mother POS connection.", "!", "#EF4444");
+                return;
+            }
+
+            var open = ClientCashDrawerOpen.From(choice);
+            SetStatus("Syncing", "#EFF6FF", "#2563EB");
+            if (string.Equals(_session?.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
+            {
+                var cashier = await new MotherCashierClient(_cache).OpenCashDrawerAsync(open.Reason, open.Amount, open.Details);
+                await CashDrawerDialogFlow.ShowNoticeAsync(
+                    this,
+                    cashier.Success ? "Cash Drawer" : "Cash Drawer Failed",
+                    cashier.Message,
+                    cashier.Success ? "OK" : "!",
+                    cashier.Success ? "#10B981" : "#EF4444");
+                SetStatus(cashier.Success ? "printed" : "failed", BadgeBackground(cashier.Success ? "printed" : "failed"), BadgeText(cashier.Success ? "printed" : "failed"));
+            }
+            else
+            {
+                var drawer = await new MotherOrderClient().OpenOrderPlaceCashDrawerAsync(null, open.DrawerReason);
+                await CashDrawerDialogFlow.ShowNoticeAsync(
+                    this,
+                    drawer.Success ? "Cash Drawer" : "Cash Drawer Failed",
+                    drawer.Message,
+                    drawer.Success ? "OK" : "!",
+                    drawer.Success ? "#10B981" : "#EF4444");
+                SetStatus(drawer.Success ? "printed" : "failed", BadgeBackground(drawer.Success ? "printed" : "failed"), BadgeText(drawer.Success ? "printed" : "failed"));
+            }
         }
         catch (Exception ex)
         {
             SetStatus("Failed", "#FEE2E2", "#DC2626");
-            await DisplayAlert("Cash Drawer Failed", ex.Message, "OK");
+            await CashDrawerDialogFlow.ShowNoticeAsync(this, "Cash Drawer Failed", ex.Message, "!", "#EF4444");
         }
         finally
         {
@@ -133,34 +169,7 @@ public partial class CashDrawerPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "cashdrawer") ||
-            !ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, menu, currentRoute: "cashdrawer");
     }
 
     private async Task UpdateAllAsync()

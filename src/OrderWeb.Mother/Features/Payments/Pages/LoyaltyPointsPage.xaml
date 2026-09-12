@@ -22,7 +22,6 @@
                 BorderColor="#FCA5A5"
                 BorderWidth="1"
                 TextColor="#DC2626"
-                FontAttributes="Bold"
                 FontSize="14"
                 WidthRequest="72"
                 HeightRequest="40"

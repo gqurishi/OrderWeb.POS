@@ -31,14 +31,14 @@ public sealed class MotherOrderHistoryClient
         string? orderType,
         string? search,
         int page = 1,
-        int pageSize = 50,
+        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var historyDate = (date ?? DateTime.Today).Date;
         var type = string.IsNullOrWhiteSpace(orderType) ? "ALL" : orderType.Trim().ToUpperInvariant();
         var searchText = (search ?? string.Empty).Trim();
         page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize <= 0 ? 50 : pageSize, 1, 100);
+        pageSize = Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 100);
 
         var online = await _offlinePolicy.IsMotherOnlineAsync(cancellationToken);
         var liveGate = _offlinePolicy.Evaluate(ClientOperation.OrderHistory, online);

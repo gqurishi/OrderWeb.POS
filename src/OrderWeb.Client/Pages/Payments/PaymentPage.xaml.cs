@@ -37,11 +37,14 @@ public partial class PaymentPage : ContentPage
         _tipAmount = Math.Max(0m, tipAmount);
         _tipTotal = Math.Max(_tipAmount, Math.Max(0m, tipTotal));
         InitializeComponent();
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         // Wizard already chose the amount for Table; COL/DEL are full-bill only.
         var (sharedPayment, viewModel) = PaymentTenderSurface.Create(
             _totalDue,
             allowSplit: allowSplit,
-            showLoyalty: true);
+            // Supported redeem surface. Order Place tender Loyalty is deferred
+            // (OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled = false) — do not delete this path.
+            showLoyalty: true); // Supported redeem surface (Order Place tender Loyalty is deferred — see OrderPlaceLoyaltyEarnRules)
         _sharedPayment = viewModel;
         _sharedPayment.StatusCheckRequested += OnSharedPaymentStatusCheckRequested;
         sharedPayment.SubmissionRequested += OnSharedPaymentRequested;

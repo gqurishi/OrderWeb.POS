@@ -23,6 +23,8 @@ public partial class LoyaltyPage : ContentPage
     public LoyaltyPage()
     {
         InitializeComponent();
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Loyalty Points");
         _offlinePolicy = new ClientOfflinePolicy(_cache);
         _loyalty = new MotherLoyaltyClient(_cache, _offlinePolicy);
 
@@ -39,13 +41,16 @@ public partial class LoyaltyPage : ContentPage
             await DisplayAlert("Loyalty", "Loyalty statements are sent from Mother POS / OrderWeb cloud.", "OK");
 
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        // WinUI can repaint the title-bar ← after PushAsync; suppress again on appear.
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Loyalty Points");
         await RefreshAccessFromMotherAsync();
         if (!HasLoyaltyAccess())
         {
@@ -54,6 +59,25 @@ public partial class LoyaltyPage : ContentPage
                 "This Client terminal is not allowed to use Loyalty. On Mother: Terminal Health → Access → Loyalty ON → Save, then try again (or Update All).",
                 "OK");
             await Navigation.PopAsync(false);
+        }
+    }
+
+    private async void OnCloseClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (Navigation.NavigationStack.Count > 1)
+            {
+                await Navigation.PopAsync(false);
+            }
+            else
+            {
+                await Navigation.PopToRootAsync(false);
+            }
+        }
+        catch
+        {
+            await Navigation.PopToRootAsync(false);
         }
     }
 
@@ -561,33 +585,6 @@ public partial class LoyaltyPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "loyalty") ||
-            !ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, menu, currentRoute: "loyalty");
     }
 }

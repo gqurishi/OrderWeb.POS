@@ -494,8 +494,10 @@ public sealed class OrderPlaceLineRow : ContentView
         _name = new Label
         {
             FontAttributes = FontAttributes.Bold,
-            LineBreakMode = LineBreakMode.WordWrap,
-            MaxLines = 2,
+            // Keep Mother/Client cart titles on one line (e.g. "Birany (learge)").
+            // WordWrap + MaxLines=2 broke at the space when Details (addons) stole width.
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
             VerticalTextAlignment = TextAlignment.Center
         };
         _name.Use(Label.FontSizeProperty, "OpFontLineName");
@@ -594,7 +596,8 @@ public sealed class OrderPlaceLineRow : ContentView
             VerticalOptions = LayoutOptions.Center
         };
         _name.HorizontalOptions = LayoutOptions.Fill;
-        _details.MaximumWidthRequest = 110;
+        // Cap addon/note snippet so the title column keeps room for "Item (Variant)".
+        _details.MaximumWidthRequest = 72;
         title.Add(_name);
         title.Add(_statusCue, 1);
         title.Add(_details, 2);

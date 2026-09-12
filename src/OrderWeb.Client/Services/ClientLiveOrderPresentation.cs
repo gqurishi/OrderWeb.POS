@@ -37,10 +37,44 @@ public static class ClientLiveOrderPresentation
             _ => "Collection"
         };
 
+    /// <summary>
+    /// Mother Live Order is a kitchen board: drafts stay off until Send to Kitchen.
+    /// </summary>
     public static IReadOnlyList<MotherOrderState> OpenOrdersOnly(IReadOnlyList<MotherOrderState> orders) =>
-        orders
-            .Where(order => !string.Equals(order.Status, "Closed", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        orders.Where(IsKitchenBoardOrder).ToList();
+
+    public static bool IsKitchenBoardOrder(MotherOrderState order) =>
+        IsKitchenBoardStatus(order.Status);
+
+    public static bool IsKitchenBoardStatus(string? status)
+    {
+        var key = NormalizeStatus(status);
+        return key is "senttokitchen" or "kitchen" or "preparing" or "ready"
+            or "sent" or "sentpartial" or "sentfull" or "paymentpartial" or "foodserved";
+    }
+
+    public static bool IsTerminalOrderStatus(string? status)
+    {
+        var key = NormalizeStatus(status);
+        return key is "closed" or "cancelled" or "canceled" or "void" or "voided" or "paid" or "completed";
+    }
+
+    /// <summary>
+    /// Mother GET /api/client/orders is already kitchen-filtered. Stamp status so a later
+    /// cache read still matches the board rule when the payload status is a customer name.
+    /// </summary>
+    public static MotherOrderState AsKitchenBoardOrder(MotherOrderState order)
+    {
+        if (IsTerminalOrderStatus(order.Status) || IsKitchenBoardStatus(order.Status))
+        {
+            return order;
+        }
+
+        return order with { Status = "sent_to_kitchen" };
+    }
+
+    private static string NormalizeStatus(string? status) =>
+        new((status ?? string.Empty).Trim().ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 
     public static IReadOnlyList<LiveOrderCardPresentation> Map(
         IReadOnlyList<MotherOrderState> openOrders,

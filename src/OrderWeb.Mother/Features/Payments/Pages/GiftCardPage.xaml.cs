@@ -17,7 +17,6 @@ public partial class GiftCardPage : ContentPage
     private GiftCardFlowKind _activeFlow = GiftCardFlowKind.Redeem;
     private string? _activateCardNumber;
     private string? _activateCapturedPaymentKey;
-    private string? _sellCapturedPaymentKey;
     private string? _topUpCapturedPaymentKey;
     private GiftCard? _topUpGiftCard;
     private GiftCard? _redeemGiftCard;
@@ -44,8 +43,6 @@ public partial class GiftCardPage : ContentPage
         Gift.CloseRequested += OnCloseClicked;
         Gift.ActivateLookupRequested += OnActivateLookupClicked;
         Gift.ActivateRequested += OnActivateCardClicked;
-        Gift.GenerateSellCardRequested += OnGenerateSellCardClicked;
-        Gift.SellRequested += OnSellCardClicked;
         Gift.TopUpLookupRequested += OnTopUpLookupClicked;
         Gift.TopUpRequested += OnTopUpCardClicked;
         Gift.RedeemLookupRequested += OnRedeemLookupClicked;
@@ -117,14 +114,6 @@ public partial class GiftCardPage : ContentPage
             System.Diagnostics.Debug.WriteLine($"Gift card close navigation failed: {ex.Message}");
             await AppAlertService.ShowAlertAsync("Navigation Error", "Could not return to the dashboard. Please try again.");
         }
-    }
-
-    private void OnGenerateSellCardClicked(object? sender, EventArgs e)
-    {
-        Gift.SellCardEntry.Text = BuildPosGiftCardNumber();
-        _sellCapturedPaymentKey = null;
-        Gift.SellReceiptLabel.Text = string.Empty;
-        GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "New POS gift card number generated.", false);
     }
 
     private async void OnActivateLookupClicked(object? sender, EventArgs e)
@@ -229,69 +218,6 @@ public partial class GiftCardPage : ContentPage
             ShowReceipt(Gift.ActivateReceiptLabel, result);
             await PrintOrderWebReceiptAsync(result, orderId, Gift.ActivateStatusLabel, "Activation");
             _activateCapturedPaymentKey = null;
-            return false;
-        });
-    }
-
-    private async void OnSellCardClicked(object? sender, EventArgs e)
-    {
-        var cardNumber = Gift.SellCardEntry.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(cardNumber))
-        {
-            cardNumber = BuildPosGiftCardNumber();
-            Gift.SellCardEntry.Text = cardNumber;
-            _sellCapturedPaymentKey = null;
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "New POS gift card number generated.", false);
-        }
-
-        if (!TryReadAmount(Gift.SellAmountEntry.Text, out var amount))
-        {
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "Enter a valid sale amount.", true);
-            return;
-        }
-
-        var orderId = GetOrCreateOrderId(Gift.SellOrderIdEntry, "SELL");
-        var paymentMethod = GetPaymentMethod(Gift.SellPaymentMethodPicker);
-        var paymentKey = BuildGiftCardPaymentKey(cardNumber, amount, paymentMethod, orderId);
-        if (!string.Equals(_sellCapturedPaymentKey, paymentKey, StringComparison.Ordinal))
-        {
-            if (!await TakeLocalPaymentAsync(paymentMethod, amount, Gift.SellStatusLabel, "sold"))
-            {
-                return;
-            }
-
-            _sellCapturedPaymentKey = paymentKey;
-        }
-        else
-        {
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "Local payment already taken. Retrying OrderWeb sale.", false);
-        }
-
-        await RunBusyAsync(Gift.SellActionButton, "Selling...", async () =>
-        {
-            var result = await _giftCardApiService.SellAsync(
-                new GiftCardSellRequest
-                {
-                    CardNumber = cardNumber,
-                    Amount = amount,
-                    PaymentMethod = paymentMethod,
-                    OrderId = orderId,
-                    TillOrderId = orderId,
-                    Description = "POS new gift card sale"
-                },
-                orderId);
-
-            if (!result.Success)
-            {
-                GiftCardView.SetFlowStatus(Gift.SellStatusLabel, result.Error ?? result.Message ?? "Gift card sale failed.", true);
-                return true;
-            }
-
-            var soldCardNumber = result.GiftCard?.CardNumber ?? cardNumber;
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, result.Message ?? $"Sold card {soldCardNumber} for {FormatMoney(amount)}.", false);
-            ShowReceipt(Gift.SellReceiptLabel, result);
-            await PrintOrderWebReceiptAsync(result, orderId, Gift.SellStatusLabel, "Sale");
-            _sellCapturedPaymentKey = null;
             return false;
         });
     }
@@ -407,7 +333,6 @@ public partial class GiftCardPage : ContentPage
         Gift.RedeemActionButton.IsEnabled = true;
         Gift.RedeemBalanceLabel.Text = FormatMoney(_redeemGiftCard.Balance);
         Gift.RedeemCardStatusLabel.Text = $"{_redeemGiftCard.CardNumber} - {_redeemGiftCard.StatusDisplay.Trim()}";
-        Gift.FocusRedeemAmountForKeypad();
     }
 
     private async void OnRedeemCardClicked(object? sender, EventArgs e)
@@ -527,40 +452,23 @@ public partial class GiftCardPage : ContentPage
         Label statusLabel,
         string actionPastTense)
     {
-        switch (paymentMethod.Trim().ToLowerInvariant())
+        var actionVerb = actionPastTense.Trim().ToLowerInvariant() switch
         {
-            case "cash":
-                GiftCardView.SetFlowStatus(statusLabel, $"Take cash payment locally: {FormatMoney(amount)}.", false);
-                var cashDialog = new CashPaymentDialog();
-                cashDialog.SetAmountDue(amount);
-                var cashResult = await cashDialog.ShowAsync();
-                if (cashResult.Success)
-                {
-                    GiftCardView.SetFlowStatus(statusLabel, $"Cash payment taken. Change: {FormatMoney(cashResult.Change)}.", false);
-                    return true;
-                }
+            "activated" => "activate",
+            "topped up" => "top up",
+            _ => "update"
+        };
 
-                GiftCardView.SetFlowStatus(statusLabel, $"Cash payment was cancelled. Card was not {actionPastTense}.", true);
-                return false;
-
-            case "card":
-                GiftCardView.SetFlowStatus(statusLabel, $"Take card payment locally: {FormatMoney(amount)}.", false);
-                var cardDialog = new CardPaymentDialog();
-                cardDialog.SetAmount(amount);
-                var cardResult = await cardDialog.ShowAsync();
-                if (cardResult.Success)
-                {
-                    GiftCardView.SetFlowStatus(statusLabel, "Card payment confirmed locally.", false);
-                    return true;
-                }
-
-                GiftCardView.SetFlowStatus(statusLabel, $"Card payment was not completed. Card was not {actionPastTense}.", true);
-                return false;
-
-            default:
-                GiftCardView.SetFlowStatus(statusLabel, "Choose cash or card as the local payment method.", true);
-                return false;
+        var confirmed = await Gift.ConfirmLocalPaymentAsync(paymentMethod, amount, actionVerb);
+        if (confirmed)
+        {
+            var method = paymentMethod.Equals("card", StringComparison.OrdinalIgnoreCase) ? "Card" : "Cash";
+            GiftCardView.SetFlowStatus(statusLabel, $"{method} payment confirmed locally.", false);
+            return true;
         }
+
+        GiftCardView.SetFlowStatus(statusLabel, $"Payment was cancelled. Card was not {actionPastTense}.", true);
+        return false;
     }
 
     private async Task PrintOrderWebReceiptAsync(
@@ -668,11 +576,6 @@ public partial class GiftCardPage : ContentPage
             amount.ToString("F2", CultureInfo.InvariantCulture),
             paymentMethod.Trim().ToLowerInvariant(),
             orderId.Trim());
-    }
-
-    private static string BuildPosGiftCardNumber()
-    {
-        return $"POSGC{DateTime.UtcNow:yyyyMMddHHmmss}{Guid.NewGuid():N}".Substring(0, 26).ToUpperInvariant();
     }
 
     private static string FormatMoney(decimal amount)

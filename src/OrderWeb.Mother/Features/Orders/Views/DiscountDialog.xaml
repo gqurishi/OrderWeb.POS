@@ -184,6 +184,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <Label Text="Discount Amount:"
                                FontSize="15"
+                               FontAttributes="Bold"
                                TextColor="#996600"
                                VerticalOptions="Center"/>
                         <Label x:Name="DiscountAmountLabel"

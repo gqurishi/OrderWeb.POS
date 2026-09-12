@@ -10,7 +10,7 @@ namespace POS_in_NET.Services;
 /// </summary>
 public sealed class ClientOrderHistoryService
 {
-    public const int DefaultPageSize = 50;
+    public const int DefaultPageSize = 20;
     public const int MaxPageSize = 100;
 
     private readonly DatabaseService _databaseService;

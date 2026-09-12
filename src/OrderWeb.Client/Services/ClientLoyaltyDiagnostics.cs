@@ -59,6 +59,11 @@ public static class ClientLoyaltyDiagnostics
             return "Mother access";
         }
 
+        if (string.Equals(errorCode, LoyaltyErrorCodes.AlreadyEarned, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Mother";
+        }
+
         var text = $"{errorCode} {message}".ToLowerInvariant();
         if (text.Contains("orderweb") || text.Contains("cloud") || text.Contains("queued"))
         {

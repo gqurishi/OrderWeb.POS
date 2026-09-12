@@ -1,59 +1,42 @@
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
-using System.Threading;
 
 namespace POS_in_NET.Pages;
 
 public partial class CustomerDataPage : ContentPage
 {
     private readonly CustomerDataService _customerDataService = new();
-    private string _filter = "all";
+    private RecentCustomerFilter _filter = RecentCustomerFilter.All;
     private bool _isLoading;
     private bool _hasPendingLoad;
     private DateTime _lastCachePurgeAt = DateTime.MinValue;
-    private CancellationTokenSource? _searchDebounceCts;
-    private static readonly TimeSpan SearchDebounceDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan CachePurgeInterval = TimeSpan.FromMinutes(5);
 
     public CustomerDataPage()
     {
         InitializeComponent();
         TopBar.SetPageTitle("Recent Customers");
-        SearchEntry.TextChanged += (_, _) => _ = DebounceLoadAsync();
+        WireBoard();
+    }
+
+    private void WireBoard()
+    {
+        Board.RefreshRequested += async (_, _) => await LoadAsync(forceCachePurge: true);
+        Board.RetrySyncRequested += async (_, _) => await RetrySyncAsync();
+        Board.SearchChanged += async (_, _) => await LoadAsync();
+        Board.FilterChanged += async (_, e) =>
+        {
+            _filter = e.Filter;
+            await LoadAsync();
+        };
+        Board.RemoveCacheRequested += async (_, e) => await RemoveCacheAsync(e.Row);
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
         _ = LoadAsync(forceCachePurge: true);
-    }
-
-    protected override void OnDisappearing()
-    {
-        _searchDebounceCts?.Cancel();
-        _searchDebounceCts?.Dispose();
-        _searchDebounceCts = null;
-        base.OnDisappearing();
-    }
-
-    private async Task DebounceLoadAsync()
-    {
-        _searchDebounceCts?.Cancel();
-        _searchDebounceCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        _searchDebounceCts = cts;
-
-        try
-        {
-            await Task.Delay(SearchDebounceDelay, cts.Token);
-            if (!cts.IsCancellationRequested)
-            {
-                await LoadAsync();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
     }
 
     private async Task LoadAsync(bool forceCachePurge = false)
@@ -67,6 +50,7 @@ public partial class CustomerDataPage : ContentPage
         try
         {
             _isLoading = true;
+            Board.SetBusy(true);
 
             if (forceCachePurge || DateTime.UtcNow - _lastCachePurgeAt > CachePurgeInterval)
             {
@@ -75,14 +59,16 @@ public partial class CustomerDataPage : ContentPage
             }
 
             var summary = await _customerDataService.GetSyncSummaryAsync();
-            SyncedCountLabel.Text = summary.SyncedCount.ToString();
-            PendingCountLabel.Text = summary.PendingCount.ToString();
-            FailedCountLabel.Text = summary.FailedCount.ToString();
-            LastSyncLabel.Text = summary.LastCloudSyncDisplay;
+            var filterCode = RecentCustomerFilterCodes.ToApiCode(_filter);
+            var records = await _customerDataService.GetAllAsync(Board.SearchText, filterCode);
 
-            var records = await _customerDataService.GetAllAsync(SearchEntry.Text, _filter);
-            CustomersCollection.ItemsSource = records;
-            SummaryLabel.Text = $"{records.Count} of {summary.TotalRecent} recent customer(s) shown · queue {summary.QueueCount}";
+            Board.SetSummary(new RecentCustomerSyncSummaryPresentation(
+                summary.SyncedCount,
+                summary.PendingCount,
+                summary.FailedCount,
+                summary.LastCloudSyncDisplay,
+                $"{records.Count} of {summary.TotalRecent} recent customer(s) shown · queue {summary.QueueCount}"));
+            Board.SetRows(records.Select(ToRow).ToList());
         }
         catch (Exception ex)
         {
@@ -91,6 +77,7 @@ public partial class CustomerDataPage : ContentPage
         finally
         {
             _isLoading = false;
+            Board.SetBusy(false);
             if (_hasPendingLoad)
             {
                 _hasPendingLoad = false;
@@ -99,15 +86,11 @@ public partial class CustomerDataPage : ContentPage
         }
     }
 
-    private async void OnRefreshClicked(object sender, EventArgs e)
-    {
-        await LoadAsync(forceCachePurge: true);
-    }
-
-    private async void OnRetrySyncClicked(object sender, EventArgs e)
+    private async Task RetrySyncAsync()
     {
         try
         {
+            Board.SetBusy(true);
             var result = await _customerDataService.RetrySyncAsync();
             await AppAlertService.ShowAlertAsync("Customer Sync", result.Message ?? "Sync complete.");
             await LoadAsync(forceCachePurge: true);
@@ -116,42 +99,15 @@ public partial class CustomerDataPage : ContentPage
         {
             await AppAlertService.ShowAlertAsync("Sync Failed", ex.Message);
         }
+        finally
+        {
+            Board.SetBusy(false);
+        }
     }
 
-    private async void OnFilterAllClicked(object sender, EventArgs e)
+    private async Task RemoveCacheAsync(RecentCustomerRowPresentation row)
     {
-        _filter = "all";
-        SetFilterButtonStyles(FilterAllButton, FilterCollectionButton, FilterDeliveryButton);
-        await LoadAsync();
-    }
-
-    private async void OnFilterCollectionClicked(object sender, EventArgs e)
-    {
-        _filter = "collection";
-        SetFilterButtonStyles(FilterCollectionButton, FilterAllButton, FilterDeliveryButton);
-        await LoadAsync();
-    }
-
-    private async void OnFilterDeliveryClicked(object sender, EventArgs e)
-    {
-        _filter = "delivery";
-        SetFilterButtonStyles(FilterDeliveryButton, FilterAllButton, FilterCollectionButton);
-        await LoadAsync();
-    }
-
-    private static void SetFilterButtonStyles(Button active, Button inactiveA, Button inactiveB)
-    {
-        active.BackgroundColor = Color.FromArgb("#3B82F6");
-        active.TextColor = Colors.White;
-        inactiveA.BackgroundColor = Color.FromArgb("#E2E8F0");
-        inactiveA.TextColor = Color.FromArgb("#334155");
-        inactiveB.BackgroundColor = Color.FromArgb("#E2E8F0");
-        inactiveB.TextColor = Color.FromArgb("#334155");
-    }
-
-    private async void OnDeleteCustomerClicked(object sender, EventArgs e)
-    {
-        if (sender is not Button { CommandParameter: CustomerDataRecord record })
+        if (row.Tag is not CustomerDataRecord record)
         {
             return;
         }
@@ -183,4 +139,15 @@ public partial class CustomerDataPage : ContentPage
             await AppAlertService.ShowAlertAsync("Remove Failed", ex.Message);
         }
     }
+
+    private static RecentCustomerRowPresentation ToRow(CustomerDataRecord record) =>
+        new(
+            record.Name,
+            record.ContactDetail,
+            record.ShowCollectionBadge,
+            record.ShowDeliveryBadge,
+            record.ShowSyncedBadge,
+            record.ShowPendingSyncBadge,
+            record.ShowFailedSyncBadge,
+            record);
 }

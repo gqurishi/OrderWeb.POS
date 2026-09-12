@@ -1,11 +1,12 @@
 using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Features;
+using OrderWeb.SharedUI.Navigation;
 
 namespace OrderWeb.Client.Services;
 
 /// <summary>
 /// Client presentation uses the feature/route list Mother sent at login.
-/// Sidebars mirror Mother User / Manager (including Rider label). Rider board stays on Mother.
+/// Sidebars mirror Mother User / Manager, except Rider. Rider stays on Mother only.
 /// </summary>
 public static class ClientHostAccess
 {
@@ -13,18 +14,11 @@ public static class ClientHostAccess
     private static IReadOnlySet<string> _routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "dashboard" };
     private static string? _sessionRole;
 
-    /// <summary>Mother User sidebar routes (Dashboard + service surface).</summary>
-    private static readonly HashSet<string> MotherUserHostRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dashboard", "restaurant", "collection", "delivery", "liveorder", "reservation"
-    };
+    /// <summary>SharedUI User sidebar — same list Mother flyout uses.</summary>
+    private static readonly HashSet<string> MotherUserHostRoutes = new(PosRoleMenus.User, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Mother Manager sidebar routes (includes Rider / weborders for menu parity).</summary>
-    private static readonly HashSet<string> MotherManagerHostRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dashboard", "cashdrawer", "restaurant", "collection", "delivery", "weborders", "liveorder",
-        "reservation", "orderhistory", "giftcards", "loyalty", "customerdata"
-    };
+    /// <summary>SharedUI Manager sidebar — same list Mother flyout uses.</summary>
+    private static readonly HashSet<string> MotherManagerHostRoutes = new(PosRoleMenus.Manager, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlySet<string> Features => _features;
     public static IReadOnlySet<string> Routes => _routes;
@@ -40,17 +34,17 @@ public static class ClientHostAccess
         {
             var userRoutes = new HashSet<string>(MotherUserHostRoutes, StringComparer.OrdinalIgnoreCase);
             userRoutes.IntersectWith(Routes);
-            return WithReservationRoute(userRoutes);
+            return WithoutRider(WithReservationRoute(userRoutes));
         }
 
         if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
             var managerRoutes = new HashSet<string>(MotherManagerHostRoutes, StringComparer.OrdinalIgnoreCase);
             managerRoutes.IntersectWith(Routes);
-            return WithRiderRoute(WithReservationRoute(managerRoutes));
+            return WithoutRider(WithReservationRoute(managerRoutes));
         }
 
-        return Routes;
+        return WithoutRider(Routes);
     }
 
     /// <summary>
@@ -117,12 +111,7 @@ public static class ClientHostAccess
             _routes = WithReservationRoute(_routes);
         }
 
-        if (_features.Contains(PosFeatureKeys.Delivery) ||
-            _routes.Contains("delivery") ||
-            _routes.Contains("weborders"))
-        {
-            _routes = WithRiderRoute(_routes);
-        }
+        _routes = WithoutRider(_routes);
     }
 
     public static void ApplyFromSession(OrderWeb.Client.Models.LoginSession? session)
@@ -156,7 +145,7 @@ public static class ClientHostAccess
         return RoutesForRole(effectiveRole).Contains(route);
     }
 
-    /// <summary>Rider board is Mother-only; Client may show the menu item for parity.</summary>
+    /// <summary>Rider is not a Client menu. Still recognized so a stale tap does not open a page.</summary>
     public static bool IsMotherOnlyMenu(string? menuTitle) =>
         IsMenuRoute(menuTitle, "weborders");
 
@@ -221,27 +210,15 @@ public static class ClientHostAccess
         return ClientAccessPolicy.FilterRoutes(next);
     }
 
-    private static IReadOnlySet<string> WithRiderRoute(IReadOnlySet<string> routes)
+    private static IReadOnlySet<string> WithoutRider(IReadOnlySet<string> routes)
     {
-        // Mother Manager shows Rider under Delivery. Mirror that label when Delivery is granted.
-        var deliverySurface =
-            _features.Contains(PosFeatureKeys.Delivery) ||
-            _routes.Contains("delivery") ||
-            _routes.Contains("weborders") ||
-            routes.Contains("delivery") ||
-            routes.Contains("weborders");
-
-        if (!deliverySurface)
+        if (!routes.Contains("weborders"))
         {
             return routes;
         }
 
-        if (routes.Contains("weborders"))
-        {
-            return routes;
-        }
-
-        var next = new HashSet<string>(routes, StringComparer.OrdinalIgnoreCase) { "weborders" };
-        return ClientAccessPolicy.FilterRoutes(next);
+        var next = new HashSet<string>(routes, StringComparer.OrdinalIgnoreCase);
+        next.Remove("weborders");
+        return next;
     }
 }

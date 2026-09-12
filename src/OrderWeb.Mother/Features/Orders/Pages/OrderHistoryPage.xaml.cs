@@ -1,13 +1,13 @@
 using Microsoft.Maui.Controls;
-using Microsoft.Maui.Controls.Shapes;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MySqlConnector;
-using Syncfusion.Maui.Calendar;
 
 namespace POS_in_NET.Pages
 {
@@ -15,7 +15,7 @@ namespace POS_in_NET.Pages
     {
         private readonly DatabaseService _databaseService;
         private readonly CloudOrderService? _cloudOrderService;
-        private const int PageSize = 50;
+        private const int PageSize = 20;
         private readonly SemaphoreSlim _loadGate = new(1, 1);
         private CancellationTokenSource? _loadCts;
         private bool _subscribedToChanges;
@@ -42,10 +42,37 @@ namespace POS_in_NET.Pages
             }
             
             TopBar.SetPageTitle("Order History");
-            
+            WireBoard();
             UpdateTabSelection();
             UpdateDateDisplay();
             UpdatePagination(false);
+        }
+
+        private void WireBoard()
+        {
+            Board.DateFilterTapped += async (_, _) => await PickSharedDateAsync();
+            Board.SearchTapped += async (_, _) => await PickSharedSearchAsync();
+            Board.ClearSearchRequested += (_, _) => OnClearSearchClicked(Board, EventArgs.Empty);
+            Board.FilterChanged += (_, e) =>
+            {
+                _selectedOrderType = OrderHistoryFilterCodes.ToApiCode(e.Filter);
+                ResetPageAndLoad();
+            };
+            Board.PreviousPageRequested += (_, _) => OnPreviousPageClicked(Board, EventArgs.Empty);
+            Board.NextPageRequested += (_, _) => OnNextPageClicked(Board, EventArgs.Empty);
+            Board.BackRequested += (_, _) => OnCancelClicked(Board, EventArgs.Empty);
+            Board.ViewOrderRequested += async (_, e) =>
+            {
+                if (e.Row.Tag is not OrderHistoryItem order)
+                {
+                    return;
+                }
+
+                var detailsModal = order.CloudOrder != null
+                    ? new OrderDetailsModal(order.CloudOrder)
+                    : new OrderDetailsModal(order.Id);
+                await Navigation.PushModalAsync(detailsModal);
+            };
         }
 
         protected override void OnAppearing()
@@ -116,10 +143,7 @@ namespace POS_in_NET.Pages
 
         private void UpdateDateDisplay()
         {
-            if (SelectedDateLabel != null)
-            {
-                SelectedDateLabel.Text = _selectedDate.ToString("MMMM dd, yyyy");
-            }
+            Board.SetDateDisplay(_selectedDate);
         }
 
         private async Task LoadOrdersAsync(CancellationToken cancellationToken)
@@ -208,18 +232,30 @@ namespace POS_in_NET.Pages
 
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                CompletedOrdersCollection.ItemsSource = completedRows;
-                VoidedOrdersCollection.ItemsSource = voidedRows;
-                CompletedEmptyLabel.Text = string.IsNullOrWhiteSpace(_searchQuery)
+                var emptyText = string.IsNullOrWhiteSpace(_searchQuery)
                     ? "No orders found for this date"
                     : "No matching orders found";
-                CompletedEmptyLabel.IsVisible = completedRows.Count == 0;
-                VoidedOrdersLayout.IsVisible = voidedRows.Count > 0;
+                Board.SetRows(
+                    completedRows.Select(ToPresentation).ToList(),
+                    voidedRows.Select(ToPresentation).ToList(),
+                    emptyText);
                 UpdateSearchStatus(cloudMessage, completedRows.Count + voidedRows.Count);
                 UpdatePagination(hasNextPage);
             });
             PosPerformanceMonitor.MarkDataVisible(performance);
         }
+
+        private static OrderHistoryRowPresentation ToPresentation(OrderHistoryItem item) =>
+            new(
+                OrderNumber: item.OrderNumber,
+                OrderDateTime: item.OrderDateTime,
+                CustomerDisplay: item.CustomerDisplay,
+                OrderTypeDisplay: item.OrderTypeDisplay,
+                PaymentDisplay: item.PaymentDisplay,
+                StatusDisplay: item.StatusDisplay,
+                TotalDisplay: $"£{item.TotalAmount:F2}",
+                IsVoided: false,
+                Tag: item);
 
         private static string ReadString(MySqlDataReader reader, string column)
         {
@@ -434,24 +470,27 @@ namespace POS_in_NET.Pages
         private void UpdateSearchStatus(string cloudMessage, int resultCount)
         {
             var searching = !string.IsNullOrWhiteSpace(_searchQuery);
-            SearchStatusBorder.IsVisible = searching;
-            if (!searching) return;
+            if (!searching)
+            {
+                Board.SetStatusBanner(false, string.Empty, string.Empty, showClear: false);
+                return;
+            }
 
-            SearchStatusLabel.Text = $"Search: {_searchQuery} • {resultCount} result(s)";
-            SearchSourceLabel.Text = _selectedOrderType == "WEB"
+            var source = _selectedOrderType == "WEB"
                 ? (string.IsNullOrWhiteSpace(cloudMessage)
                     ? "Recent cache checked; checking OrderWeb history is available on the Web tab."
                     : $"Recent cache + cloud: {cloudMessage}")
                 : "Local order history";
+            Board.SetStatusBanner(
+                visible: true,
+                title: $"Search: {_searchQuery} • {resultCount} result(s)",
+                detail: source,
+                showClear: true);
         }
 
         private void UpdatePagination(bool hasNextPage)
         {
-            PageNumberLabel.Text = $"Page {_pageNumber}";
-            PreviousPageButton.IsEnabled = _pageNumber > 1;
-            PreviousPageButton.Opacity = PreviousPageButton.IsEnabled ? 1 : 0.45;
-            NextPageButton.IsEnabled = hasNextPage;
-            NextPageButton.Opacity = hasNextPage ? 1 : 0.45;
+            Board.SetPaging(_pageNumber, _pageNumber > 1, hasNextPage);
         }
 
         private void ResetPageAndLoad()
@@ -460,80 +499,9 @@ namespace POS_in_NET.Pages
             _ = LoadOrdersSafeAsync();
         }
 
-        // Tab Selection Handlers
-        private void OnAllTabClicked(object sender, EventArgs e)
-        {
-            _selectedOrderType = "ALL";
-            UpdateTabSelection();
-            ResetPageAndLoad();
-        }
-
-        private void OnCollectionTabClicked(object sender, EventArgs e)
-        {
-            _selectedOrderType = "COL";
-            UpdateTabSelection();
-            ResetPageAndLoad();
-        }
-
-        private void OnDeliveryTabClicked(object sender, EventArgs e)
-        {
-            _selectedOrderType = "DEL";
-            UpdateTabSelection();
-            ResetPageAndLoad();
-        }
-
-        private void OnTableTabClicked(object sender, EventArgs e)
-        {
-            _selectedOrderType = "TBL";
-            UpdateTabSelection();
-            ResetPageAndLoad();
-        }
-
-        private void OnWebTabClicked(object sender, EventArgs e)
-        {
-            _selectedOrderType = "WEB";
-            UpdateTabSelection();
-            ResetPageAndLoad();
-        }
-
         private void UpdateTabSelection()
         {
-            // Reset all tabs
-            AllTabBorder.BackgroundColor = Color.FromArgb("#F5F5F5");
-            AllTabLabel.TextColor = Color.FromArgb("#6B7280");
-            CollectionTabBorder.BackgroundColor = Color.FromArgb("#F5F5F5");
-            CollectionTabLabel.TextColor = Color.FromArgb("#6B7280");
-            DeliveryTabBorder.BackgroundColor = Color.FromArgb("#F5F5F5");
-            DeliveryTabLabel.TextColor = Color.FromArgb("#6B7280");
-            TableTabBorder.BackgroundColor = Color.FromArgb("#F5F5F5");
-            TableTabLabel.TextColor = Color.FromArgb("#6B7280");
-            WebTabBorder.BackgroundColor = Color.FromArgb("#F5F5F5");
-            WebTabLabel.TextColor = Color.FromArgb("#6B7280");
-
-            // Highlight selected tab
-            switch (_selectedOrderType)
-            {
-                case "ALL":
-                    AllTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-                    AllTabLabel.TextColor = Colors.White;
-                    break;
-                case "COL":
-                    CollectionTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-                    CollectionTabLabel.TextColor = Colors.White;
-                    break;
-                case "DEL":
-                    DeliveryTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-                    DeliveryTabLabel.TextColor = Colors.White;
-                    break;
-                case "TBL":
-                    TableTabBorder.BackgroundColor = Color.FromArgb("#10B981");
-                    TableTabLabel.TextColor = Colors.White;
-                    break;
-                case "WEB":
-                    WebTabBorder.BackgroundColor = Color.FromArgb("#2563EB");
-                    WebTabLabel.TextColor = Colors.White;
-                    break;
-            }
+            Board.SetFilter(OrderHistoryFilterCodes.FromApiCode(_selectedOrderType));
         }
 
         private async void OnCancelClicked(object sender, EventArgs e)
@@ -545,214 +513,31 @@ namespace POS_in_NET.Pages
                 source: sender as VisualElement);
         }
 
-        private async void OnCalendarClicked(object sender, EventArgs e)
+        private async Task PickSharedDateAsync()
         {
-            // Create a modal with Syncfusion Calendar
-            var modal = new ContentPage
+            var picked = await OrderHistoryPickers.PickDateAsync(Navigation, _selectedDate);
+            if (picked is null)
             {
-                BackgroundColor = Color.FromArgb("#80000000")
-            };
+                return;
+            }
 
-            var calendar = new SfCalendar
-            {
-                SelectedDate = _selectedDate,
-                MinimumDate = new DateTime(2020, 1, 1),
-                MaximumDate = DateTime.Today,
-                SelectionMode = CalendarSelectionMode.Single,
-                HeightRequest = 380,
-                Background = Colors.White,
-                HeaderView = new CalendarHeaderView
-                {
-                    Background = Color.FromArgb("#10B981"),
-                    TextStyle = new CalendarTextStyle
-                    {
-                        TextColor = Colors.White,
-                        FontSize = 18,
-                        FontAttributes = FontAttributes.Bold
-                    }
-                },
-                MonthView = new CalendarMonthView
-                {
-                    Background = Colors.White,
-                    HeaderView = new CalendarMonthHeaderView
-                    {
-                        Background = Color.FromArgb("#F3F4F6"),
-                        TextStyle = new CalendarTextStyle
-                        {
-                            TextColor = Color.FromArgb("#6B7280"),
-                            FontSize = 14,
-                            FontAttributes = FontAttributes.Bold
-                        }
-                    },
-                    TextStyle = new CalendarTextStyle
-                    {
-                        TextColor = Color.FromArgb("#1F2937"),
-                        FontSize = 15
-                    },
-                    TodayTextStyle = new CalendarTextStyle
-                    {
-                        TextColor = Color.FromArgb("#10B981"),
-                        FontSize = 15,
-                        FontAttributes = FontAttributes.Bold
-                    },
-                    TrailingLeadingDatesTextStyle = new CalendarTextStyle
-                    {
-                        TextColor = Color.FromArgb("#D1D5DB"),
-                        FontSize = 14
-                    },
-                    TodayBackground = Color.FromArgb("#D1FAE5")
-                },
-                SelectionBackground = Color.FromArgb("#10B981")
-            };
-
-            var frame = new Frame
-            {
-                BackgroundColor = Colors.White,
-                Padding = 0,
-                CornerRadius = 16,
-                HasShadow = true,
-                VerticalOptions = LayoutOptions.Center,
-                HorizontalOptions = LayoutOptions.Center,
-                WidthRequest = 420
-            };
-
-            var mainLayout = new VerticalStackLayout
-            {
-                Spacing = 0
-            };
-
-            // Header with green background
-            var headerLayout = new VerticalStackLayout
-            {
-                BackgroundColor = Color.FromArgb("#10B981"),
-                Padding = new Thickness(24, 20),
-                Spacing = 4
-            };
-
-            var titleLabel = new Label
-            {
-                Text = "Select Date",
-                FontSize = 22,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Colors.White,
-                HorizontalOptions = LayoutOptions.Start
-            };
-
-            var subtitleLabel = new Label
-            {
-                Text = "Choose a date to view orders",
-                FontSize = 14,
-                TextColor = Color.FromArgb("#D1FAE5"),
-                HorizontalOptions = LayoutOptions.Start
-            };
-
-            headerLayout.Children.Add(titleLabel);
-            headerLayout.Children.Add(subtitleLabel);
-
-            // Content area with calendar
-            var contentLayout = new VerticalStackLayout
-            {
-                Padding = new Thickness(16, 16),
-                Spacing = 0
-            };
-
-            contentLayout.Children.Add(calendar);
-
-            // Button area
-            var buttonLayout = new Grid
-            {
-                Padding = new Thickness(24, 16, 24, 24),
-                ColumnDefinitions = new ColumnDefinitionCollection
-                {
-                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
-                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
-                },
-                ColumnSpacing = 12
-            };
-
-            var cancelBorder = new Border
-            {
-                BackgroundColor = Colors.White,
-                StrokeThickness = 2,
-                Stroke = Color.FromArgb("#D1D5DB"),
-                Padding = new Thickness(0, 14)
-            };
-            cancelBorder.StrokeShape = new RoundRectangle { CornerRadius = 8 };
-            var cancelLabel = new Label
-            {
-                Text = "Cancel",
-                TextColor = Color.FromArgb("#6B7280"),
-                FontSize = 15,
-                FontAttributes = FontAttributes.Bold,
-                HorizontalOptions = LayoutOptions.Center,
-                VerticalOptions = LayoutOptions.Center
-            };
-            cancelBorder.Content = cancelLabel;
-            var cancelTap = new TapGestureRecognizer();
-            cancelTap.Tapped += async (s, args) =>
-            {
-                await Navigation.PopModalAsync();
-            };
-            cancelBorder.GestureRecognizers.Add(cancelTap);
-
-            var okBorder = new Border
-            {
-                BackgroundColor = Color.FromArgb("#10B981"),
-                StrokeThickness = 0,
-                Padding = new Thickness(0, 14)
-            };
-            okBorder.StrokeShape = new RoundRectangle { CornerRadius = 8 };
-            var okLabel = new Label
-            {
-                Text = "Apply",
-                TextColor = Colors.White,
-                FontSize = 15,
-                FontAttributes = FontAttributes.Bold,
-                HorizontalOptions = LayoutOptions.Center,
-                VerticalOptions = LayoutOptions.Center
-            };
-            okBorder.Content = okLabel;
-            var okTap = new TapGestureRecognizer();
-            okTap.Tapped += async (s, args) =>
-            {
-                if (calendar.SelectedDate.HasValue)
-                {
-                    _selectedDate = calendar.SelectedDate.Value;
-                    UpdateDateDisplay();
-                    ResetPageAndLoad();
-                }
-                await Navigation.PopModalAsync();
-            };
-            okBorder.GestureRecognizers.Add(okTap);
-
-            buttonLayout.Children.Add(cancelBorder);
-            Grid.SetColumn(cancelBorder, 0);
-            buttonLayout.Children.Add(okBorder);
-            Grid.SetColumn(okBorder, 1);
-
-            mainLayout.Children.Add(headerLayout);
-            mainLayout.Children.Add(contentLayout);
-            mainLayout.Children.Add(buttonLayout);
-
-            frame.Content = mainLayout;
-            modal.Content = frame;
-
-            await Navigation.PushModalAsync(modal);
+            _selectedDate = picked.Value.Date;
+            UpdateDateDisplay();
+            ResetPageAndLoad();
         }
 
-        private async void OnSearchClicked(object sender, EventArgs e)
+        private async Task PickSharedSearchAsync()
         {
-            var searchPage = new OrderSearchModal();
-            searchPage.SearchSubmitted += query =>
+            var value = await OrderHistoryPickers.PickSearchAsync(this, _searchQuery);
+            if (value is null)
             {
-                _searchQuery = query?.Trim() ?? string.Empty;
-                UpdateSearchPlaceholder();
-                ResetPageAndLoad();
-            };
-            
-            await Navigation.PushModalAsync(searchPage);
-        }
+                return;
+            }
 
+            _searchQuery = value;
+            UpdateSearchPlaceholder();
+            ResetPageAndLoad();
+        }
         private void OnClearSearchClicked(object sender, EventArgs e)
         {
             _searchQuery = string.Empty;
@@ -762,21 +547,7 @@ namespace POS_in_NET.Pages
 
         private void UpdateSearchPlaceholder()
         {
-            if (SearchOrdersPlaceholder == null)
-            {
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(_searchQuery))
-            {
-                SearchOrdersPlaceholder.Text = "Search orders...";
-                SearchOrdersPlaceholder.TextColor = Color.FromArgb("#94A3B8");
-            }
-            else
-            {
-                SearchOrdersPlaceholder.Text = _searchQuery;
-                SearchOrdersPlaceholder.TextColor = Color.FromArgb("#1F2937");
-            }
+            Board.SetSearchDisplay(string.IsNullOrWhiteSpace(_searchQuery) ? null : _searchQuery);
         }
 
         private void OnPreviousPageClicked(object sender, EventArgs e)
@@ -790,18 +561,6 @@ namespace POS_in_NET.Pages
         {
             _pageNumber++;
             _ = LoadOrdersSafeAsync();
-        }
-
-        // Order Action Handlers
-        private async void OnViewOrderClicked(object sender, EventArgs e)
-        {
-            if (sender is VisualElement element && element.BindingContext is OrderHistoryItem order)
-            {
-                var detailsModal = order.CloudOrder != null
-                    ? new OrderDetailsModal(order.CloudOrder)
-                    : new OrderDetailsModal(order.Id);
-                await Navigation.PushModalAsync(detailsModal);
-            }
         }
 
     }

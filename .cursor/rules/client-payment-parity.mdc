@@ -23,7 +23,8 @@ alwaysApply: false
 - Hosts own order data, tip save, and payment post.
 
 **Loyalty**
-- Keep Client pay-with-points path on tender; do not drop when matching Mother chrome.
+- Keep Client pay-with-points path on PaymentPage / Mother payments API; do **not** delete when matching Mother chrome.
+- Order Place SELECT PAYMENT METHOD Loyalty button is **deferred** (`OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled = false`) until a dedicated redeem polish pass — flip the flag to re-enable Order Place tender.
 
 ## Build order
 | Phase | Status |

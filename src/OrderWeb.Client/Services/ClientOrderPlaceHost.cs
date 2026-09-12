@@ -4,6 +4,7 @@ using OrderWeb.Client.Pages.Payments;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Access;
 using OrderWeb.Contracts.Dtos;
+using OrderWeb.Contracts.Features;
 using OrderWeb.SharedUI.Controls;
 using OrderWeb.SharedUI.Controls.OrderPlace;
 using OrderWeb.SharedUI.Hosting;
@@ -43,6 +44,10 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private MotherOrderState? _currentOrder;
     private bool _initialized;
     private bool _persistQueued;
+    private readonly HashSet<string> _loyaltyEarnedOrderIds = new(StringComparer.OrdinalIgnoreCase);
+    private string? _loyaltyAddIdempotencyKey;
+    private string? _loyaltyAddIdempotencyFingerprint;
+    private bool _loyaltyAddBusy;
 
     public ClientOrderPlaceHost(IClientOrderPlaceUi ui)
     {
@@ -574,7 +579,13 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             options.Add(new OrderPlaceMoreOption("Fire Course", IsEnabled: _currentOrder?.Lines.Count > 0));
         }
 
-        options.Add(new OrderPlaceMoreOption("Loyalty Points"));
+        options.Add(new OrderPlaceMoreOption(
+            "Add Loyalty Points",
+            IsEnabled: _currentOrder?.Lines.Count > 0
+                       && _currentOrder.Total > 0m
+                       && _currentOrder.LoyaltyPointsEarned <= 0
+                       && HasLoyaltyAccess()
+                       && await CanRunLoyaltyOnlineAsync()));
         options.Add(new OrderPlaceMoreOption("Cash Drawer"));
 
         var selected = await _ui.ShowMoreOptionsAsync(options);
@@ -600,8 +611,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             case "Fire Course":
                 await ShowFireCourseAsync();
                 break;
+            case "Add Loyalty Points":
             case "Loyalty Points":
-                await ShowLoyaltyRedeemAsync();
+                await ShowLoyaltyAddAsync();
                 break;
             case "Cash Drawer":
                 await OpenCashDrawerFromMoreAsync();
@@ -944,98 +956,192 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         }
     }
 
-    private async Task ShowLoyaltyRedeemAsync()
+    private async Task ShowLoyaltyAddAsync()
     {
+        if (_loyaltyAddBusy)
+        {
+            return;
+        }
+
         if (_currentOrder is null || _currentOrder.Lines.Count == 0)
         {
-            await _ui.ShowAlertAsync("Loyalty Points", "Add items before redeeming loyalty points.");
+            await _ui.ShowAlertAsync("Add Loyalty Points", "Add items before adding loyalty points.");
             return;
         }
 
         if (_currentOrder.Total <= 0m)
         {
-            await _ui.ShowAlertAsync("Loyalty Points", "There is no bill amount to offset with loyalty points.");
+            await _ui.ShowAlertAsync("Add Loyalty Points", "There is no bill amount to earn loyalty points on.");
             return;
         }
 
-        var lookup = await _ui.PromptAsync(
-            "Loyalty Points",
-            "Enter customer phone number or loyalty card number:",
-            "Continue",
-            "Cancel",
-            "e.g. 07123 456 789");
-        if (string.IsNullOrWhiteSpace(lookup))
+        if (!HasLoyaltyAccess())
         {
+            const string message =
+                "This Client terminal is not allowed to use Loyalty. On Mother: Terminal Health → Access → Loyalty ON → Save, then Update All (or wait for features.updated).";
+            ClientLoyaltyDiagnostics.Record(
+                "order_loyalty_add",
+                false,
+                message,
+                LoyaltyErrorCodes.AccessDenied);
+            await _ui.ShowAlertAsync("Add Loyalty Points", message);
             return;
         }
 
+        if (_currentOrder.LoyaltyPointsEarned > 0
+            || (!string.IsNullOrWhiteSpace(_currentOrder.OrderId)
+                && _loyaltyEarnedOrderIds.Contains(_currentOrder.OrderId)))
+        {
+            await _ui.ShowAlertAsync(
+                "Already Added",
+                _currentOrder.LoyaltyPointsEarned > 0
+                    ? $"Loyalty points were already added for this order ({_currentOrder.LoyaltyPointsEarned:N0} pts)."
+                    : "Loyalty points were already added for this order on this till.");
+            return;
+        }
+
+        var online = await _offlinePolicy.IsMotherOnlineAsync();
+        var decision = _offlinePolicy.Evaluate(ClientOperation.Loyalty, online);
+        if (!decision.Allowed)
+        {
+            ClientLoyaltyDiagnostics.Record(
+                "order_loyalty_add",
+                false,
+                decision.Message,
+                LoyaltyErrorCodes.OfflineMother);
+            await _ui.ShowAlertAsync("Add Loyalty Points", decision.Message);
+            return;
+        }
+
+        var pointsPreview = OrderPlaceLoyaltyEarnRules.ComputePointsFromBillTotal(_currentOrder.Total);
+        if (pointsPreview <= 0)
+        {
+            await _ui.ShowAlertAsync("Add Loyalty Points", "Bill total is under £1 — no points to add.");
+            return;
+        }
+
+        _loyaltyAddBusy = true;
         try
         {
-            var loyalty = new MotherLoyaltyClient(_cache, _offlinePolicy);
-            var search = await loyalty.SearchAsync(lookup.Trim());
-            if (!search.Success || search.Customer is null)
-            {
-                await _ui.ShowAlertAsync("Loyalty Lookup Failed", search.Error ?? search.Message ?? "Customer not found.");
-                return;
-            }
-
-            var available = search.Customer.PointsBalance;
-            var maxBill = (int)Math.Floor(_currentOrder.Total * 100m);
-            var maxRedeem = Math.Min(available, maxBill);
-            await _ui.ShowAlertAsync(
-                "Loyalty Balance",
-                $"Customer: {search.Customer.Name}\n" +
-                $"Available points: {available:N0}\n" +
-                $"Current bill: £{_currentOrder.Total:F2}\n" +
-                $"Max redeemable: {maxRedeem:N0} points");
-
-            if (maxRedeem <= 0)
-            {
-                await _ui.ShowAlertAsync("Nothing to Redeem", "There are no points available to apply to this bill.");
-                return;
-            }
-
-            var pointsText = await _ui.PromptAsync(
-                "Redeem Loyalty Points",
-                $"Enter points to redeem (max {maxRedeem:N0}). 100 pts = £1.",
-                "Apply",
-                "Cancel",
-                maxRedeem.ToString(CultureInfo.InvariantCulture));
-            if (string.IsNullOrWhiteSpace(pointsText) ||
-                !int.TryParse(pointsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var points) ||
-                points <= 0)
-            {
-                return;
-            }
-
-            if (points > maxRedeem)
-            {
-                await _ui.ShowAlertAsync("Points Too High", $"You can only redeem up to {maxRedeem:N0} points on this bill.");
-                return;
-            }
-
-            var discountAmount = Math.Round(points / 100m, 2, MidpointRounding.AwayFromZero);
-            if (!await _ui.ConfirmAsync(
-                    "Confirm Loyalty Redemption",
-                    $"Redeem {points:N0} points for £{discountAmount:F2}?\nNew bill total: £{Math.Max(0m, _currentOrder.Total - discountAmount):F2}",
-                    "Redeem",
-                    "Cancel"))
-            {
-                return;
-            }
-
+            // Sync basket to Mother first so order id + total are authoritative for earn.
             await FlushMotherPersistAsync();
-            var key = $"{_currentOrder.OrderId}:loyalty-redeem:{lookup.Trim()}:{points}";
-            var result = await _orderClient.ApplyLoyaltyRedeemAsync(_currentOrder, lookup.Trim(), points, key);
-            _currentOrder = MergeFinancials(_currentOrder, result.State);
-            await _cache.SaveOrderStateAsync(_currentOrder);
-            PublishSession();
-            await _ui.ShowAlertAsync("Loyalty Applied", result.Message);
+            if (string.IsNullOrWhiteSpace(_currentOrder.OrderId))
+            {
+                await _ui.ShowAlertAsync("Add Loyalty Points", "This order has not been created on Mother POS yet.");
+                return;
+            }
+
+            if (_currentOrder.LoyaltyPointsEarned > 0
+                || _loyaltyEarnedOrderIds.Contains(_currentOrder.OrderId))
+            {
+                await _ui.ShowAlertAsync(
+                    "Already Added",
+                    _currentOrder.LoyaltyPointsEarned > 0
+                        ? $"Loyalty points were already added for this order ({_currentOrder.LoyaltyPointsEarned:N0} pts)."
+                        : "Loyalty points were already added for this order on this till.");
+                return;
+            }
+
+            var orderId = _currentOrder.OrderId;
+            var outcome = await _ui.ShowLoyaltyAddAsync(
+                _currentOrder.Total,
+                orderId,
+                (lookup, points) => GetStickyLoyaltyAddKey(orderId, lookup, points));
+            if (outcome is null)
+            {
+                return;
+            }
+
+            if (!outcome.Success)
+            {
+                var queued = string.Equals(outcome.ErrorCode, LoyaltyErrorCodes.Queued, StringComparison.OrdinalIgnoreCase);
+                ClientLoyaltyDiagnostics.Record(
+                    "order_loyalty_add",
+                    false,
+                    outcome.Message,
+                    outcome.ErrorCode,
+                    queued);
+                await _ui.ShowAlertAsync("Add Loyalty Points", outcome.Message);
+                return;
+            }
+
+            ClearStickyLoyaltyAddKey();
+            _loyaltyEarnedOrderIds.Add(orderId);
+            ClientLoyaltyDiagnostics.Record("order_loyalty_add", true, outcome.Message);
+
+            try
+            {
+                var refreshed = await _orderClient.OpenOrderForEditAsync(orderId);
+                _currentOrder = MergeFinancials(_currentOrder, refreshed.State);
+                if (_currentOrder.LoyaltyPointsEarned <= 0 && outcome.PointsAdded is > 0)
+                {
+                    _currentOrder = _currentOrder with { LoyaltyPointsEarned = outcome.PointsAdded.Value };
+                }
+
+                await _cache.SaveOrderStateAsync(_currentOrder);
+                PublishSession();
+            }
+            catch
+            {
+                // Points already added in cloud via Mother; keep till usable.
+                if (outcome.PointsAdded is > 0)
+                {
+                    _currentOrder = _currentOrder with { LoyaltyPointsEarned = outcome.PointsAdded.Value };
+                }
+
+                PublishSession();
+            }
+
+            await _ui.ShowAlertAsync(
+                "Loyalty Points Added",
+                string.IsNullOrWhiteSpace(outcome.Message)
+                    ? $"Added {outcome.PointsAdded:N0} points. New balance: {outcome.PointsBalance:N0}."
+                    : outcome.Message);
         }
         catch (Exception ex)
         {
-            await _ui.ShowAlertAsync("Loyalty Error", ex.Message);
+            ClientLoyaltyDiagnostics.Record(
+                "order_loyalty_add",
+                false,
+                ex.Message,
+                LoyaltyErrorCodes.Unknown);
+            await _ui.ShowAlertAsync("Add Loyalty Points", ex.Message);
         }
+        finally
+        {
+            _loyaltyAddBusy = false;
+        }
+    }
+
+    private static bool HasLoyaltyAccess() =>
+        ClientHostAccess.Features.Contains(PosFeatureKeys.CustomerPoints) ||
+        ClientHostAccess.CanOpenMenu("Loyalty Points") ||
+        ClientHostAccess.CanOpenMenu("Loyalty");
+
+    private async Task<bool> CanRunLoyaltyOnlineAsync()
+    {
+        var online = await _offlinePolicy.IsMotherOnlineAsync();
+        return _offlinePolicy.Evaluate(ClientOperation.Loyalty, online).Allowed;
+    }
+
+    private string GetStickyLoyaltyAddKey(string orderId, string lookup, int points)
+    {
+        var fingerprint = $"{orderId}|{lookup.Trim()}|{points}";
+        if (!string.Equals(_loyaltyAddIdempotencyFingerprint, fingerprint, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(_loyaltyAddIdempotencyKey))
+        {
+            _loyaltyAddIdempotencyFingerprint = fingerprint;
+            _loyaltyAddIdempotencyKey =
+                $"client-order-loyalty-add:{orderId}:{lookup.Trim()}:{points}:{Guid.NewGuid():N}";
+        }
+
+        return _loyaltyAddIdempotencyKey;
+    }
+
+    private void ClearStickyLoyaltyAddKey()
+    {
+        _loyaltyAddIdempotencyKey = null;
+        _loyaltyAddIdempotencyFingerprint = null;
     }
 
     private async Task ShowPreviousOrdersAsync()
@@ -1136,6 +1242,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             ServiceCharge = mother.ServiceCharge,
             ServiceChargeStatus = mother.ServiceChargeStatus,
             ServiceChargePercent = mother.ServiceChargePercent,
+            LoyaltyPointsEarned = mother.LoyaltyPointsEarned > 0
+                ? mother.LoyaltyPointsEarned
+                : current.LoyaltyPointsEarned,
             TableId = mother.TableId ?? current.TableId,
             TableNumber = mother.TableNumber ?? current.TableNumber,
             CustomerName = FirstNonEmpty(mother.CustomerName, current.CustomerName),
@@ -1145,6 +1254,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     public async Task SendAsync(CancellationToken cancellationToken = default)
     {
+        // No auto loyalty earn on Send — OrderPlaceLoyaltyEarnRules.AutoEarnOnSendOrPrint is false.
+        // Staff add points only via More → Add Loyalty Points.
         if (_currentOrder is null || _currentOrder.Lines.Count == 0)
         {
             await _ui.ShowAlertAsync("Send to Kitchen", "Add items before sending to kitchen.");
@@ -1211,6 +1322,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     public async Task PrintAsync(CancellationToken cancellationToken = default)
     {
+        // No auto loyalty earn on Print — same defer as Send (AutoEarnOnSendOrPrint = false).
         if (_currentOrder is null || _currentOrder.Lines.Count == 0)
         {
             await _ui.ShowAlertAsync("Print", "Add items before printing.");
@@ -1448,6 +1560,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 break;
             }
             case OrderWeb.SharedUI.Payments.PaymentMethodChoice.Loyalty:
+                // Kept for when OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled flips on.
+                // Do not remove — PaymentPage redeem path is the current supported surface.
                 methodKey = "loyalty";
                 var loyalty = await _ui.PromptLoyaltyPaymentAsync(amount);
                 if (loyalty is null || !loyalty.Success || string.IsNullOrWhiteSpace(loyalty.Lookup) || loyalty.Points <= 0)
@@ -2130,6 +2244,9 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                                 ServiceCharge = result.State.ServiceCharge,
                                 ServiceChargeStatus = result.State.ServiceChargeStatus,
                                 ServiceChargePercent = result.State.ServiceChargePercent,
+                                LoyaltyPointsEarned = result.State.LoyaltyPointsEarned > 0
+                                    ? result.State.LoyaltyPointsEarned
+                                    : _currentOrder.LoyaltyPointsEarned,
                                 Subtotal = result.State.Subtotal,
                                 Total = result.State.Total,
                                 Tax = result.State.Tax
@@ -2507,4 +2624,10 @@ public interface IClientOrderPlaceUi
 
     /// <summary>Mother FireCourseDialog parity: colored course tiles + Fire All (includes Drinks).</summary>
     Task<string?> ShowFireCourseAsync(bool includeDrinks = true);
+
+    /// <summary>Order Place earn: SharedUI Add Loyalty Points (lookup → confirm → Mother add).</summary>
+    Task<OrderPlaceLoyaltyAddOutcome?> ShowLoyaltyAddAsync(
+        decimal billTotal,
+        string orderId,
+        Func<string, int, string>? resolveStickyIdempotencyKey = null);
 }

@@ -12,16 +12,17 @@ namespace OrderWeb.Client.Services;
 /// </summary>
 public static class ClientSidebarNavigation
 {
+    private static string? _pendingRootRoute;
+
     /// <summary>
     /// Creates the ContentPage for a catalog/sidebar title.
-    /// Returns null for Dashboard (caller pops to root) and for customer
-    /// routes that only MainPage hosts via SharedAppFrame.
+    /// Returns null for Dashboard (caller pops to root).
     /// </summary>
     public static Page? CreatePage(string? menuTitle)
     {
         return ClientHostAccess.RouteForTitle(menuTitle) switch
         {
-            "cashdrawer" => new CashDrawerPage(),
+            "cashdrawer" => null,
             "restaurant" => new RestaurantPage(),
             "collection" => new CollectionOrderPage(),
             "delivery" => new DeliveryOrderPage(),
@@ -31,6 +32,8 @@ public static class ClientSidebarNavigation
             "loyalty" => new LoyaltyPage(),
             "reservation" => new ReservationPage(),
             "orderhistory" => new OrderHistoryPage(),
+            "customerdata" => new RecentCustomersPage(),
+            "customers" => new RecentCustomersPage(),
             _ => null
         };
     }
@@ -38,11 +41,69 @@ public static class ClientSidebarNavigation
     public static bool IsDashboard(string? menuTitle) =>
         ClientHostAccess.IsMenuRoute(menuTitle, "dashboard");
 
-    public static bool IsCustomerSurface(string? menuTitle) =>
-        ClientHostAccess.IsMenuRoute(menuTitle, "customerdata") ||
-        ClientHostAccess.IsMenuRoute(menuTitle, "customers");
+    /// <summary>
+    /// Route MainPage should open after <see cref="SwitchAsync"/> pops to root
+    /// (Live Order / Restaurant stay MainPage-owned).
+    /// </summary>
+    public static string? ConsumePendingRootRoute()
+    {
+        var route = _pendingRootRoute;
+        _pendingRootRoute = null;
+        return route;
+    }
 
-    /// <summary>Rider (and any future Mother-only sidebar labels). Shows a notice; returns true if handled.</summary>
+    /// <summary>
+    /// Replace the current pushed manager/order page with another sidebar target.
+    /// Always clears the stack first so Gift Cards → Loyalty (and User Collection → Live Order) work.
+    /// </summary>
+    /// <param name="host">Page that owns the sidebar tap.</param>
+    /// <param name="menuTitle">Catalog title from the sidebar.</param>
+    /// <param name="currentRoute">Route of the host page (e.g. giftcards); same-route taps no-op.</param>
+    public static async Task SwitchAsync(Page host, string? menuTitle, string? currentRoute = null)
+    {
+        var route = ClientHostAccess.RouteForTitle(menuTitle);
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentRoute) &&
+            string.Equals(route, currentRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (await TryHandleMotherOnlyAsync(host, menuTitle))
+        {
+            return;
+        }
+
+        if (!IsDashboard(menuTitle) && !ClientHostAccess.CanOpenMenu(menuTitle))
+        {
+            return;
+        }
+
+        // Open from MainPage using the catalog title (CreatePage maps titles, not raw routes).
+        await PopToRootAndResumeMainAsync(host, menuTitle!.Trim());
+    }
+
+    private static async Task PopToRootAndResumeMainAsync(Page host, string rootRoute)
+    {
+        _pendingRootRoute = rootRoute;
+        var navigation = host.Navigation;
+        if (navigation.NavigationStack.Count > 1)
+        {
+            await navigation.PopToRootAsync(false);
+        }
+
+        // WinUI sometimes skips Appearing on root after PopToRoot — nudge MainPage directly.
+        if (navigation.NavigationStack.FirstOrDefault() is MainPage main)
+        {
+            main.Dispatcher.Dispatch(main.TryConsumePendingSidebarRoute);
+        }
+    }
+
+    /// <summary>Rider stays on Mother POS. Shows a notice; returns true if handled.</summary>
     public static async Task<bool> TryHandleMotherOnlyAsync(Page host, string? menuTitle)
     {
         if (!ClientHostAccess.IsMotherOnlyMenu(menuTitle))

@@ -171,7 +171,7 @@ public partial class TableLayoutPage : ContentPage
             Aspect = Aspect.AspectFit,
             HorizontalOptions = LayoutOptions.End
         };
-        logoutButton.Clicked += async (_, _) => await DisplayAlert("Restaurant POS", "Logout returns to login.", "OK");
+        logoutButton.Clicked += async (_, _) => await ClientSignOut.RequestAsync(this);
 
         _dateLabel = new Label
         {

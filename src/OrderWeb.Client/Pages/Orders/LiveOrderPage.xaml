@@ -5,63 +5,18 @@
              xmlns:sharedViews="clr-namespace:OrderWeb.SharedUI.Views;assembly=OrderWeb.SharedUI"
              x:Class="OrderWeb.Client.Pages.Orders.LiveOrderPage"
              Shell.NavBarIsVisible="False"
+             NavigationPage.HasNavigationBar="False"
+             NavigationPage.HasBackButton="False"
              BackgroundColor="#F6F8FB"
              Title="Live Order">
-    <Grid RowDefinitions="150,*"
-          BackgroundColor="#F6F8FB">
-        <Border Grid.Row="0" BackgroundColor="#F6F9FC" StrokeThickness="0">
-            <Grid Padding="20,0" ColumnDefinitions="120,*,270">
-                <ImageButton x:Name="MenuButton"
-                             Source="mian.png"
-                             WidthRequest="35"
-                             HeightRequest="35"
-                             Padding="0"
-                             BackgroundColor="Transparent"
-                             Aspect="AspectFit"
-                             HorizontalOptions="Start"
-                             VerticalOptions="Center"
-                             Clicked="OnMenuClicked" />
+    <Shell.BackButtonBehavior>
+        <BackButtonBehavior IsVisible="False" IsEnabled="False" />
+    </Shell.BackButtonBehavior>
+    <Grid RowDefinitions="Auto,*" BackgroundColor="#F6F8FB">
+        <!-- Same PosHeader chrome as Mother Live Order. -->
+        <layout:ClientTopBar x:Name="TopBar" />
 
-                <Label Grid.Column="1"
-                       Text="Live Order"
-                       FontSize="32"
-                       FontAttributes="Bold"
-                       TextColor="#1F2937"
-                       HorizontalTextAlignment="Center"
-                       VerticalTextAlignment="Center" />
-
-                <VerticalStackLayout Grid.Column="2"
-                                     Spacing="5"
-                                     VerticalOptions="Center"
-                                     HorizontalOptions="End">
-                    <Label x:Name="DateLabel"
-                           FontSize="18"
-                           FontAttributes="Bold"
-                           TextColor="#1F2937"
-                           HorizontalTextAlignment="End"
-                           HorizontalOptions="End" />
-                    <Label x:Name="TimeLabel"
-                           FontSize="28"
-                           FontAttributes="Bold"
-                           TextColor="#0369A1"
-                           HorizontalTextAlignment="End"
-                           HorizontalOptions="End" />
-                    <ImageButton Source="outred.png"
-                                 WidthRequest="40"
-                                 HeightRequest="40"
-                                 Padding="0"
-                                 Margin="0,10,0,0"
-                                 BackgroundColor="Transparent"
-                                 Aspect="AspectFit"
-                                 HorizontalOptions="End"
-                                 Clicked="OnLogoutClicked" />
-                </VerticalStackLayout>
-            </Grid>
-        </Border>
-
-        <!-- Same SharedUI board as MainPage (no host Refresh in filter strip). -->
-        <sharedViews:LiveOrderBoardView x:Name="Board"
-                                        Grid.Row="1"/>
+        <sharedViews:LiveOrderBoardView x:Name="Board" Grid.Row="1" />
 
         <Grid x:Name="SidebarLayer"
               Grid.RowSpan="2"

@@ -19,8 +19,7 @@ public static class PosNavigationCatalog
         Item("restaurant", "Restaurant", "restaurant.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.DineIn], 30),
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
-        // Mother-only rider board (Shell route remains "weborders").
-        // Client shows the same sidebar label for Manager parity; board stays on Mother.
+        // Mother sidebar only. ClientHostAccess strips this route from the Client menu.
         Item("weborders", "Rider", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery, PosFeatureKeys.WebOrders], 52),
         Item("customers", "Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 60),
         Item("payments", "Payments", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 70),
@@ -71,4 +70,37 @@ public static class PosNavigationCatalog
             new HashSet<string>(capabilities, StringComparer.OrdinalIgnoreCase),
             new HashSet<string>(features, StringComparer.OrdinalIgnoreCase),
             sort);
+}
+
+/// <summary>
+/// Mother User / Manager flyout routes. Client uses the same sets so both
+/// hosts stay in sync when a sidebar item is added or removed.
+/// </summary>
+public static class PosRoleMenus
+{
+    public static IReadOnlySet<string> User { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "dashboard", "restaurant", "collection", "delivery", "liveorder", "reservation"
+    };
+
+    public static IReadOnlySet<string> Manager { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "dashboard", "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
+        "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
+    };
+
+    public static IReadOnlySet<string>? ForRole(string? role)
+    {
+        if (string.Equals(role, "User", StringComparison.OrdinalIgnoreCase))
+        {
+            return User;
+        }
+
+        if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return Manager;
+        }
+
+        return null;
+    }
 }

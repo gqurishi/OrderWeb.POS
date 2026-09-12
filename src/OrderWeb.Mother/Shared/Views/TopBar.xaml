@@ -3,11 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
              x:Class="POS_in_NET.Views.TopBar"
-             MinimumHeightRequest="82">
+             VerticalOptions="Start"
+             MinimumHeightRequest="52">
 
-    <Grid RowDefinitions="Auto,*">
+    <VerticalStackLayout Spacing="0">
         <Border x:Name="MotherDisconnectedBanner"
-                Grid.Row="0"
                 BackgroundColor="#FEF2F2"
                 Stroke="#FECACA"
                 StrokeThickness="1"
@@ -22,11 +22,11 @@
         </Border>
 
         <shared:PosHeader x:Name="SharedHeader"
-                                  Grid.Row="1"
-                                  ShowIdentity="False"
-                                  ShowMinimize="True"
-                                  MenuClicked="OnMenuClicked"
-                                  MinimizeClicked="OnMinimizeClicked"
-                                  LogoutClicked="OnLogoutClicked" />
-    </Grid>
+                          VerticalOptions="Start"
+                          ShowIdentity="False"
+                          ShowMinimize="True"
+                          MenuClicked="OnMenuClicked"
+                          MinimizeClicked="OnMinimizeClicked"
+                          LogoutClicked="OnLogoutClicked" />
+    </VerticalStackLayout>
 </ContentView>

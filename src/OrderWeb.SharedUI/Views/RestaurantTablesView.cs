@@ -177,7 +177,7 @@ public class RestaurantTablesView : ContentView
             HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
             VerticalScrollBarVisibility = ScrollBarVisibility.Never,
             VerticalOptions = LayoutOptions.Center,
-            MaximumHeightRequest = 48,
+            MaximumHeightRequest = 36,
             Content = _floorTabs
         };
 
@@ -186,8 +186,8 @@ public class RestaurantTablesView : ContentView
             BackgroundColor = Color.FromArgb("#F0FDFA"),
             Stroke = Color.FromArgb("#CCFBF1"),
             StrokeThickness = 1,
-            Padding = new Thickness(10, 7),
-            MinimumHeightRequest = 44,
+            Padding = new Thickness(8, 4),
+            MinimumHeightRequest = 28,
             StrokeShape = new RoundRectangle { CornerRadius = 10 },
             Content = _lastSync
         };
@@ -199,7 +199,7 @@ public class RestaurantTablesView : ContentView
             VerticalScrollBarVisibility = ScrollBarVisibility.Never,
             HorizontalOptions = LayoutOptions.Fill,
             VerticalOptions = LayoutOptions.Center,
-            MaximumHeightRequest = 48,
+            MaximumHeightRequest = 36,
             Content = new HorizontalStackLayout
             {
                 Spacing = 8,
@@ -225,9 +225,9 @@ public class RestaurantTablesView : ContentView
         {
             BackgroundColor = Colors.White,
             StrokeThickness = 0,
-            Padding = new Thickness(12, 9),
-            MinimumHeightRequest = 64,
-            MaximumHeightRequest = 72,
+            Padding = new Thickness(12, 4),
+            MinimumHeightRequest = 36,
+            MaximumHeightRequest = 40,
             Content = toolbarGrid
         };
 
@@ -399,14 +399,14 @@ public class RestaurantTablesView : ContentView
                 BackgroundColor = Color.FromArgb(selected ? "#3B82F6" : "#F3F4F6"),
                 Stroke = selected ? Colors.Transparent : Color.FromArgb("#E5E7EB"),
                 StrokeThickness = 1,
-                Padding = new Thickness(16, 8),
-                MinimumHeightRequest = 44,
+                Padding = new Thickness(12, 4),
+                MinimumHeightRequest = 30,
                 VerticalOptions = LayoutOptions.Center,
                 StrokeShape = new RoundRectangle { CornerRadius = 12 },
                 Content = new Label
                 {
                     Text = $"{floor.Name} ({count})",
-                    FontSize = 14,
+                    FontSize = 13,
                     FontFamily = "OpenSansSemibold",
                     TextColor = selected ? Colors.White : Color.FromArgb("#374151"),
                     VerticalOptions = LayoutOptions.Center

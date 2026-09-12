@@ -535,6 +535,142 @@ public sealed class OrderPlaceConfirmDialog : ContentView
     }
 }
 
+/// <summary>Elegant OK alert for Order Place (replaces system DisplayAlert / plain ModernAlert).</summary>
+public enum OrderPlaceAlertTone
+{
+    Info,
+    Success,
+    Warning,
+    Error
+}
+
+public sealed class OrderPlaceAlertDialog : ContentView
+{
+    private readonly Border _iconBorder;
+    private readonly Label _iconLabel;
+    private readonly Label _title = MotherDialogVisuals.Title();
+    private readonly Label _message = MotherDialogVisuals.Message();
+    private readonly Button _ok = new()
+    {
+        Text = "OK",
+        Style = null,
+        BackgroundColor = Color.FromArgb("#2563EB"),
+        TextColor = Colors.White,
+        FontAttributes = FontAttributes.Bold,
+        CornerRadius = 14,
+        HeightRequest = 52,
+        FontSize = 16
+    };
+    private TaskCompletionSource<bool>? _tcs;
+
+    public OrderPlaceAlertDialog()
+    {
+        BackgroundColor = Color.FromArgb("#80000000");
+        _ok.Clicked += (_, _) => _tcs?.TrySetResult(true);
+
+        _iconLabel = new Label
+        {
+            Text = "i",
+            FontSize = 28,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Colors.White,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        _iconBorder = new Border
+        {
+            WidthRequest = 72,
+            HeightRequest = 72,
+            Stroke = Colors.White,
+            StrokeThickness = 2,
+            StrokeShape = new RoundRectangle { CornerRadius = 36 },
+            BackgroundColor = Color.FromArgb("#2563EB"),
+            Content = _iconLabel,
+            HorizontalOptions = LayoutOptions.Center,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+
+        var body = new VerticalStackLayout
+        {
+            Spacing = 16,
+            Children = { _iconBorder, _title, _message, _ok }
+        };
+
+        Content = MotherDialogVisuals.OverlayGrid(MotherDialogVisuals.Panel(440, 460, body, padding: 28));
+    }
+
+    public Task ShowAsync(
+        ContentPage page,
+        string title,
+        string message,
+        string okText = "OK",
+        OrderPlaceAlertTone? tone = null)
+    {
+        _tcs = new TaskCompletionSource<bool>();
+        _title.Text = string.IsNullOrWhiteSpace(title) ? "Notice" : title.Trim();
+        _message.Text = message ?? string.Empty;
+        _ok.Text = string.IsNullOrWhiteSpace(okText) ? "OK" : okText.Trim();
+        ApplyTone(tone ?? InferTone(_title.Text));
+        return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
+    }
+
+    public static OrderPlaceAlertTone InferTone(string? title)
+    {
+        var t = (title ?? string.Empty).ToLowerInvariant();
+        if (t.Contains("fail") || t.Contains("error") || t.Contains("blocked") || t.Contains("unavailable"))
+        {
+            return OrderPlaceAlertTone.Error;
+        }
+
+        if (t.Contains("complete") ||
+            t.Contains("success") ||
+            t.Contains("applied") ||
+            t.Contains("voided") ||
+            t.Contains("merged") ||
+            t.Contains("printed") ||
+            t.Contains("sent"))
+        {
+            return OrderPlaceAlertTone.Success;
+        }
+
+        if (t.Contains("warn") || t.Contains("required"))
+        {
+            return OrderPlaceAlertTone.Warning;
+        }
+
+        return OrderPlaceAlertTone.Info;
+    }
+
+    private void ApplyTone(OrderPlaceAlertTone tone)
+    {
+        switch (tone)
+        {
+            case OrderPlaceAlertTone.Success:
+                _iconLabel.Text = "✓";
+                _iconBorder.BackgroundColor = Color.FromArgb("#059669");
+                _ok.BackgroundColor = Color.FromArgb("#059669");
+                break;
+            case OrderPlaceAlertTone.Error:
+                _iconLabel.Text = "!";
+                _iconBorder.BackgroundColor = Color.FromArgb("#DC2626");
+                _ok.BackgroundColor = Color.FromArgb("#DC2626");
+                break;
+            case OrderPlaceAlertTone.Warning:
+                _iconLabel.Text = "!";
+                _iconBorder.BackgroundColor = Color.FromArgb("#D97706");
+                _ok.BackgroundColor = Color.FromArgb("#059669");
+                break;
+            default:
+                _iconLabel.Text = "i";
+                _iconBorder.BackgroundColor = Color.FromArgb("#2563EB");
+                _ok.BackgroundColor = Color.FromArgb("#2563EB");
+                break;
+        }
+    }
+}
+
 /// <summary>Mother DiscountDialog parity: Fixed/Percent toggle, amount, reason chips, Remove/Apply.</summary>
 public sealed class OrderPlaceDiscountDialog : ContentView
 {
@@ -696,7 +832,7 @@ public sealed class OrderPlaceDiscountDialog : ContentView
                 ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
                 Children =
                 {
-                    new Label { Text = "Discount Amount:", FontSize = 15, TextColor = Color.FromArgb("#996600"), VerticalOptions = LayoutOptions.Center }
+                    new Label { Text = "Discount Amount:", FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#996600"), VerticalOptions = LayoutOptions.Center }
                 }
             }
         };
@@ -788,23 +924,8 @@ public sealed class OrderPlaceDiscountDialog : ContentView
         }
 
         SetFixed(true);
-        return ShowAttachedWithAmountKeyboardAsync(page);
-    }
-
-    private async Task<OrderPlaceDiscountResult?> ShowAttachedWithAmountKeyboardAsync(ContentPage page)
-    {
-        var presenterTask = OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs!);
-        try
-        {
-            await Task.Delay(80);
-            await OpenAmountKeyboardAsync();
-        }
-        catch
-        {
-            // User can still tap Amount.
-        }
-
-        return await presenterTask;
+        // Amount keypad opens only when the user taps the Amount field (not on dialog open).
+        return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
     }
 
     private Task OpenAmountKeyboardAsync() =>

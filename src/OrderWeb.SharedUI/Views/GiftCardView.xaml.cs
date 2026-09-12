@@ -5,7 +5,6 @@ using OrderWeb.SharedUI.Controls;
 public enum GiftCardFlowKind
 {
     Activate,
-    Sell,
     TopUp,
     Redeem
 }
@@ -22,6 +21,7 @@ public partial class GiftCardView : ContentView
         WireGiftCardKeypads();
         WireSuccessActionChrome(RedeemActionButtonControl);
         WireSuccessActionChrome(ActivateActionButtonControl);
+        WireSuccessActionChrome(TopUpActionButtonControl);
         ShowFlow(GiftCardFlowKind.Redeem);
     }
 
@@ -31,8 +31,6 @@ public partial class GiftCardView : ContentView
     public event EventHandler? CloseRequested;
     public event EventHandler? ActivateLookupRequested;
     public event EventHandler? ActivateRequested;
-    public event EventHandler? GenerateSellCardRequested;
-    public event EventHandler? SellRequested;
     public event EventHandler? TopUpLookupRequested;
     public event EventHandler? TopUpRequested;
     public event EventHandler? RedeemLookupRequested;
@@ -46,14 +44,6 @@ public partial class GiftCardView : ContentView
     public Entry ActivateOrderIdEntry => ActivateOrderIdEntryControl;
     public Button ActivateActionButton => ActivateActionButtonControl;
     public Label ActivateReceiptLabel => ActivateReceiptLabelControl;
-
-    public Entry SellCardEntry => SellCardEntryControl;
-    public Entry SellAmountEntry => SellAmountEntryControl;
-    public Picker SellPaymentMethodPicker => SellPaymentMethodPickerControl;
-    public Entry SellOrderIdEntry => SellOrderIdEntryControl;
-    public Button SellActionButton => SellActionButtonControl;
-    public Label SellStatusLabel => SellStatusLabelControl;
-    public Label SellReceiptLabel => SellReceiptLabelControl;
 
     public Entry TopUpCardEntry => TopUpCardEntryControl;
     public Button TopUpLookupButton => TopUpLookupButtonControl;
@@ -73,11 +63,17 @@ public partial class GiftCardView : ContentView
     public Button RedeemActionButton => RedeemActionButtonControl;
     public Label RedeemStatusLabel => RedeemStatusLabelControl;
 
+    /// <summary>Confirm cash/card was taken at the till before cloud top-up / activate.</summary>
+    public Task<bool> ConfirmLocalPaymentAsync(string paymentMethod, decimal amount, string actionVerb)
+    {
+        var dialog = new GiftCardPaymentConfirmDialog();
+        return dialog.ShowAsync(RootOverlay, paymentMethod, amount, actionVerb);
+    }
+
     public string FlowTitle => CurrentFlow switch
     {
         GiftCardFlowKind.Activate => "Activate",
-        GiftCardFlowKind.Sell => "Sell card",
-        GiftCardFlowKind.TopUp => "Top-up card",
+        GiftCardFlowKind.TopUp => "Top-up",
         GiftCardFlowKind.Redeem => "Redeem card",
         _ => "Gift Cards"
     };
@@ -86,23 +82,13 @@ public partial class GiftCardView : ContentView
     {
         CurrentFlow = flow;
 
-        var isSellTopUp = flow is GiftCardFlowKind.Sell or GiftCardFlowKind.TopUp;
         ActivateScreen.IsVisible = flow == GiftCardFlowKind.Activate;
-        SellTopUpScreen.IsVisible = isSellTopUp;
+        TopUpScreen.IsVisible = flow == GiftCardFlowKind.TopUp;
         RedeemScreen.IsVisible = flow == GiftCardFlowKind.Redeem;
 
-        SellScreen.IsVisible = flow == GiftCardFlowKind.Sell;
-        TopUpScreen.IsVisible = flow == GiftCardFlowKind.TopUp;
-
         SetFlowButtonState(ActivateFlowButton, flow == GiftCardFlowKind.Activate);
-        SetFlowButtonState(SellTopUpFlowButton, isSellTopUp);
+        SetFlowButtonState(TopUpFlowButton, flow == GiftCardFlowKind.TopUp);
         SetFlowButtonState(RedeemFlowButton, flow == GiftCardFlowKind.Redeem);
-
-        if (isSellTopUp)
-        {
-            SetFlowButtonState(SellModeButton, flow == GiftCardFlowKind.Sell);
-            SetFlowButtonState(TopUpModeButton, flow == GiftCardFlowKind.TopUp);
-        }
 
         FlowChanged?.Invoke(this, flow);
     }
@@ -115,7 +101,7 @@ public partial class GiftCardView : ContentView
 
     private void InitializePaymentPickers()
     {
-        foreach (var picker in new[] { ActivatePaymentMethodPickerControl, SellPaymentMethodPickerControl, TopUpPaymentMethodPickerControl })
+        foreach (var picker in new[] { ActivatePaymentMethodPickerControl, TopUpPaymentMethodPickerControl })
         {
             picker.Items.Clear();
             foreach (var method in PaymentMethods)
@@ -127,17 +113,15 @@ public partial class GiftCardView : ContentView
         }
 
         ApplyPaymentMethod(ActivatePaymentMethodPickerControl, ActivateCashButton, ActivateCardButton, "cash");
-        ApplyPaymentMethod(SellPaymentMethodPickerControl, SellCashButton, SellCardButton, "cash");
         ApplyPaymentMethod(TopUpPaymentMethodPickerControl, TopUpCashButton, TopUpCardButton, "cash");
     }
 
     private void WireGiftCardKeypads()
     {
-        // Tap opens VirtualKeyboardDialog over RootOverlay (Loyalty pattern).
-        // Entries are InputTransparent so Border taps always win.
         DisableSharedTouchKeyboard(ActivateCardEntryControl);
-        DisableSharedTouchKeyboard(SellCardEntryControl);
+        DisableSharedTouchKeyboard(ActivateAmountEntryControl);
         DisableSharedTouchKeyboard(TopUpCardEntryControl);
+        DisableSharedTouchKeyboard(TopUpAmountEntryControl);
         DisableSharedTouchKeyboard(RedeemCardEntryControl);
         DisableSharedTouchKeyboard(RedeemAmountEntryControl);
     }
@@ -174,13 +158,10 @@ public partial class GiftCardView : ContentView
     }
 
     private void OnActivateFlowClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Activate);
-    private void OnSellTopUpFlowClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Sell);
-    private void OnSellModeClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Sell);
-    private void OnTopUpModeClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.TopUp);
+    private void OnTopUpFlowClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.TopUp);
     private void OnRedeemFlowClicked(object? sender, EventArgs e) => ShowFlow(GiftCardFlowKind.Redeem);
     private void OnCloseFlowClicked(object? sender, EventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
-    /// <summary>Keep Mother emerald action buttons green on WinUI when disabled (not platform grey).</summary>
     private static void WireSuccessActionChrome(Button button)
     {
         ApplySuccessActionChrome(button);
@@ -206,12 +187,6 @@ public partial class GiftCardView : ContentView
     private void OnActivateCardPayClicked(object? sender, EventArgs e) =>
         ApplyPaymentMethod(ActivatePaymentMethodPickerControl, ActivateCashButton, ActivateCardButton, "card");
 
-    private void OnSellCashClicked(object? sender, EventArgs e) =>
-        ApplyPaymentMethod(SellPaymentMethodPickerControl, SellCashButton, SellCardButton, "cash");
-
-    private void OnSellCardPayClicked(object? sender, EventArgs e) =>
-        ApplyPaymentMethod(SellPaymentMethodPickerControl, SellCashButton, SellCardButton, "card");
-
     private void OnTopUpCashClicked(object? sender, EventArgs e) =>
         ApplyPaymentMethod(TopUpPaymentMethodPickerControl, TopUpCashButton, TopUpCardButton, "cash");
 
@@ -220,8 +195,6 @@ public partial class GiftCardView : ContentView
 
     private void OnActivateLookupClicked(object? sender, EventArgs e) => ActivateLookupRequested?.Invoke(this, EventArgs.Empty);
     private void OnActivateCardClicked(object? sender, EventArgs e) => ActivateRequested?.Invoke(this, EventArgs.Empty);
-    private void OnGenerateSellCardClicked(object? sender, EventArgs e) => GenerateSellCardRequested?.Invoke(this, EventArgs.Empty);
-    private void OnSellCardClicked(object? sender, EventArgs e) => SellRequested?.Invoke(this, EventArgs.Empty);
     private void OnTopUpLookupClicked(object? sender, EventArgs e) => TopUpLookupRequested?.Invoke(this, EventArgs.Empty);
     private void OnTopUpCardClicked(object? sender, EventArgs e) => TopUpRequested?.Invoke(this, EventArgs.Empty);
     private void OnRedeemLookupClicked(object? sender, EventArgs e) => RedeemLookupRequested?.Invoke(this, EventArgs.Empty);
@@ -230,26 +203,30 @@ public partial class GiftCardView : ContentView
     private async void OnActivateCardEntryTapped(object? sender, TappedEventArgs e) =>
         await OpenTextKeyboardAsync(ActivateCardEntryControl, "Stock card number");
 
-    private async void OnSellCardEntryTapped(object? sender, TappedEventArgs e) =>
-        await OpenTextKeyboardAsync(SellCardEntryControl, "Card number");
-
     private async void OnTopUpCardEntryTapped(object? sender, TappedEventArgs e) =>
         await OpenTextKeyboardAsync(TopUpCardEntryControl, "Gift card number");
 
     private async void OnRedeemCardEntryTapped(object? sender, TappedEventArgs e) =>
         await OpenTextKeyboardAsync(RedeemCardEntryControl, "Gift card number");
 
-    private async void OnRedeemAmountEntryTapped(object? sender, TappedEventArgs e) =>
+    private async void OnActivateAmountEntryTapped(object? sender, TappedEventArgs e) =>
         await OpenNumericKeyboardAsync(
-            RedeemAmountEntryControl,
-            "Redeem amount",
+            ActivateAmountEntryControl,
+            "Activation amount",
             VirtualKeyboardNumericMode.Currency,
             minimum: 0,
             maximum: 999999.99m);
 
-    /// <summary>After a successful check, open the amount keypad.</summary>
-    public void FocusRedeemAmountForKeypad() =>
-        _ = OpenNumericKeyboardAsync(
+    private async void OnTopUpAmountEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenNumericKeyboardAsync(
+            TopUpAmountEntryControl,
+            "Top-up amount",
+            VirtualKeyboardNumericMode.Currency,
+            minimum: 0,
+            maximum: 999999.99m);
+
+    private async void OnRedeemAmountEntryTapped(object? sender, TappedEventArgs e) =>
+        await OpenNumericKeyboardAsync(
             RedeemAmountEntryControl,
             "Redeem amount",
             VirtualKeyboardNumericMode.Currency,
@@ -341,6 +318,6 @@ public partial class GiftCardView : ContentView
         }
 
         return Shell.Current?.CurrentPage as ContentPage
-            ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
+               ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
     }
 }

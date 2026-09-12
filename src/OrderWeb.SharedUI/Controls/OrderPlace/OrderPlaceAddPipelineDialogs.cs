@@ -51,9 +51,18 @@ public static class OrderPlaceDialogPresenter
 
         dialog.HorizontalOptions = LayoutOptions.Fill;
         dialog.VerticalOptions = LayoutOptions.Fill;
-        if (dialog.ZIndex <= 0)
+        dialog.InputTransparent = false;
+        dialog.ZIndex = Math.Max(dialog.ZIndex, 20000);
+        Grid.SetRow(dialog, 0);
+        Grid.SetColumn(dialog, 0);
+        if (host.RowDefinitions.Count > 0)
         {
-            dialog.ZIndex = 5000;
+            Grid.SetRowSpan(dialog, host.RowDefinitions.Count);
+        }
+
+        if (host.ColumnDefinitions.Count > 0)
+        {
+            Grid.SetColumnSpan(dialog, host.ColumnDefinitions.Count);
         }
 
         host.Children.Add(dialog);

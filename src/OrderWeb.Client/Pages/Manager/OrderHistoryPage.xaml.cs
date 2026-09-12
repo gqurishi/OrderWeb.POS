@@ -1,54 +1,94 @@
 namespace OrderWeb.Client.Pages.Manager;
 
 using System.Globalization;
-using OrderWeb.Client.Dialogs;
-using OrderWeb.Client.Pages.Orders;
-using OrderWeb.Client.Pages.Pos;
 using OrderWeb.Client.Services;
 using OrderWeb.Contracts.Dtos;
 using OrderWeb.Contracts.Features;
+using OrderWeb.SharedUI.Views;
 
 public partial class OrderHistoryPage : ContentPage
 {
-    private const int PageSize = 50;
+    private const int PageSize = 20;
 
     private readonly ClientCacheService _cache = new();
     private readonly ClientOfflinePolicy _offlinePolicy;
     private readonly MotherOrderHistoryClient _history;
 
-    private string _selectedOrderType = "ALL";
+    private DateTime _selectedDate = DateTime.Today;
+    private OrderHistoryFilter _filter = OrderHistoryFilter.All;
     private string _activeSearch = string.Empty;
     private int _pageNumber = 1;
     private bool _hasNextPage;
     private bool _busy;
     private bool _isVisible;
     private bool _wsRefreshPending;
-    private bool _suppressDateEvent;
     private CancellationTokenSource? _loadCts;
 
     public OrderHistoryPage()
     {
         InitializeComponent();
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Order History");
+
         _offlinePolicy = new ClientOfflinePolicy(_cache);
         _history = new MotherOrderHistoryClient(_cache, _offlinePolicy);
 
-        _suppressDateEvent = true;
-        HistoryDatePicker.Date = DateTime.Today;
-        _suppressDateEvent = false;
-        UpdateTabStyles();
-        UpdatePagingControls();
+        Board.SetDateDisplay(_selectedDate);
+        Board.SetFilter(_filter);
+        Board.SetPaging(1, false, false);
+
+        Board.DateFilterTapped += async (_, _) => await PickDateAsync();
+        Board.SearchTapped += async (_, _) => await PickSearchAsync();
+        Board.ClearSearchRequested += async (_, _) =>
+        {
+            _activeSearch = string.Empty;
+            Board.SetSearchDisplay(null);
+            _pageNumber = 1;
+            await LoadHistoryAsync();
+        };
+        Board.FilterChanged += async (_, e) =>
+        {
+            _filter = e.Filter;
+            _pageNumber = 1;
+            await LoadHistoryAsync();
+        };
+        Board.PreviousPageRequested += async (_, _) =>
+        {
+            if (_pageNumber <= 1 || _busy)
+            {
+                return;
+            }
+
+            _pageNumber--;
+            await LoadHistoryAsync();
+        };
+        Board.NextPageRequested += async (_, _) =>
+        {
+            if (!_hasNextPage || _busy)
+            {
+                return;
+            }
+
+            _pageNumber++;
+            await LoadHistoryAsync();
+        };
+        Board.BackRequested += async (_, _) => await Navigation.PopAsync(false);
+        Board.ViewOrderRequested += async (_, e) => await OpenDetailAsync(e.Row);
 
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Order History");
+
         if (!HasHistoryAccess())
         {
-            await DisplayAlertAsync(
+            await DisplayAlert(
                 "Order History",
                 "This Client terminal is not allowed to use Order History. Ask Mother to grant Payments / Order History access.",
                 "OK");
@@ -73,10 +113,6 @@ public partial class OrderHistoryPage : ContentPage
         ClientHostAccess.Features.Contains(PosFeatureKeys.Payments) ||
         ClientHostAccess.CanOpenMenu("Order History");
 
-    /// <summary>
-    /// Light live refresh: WS carries no order list — only a notify. Re-fetch current date/filters
-    /// while this page is visible (same pattern as Live Order).
-    /// </summary>
     private async void OnMotherDataChanged(object? sender, MotherDataChangedEventArgs e)
     {
         if (!_isVisible || !IsHistoryRefreshEvent(e.EventType))
@@ -114,76 +150,46 @@ public partial class OrderHistoryPage : ContentPage
                || eventType.Contains("history.updated", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async void OnHistoryDateSelected(object? sender, DateChangedEventArgs e)
+    private async Task PickDateAsync()
     {
-        if (_suppressDateEvent)
+        var picked = await OrderHistoryPickers.PickDateAsync(Navigation, _selectedDate);
+        if (picked is null)
         {
             return;
         }
 
+        _selectedDate = picked.Value.Date;
+        Board.SetDateDisplay(_selectedDate);
         _pageNumber = 1;
         await LoadHistoryAsync();
     }
 
-    private async void OnSearchClicked(object? sender, EventArgs e) => await ApplySearchAsync();
-    private async void OnSearchCompleted(object? sender, EventArgs e) => await ApplySearchAsync();
-
-    private async void OnClearSearchClicked(object? sender, EventArgs e)
+    private async Task PickSearchAsync()
     {
-        SearchEntry.Text = string.Empty;
-        _activeSearch = string.Empty;
+        var value = await OrderHistoryPickers.PickSearchAsync(this, _activeSearch);
+        if (value is null)
+        {
+            return;
+        }
+
+        _activeSearch = value;
+        Board.SetSearchDisplay(string.IsNullOrWhiteSpace(_activeSearch) ? null : _activeSearch);
         _pageNumber = 1;
         await LoadHistoryAsync();
     }
 
-    private async void OnAllTabClicked(object? sender, TappedEventArgs e) => await SelectOrderTypeAsync("ALL");
-    private async void OnCollectionTabClicked(object? sender, TappedEventArgs e) => await SelectOrderTypeAsync("COL");
-    private async void OnDeliveryTabClicked(object? sender, TappedEventArgs e) => await SelectOrderTypeAsync("DEL");
-    private async void OnTableTabClicked(object? sender, TappedEventArgs e) => await SelectOrderTypeAsync("TBL");
-    private async void OnWebTabClicked(object? sender, TappedEventArgs e) => await SelectOrderTypeAsync("WEB");
-
-    private async void OnPreviousPageClicked(object? sender, EventArgs e)
+    private async Task OpenDetailAsync(OrderHistoryRowPresentation row)
     {
-        if (_pageNumber <= 1 || _busy)
-        {
-            return;
-        }
-
-        _pageNumber--;
-        await LoadHistoryAsync();
-    }
-
-    private async void OnNextPageClicked(object? sender, EventArgs e)
-    {
-        if (!_hasNextPage || _busy)
-        {
-            return;
-        }
-
-        _pageNumber++;
-        await LoadHistoryAsync();
-    }
-
-    private async void OnBackClicked(object? sender, EventArgs e) => await Navigation.PopAsync(false);
-    private async void OnBackdropTapped(object? sender, TappedEventArgs e) => await CloseSidebarAsync();
-
-    private async void OnViewOrderClicked(object? sender, EventArgs e)
-    {
-        if (sender is not BindableObject { BindingContext: OrderHistoryRowModel row })
-        {
-            return;
-        }
-
-        if (_busy)
+        if (_busy || row.Tag is not HistoryRowTag tag)
         {
             return;
         }
 
         _busy = true;
-        SetLoading(true);
+        Board.SetLoading(true);
         try
         {
-            var detail = await _history.GetDetailAsync(row.OrderId, row.DatabaseId);
+            var detail = await _history.GetDetailAsync(tag.OrderId, tag.DatabaseId);
             if (!detail.Success || detail.Order is null)
             {
                 await DisplayAlertAsync(
@@ -193,7 +199,9 @@ public partial class OrderHistoryPage : ContentPage
                 return;
             }
 
-            var dialog = new OrderHistoryDetailDialogPage(detail.Order);
+            var presentation = MapDetail(detail.Order);
+            var dialog = new OrderHistoryDetailDialog(presentation);
+            dialog.PrintRequested += OnSharedReprintAsync;
             await dialog.ShowAsync(Navigation);
         }
         catch (Exception ex)
@@ -202,29 +210,98 @@ public partial class OrderHistoryPage : ContentPage
         }
         finally
         {
-            SetLoading(false);
+            Board.SetLoading(false);
             _busy = false;
         }
     }
 
-    private async Task ApplySearchAsync()
+    private async Task OnSharedReprintAsync(OrderHistoryDetailPresentation presentation)
     {
-        _activeSearch = (SearchEntry.Text ?? string.Empty).Trim().TrimStart('#');
-        _pageNumber = 1;
-        await LoadHistoryAsync();
-    }
-
-    private async Task SelectOrderTypeAsync(string orderType)
-    {
-        if (string.Equals(_selectedOrderType, orderType, StringComparison.OrdinalIgnoreCase) || _busy)
+        if (presentation.Tag is not ClientOrderHistoryDetailDto order)
         {
             return;
         }
 
-        _selectedOrderType = orderType;
-        _pageNumber = 1;
-        UpdateTabStyles();
-        await LoadHistoryAsync();
+        var printOrderId = !string.IsNullOrWhiteSpace(order.OrderId)
+            ? order.OrderId!.Trim()
+            : (order.Id > 0 ? order.Id.ToString(CultureInfo.InvariantCulture) : string.Empty);
+        if (string.IsNullOrWhiteSpace(printOrderId))
+        {
+            await DisplayAlertAsync("Reprint", "This order has no Mother print id.", "OK");
+            return;
+        }
+
+        var online = await _offlinePolicy.IsMotherOnlineAsync();
+        var gate = _offlinePolicy.Evaluate(ClientOperation.OrderHistory, online);
+        if (!gate.Allowed)
+        {
+            await DisplayAlertAsync("Reprint", gate.Message, "OK");
+            return;
+        }
+
+        var session = await _cache.GetCurrentLoginSessionAsync();
+        if (session is null || string.IsNullOrWhiteSpace(session.SessionToken))
+        {
+            await DisplayAlertAsync("Reprint", "Sign in again before reprinting.", "OK");
+            return;
+        }
+
+        var print = new MotherPrintClient();
+        var result = await print.RequestPrintAsync("reprint", printOrderId, session);
+        var ok = string.Equals(result.Status, "queued", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(result.Status, "printed", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(result.Status, "partial", StringComparison.OrdinalIgnoreCase);
+        await DisplayAlertAsync(
+            ok ? "Reprint queued" : "Reprint failed",
+            result.Message ?? (ok
+                ? "Mother POS accepted the reprint on its receipt printer."
+                : "Mother POS could not reprint this receipt."),
+            "OK");
+    }
+
+    private static OrderHistoryDetailPresentation MapDetail(ClientOrderHistoryDetailDto order)
+    {
+        static string Money(decimal value) => $"£{value:F2}";
+        static string Text(string? value, string fallback = "—") =>
+            string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+        var lines = (order.Lines ?? Array.Empty<ClientOrderHistoryDetailLineDto>())
+            .Select(line => new OrderHistoryDetailLinePresentation(
+                QuantityDisplay: $"{line.Quantity}x",
+                Name: Text(line.Name, "Item"),
+                Details: line.Details,
+                TotalDisplay: Money(line.TotalPrice)))
+            .ToList();
+
+        return new OrderHistoryDetailPresentation(
+            OrderNumber: Text(order.OrderNumber, "#—"),
+            OrderDateTime: Text(order.OrderDateTime),
+            OrderTypeDisplay: Text(order.OrderTypeDisplay, "Order"),
+            StatusDisplay: Text(order.StatusDisplay),
+            CustomerName: Text(order.CustomerName),
+            CustomerPhone: Text(order.CustomerPhone),
+            CustomerAddress: Text(order.CustomerAddress),
+            PaymentMethod: Text(order.PaymentDisplay ?? order.PaymentMethod),
+            PaymentStatus: Text(order.PaymentStatusDisplay),
+            AmountPaid: order.AmountPaid.HasValue ? Money(order.AmountPaid.Value) : "Not supplied",
+            PaymentProvider: Text(order.PaymentProvider),
+            PaymentReference: Text(order.PaymentReference),
+            Scheduled: Text(order.ScheduledDisplay),
+            Instructions: Text(order.SpecialInstructions, "None"),
+            Promo: Text(order.PromoCode, "None"),
+            GiftCard: Text(order.GiftCardDisplay, "None"),
+            Loyalty: Text(order.LoyaltyDisplay, "None"),
+            Subtotal: Money(order.SubtotalAmount),
+            Vat: Money(order.TaxAmount),
+            Discount: order.DiscountAmount > 0 ? $"-{Money(order.DiscountAmount)}" : Money(0),
+            DeliveryFee: Money(order.DeliveryFee),
+            ServiceCharge: Money(order.ServiceChargeAmount),
+            Tips: Money(order.TipsAmount),
+            Total: Money(order.TotalAmount),
+            CanPrint: order.CanReprint && (!string.IsNullOrWhiteSpace(order.OrderId) || order.Id > 0),
+            PrintButtonText: "Print",
+            Lines: lines,
+            Tag: order);
     }
 
     private async Task LoadHistoryAsync(bool fromLiveNotify = false)
@@ -251,17 +328,17 @@ public partial class OrderHistoryPage : ContentPage
         _loadCts = new CancellationTokenSource();
         var token = _loadCts.Token;
 
-        // Soft refresh from WS: keep the list visible; avoid flashing the spinner on every notify.
         if (!fromLiveNotify)
         {
-            SetLoading(true);
+            // Mother paints without ChefLoader flash for normal date/tab browse.
+            Board.SetLoading(false);
         }
 
         try
         {
             var result = await _history.SearchAsync(
-                HistoryDatePicker.Date,
-                _selectedOrderType,
+                _selectedDate,
+                OrderHistoryFilterCodes.ToApiCode(_filter),
                 _activeSearch,
                 _pageNumber,
                 PageSize,
@@ -280,7 +357,6 @@ public partial class OrderHistoryPage : ContentPage
                     return;
                 }
 
-                // Keep prior rows on a failed live notify; only hard-fail interactive loads.
                 if (!fromLiveNotify)
                 {
                     ShowErrorState(result.Error ?? result.Message ?? "Could not load order history.");
@@ -303,7 +379,7 @@ public partial class OrderHistoryPage : ContentPage
         }
         finally
         {
-            SetLoading(false);
+            Board.SetLoading(false);
             _busy = false;
             if (_wsRefreshPending && _isVisible)
             {
@@ -316,16 +392,18 @@ public partial class OrderHistoryPage : ContentPage
     private void ApplyResult(ClientOrderHistoryResponseDto result)
     {
         var completed = (result.Completed ?? Array.Empty<ClientOrderHistoryItemDto>())
-            .Select(OrderHistoryRowModel.FromDto)
+            .Select(MapRow)
             .ToList();
         var voided = (result.Voided ?? Array.Empty<ClientOrderHistoryItemDto>())
-            .Select(OrderHistoryRowModel.FromDto)
+            .Select(MapRow)
             .ToList();
 
-        CompletedOrdersCollection.ItemsSource = completed;
-        VoidedOrdersCollection.ItemsSource = voided;
-        CompletedEmptyLabel.IsVisible = completed.Count == 0 && voided.Count == 0;
-        VoidedOrdersLayout.IsVisible = voided.Count > 0;
+        Board.SetRows(
+            completed,
+            voided,
+            string.IsNullOrWhiteSpace(_activeSearch)
+                ? "No orders found for this date"
+                : "No matching orders found");
 
         _hasNextPage = result.HasNextPage && !result.FromCache;
         if (result.Page > 0)
@@ -333,90 +411,73 @@ public partial class OrderHistoryPage : ContentPage
             _pageNumber = result.Page;
         }
 
-        UpdatePagingControls();
+        Board.SetPaging(_pageNumber, !_busy && _pageNumber > 1, !_busy && _hasNextPage);
 
+        // Mother parity: status banner only while searching (idle offline stays quiet).
         var hasSearch = !string.IsNullOrWhiteSpace(_activeSearch);
-        StatusBanner.IsVisible = true;
-        ClearSearchButton.IsVisible = hasSearch;
-        StatusTitleLabel.Text = result.FromCache
-            ? "Offline snapshot"
-            : hasSearch
-                ? $"Search: {_activeSearch}"
-                : string.Format(CultureInfo.CurrentCulture, "{0:D}", HistoryDatePicker.Date);
-        StatusDetailLabel.Text = result.Message
-            ?? (result.FromCache
-                ? "Showing last saved day from this terminal."
-                : "Loaded from Mother POS.");
-        StatusBanner.BackgroundColor = result.FromCache
-            ? Color.FromArgb("#FFFBEB")
-            : Color.FromArgb("#EFF6FF");
-        StatusBanner.Stroke = result.FromCache
-            ? Color.FromArgb("#FCD34D")
-            : Color.FromArgb("#BFDBFE");
-        StatusTitleLabel.TextColor = result.FromCache
-            ? Color.FromArgb("#92400E")
-            : Color.FromArgb("#1E3A8A");
-        StatusDetailLabel.TextColor = result.FromCache
-            ? Color.FromArgb("#B45309")
-            : Color.FromArgb("#2563EB");
+        if (hasSearch && result.FromCache)
+        {
+            Board.SetStatusBanner(
+                visible: true,
+                title: $"Search: {_activeSearch} • {completed.Count + voided.Count} result(s)",
+                detail: result.Message ?? "Showing last saved day from this terminal.",
+                showClear: true,
+                warning: true);
+        }
+        else if (hasSearch)
+        {
+            var count = completed.Count + voided.Count;
+            Board.SetStatusBanner(
+                visible: true,
+                title: $"Search: {_activeSearch} • {count} result(s)",
+                detail: result.Message ?? "Loaded from Mother POS.",
+                showClear: true);
+        }
+        else
+        {
+            Board.SetStatusBanner(false, string.Empty, string.Empty, showClear: false);
+        }
     }
+
+    private static OrderHistoryRowPresentation MapRow(ClientOrderHistoryItemDto dto) =>
+        new(
+            OrderNumber: string.IsNullOrWhiteSpace(dto.OrderNumber) ? "#—" : dto.OrderNumber!,
+            OrderDateTime: dto.OrderDateTime ?? string.Empty,
+            CustomerDisplay: string.IsNullOrWhiteSpace(dto.CustomerDisplay) ? "Customer not supplied" : dto.CustomerDisplay!,
+            OrderTypeDisplay: string.IsNullOrWhiteSpace(dto.OrderTypeDisplay) ? "Order" : dto.OrderTypeDisplay!,
+            PaymentDisplay: string.IsNullOrWhiteSpace(dto.PaymentDisplay) ? "—" : dto.PaymentDisplay!,
+            StatusDisplay: string.IsNullOrWhiteSpace(dto.StatusDisplay) ? "—" : dto.StatusDisplay!,
+            TotalDisplay: $"£{dto.TotalAmount:F2}",
+            IsVoided: string.Equals(dto.HistoryGroup, "voided", StringComparison.OrdinalIgnoreCase),
+            Tag: new HistoryRowTag(dto.Id, dto.OrderId ?? string.Empty));
 
     private void ShowErrorState(string message)
     {
-        CompletedOrdersCollection.ItemsSource = null;
-        VoidedOrdersCollection.ItemsSource = null;
-        VoidedOrdersLayout.IsVisible = false;
-        CompletedEmptyLabel.IsVisible = true;
-        CompletedEmptyLabel.Text = message;
+        Board.SetRows([], [], message);
         _hasNextPage = false;
-        UpdatePagingControls();
-
-        StatusBanner.IsVisible = true;
-        ClearSearchButton.IsVisible = !string.IsNullOrWhiteSpace(_activeSearch);
-        StatusTitleLabel.Text = "Could not load history";
-        StatusDetailLabel.Text = message;
-        StatusBanner.BackgroundColor = Color.FromArgb("#FEF2F2");
-        StatusBanner.Stroke = Color.FromArgb("#FECACA");
-        StatusTitleLabel.TextColor = Color.FromArgb("#991B1B");
-        StatusDetailLabel.TextColor = Color.FromArgb("#B91C1C");
+        Board.SetPaging(_pageNumber, false, false);
+        Board.SetStatusBanner(
+            visible: true,
+            title: "Could not load history",
+            detail: message,
+            showClear: !string.IsNullOrWhiteSpace(_activeSearch),
+            error: true);
     }
 
     private void ShowForbiddenState(string? message = null)
     {
         ShowErrorState(message
             ?? "Order History is not enabled for this Client terminal. Ask Mother to grant Payments / Order History access.");
-        StatusTitleLabel.Text = "Access denied";
+        Board.SetStatusBanner(
+            visible: true,
+            title: "Access denied",
+            detail: message
+                ?? "Order History is not enabled for this Client terminal. Ask Mother to grant Payments / Order History access.",
+            showClear: false,
+            error: true);
     }
 
-    private void SetLoading(bool loading)
-    {
-        LoadingIndicator.IsLoading = loading;
-        PreviousPageButton.IsEnabled = !loading && _pageNumber > 1;
-        NextPageButton.IsEnabled = !loading && _hasNextPage;
-    }
-
-    private void UpdatePagingControls()
-    {
-        PageNumberLabel.Text = $"Page {_pageNumber}";
-        PreviousPageButton.IsEnabled = !_busy && _pageNumber > 1;
-        NextPageButton.IsEnabled = !_busy && _hasNextPage;
-    }
-
-    private void UpdateTabStyles()
-    {
-        StyleTab(AllTabBorder, AllTabLabel, "ALL");
-        StyleTab(CollectionTabBorder, CollectionTabLabel, "COL");
-        StyleTab(DeliveryTabBorder, DeliveryTabLabel, "DEL");
-        StyleTab(TableTabBorder, TableTabLabel, "TBL");
-        StyleTab(WebTabBorder, WebTabLabel, "WEB");
-    }
-
-    private void StyleTab(Border border, Label label, string orderType)
-    {
-        var selected = string.Equals(_selectedOrderType, orderType, StringComparison.OrdinalIgnoreCase);
-        border.BackgroundColor = selected ? Color.FromArgb("#10B981") : Color.FromArgb("#F5F5F5");
-        label.TextColor = selected ? Colors.White : Color.FromArgb("#6B7280");
-    }
+    private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
     private async Task OpenSidebarAsync()
     {
@@ -434,60 +495,8 @@ public partial class OrderHistoryPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "orderhistory") ||
-            !ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, menu, currentRoute: "orderhistory");
     }
-}
 
-public sealed class OrderHistoryRowModel
-{
-    public int DatabaseId { get; init; }
-    public string OrderId { get; init; } = string.Empty;
-    public string OrderNumber { get; init; } = string.Empty;
-    public string OrderDateTime { get; init; } = string.Empty;
-    public string CustomerDisplay { get; init; } = string.Empty;
-    public string OrderTypeDisplay { get; init; } = string.Empty;
-    public string PaymentDisplay { get; init; } = string.Empty;
-    public string StatusDisplay { get; init; } = string.Empty;
-    public string TotalDisplay { get; init; } = string.Empty;
-
-    public static OrderHistoryRowModel FromDto(ClientOrderHistoryItemDto dto) =>
-        new()
-        {
-            DatabaseId = dto.Id,
-            OrderId = dto.OrderId ?? string.Empty,
-            OrderNumber = string.IsNullOrWhiteSpace(dto.OrderNumber) ? "#—" : dto.OrderNumber,
-            OrderDateTime = dto.OrderDateTime ?? string.Empty,
-            CustomerDisplay = string.IsNullOrWhiteSpace(dto.CustomerDisplay) ? "Customer not supplied" : dto.CustomerDisplay,
-            OrderTypeDisplay = string.IsNullOrWhiteSpace(dto.OrderTypeDisplay) ? "Order" : dto.OrderTypeDisplay,
-            PaymentDisplay = string.IsNullOrWhiteSpace(dto.PaymentDisplay) ? "—" : dto.PaymentDisplay,
-            StatusDisplay = string.IsNullOrWhiteSpace(dto.StatusDisplay) ? "—" : dto.StatusDisplay,
-            TotalDisplay = $"£{dto.TotalAmount:F2}"
-        };
+    private sealed record HistoryRowTag(int DatabaseId, string OrderId);
 }

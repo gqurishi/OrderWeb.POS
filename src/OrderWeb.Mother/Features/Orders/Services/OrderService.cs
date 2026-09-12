@@ -477,6 +477,71 @@ public class OrderService
         }
     }
 
+    /// <summary>
+    /// After cloud loyalty-add succeeds, stamp the order as earned without full-order
+    /// optimistic concurrency (which breaks if UpdatedAt was rewritten to "now").
+    /// Idempotent when <c>loyalty_points_earned</c> is already &gt; 0.
+    /// </summary>
+    public async Task<(bool Success, string Message)> MarkLoyaltyPointsEarnedAsync(
+        string orderId,
+        int pointsEarned,
+        string? customerName = null,
+        string? customerPhone = null,
+        int? loyaltyBalanceAfter = null)
+    {
+        if (string.IsNullOrWhiteSpace(orderId) || pointsEarned <= 0)
+        {
+            return (false, "Order id and points earned are required.");
+        }
+
+        try
+        {
+            await using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            await EnsureFinancialSchemaAsync(connection);
+
+            var now = NormalizeTimestampForDb(DateTime.Now);
+            const string sql = @"
+                UPDATE orders SET
+                    loyalty_points_earned = CASE
+                        WHEN COALESCE(loyalty_points_earned, 0) > 0 THEN loyalty_points_earned
+                        ELSE @pointsEarned
+                    END,
+                    customer_name = CASE
+                        WHEN NULLIF(@customerName, '') IS NULL THEN customer_name
+                        ELSE @customerName
+                    END,
+                    customer_phone = CASE
+                        WHEN NULLIF(@customerPhone, '') IS NULL THEN customer_phone
+                        ELSE @customerPhone
+                    END,
+                    loyalty_balance_after = COALESCE(@loyaltyBalanceAfter, loyalty_balance_after),
+                    updated_at = @updatedAt
+                WHERE order_id = @orderId";
+
+            await using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@pointsEarned", pointsEarned);
+            command.Parameters.AddWithValue("@customerName", customerName?.Trim() ?? string.Empty);
+            command.Parameters.AddWithValue("@customerPhone", customerPhone?.Trim() ?? string.Empty);
+            command.Parameters.AddWithValue("@loyaltyBalanceAfter", loyaltyBalanceAfter ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@updatedAt", now);
+            command.Parameters.AddWithValue("@orderId", orderId.Trim());
+
+            var rows = await command.ExecuteNonQueryAsync();
+            var latest = await GetOrderByExternalIdAsync(orderId.Trim());
+            if (latest != null && latest.LoyaltyPointsEarned > 0)
+            {
+                return (true, rows > 0 ? "Loyalty earn marked on order." : "Loyalty earn already marked on order.");
+            }
+
+            return (false, rows == 0 ? "Order not found for loyalty earn mark." : "Loyalty earn mark did not persist.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Failed to mark loyalty earn: {ex.Message}");
+        }
+    }
+
     public async Task<Order?> GetOrderByExternalIdAsync(string externalOrderId)
     {
         try

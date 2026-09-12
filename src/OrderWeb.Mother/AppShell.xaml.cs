@@ -605,17 +605,9 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         var features = MotherFeatureSet();
         var hostRoutes = role switch
         {
-            // Dashboard first so User/Manager can return home from any page,
-            // matching Admin sidebar behavior (shared catalog route "dashboard").
-            UserRole.User => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "dashboard", "restaurant", "collection", "delivery", "liveorder", "reservation"
-            },
-            UserRole.Manager => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "dashboard", "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
-                "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
-            },
+            // SharedUI User/Manager lists — same items Client shows.
+            UserRole.User => new HashSet<string>(OrderWeb.SharedUI.Navigation.PosRoleMenus.User, StringComparer.OrdinalIgnoreCase),
+            UserRole.Manager => new HashSet<string>(OrderWeb.SharedUI.Navigation.PosRoleMenus.Manager, StringComparer.OrdinalIgnoreCase),
             UserRole.Cashier => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "dashboard", "cashdrawer", "report"

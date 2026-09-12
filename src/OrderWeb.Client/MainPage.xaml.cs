@@ -139,7 +139,11 @@ public partial class MainPage : ContentPage
         _cashierRefreshTimer = Dispatcher.CreateTimer();
         _cashierRefreshTimer.Interval = TimeSpan.FromSeconds(45);
         _cashierRefreshTimer.Tick += async (_, _) => await RefreshCashierDashboardAsync();
-        Appearing += (_, _) => _inactivity.TrackPage(this);
+        Appearing += (_, _) =>
+        {
+            _inactivity.TrackPage(this);
+            TryConsumePendingSidebarRoute();
+        };
         ShowCheckingMother();
         _ = InitializeCacheAsync();
     }
@@ -1767,6 +1771,7 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        _posSelectedMenu = "Dashboard";
         // Financial values and final actions remain Mother-authoritative. The
         // Client deliberately renders no cached totals and provides no local
         // order, refund, discount, or void workflow for this role.
@@ -1887,26 +1892,29 @@ public partial class MainPage : ContentPage
         button.IsEnabled = false;
         try
         {
-            var reason = await new CashDrawerReasonDialogPage().ShowAsync(Navigation);
-            if (string.IsNullOrWhiteSpace(reason)) return;
-            CashDrawerFormResult? form = null;
-            if (reason is "Shopping" or "Delivery" or "Cash Count" or "Other")
+            var choice = await CashDrawerDialogFlow.CollectAsync(this);
+            if (choice is null) return;
+            if (choice.Kind == CashDrawerUiKind.ShoppingSettle)
             {
-                form = reason switch
-                {
-                    "Shopping" => await new CashDrawerFormDialogPage("Shopping", "Record cash taken from the till before opening the drawer.", "Take & Open", "#0F8278", "Shopping item or purpose", "Amount out").ShowAsync(Navigation),
-                    "Delivery" => await new CashDrawerFormDialogPage("Delivery payout", "Record cash paid out for delivery before opening the drawer.", "Pay & Open", "#0F8278", null, "Amount out").ShowAsync(Navigation),
-                    "Cash Count" => await new CashDrawerFormDialogPage("Cash count", "Enter the cash counted in the drawer.", "Record & Open", "#0F8278", null, "Counted cash", allowZeroAmount: true).ShowAsync(Navigation),
-                    _ => await new CashDrawerFormDialogPage("Other till expense", "Enter the reason for opening the cash drawer.", "Continue", "#2563EB", "Reason", "Amount out").ShowAsync(Navigation)
-                };
-                if (form is null) return;
+                var settled = await ClientCashDrawerOpen.SettleShoppingAsync(this, _cache);
+                if (settled is null) return;
+                await CashDrawerDialogFlow.ShowNoticeAsync(
+                    this,
+                    settled.Success ? "Cash Drawer" : "Cash Drawer Failed",
+                    settled.Message,
+                    settled.Success ? "OK" : "!",
+                    settled.Success ? "#10B981" : "#EF4444");
+                return;
             }
-            form ??= new CashDrawerFormResult(null, null);
             if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Mother POS disconnected. No cash-drawer action was submitted.", "OK"); return; }
-            if (!await new CashDrawerConfirmDialogPage(reason).ShowAsync(Navigation)) return;
-            if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Mother POS disconnected. No cash-drawer action was submitted.", "OK"); return; }
-            var result = await _cashierClient!.OpenCashDrawerAsync(reason, form.Amount, form.Details);
-            await DisplayAlertAsync(result.Success ? "Cash Drawer" : "Cash Drawer Failed", result.Message, "OK");
+            var open = ClientCashDrawerOpen.From(choice);
+            var result = await _cashierClient!.OpenCashDrawerAsync(open.Reason, open.Amount, open.Details);
+            await CashDrawerDialogFlow.ShowNoticeAsync(
+                this,
+                result.Success ? "Cash Drawer" : "Cash Drawer Failed",
+                result.Message,
+                result.Success ? "OK" : "!",
+                result.Success ? "#10B981" : "#EF4444");
             await RefreshCashierDashboardAsync();
         }
         finally { button.IsEnabled = CanRunCashierLiveAction(); }
@@ -2008,7 +2016,7 @@ public partial class MainPage : ContentPage
             case "reservation": OnClientSidebarMenuSelected(this, "Reservations"); break;
             case "liveorder": OnClientSidebarMenuSelected(this, "Live Orders"); break;
             case "openorders": OnClientSidebarMenuSelected(this, "Live Orders"); break;
-            case "customers": ShowSharedCustomerFlow(); break;
+            case "customers": OnClientSidebarMenuSelected(this, "Recent Customers"); break;
         }
     }
 
@@ -2155,6 +2163,7 @@ public partial class MainPage : ContentPage
             RowDefinitions =
             {
                 new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Auto)
             },
             ColumnSpacing = 28,
@@ -2166,13 +2175,20 @@ public partial class MainPage : ContentPage
         AddManagerTool(grid, "Loyalty Points", "loyalty.png", 0, 2, () => OpenManagerToolPage(new LoyaltyPage()));
         AddManagerTool(grid, "Reservation", "reservation.png", 1, 0, () => OpenManagerToolPage(new ReservationPage()));
         AddManagerTool(grid, "Order History", "orderhistory.png", 1, 1, () => OpenManagerToolPage(new OrderHistoryPage()));
-        AddManagerTool(grid, "Cash Drawer", "giftcard.png", 1, 2, () => OpenManagerToolPage(new CashDrawerPage()));
+        AddManagerTool(grid, "Cash Drawer", "giftcard.png", 1, 2, () => _ = OpenSharedCashDrawerAsync());
+        AddManagerTool(grid, "Recent Customers", "customers.png", 2, 1, () => OpenManagerToolPage(new RecentCustomersPage()));
         return grid;
     }
 
     private async void OpenManagerToolPage(ContentPage page)
     {
         ClientPageChrome.HideSystemBackChrome(page);
+
+        // Avoid stacking tools (Gift Cards under Loyalty). Sidebar switches pop first.
+        if (Navigation.NavigationStack.Count > 1)
+        {
+            await Navigation.PopToRootAsync(false);
+        }
 
         // Mother Collection/Delivery temporary routes slide in from the side.
         if (page is Pages.Orders.CollectionOrderPage or Pages.Orders.DeliveryOrderPage)
@@ -2182,6 +2198,46 @@ public partial class MainPage : ContentPage
         }
 
         await Navigation.PushAsync(page, false);
+    }
+
+    internal void TryConsumePendingSidebarRoute()
+    {
+        var pending = ClientSidebarNavigation.ConsumePendingRootRoute();
+        if (string.IsNullOrWhiteSpace(pending))
+        {
+            return;
+        }
+
+        var route = ClientHostAccess.RouteForTitle(pending);
+        switch (route)
+        {
+            case "dashboard":
+                ShowDashboard();
+                return;
+            case "liveorder":
+                ShowLiveOrders();
+                return;
+            case "restaurant":
+                ShowRestaurantLayout();
+                return;
+            case "weborders":
+                ShowToast("Rider board is on Mother POS. Open Rider there.");
+                ShowDashboard();
+                return;
+            case "cashdrawer":
+                _posSelectedMenu = "Dashboard";
+                _ = OpenSharedCashDrawerAsync();
+                return;
+        }
+
+        var page = ClientSidebarNavigation.CreatePage(pending);
+        if (page is ContentPage contentPage)
+        {
+            OpenManagerToolPage(contentPage);
+            return;
+        }
+
+        ShowDashboard();
     }
 
     private void AddManagerTool(Grid grid, string label, string imageSource, int row, int column, Action action)
@@ -2575,7 +2631,7 @@ public partial class MainPage : ContentPage
                 RunFromPosSidebar(selectedMenu, ShowDashboard);
                 break;
             case "cashdrawer":
-                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new CashDrawerPage()));
+                RunFromPosSidebar("Dashboard", () => _ = OpenSharedCashDrawerAsync());
                 break;
             case "liveorder":
                 RunFromPosSidebar(selectedMenu, ShowLiveOrders);
@@ -2604,7 +2660,7 @@ public partial class MainPage : ContentPage
                 break;
             case "customerdata":
             case "customers":
-                RunFromPosSidebar(selectedMenu, ShowSharedCustomerFlow);
+                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new RecentCustomersPage()));
                 break;
             case "orderhistory":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new OrderHistoryPage()));
@@ -2766,7 +2822,7 @@ public partial class MainPage : ContentPage
         var userItems = new[]
         {
             new PosSidebarMenuItem("Dashboard", "dashboard.png", () => RunFromPosSidebar("Dashboard", ShowDashboard)),
-            new PosSidebarMenuItem("Cash Drawer", "giftcard.png", () => RunFromPosSidebar("Cash Drawer", () => OpenManagerToolPage(new CashDrawerPage()))),
+            new PosSidebarMenuItem("Cash Drawer", "giftcard.png", () => RunFromPosSidebar("Dashboard", () => _ = OpenSharedCashDrawerAsync())),
             new PosSidebarMenuItem("Live Order", "liveorder.png", () => RunFromPosSidebar("Live Order", ShowLiveOrders)),
             new PosSidebarMenuItem("Restaurant", "restaurant.png", () => RunFromPosSidebar("Restaurant", ShowRestaurantLayout)),
             new PosSidebarMenuItem("Collection", "collection.png", () => RunFromPosSidebar("Collection", () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()))),
@@ -2784,7 +2840,7 @@ public partial class MainPage : ContentPage
             return new[]
             {
                 new PosSidebarMenuItem("Dashboard", "dashboard.png", () => RunFromPosSidebar("Dashboard", ShowDashboard)),
-                new PosSidebarMenuItem("Cash Drawer", "giftcard.png", () => RunFromPosSidebar("Cash Drawer", () => OpenManagerToolPage(new CashDrawerPage()))),
+                new PosSidebarMenuItem("Cash Drawer", "giftcard.png", () => RunFromPosSidebar("Dashboard", () => _ = OpenSharedCashDrawerAsync())),
                 new PosSidebarMenuItem("Live Order", "liveorder.png", () => RunFromPosSidebar("Live Order", ShowLiveOrders)),
                 new PosSidebarMenuItem("Restaurant", "restaurant.png", () => RunFromPosSidebar("Restaurant", ShowRestaurantLayout)),
                 new PosSidebarMenuItem("Collection", "collection.png", () => RunFromPosSidebar("Collection", () => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage()))),
@@ -2792,7 +2848,8 @@ public partial class MainPage : ContentPage
                 new PosSidebarMenuItem("Gift Cards", "giftcards.png", () => RunFromPosSidebar("Gift Cards", () => OpenManagerToolPage(new GiftCardPage()))),
                 new PosSidebarMenuItem("Loyalty Points", "loyalty.png", () => RunFromPosSidebar("Loyalty Points", () => OpenManagerToolPage(new LoyaltyPage()))),
                 new PosSidebarMenuItem("Reservation", "reservation.png", () => RunFromPosSidebar("Reservation", () => OpenManagerToolPage(new ReservationPage()))),
-                new PosSidebarMenuItem("Order History", "orderhistory.png", () => RunFromPosSidebar("Order History", () => OpenManagerToolPage(new OrderHistoryPage())))
+                new PosSidebarMenuItem("Order History", "orderhistory.png", () => RunFromPosSidebar("Order History", () => OpenManagerToolPage(new OrderHistoryPage()))),
+                new PosSidebarMenuItem("Recent Customers", "customers.png", () => RunFromPosSidebar("Recent Customers", () => OpenManagerToolPage(new RecentCustomersPage())))
             }.Where(item => ClientHostAccess.CanOpenMenu(item.Label));
         }
 
@@ -2958,6 +3015,8 @@ public partial class MainPage : ContentPage
         string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(role, "SuperAdmin", StringComparison.OrdinalIgnoreCase);
 
+    internal void SignOut() => Logout();
+
     private void Logout()
     {
         StopSilentLiveSync();
@@ -3073,10 +3132,67 @@ public partial class MainPage : ContentPage
 
     private void StartIdleAutoLogout()
     {
-        // Staff / Manager / User / Cashier → 3 minutes idle logout.
-        _inactivity.Start(() => _currentSession?.Role, Logout);
+        // Same as Mother: 60s back to the role dashboard, then 3 minutes logout.
+        _inactivity.Start(
+            () => _currentSession?.Role,
+            Logout,
+            ReturnToRoleDashboardForIdleAsync,
+            IsIdleReturnBlocked);
         _inactivity.TrackPage(this);
         _inactivity.ResetActivity();
+    }
+
+    private bool IsIdleReturnBlocked()
+    {
+        if (Navigation.ModalStack.Count > 0)
+        {
+            return true;
+        }
+
+        var top = Navigation.NavigationStack.LastOrDefault();
+        return top is not null && !ReferenceEquals(top, this) && top.Navigation.ModalStack.Count > 0;
+    }
+
+    private async Task ReturnToRoleDashboardForIdleAsync()
+    {
+        if (_currentSession is null || IsIdleReturnBlocked())
+        {
+            return;
+        }
+
+        var isCashier = string.Equals(_currentSession.Role, "Cashier", StringComparison.OrdinalIgnoreCase);
+        if (!isCashier && !string.Equals(_currentSession.Role, "User", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(_currentSession.Role, "Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!IsOnRoleHome())
+        {
+            if (Navigation.NavigationStack.Count > 1)
+            {
+                await Navigation.PopToRootAsync(false);
+            }
+
+            if (isCashier)
+            {
+                ShowCashierDashboard();
+            }
+            else
+            {
+                ShowDashboard();
+            }
+        }
+    }
+
+    private bool IsOnRoleHome()
+    {
+        if (Navigation.NavigationStack.Count > 1 || Navigation.ModalStack.Count > 0 || _isViewingOrderScreen)
+        {
+            return false;
+        }
+
+        return string.Equals(_posSelectedMenu, "Dashboard", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record DashboardTile(string Label, string Icon, string Permission, Action Action);
@@ -4907,6 +5023,12 @@ public partial class MainPage : ContentPage
         frame.DialogContent = dialog;
     }
 
+    private Task OpenSharedCashDrawerAsync() =>
+        ClientCashDrawerOpen.RunAsync(
+            this,
+            _cache,
+            cashier: string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase));
+
     private async void ShowCashDrawer()
     {
         _posSelectedMenu = "Cash Drawer";
@@ -4959,7 +5081,7 @@ public partial class MainPage : ContentPage
         {
             openButton.IsEnabled = false;
             openButton.Text = "Opening...";
-            await RequestPrintAsync("cash drawer open", null, false);
+            await OpenSharedCashDrawerAsync();
             ShowCashDrawer();
         };
 
@@ -5614,11 +5736,12 @@ public partial class MainPage : ContentPage
         var remainingAfter = Math.Max(0m, remainingBalance - paymentAmount);
 
         // Mother chrome: SELECT PAYMENT METHOD (same SharedUI dialog as Order Place).
+        // Phase 7 defer: Loyalty tender off here; PaymentPage still offers redeem. Do not delete path.
         var method = await PaymentWizard.ShowMethodAsync(
             paymentAmount,
             remainingAfter,
             plan.GetPaymentTitle(),
-            showLoyalty: false,
+            showLoyalty: OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled,
             hostPage: this);
         if (method == PaymentMethodChoice.Cancelled)
         {
@@ -6038,15 +6161,24 @@ public partial class MainPage : ContentPage
 
         var page = new Grid
         {
-            BackgroundColor = Color.FromArgb(LightSurface),
+            BackgroundColor = Color.FromArgb("#F6F8FB"),
             RowDefinitions =
             {
-                new RowDefinition(150),
+                new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Star)
             }
         };
 
-        page.Children.Add(RestaurantHeader("Live Orders"));
+        // Same PosHeader chrome as Mother Live Order (not the tall Restaurant clock header).
+        var topBar = new ClientTopBar
+        {
+            ConnectionStatus = _connectionStatus,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+        topBar.SetPageTitle("Live Order");
+        topBar.MenuClicked += (_, _) => TogglePosSidebar();
+        topBar.LogoutClicked += (_, _) => Logout();
+        page.Children.Add(topBar);
         Grid.SetRow(_liveOrderBoard, 1);
         page.Children.Add(_liveOrderBoard);
 
@@ -6291,7 +6423,7 @@ public partial class MainPage : ContentPage
                     }
                 },
                 SidebarItem("Dashboard", "dashboard.png", (_, _) => ShowDashboard()),
-                SidebarItem("Cash Drawer", "giftcard.png", (_, _) => OpenManagerToolPage(new CashDrawerPage())),
+                SidebarItem("Cash Drawer", "giftcard.png", (_, _) => _ = OpenSharedCashDrawerAsync()),
                 SidebarItem("Live Order", "liveorder.png", (_, _) => ShowLiveOrders()),
                 SidebarItem("Restaurant", "restaurant.png", (_, _) => ShowRestaurantLayout()),
                 SidebarItem("Collection", "collection.png", (_, _) => OpenManagerToolPage(new Pages.Orders.CollectionOrderPage())),

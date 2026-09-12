@@ -20,8 +20,6 @@ public partial class GiftCardPage : ContentPage
     private bool _busy;
     private string? _activateIdempotencyKey;
     private string? _activateIdempotencyFingerprint;
-    private string? _sellIdempotencyKey;
-    private string? _sellIdempotencyFingerprint;
     private string? _topUpIdempotencyKey;
     private string? _topUpIdempotencyFingerprint;
     private string? _redeemIdempotencyKey;
@@ -34,15 +32,13 @@ public partial class GiftCardPage : ContentPage
         _giftCards = new MotherGiftCardClient(_cache, _offlinePolicy);
 
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await Navigation.PopToRootAsync(false);
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
 
         Gift.FlowChanged += (_, _) => TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
         Gift.CloseRequested += async (_, _) => await Navigation.PopAsync(false);
         Gift.ActivateLookupRequested += async (_, _) => await OnActivateLookupAsync();
         Gift.ActivateRequested += async (_, _) => await OnActivateAsync();
-        Gift.GenerateSellCardRequested += (_, _) => OnGenerateSellCard();
-        Gift.SellRequested += async (_, _) => await OnSellAsync();
         Gift.TopUpLookupRequested += async (_, _) => await OnTopUpLookupAsync();
         Gift.TopUpRequested += async (_, _) => await OnTopUpAsync();
         Gift.RedeemLookupRequested += async (_, _) => await OnRedeemLookupAsync();
@@ -66,13 +62,6 @@ public partial class GiftCardPage : ContentPage
                 "OK");
             await Navigation.PopAsync(false);
         }
-    }
-
-    private void OnGenerateSellCard()
-    {
-        Gift.SellCardEntry.Text = BuildPosGiftCardNumber();
-        Gift.SellReceiptLabel.Text = string.Empty;
-        GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "New POS gift card number generated.", false);
     }
 
     private async Task OnActivateLookupAsync()
@@ -156,56 +145,6 @@ public partial class GiftCardPage : ContentPage
             GiftCardView.SetFlowStatus(Gift.ActivateStatusLabel, message, false);
             ShowReceipt(Gift.ActivateReceiptLabel, result.ReceiptLines);
             ClearStickyKey(ref _activateIdempotencyKey, ref _activateIdempotencyFingerprint);
-        });
-    }
-
-    private async Task OnSellAsync()
-    {
-        var cardNumber = Gift.SellCardEntry.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(cardNumber))
-        {
-            cardNumber = BuildPosGiftCardNumber();
-            Gift.SellCardEntry.Text = cardNumber;
-        }
-
-        if (!TryReadAmount(Gift.SellAmountEntry.Text, out var amount))
-        {
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, "Enter a valid sale amount.", true);
-            return;
-        }
-
-        var paymentMethod = GetPaymentMethod(Gift.SellPaymentMethodPicker);
-        if (!await ConfirmLocalPaymentAsync(paymentMethod, amount, "sell"))
-        {
-            return;
-        }
-
-        var orderId = GetOrCreateOrderId(Gift.SellOrderIdEntry, "SELL");
-        var fingerprint = $"sell|{orderId}|{cardNumber}|{amount:F2}|{paymentMethod}";
-        var idempotencyKey = GetStickyKey(ref _sellIdempotencyKey, ref _sellIdempotencyFingerprint, fingerprint, $"client-sell:{orderId}:{cardNumber}:{amount:F2}:{paymentMethod}");
-        await RunBusyAsync(Gift.SellActionButton, "Selling...", async () =>
-        {
-            var result = await _giftCards.SellAsync(
-                cardNumber,
-                amount,
-                paymentMethod,
-                orderId,
-                "Client POS gift card sale",
-                idempotencyKey);
-            if (!result.Success)
-            {
-                ClientGiftCardDiagnostics.Record("sell", false, result.Error ?? result.Message, result.ErrorCode);
-                GiftCardView.SetFlowStatus(Gift.SellStatusLabel, FormatError(result.Error, result.Message, result.ErrorCode), true);
-                return;
-            }
-
-            var masked = result.GiftCard?.CardNumberMasked ?? MaskLocal(cardNumber);
-            var balance = result.Balance ?? result.GiftCard?.Balance ?? amount;
-            var message = result.Message ?? $"Sold {FormatMoney(amount)}. Card {masked}. Balance {FormatMoney(balance)}.";
-            ClientGiftCardDiagnostics.Record("sell", true, message);
-            GiftCardView.SetFlowStatus(Gift.SellStatusLabel, message, false);
-            ShowReceipt(Gift.SellReceiptLabel, result.ReceiptLines);
-            ClearStickyKey(ref _sellIdempotencyKey, ref _sellIdempotencyFingerprint);
         });
     }
 
@@ -310,7 +249,6 @@ public partial class GiftCardPage : ContentPage
             : $"{lookup.GiftCard.CardNumberMasked} · {lookup.GiftCard.Status}";
         Gift.RedeemActionButton.IsEnabled = lookup.GiftCard.CanUse;
         ApplySuggestedAmount(lookup, Gift.RedeemAmountEntry);
-        Gift.FocusRedeemAmountForKeypad();
     }
 
     private async Task OnRedeemAsync()
@@ -450,15 +388,8 @@ public partial class GiftCardPage : ContentPage
         return true;
     }
 
-    private async Task<bool> ConfirmLocalPaymentAsync(string paymentMethod, decimal amount, string action)
-    {
-        var method = paymentMethod.Equals("card", StringComparison.OrdinalIgnoreCase) ? "card" : "cash";
-        return await DisplayAlert(
-            "Confirm payment",
-            $"Confirm {method} {FormatMoney(amount)} was taken before you {action} this gift card on OrderWeb cloud.",
-            "Payment taken",
-            "Cancel");
-    }
+    private Task<bool> ConfirmLocalPaymentAsync(string paymentMethod, decimal amount, string action) =>
+        Gift.ConfirmLocalPaymentAsync(paymentMethod, amount, action);
 
     private async Task RunBusyAsync(Button button, string busyText, Func<Task> action)
     {
@@ -561,22 +492,8 @@ public partial class GiftCardPage : ContentPage
         return id;
     }
 
-    private static string BuildPosGiftCardNumber() =>
-        $"POS{DateTime.UtcNow:yyMMddHHmmss}{Random.Shared.Next(100, 999)}";
-
     private static string FormatMoney(decimal amount) =>
         amount.ToString("C", CultureInfo.GetCultureInfo("en-GB"));
-
-    private static string MaskLocal(string? cardNumber)
-    {
-        var trimmed = (cardNumber ?? string.Empty).Trim();
-        if (trimmed.Length <= 4)
-        {
-            return trimmed;
-        }
-
-        return new string('*', Math.Min(trimmed.Length - 4, 12)) + trimmed[^4..];
-    }
 
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
 
@@ -596,33 +513,6 @@ public partial class GiftCardPage : ContentPage
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "giftcards") ||
-            !ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, menu, currentRoute: "giftcards");
     }
 }

@@ -1,4 +1,3 @@
-using System.Globalization;
 using OrderWeb.Client.Models;
 using OrderWeb.Client.Services;
 using OrderWeb.SharedUI.Views;
@@ -14,7 +13,6 @@ public partial class LiveOrderPage : ContentPage
     private readonly ClientCacheService _cache = new();
     private readonly MotherOrderClient _orderClient = new();
     private readonly ClientOfflinePolicy _offlinePolicy = new();
-    private readonly IDispatcherTimer _clockTimer;
     private string _selectedFilter = "All";
     private IReadOnlyList<MotherOrderState> _cachedOrders = Array.Empty<MotherOrderState>();
     private bool _isVisible;
@@ -27,18 +25,16 @@ public partial class LiveOrderPage : ContentPage
     public LiveOrderPage()
     {
         InitializeComponent();
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Live Order");
+        TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
+        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
         Sidebar.MenuItemSelected += async (_, label) => await SelectSidebarItemAsync(label);
         Sidebar.UpdateAllClicked += async (_, _) => await UpdateAllFromMotherAsync();
 
         Board.FilterChanged += OnBoardFilterChanged;
         Board.CardTapped += OnBoardCardTapped;
 
-        _clockTimer = Dispatcher.CreateTimer();
-        _clockTimer.Interval = TimeSpan.FromSeconds(1);
-        _clockTimer.Tick += (_, _) => UpdateClock();
-        _clockTimer.Start();
-
-        UpdateClock();
         ApplyBoardCards();
     }
 
@@ -46,8 +42,9 @@ public partial class LiveOrderPage : ContentPage
     {
         base.OnAppearing();
         _isVisible = true;
+        ClientPageChrome.HideSystemBackChrome(this);
+        TopBar.SetPageTitle("Live Order");
         MotherEventClient.SharedAuthoritativeDataChanged += OnMotherDataChanged;
-        _clockTimer.Start();
         await RefreshOrdersAsync();
     }
 
@@ -56,7 +53,6 @@ public partial class LiveOrderPage : ContentPage
         base.OnDisappearing();
         _isVisible = false;
         MotherEventClient.SharedAuthoritativeDataChanged -= OnMotherDataChanged;
-        _clockTimer.Stop();
     }
 
     private async void OnMotherDataChanged(object? sender, MotherDataChangedEventArgs e)
@@ -231,50 +227,12 @@ public partial class LiveOrderPage : ContentPage
         }
     }
 
-    private async void OnMenuClicked(object sender, EventArgs e) => await OpenSidebarAsync();
-
-    private async void OnLogoutClicked(object sender, EventArgs e) => await Navigation.PopToRootAsync(false);
-
     private async void OnBackdropTapped(object sender, TappedEventArgs e) => await CloseSidebarAsync();
-
-    private void UpdateClock()
-    {
-        var now = DateTime.Now;
-        DateLabel.Text = now.ToString("dddd, MMMM d, yyyy", CultureInfo.InvariantCulture);
-        TimeLabel.Text = now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-    }
 
     private async Task SelectSidebarItemAsync(string label)
     {
         await CloseSidebarAsync();
-        if (ClientSidebarNavigation.IsDashboard(label))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, label))
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(label, "liveorder") ||
-            !ClientHostAccess.CanOpenMenu(label))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(label))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(label);
-        if (page is not null)
-        {
-            await Navigation.PushAsync(page, false);
-        }
+        await ClientSidebarNavigation.SwitchAsync(this, label, currentRoute: "liveorder");
     }
 
     private async Task OpenSidebarAsync()

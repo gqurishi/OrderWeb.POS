@@ -126,7 +126,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     protected override bool OnBackButtonPressed() => true;
 
     public Task ShowAlertAsync(string title, string message) =>
-        DisplayAlert(title, message, "OK");
+        new OrderPlaceAlertDialog().ShowAsync(this, title, message);
 
     public Task ShowToastAsync(string title, string message, StatusKind kind = StatusKind.Info) =>
         MainThread.InvokeOnMainThreadAsync(() =>
@@ -194,6 +194,44 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     public Task<string?> ShowFireCourseAsync(bool includeDrinks = true) =>
         new OrderPlaceFireCourseDialog().ShowAsync(this, includeDrinks);
 
+    public Task<OrderPlaceLoyaltyAddOutcome?> ShowLoyaltyAddAsync(
+        decimal billTotal,
+        string orderId,
+        Func<string, int, string>? resolveStickyIdempotencyKey = null)
+    {
+        var loyalty = new MotherLoyaltyClient(_cache, _offlinePolicy);
+        return new OrderPlaceLoyaltyAddDialog().ShowAsync(
+            this,
+            billTotal,
+            async lookup =>
+            {
+                var search = await loyalty.SearchAsync(lookup);
+                if (!search.Success || search.Customer is null)
+                {
+                    return (false, search.Error ?? search.Message ?? "Customer not found.", null);
+                }
+
+                return (true, null, new OrderPlaceLoyaltyAddCustomer(
+                    Lookup: lookup,
+                    Name: search.Customer.Name ?? "Customer",
+                    Phone: search.Customer.Phone,
+                    PointsBalance: search.Customer.PointsBalance));
+            },
+            async (lookup, points, key) =>
+            {
+                var add = await loyalty.AddPointsForOrderAsync(orderId, lookup, points, key);
+                return new OrderPlaceLoyaltyAddOutcome(
+                    Success: add.Success,
+                    Message: add.Success
+                        ? (add.Message ?? $"Added {add.PointsAdded:N0} points. New balance: {add.PointsBalance:N0}.")
+                        : (add.Error ?? add.Message ?? "Unable to add loyalty points."),
+                    PointsAdded: add.PointsAdded,
+                    PointsBalance: add.PointsBalance,
+                    ErrorCode: add.ErrorCode);
+            },
+            resolveStickyIdempotencyKey);
+    }
+
     public Task<OrderPlaceVariantChoice?> PickVariantAsync(
         string itemName,
         IReadOnlyList<OrderPlaceVariantChoice> variants) =>
@@ -253,7 +291,10 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             amountDue,
             remainingAfterThisPayment,
             title,
-            showLoyalty: false,
+            // Phase 7 defer: Order Place tender Loyalty off. Keep PromptLoyaltyPaymentAsync +
+            // PaymentPage showLoyalty:true — do not delete redeem; re-enable via
+            // OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled later.
+            showLoyalty: OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled,
             hostPage: this);
 
     public Task<OrderWeb.SharedUI.Payments.PaymentCashResult> ShowPaymentCashAsync(decimal amountDue) =>
@@ -312,15 +353,22 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
 
     private async void OnMotherOrderUpdated(object? sender, MotherDataChangedEventArgs e)
     {
-        if (!_isVisible ||
-            _host.CurrentOrder is null ||
-            string.IsNullOrWhiteSpace(e.EventType) ||
-            !e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase))
+        if (!_isVisible || _host.CurrentOrder is null || string.IsNullOrWhiteSpace(e.EventType))
         {
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(e.Version) &&
+        var isOrderEvent = e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase);
+        var isLoyaltyEvent = e.EventType.Contains("loyalty", StringComparison.OrdinalIgnoreCase);
+        if (!isOrderEvent && !isLoyaltyEvent)
+        {
+            return;
+        }
+
+        // order.updated carries order id in Version; loyalty.updated carries a timestamp — skip id filter for loyalty.
+        if (isOrderEvent &&
+            !isLoyaltyEvent &&
+            !string.IsNullOrWhiteSpace(e.Version) &&
             !string.Equals(e.Version.Trim(), _host.CurrentOrder.OrderId, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -498,43 +546,7 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     private async Task NavigateFromSidebarAsync(string menu)
     {
         await CloseSidebarAsync();
-
-        if (ClientSidebarNavigation.IsDashboard(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (await ClientSidebarNavigation.TryHandleMotherOnlyAsync(this, menu))
-        {
-            return;
-        }
-
-        if (ClientSidebarNavigation.IsCustomerSurface(menu))
-        {
-            await Navigation.PopToRootAsync(false);
-            return;
-        }
-
-        if (!ClientHostAccess.CanOpenMenu(menu))
-        {
-            return;
-        }
-
-        var page = ClientSidebarNavigation.CreatePage(menu);
-        if (page is null)
-        {
-            return;
-        }
-
-        if (ClientHostAccess.IsMenuRoute(menu, "collection") ||
-            ClientHostAccess.IsMenuRoute(menu, "delivery"))
-        {
-            await ClientSideNavigation.PushFromSideAsync(Navigation, page);
-            return;
-        }
-
-        await Navigation.PushAsync(page, false);
+        await ClientSidebarNavigation.SwitchAsync(this, menu);
     }
 
     private async Task UpdateAllFromMotherAsync()
@@ -561,7 +573,6 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
     private async Task OnLogoutClickedAsync()
     {
         await CloseSidebarAsync();
-        await _cache.ClearLoginSessionAsync();
-        await Navigation.PopToRootAsync(false);
+        await ClientSignOut.RequestAsync(this);
     }
 }

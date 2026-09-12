@@ -11,9 +11,6 @@ public partial class TopBar : ContentView
     {
         InitializeComponent();
 
-        SizeChanged += OnTopBarSizeChanged;
-        ApplyResponsiveLayout(Width);
-
         SubscribeToTerminalConnectionState();
         RefreshHeaderIdentity();
         UpdateMotherDisconnectedBanner();
@@ -46,17 +43,6 @@ public partial class TopBar : ContentView
         SharedHeader.UserName = ServiceHelper.GetService<AuthenticationService>()?.CurrentUser?.Name ?? "No user";
         SharedHeader.TerminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
         UpdateMotherDisconnectedBanner();
-    }
-
-    private void OnTopBarSizeChanged(object? sender, EventArgs e)
-    {
-        ApplyResponsiveLayout(Width);
-    }
-
-    private void ApplyResponsiveLayout(double width)
-    {
-        var compact = width > 0 && width < 1450;
-        SharedHeader.HeightRequest = compact ? 82 : 88;
     }
 
     private void OnTerminalConnectionStateChanged(object? sender, TerminalConnectionStateChangedEventArgs e)

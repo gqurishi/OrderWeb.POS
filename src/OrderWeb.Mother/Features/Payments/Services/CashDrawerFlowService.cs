@@ -1,4 +1,5 @@
 using MySqlConnector;
+using OrderWeb.SharedUI.Views;
 using POS_in_NET.Models;
 using POS_in_NET.Views;
 
@@ -42,84 +43,57 @@ public sealed class CashDrawerFlowService
             return;
         }
 
-        var reasonDialog = new ModernActionSheetDialog();
-        reasonDialog.SetActionSheetGrid(
-            "Cash Drawer Reason",
-            new List<string> { "No Sale", "Shopping", "Delivery", "Refund", "Cash Count", "Other" },
-            "£",
-            "#0F766E");
-
-        var reason = await reasonDialog.ShowAsync();
-        if (reason == null)
+        var page = GetContentPage();
+        if (page is null)
         {
             return;
         }
 
-        switch (reason)
+        using var idleGuard = _inactivityService?.BeginCriticalActivity();
+        var choice = await CashDrawerDialogFlow.CollectAsync(page);
+        if (choice is null)
         {
-            case "No Sale":
-                await OpenSimpleAsync("No Sale", context);
+            return;
+        }
+
+        switch (choice.Kind)
+        {
+            case CashDrawerUiKind.NoSale:
+                await OpenDrawerAsync("No Sale", context);
                 break;
-            case "Shopping":
-                await RunShoppingFlowAsync(context);
+            case CashDrawerUiKind.Refund:
+                await OpenDrawerAsync("Refund", context);
                 break;
-            case "Delivery":
-                await RunDeliveryFlowAsync(context);
+            case CashDrawerUiKind.ShoppingTake:
+                await RecordShoppingTakeAsync(choice, context);
                 break;
-            case "Refund":
-                await OpenSimpleAsync("Refund", context);
+            case CashDrawerUiKind.ShoppingSettle:
+                await RunShoppingSettleAsync(context);
                 break;
-            case "Cash Count":
-                await RunCashCountFlowAsync(context);
+            case CashDrawerUiKind.Delivery:
+                await RecordDeliveryAsync(choice, context);
                 break;
-            case "Other":
-                await RunOtherFlowAsync(context);
+            case CashDrawerUiKind.CashCount:
+                await RecordCashCountAsync(choice, context);
+                break;
+            case CashDrawerUiKind.Other:
+                await RecordOtherAsync(choice, context);
                 break;
         }
     }
 
-    private async Task RunShoppingFlowAsync(CashDrawerFlowContext context)
+    private async Task RecordShoppingTakeAsync(CashDrawerUiResult choice, CashDrawerFlowContext context)
     {
-        var subDialog = new ModernActionSheetDialog();
-        subDialog.SetActionSheet(
-            "Shopping",
-            new List<string> { "Take from till", "Settle pending trip" },
-            "£",
-            "#0F766E");
-
-        var action = await subDialog.ShowAsync();
-        if (action == null)
-        {
-            return;
-        }
-
-        if (action == "Take from till")
-        {
-            await RunShoppingTakeAsync(context);
-            return;
-        }
-
-        await RunShoppingSettleAsync(context);
-    }
-
-    private async Task RunShoppingTakeAsync(CashDrawerFlowContext context)
-    {
-        var hostPage = GetHostPage();
-        if (hostPage == null)
-        {
-            return;
-        }
-
-        var takeDialog = new TillShoppingTakeDialog(context.SourceArea, context.OrderId, context.OrderNumber);
-        var request = await takeDialog.ShowAsync(hostPage);
-        if (request == null)
-        {
-            return;
-        }
-
         try
         {
-            var expense = await _tillExpenseService.CreateShoppingTakeAsync(request);
+            var expense = await _tillExpenseService.CreateShoppingTakeAsync(new ShoppingTakeRequest
+            {
+                ItemName = string.IsNullOrWhiteSpace(choice.Details) ? "Shopping" : choice.Details.Trim(),
+                AmountTaken = choice.Amount ?? 0,
+                SourceArea = context.SourceArea,
+                OrderId = context.OrderId,
+                OrderNumber = context.OrderNumber
+            });
             await OpenDrawerAsync(
                 $"Shopping take · {expense.Description} · £{expense.AmountTaken:F2}",
                 context,
@@ -131,79 +105,9 @@ public sealed class CashDrawerFlowService
         }
     }
 
-    private async Task RunShoppingSettleAsync(CashDrawerFlowContext context)
+    private async Task RecordDeliveryAsync(CashDrawerUiResult choice, CashDrawerFlowContext context)
     {
-        var userId = _authenticationService.CurrentUser?.Id;
-        var pending = await _tillExpenseService.GetPendingShoppingAsync(userId);
-        if (pending.Count == 0)
-        {
-            await ShowInfoAsync("No pending trips", "There are no shopping trips waiting to be settled.");
-            return;
-        }
-
-        var picker = new ModernActionSheetDialog();
-        picker.SetActionSheet(
-            "Settle shopping trip",
-            pending.Select(t => $"{t.Description} · £{t.AmountTaken:F2} out").ToList(),
-            "£",
-            "#0F766E");
-
-        var picked = await picker.ShowAsync();
-        if (picked == null)
-        {
-            return;
-        }
-
-        var trip = pending.FirstOrDefault(t =>
-            string.Equals($"{t.Description} · £{t.AmountTaken:F2} out", picked, StringComparison.Ordinal));
-        if (trip == null)
-        {
-            return;
-        }
-
-        var hostPage = GetHostPage();
-        if (hostPage == null)
-        {
-            return;
-        }
-
-        var settleDialog = new TillShoppingSettleDialog(trip);
-        var settleRequest = await settleDialog.ShowAsync(hostPage);
-        if (settleRequest == null)
-        {
-            return;
-        }
-
-        try
-        {
-            var expense = await _tillExpenseService.SettleShoppingAsync(settleRequest);
-            var change = expense.AmountReturned ?? 0;
-            await OpenDrawerAsync(
-                $"Shopping settle · {expense.Description} · spent £{expense.AmountSpent:F2} · return £{change:F2}",
-                context,
-                expense.Id);
-        }
-        catch (Exception ex)
-        {
-            await ShowFailureAsync(ex.Message);
-        }
-    }
-
-    private async Task RunDeliveryFlowAsync(CashDrawerFlowContext context)
-    {
-        var hostPage = GetHostPage();
-        if (hostPage == null)
-        {
-            return;
-        }
-
-        var amountDialog = new TillAmountDialog(
-            "Delivery payout",
-            "Record cash paid out for delivery before opening the drawer.",
-            "Amount out (£)",
-            "Pay & Open");
-        var amount = await amountDialog.ShowAsync(hostPage);
-        if (!amount.HasValue || amount.Value <= 0)
+        if (choice.Amount is not > 0)
         {
             return;
         }
@@ -212,16 +116,12 @@ public sealed class CashDrawerFlowService
         {
             var expense = await _tillExpenseService.CreateDeliveryPayoutAsync(new DeliveryPayoutRequest
             {
-                Amount = amount.Value,
+                Amount = choice.Amount.Value,
                 OrderId = context.OrderId,
                 OrderNumber = context.OrderNumber,
                 SourceArea = context.SourceArea
             });
-
-            await OpenDrawerAsync(
-                $"Delivery · £{expense.NetAmount:F2}",
-                context,
-                expense.Id);
+            await OpenDrawerAsync($"Delivery · £{expense.NetAmount:F2}", context, expense.Id);
         }
         catch (Exception ex)
         {
@@ -229,21 +129,9 @@ public sealed class CashDrawerFlowService
         }
     }
 
-    private async Task RunCashCountFlowAsync(CashDrawerFlowContext context)
+    private async Task RecordCashCountAsync(CashDrawerUiResult choice, CashDrawerFlowContext context)
     {
-        var hostPage = GetHostPage();
-        if (hostPage == null)
-        {
-            return;
-        }
-
-        var amountDialog = new TillAmountDialog(
-            "Cash count",
-            "Enter the cash counted in the drawer.",
-            "Counted cash (£)",
-            "Record & Open");
-        var amount = await amountDialog.ShowAsync(hostPage);
-        if (!amount.HasValue || amount.Value < 0)
+        if (choice.Amount is not >= 0)
         {
             return;
         }
@@ -252,14 +140,10 @@ public sealed class CashDrawerFlowService
         {
             var expense = await _tillExpenseService.CreateCashCountAsync(new CashCountRequest
             {
-                CountedCash = amount.Value,
+                CountedCash = choice.Amount.Value,
                 SourceArea = context.SourceArea
             });
-
-            await OpenDrawerAsync(
-                $"Cash count · £{expense.CountedCash:F2}",
-                context,
-                expense.Id);
+            await OpenDrawerAsync($"Cash count · £{expense.CountedCash:F2}", context, expense.Id);
         }
         catch (Exception ex)
         {
@@ -267,49 +151,23 @@ public sealed class CashDrawerFlowService
         }
     }
 
-    private async Task RunOtherFlowAsync(CashDrawerFlowContext context)
+    private async Task RecordOtherAsync(CashDrawerUiResult choice, CashDrawerFlowContext context)
     {
-        var reasonDialog = new StyledPromptDialog();
-        reasonDialog.SetDialog(
-            "Other till expense",
-            "Enter the reason for opening the cash drawer:",
-            "Reason",
-            null,
-            string.Empty,
-            true);
-
-        var reason = await reasonDialog.ShowAsync();
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return;
-        }
-
-        var hostPage = GetHostPage();
-        if (hostPage == null)
-        {
-            return;
-        }
-
-        var amountDialog = new TillAmountDialog(
-            "Amount out (optional)",
-            "Leave as 0 if no cash is leaving the till.",
-            "Amount out (£)",
-            "Continue");
-        var amount = await amountDialog.ShowAsync(hostPage);
-        if (!amount.HasValue)
+        var reason = choice.Details?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(reason) || choice.Amount is null)
         {
             return;
         }
 
         int? expenseId = null;
-        if (amount.Value > 0)
+        if (choice.Amount.Value > 0)
         {
             try
             {
                 var expense = await _tillExpenseService.CreateOtherExpenseAsync(new OtherTillExpenseRequest
                 {
-                    Reason = reason.Trim(),
-                    AmountOut = amount.Value,
+                    Reason = reason,
+                    AmountOut = choice.Amount.Value,
                     SourceArea = context.SourceArea
                 });
                 expenseId = expense?.Id;
@@ -321,29 +179,51 @@ public sealed class CashDrawerFlowService
             }
         }
 
-        var drawerReason = amount.Value > 0
-            ? $"Other · {reason.Trim()} · £{amount.Value:F2}"
-            : $"Other · {reason.Trim()}";
-
+        var drawerReason = choice.Amount.Value > 0
+            ? $"Other · {reason} · £{choice.Amount.Value:F2}"
+            : $"Other · {reason}";
         await OpenDrawerAsync(drawerReason, context, expenseId);
     }
 
-    private async Task OpenSimpleAsync(string reason, CashDrawerFlowContext context)
+    private async Task RunShoppingSettleAsync(CashDrawerFlowContext context)
     {
-        var confirmDialog = new ModernConfirmDialog();
-        confirmDialog.SetConfirm(
-            "Open Cash Drawer",
-            $"Open the cash drawer for: {reason}?",
-            "Open",
-            "No",
-            "£");
-
-        if (!await confirmDialog.ShowAsync())
+        var page = GetContentPage();
+        if (page is null)
         {
             return;
         }
 
-        await OpenDrawerAsync(reason, context);
+        var pending = await _tillExpenseService.GetPendingShoppingAsync(_authenticationService.CurrentUser?.Id);
+        var trips = pending.Select(trip => new CashDrawerPendingTrip(
+            trip.Id,
+            $"{trip.Description} · £{trip.AmountTaken:F2} out",
+            $"{trip.Description} · £{trip.AmountTaken:F2} taken · by {trip.RecordedByName}",
+            trip.AmountTaken,
+            trip.Description)).ToList();
+
+        var choice = await CashDrawerDialogFlow.CollectSettleAsync(page, trips);
+        if (choice?.ExpenseId is not int expenseId || choice.Amount is not decimal spent)
+        {
+            return;
+        }
+
+        try
+        {
+            var expense = await _tillExpenseService.SettleShoppingAsync(new ShoppingSettleRequest
+            {
+                TillExpenseId = expenseId,
+                AmountSpent = spent
+            });
+            var change = expense.AmountReturned ?? 0;
+            await OpenDrawerAsync(
+                $"Shopping settle · {expense.Description} · spent £{expense.AmountSpent:F2} · return £{change:F2}",
+                context,
+                expense.Id);
+        }
+        catch (Exception ex)
+        {
+            await ShowFailureAsync(ex.Message);
+        }
     }
 
     private async Task OpenDrawerAsync(string reason, CashDrawerFlowContext context, int? tillExpenseId = null)
@@ -485,35 +365,45 @@ public sealed class CashDrawerFlowService
         return null;
     }
 
-    private static Page? GetHostPage()
+    private static ContentPage? GetContentPage()
     {
-        if (Application.Current?.MainPage is Shell shell)
-        {
-            return shell.CurrentPage;
-        }
-
-        return Application.Current?.MainPage;
+        var page = Application.Current?.MainPage is Shell shell
+            ? shell.CurrentPage
+            : Application.Current?.MainPage;
+        return page as ContentPage;
     }
 
     private static async Task ShowSuccessAsync(string message)
     {
-        var dialog = new ModernAlertDialog();
-        dialog.SetAlert("Cash Drawer", message, "OK", "#10B981", "White");
-        await dialog.ShowAsync();
+        var page = GetContentPage();
+        if (page is null)
+        {
+            return;
+        }
+
+        await CashDrawerDialogFlow.ShowNoticeAsync(page, "Cash Drawer", message, "OK", "#10B981");
     }
 
     private static async Task ShowFailureAsync(string message)
     {
-        var dialog = new ModernAlertDialog();
-        dialog.SetAlert("Cash Drawer Failed", message, "!", "#EF4444", "White");
-        await dialog.ShowAsync();
+        var page = GetContentPage();
+        if (page is null)
+        {
+            return;
+        }
+
+        await CashDrawerDialogFlow.ShowNoticeAsync(page, "Cash Drawer Failed", message, "!", "#EF4444");
     }
 
     private static async Task ShowInfoAsync(string title, string message)
     {
-        var dialog = new ModernAlertDialog();
-        dialog.SetAlert(title, message, "i", "#3B82F6", "White");
-        await dialog.ShowAsync();
+        var page = GetContentPage();
+        if (page is null)
+        {
+            return;
+        }
+
+        await CashDrawerDialogFlow.ShowNoticeAsync(page, title, message, "i", "#3B82F6");
     }
 
     private sealed record CashDrawerApproval(int UserId, string Name, string Role);

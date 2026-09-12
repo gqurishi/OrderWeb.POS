@@ -185,8 +185,12 @@ public sealed class PaymentActionSheetDialog : ContentView
 
     private void Complete(string? result)
     {
-        PaymentOverlayHost.Detach(this, _parent);
+        var parent = _parent;
         _parent = null;
-        _tcs?.TrySetResult(result);
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            PaymentOverlayHost.Detach(this, parent);
+            _tcs?.TrySetResult(result);
+        });
     }
 }

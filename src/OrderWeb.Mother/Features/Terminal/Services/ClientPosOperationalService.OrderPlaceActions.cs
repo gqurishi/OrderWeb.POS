@@ -1,4 +1,5 @@
 using MyFirstMauiApp.Models.FoodMenu;
+using OrderWeb.Contracts.Dtos;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -378,8 +379,12 @@ public sealed partial class ClientPosOperationalService
 
         var menuItems = await _menuItemService.GetAllItemsAsync() ?? new List<FoodMenuItem>();
         var categories = await _categoryService.GetAllCategoriesAsync() ?? new List<MenuCategory>();
-        foreach (var item in order.Items.Where(item => string.IsNullOrWhiteSpace(item.CourseType)))
+        foreach (var item in order.Items.Where(item =>
+                     item.MenuItemId == null ||
+                     (!item.MenuItemId.StartsWith(TastingMenu.OrderMenuItemPrefix, StringComparison.OrdinalIgnoreCase) &&
+                      !item.MenuItemId.StartsWith(TastingMenu.OrderCourseItemPrefix, StringComparison.OrdinalIgnoreCase))))
         {
+            // Always refresh from top-level Category so Client Fire Course ignores Sub-Category names.
             item.CourseType = ResolveCourseTypeFromMenu(item.MenuItemId, menuItems, categories) ?? "Mains";
         }
 
@@ -554,6 +559,193 @@ public sealed partial class ClientPosOperationalService
             $"Redeemed {points:N0} points for £{discountAmount:F2}. Remaining balance: {redeem.Customer.PointsBalance:N0} pts.");
     }
 
+    /// <summary>
+    /// Order Place earn (More → Loyalty Points): add points for the bill.
+    /// Rate v1: £1 = 1 point = floor(order.TotalAmount). One earn per order.
+    /// Customer must already exist (no auto-create).
+    /// </summary>
+    public async Task<ClientOrderLoyaltyAddResult> ApplyLoyaltyAddForOrderAsync(
+        string? orderId,
+        string? lookup,
+        int? pointsOverride,
+        string? idempotencyKey,
+        int? sessionUserId,
+        string? sessionUserName)
+    {
+        var existing = await LoadMutableOrderAsync(orderId);
+        if (!existing.Success || existing.Order is null)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(existing.StatusCode, existing.Message, LoyaltyErrorCodes.Validation);
+        }
+
+        var order = existing.Order;
+        if (order.Items.Count == 0)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                400,
+                "Add items before adding loyalty points for this order.",
+                LoyaltyErrorCodes.Validation);
+        }
+
+        if (order.TotalAmount <= 0m)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                400,
+                "There is no bill amount to earn loyalty points on.",
+                LoyaltyErrorCodes.Validation);
+        }
+
+        if (order.LoyaltyPointsEarned > 0)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                409,
+                $"Loyalty points were already added for this order ({order.LoyaltyPointsEarned:N0} pts).",
+                LoyaltyErrorCodes.AlreadyEarned);
+        }
+
+        if (string.IsNullOrWhiteSpace(lookup))
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                400,
+                "Enter a customer phone number or loyalty card number.",
+                LoyaltyErrorCodes.Validation);
+        }
+
+        var computedPoints = OrderPlaceLoyaltyEarnRules.ComputePointsFromBillTotal(order.TotalAmount);
+        if (computedPoints <= 0)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                400,
+                "Bill total is under £1 — no points to add.",
+                LoyaltyErrorCodes.Validation);
+        }
+
+        var pointsToAdd = pointsOverride is > 0 ? pointsOverride.Value : computedPoints;
+        if (pointsToAdd <= 0)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                400,
+                "Points to add must be greater than zero.",
+                LoyaltyErrorCodes.Validation);
+        }
+
+        var loyalty = ClientPosLoyaltyService.TryResolve();
+        if (loyalty is null)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                503,
+                "Mother loyalty service is not available. Check OrderWeb cloud settings.",
+                LoyaltyErrorCodes.CloudDown);
+        }
+
+        var search = await loyalty.SearchAsync(lookup.Trim());
+        if (!search.Success || search.Customer is null)
+        {
+            var notFound = string.IsNullOrWhiteSpace(search.Error)
+                || search.Error.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                || search.Error.Contains("no customer", StringComparison.OrdinalIgnoreCase);
+            return ClientOrderLoyaltyAddResult.Fail(
+                notFound ? 404 : 422,
+                search.Error ?? "Loyalty customer not found. Create the customer in Loyalty first.",
+                notFound ? LoyaltyErrorCodes.CustomerNotFound : ClientPosLoyaltyService.ClassifyError(search));
+        }
+
+        var phone = string.IsNullOrWhiteSpace(search.Customer.Phone)
+            ? lookup.Trim()
+            : search.Customer.Phone.Trim();
+        var txnId = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? $"{order.OrderId}:loyalty-add:{phone}:{pointsToAdd}"
+            : idempotencyKey.Trim();
+        var reason =
+            $"Order Place loyalty earn - order {order.OrderNumber ?? order.OrderId} " +
+            $"(£{order.TotalAmount:F2}) by {sessionUserName ?? "Client"}";
+
+        var add = await loyalty.AddPointsAsync(phone, pointsToAdd, reason, txnId);
+        if (!add.Success || add.Customer is null)
+        {
+            var code = ClientPosLoyaltyService.ClassifyError(add);
+            var status = code == LoyaltyErrorCodes.Queued ? 503
+                : code == LoyaltyErrorCodes.CloudDown ? 503
+                : 422;
+            return ClientOrderLoyaltyAddResult.Fail(
+                status,
+                add.Error ?? "Unable to add loyalty points.",
+                code);
+        }
+
+        order.LoyaltyPointsEarned = pointsToAdd;
+        order.CustomerName = string.IsNullOrWhiteSpace(add.Customer.CustomerName)
+            ? (string.IsNullOrWhiteSpace(search.Customer.CustomerName) ? order.CustomerName : search.Customer.CustomerName)
+            : add.Customer.CustomerName;
+        order.CustomerPhone = string.IsNullOrWhiteSpace(add.Customer.Phone) ? phone : add.Customer.Phone;
+        order.LoyaltyBalanceAfter = add.Customer.PointsBalance;
+        // Do NOT set UpdatedAt = Now here — SaveOrderAsync would treat it as the
+        // optimistic concurrency token and fail against the real DB timestamp.
+
+        var mark = await _orderService.MarkLoyaltyPointsEarnedAsync(
+            order.OrderId,
+            pointsToAdd,
+            order.CustomerName,
+            order.CustomerPhone,
+            add.Customer.PointsBalance);
+        if (!mark.Success)
+        {
+            // Cloud already succeeded; one reload+retry covers draft autosave races.
+            await Task.Delay(150);
+            mark = await _orderService.MarkLoyaltyPointsEarnedAsync(
+                order.OrderId,
+                pointsToAdd,
+                order.CustomerName,
+                order.CustomerPhone,
+                add.Customer.PointsBalance);
+        }
+
+        if (!mark.Success)
+        {
+            return ClientOrderLoyaltyAddResult.Fail(
+                422,
+                "Points were added in cloud but Mother could not mark this order as earned. Do not add again — contact a manager.",
+                LoyaltyErrorCodes.Unknown);
+        }
+
+        try
+        {
+            var audit = new DiscountAuditService(_databaseService, AuthenticationService.Instance);
+            await audit.LogAsync(new DiscountAuditRequest
+            {
+                OrderId = order.OrderId,
+                OrderNumber = order.OrderNumber,
+                TableSessionId = order.TableSessionId,
+                TableNumber = ExtractTableNumber(order),
+                Action = "loyalty_earn",
+                DiscountType = "loyalty_earn",
+                SubtotalAmount = order.SubtotalAmount,
+                PreviousDiscountAmount = order.DiscountAmount,
+                DiscountAmount = 0m,
+                DiscountPercent = 0m,
+                TotalAfterDiscount = order.TotalAmount,
+                Reason = $"{reason}; points={pointsToAdd}; balance={add.Customer.PointsBalance}",
+                SourceArea = "client_order_loyalty_add",
+                ApprovalRequired = false
+            });
+        }
+        catch
+        {
+            // Best-effort.
+        }
+
+        var persisted = await _orderService.GetOrderByExternalIdAsync(order.OrderId);
+        var customerDto = ClientPosLoyaltyService.ToCustomerDto(add.Customer);
+        var billTotal = (persisted ?? order).TotalAmount;
+        return ClientOrderLoyaltyAddResult.Ok(
+            ToClientOrder(persisted ?? order),
+            $"Added {pointsToAdd:N0} points for £{billTotal:F2}. New balance: {add.Customer.PointsBalance:N0} pts.",
+            billTotal,
+            pointsToAdd,
+            add.Customer.PointsBalance,
+            customerDto);
+    }
+
     public async Task<ClientPreviousOrdersResult> GetPreviousCustomerOrdersAsync(string? customerPhone)
     {
         if (string.IsNullOrWhiteSpace(customerPhone))
@@ -591,7 +783,8 @@ public sealed partial class ClientPosOperationalService
         string? orderNumber,
         int? sessionUserId,
         string? sessionUserName,
-        string? sessionUserRole)
+        string? sessionUserRole,
+        int? tillExpenseId = null)
     {
         var drawer = ServiceHelper.GetService<CashDrawerService>();
         if (drawer is null)
@@ -605,6 +798,7 @@ public sealed partial class ClientPosOperationalService
             SourceArea = "client_order_more_options",
             OrderId = orderId,
             OrderNumber = orderNumber,
+            TillExpenseId = tillExpenseId,
             RequestedByUserId = sessionUserId,
             RequestedByName = string.IsNullOrWhiteSpace(sessionUserName) ? "Client POS" : sessionUserName.Trim(),
             RequestedByRole = string.IsNullOrWhiteSpace(sessionUserRole) ? "User" : sessionUserRole.Trim()
@@ -758,7 +952,10 @@ public sealed partial class ClientPosOperationalService
         };
     }
 
-    /// <summary>Mother Order Place parity: blank CourseType from category name / Drink item type.</summary>
+    /// <summary>
+    /// Fire Course targets the top-level Category (Main / starter / drink / dessert),
+    /// not the Sub-Category shelf name. Drink item type remains the last fallback.
+    /// </summary>
     private static string? ResolveCourseTypeFromMenu(
         string? menuItemId,
         IReadOnlyList<FoodMenuItem> menuItems,
@@ -778,6 +975,7 @@ public sealed partial class ClientPosOperationalService
 
         var categoryId = menuItem.CategoryId;
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        MenuCategory? root = null;
         while (!string.IsNullOrWhiteSpace(categoryId) && visited.Add(categoryId))
         {
             var category = categories.FirstOrDefault(candidate =>
@@ -787,13 +985,17 @@ public sealed partial class ClientPosOperationalService
                 break;
             }
 
-            var course = NormalizeCourseType(category.Name);
+            root = category;
+            categoryId = category.ParentId;
+        }
+
+        if (root is not null)
+        {
+            var course = NormalizeCourseType(root.Name);
             if (course is not null)
             {
                 return course;
             }
-
-            categoryId = category.ParentId;
         }
 
         return string.Equals(menuItem.ItemType, "Drink", StringComparison.OrdinalIgnoreCase)
