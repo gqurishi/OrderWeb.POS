@@ -117,6 +117,7 @@ public partial class MainPage : ContentPage
     public MainPage()
     {
         InitializeComponent();
+        ClientSignOut.Register(this);
         _bootstrapClient = new MotherBootstrapClient();
         _offlinePolicy = new ClientOfflinePolicy(_cache);
         _customerClient = new MotherCustomerClient();
@@ -142,6 +143,12 @@ public partial class MainPage : ContentPage
         Appearing += (_, _) =>
         {
             _inactivity.TrackPage(this);
+            if (ClientSignOut.ConsumeForcedLogin())
+            {
+                SignOut();
+                return;
+            }
+
             TryConsumePendingSidebarRoute();
         };
         ShowCheckingMother();

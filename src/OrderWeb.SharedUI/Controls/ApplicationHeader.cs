@@ -19,9 +19,11 @@ public class ApplicationHeader : ContentView
     private readonly Button _back;
     private readonly HorizontalStackLayout _contextActions;
     private readonly Border _shell;
+    private readonly BoxView _bottomRule;
     private readonly Grid _grid;
     private readonly ImageButton _menuButton;
-    private readonly ImageButton _logoutButton;
+    private readonly Border _logoutButton;
+    private readonly Image _logoutIcon;
     private readonly HorizontalStackLayout _clock;
 
     public static readonly BindableProperty TitleProperty = BindableProperty.Create(nameof(Title), typeof(string), typeof(ApplicationHeader), string.Empty, propertyChanged: (b, _, v) => ((ApplicationHeader)b)._title.Text = v?.ToString());
@@ -50,7 +52,31 @@ public class ApplicationHeader : ContentView
     public ApplicationHeader()
     {
         _menuButton = IconButton(SharedImageNames.CompanyLogo, 44);
-        _logoutButton = IconButton(SharedImageNames.Logout, 44);
+        _logoutIcon = new Image
+        {
+            Source = SharedImageNames.Logout,
+            WidthRequest = 36,
+            HeightRequest = 36,
+            Aspect = Aspect.AspectFit,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            InputTransparent = true
+        };
+        _logoutButton = new Border
+        {
+            BackgroundColor = Colors.White,
+            StrokeThickness = 0,
+            Padding = 4,
+            WidthRequest = 48,
+            HeightRequest = 48,
+            MinimumWidthRequest = 48,
+            MinimumHeightRequest = 48,
+            ZIndex = 8,
+            Content = _logoutIcon
+        };
+        var logoutTap = new TapGestureRecognizer();
+        logoutTap.Tapped += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
+        _logoutButton.GestureRecognizers.Add(logoutTap);
         _back = new Button { Text = "‹", FontSize = 32, Padding = 0, WidthRequest = 38, HeightRequest = 38, MinimumWidthRequest = 44, MinimumHeightRequest = 44, BackgroundColor = Colors.Transparent, BorderWidth = 0 };
         _back.Use(Button.TextColorProperty, "OwTextPrimary");
         _back.IsVisible = false;
@@ -73,7 +99,6 @@ public class ApplicationHeader : ContentView
         };
         _menuButton.Clicked += (_, _) => MenuClicked?.Invoke(this, EventArgs.Empty);
         _back.Clicked += (_, _) => BackRequested?.Invoke(this, EventArgs.Empty);
-        _logoutButton.Clicked += (_, _) => LogoutClicked?.Invoke(this, EventArgs.Empty);
         _minimize.Clicked += (_, _) => MinimizeClicked?.Invoke(this, EventArgs.Empty);
 
         _restaurantLogo = new Image { WidthRequest = 30, HeightRequest = 30, Aspect = Aspect.AspectFit, IsVisible = false };
@@ -152,24 +177,23 @@ public class ApplicationHeader : ContentView
         _grid.Add(left);
         _grid.Add(titleStack, 1);
         _grid.Add(right, 2);
+        _bottomRule = new BoxView
+        {
+            HeightRequest = 1,
+            Color = Color.FromArgb("#E5E7EB"),
+            VerticalOptions = LayoutOptions.End,
+            HorizontalOptions = LayoutOptions.Fill,
+            IsVisible = false
+        };
         _shell = new Border
         {
+            Stroke = Colors.Transparent,
             StrokeThickness = 0,
             BackgroundColor = Colors.White,
             VerticalOptions = LayoutOptions.Start,
             Content = new Grid
             {
-                Children =
-                {
-                    _grid,
-                    new BoxView
-                    {
-                        HeightRequest = 1,
-                        Color = Color.FromArgb("#E5E7EB"),
-                        VerticalOptions = LayoutOptions.End,
-                        HorizontalOptions = LayoutOptions.Fill
-                    }
-                }
+                Children = { _grid, _bottomRule }
             }
         };
         VerticalOptions = LayoutOptions.Start;
@@ -252,10 +276,12 @@ public class ApplicationHeader : ContentView
         _menuButton.Padding = 0;
         _menuButton.Margin = new Thickness(0, 0, 8, 0);
 
-        _logoutButton.WidthRequest = 44;
-        _logoutButton.HeightRequest = 44;
-        _logoutButton.MinimumWidthRequest = 44;
-        _logoutButton.MinimumHeightRequest = 44;
+        _logoutButton.WidthRequest = 48;
+        _logoutButton.HeightRequest = 48;
+        _logoutButton.MinimumWidthRequest = 48;
+        _logoutButton.MinimumHeightRequest = 48;
+        _logoutIcon.WidthRequest = 36;
+        _logoutIcon.HeightRequest = 36;
 
         _minimize.WidthRequest = 28;
         _minimize.HeightRequest = 28;
@@ -275,8 +301,10 @@ public class ApplicationHeader : ContentView
         _grid.MinimumHeightRequest = PreferredHeight;
         _grid.Padding = new Thickness(14, 0);
         _shell.BackgroundColor = Colors.White;
+        _shell.Stroke = Colors.Transparent;
         _shell.StrokeThickness = 0;
         _shell.Shadow = null;
+        _bottomRule.IsVisible = !welcome;
         HeightRequest = PreferredHeight;
         VerticalOptions = LayoutOptions.Start;
 

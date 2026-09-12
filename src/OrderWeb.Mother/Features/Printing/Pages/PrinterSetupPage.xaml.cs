@@ -4,6 +4,7 @@ using POS_in_NET.Views;
 using MyFirstMauiApp.Models;
 using MyFirstMauiApp.Services;
 using Microsoft.Maui.Controls.Shapes;
+using System.Globalization;
 
 namespace POS_in_NET.Pages;
 
@@ -574,6 +575,34 @@ public partial class PrinterSetupPage : ContentPage
         CutterCheckbox.IsChecked = printer.HasCutter;
         BuzzerCheckbox.IsChecked = printer.HasBuzzer;
         TwoColorCheckbox.IsChecked = printer.SupportsTwoColor;
+
+        if (printer.PrinterType == NetworkPrinterType.Label)
+        {
+            LabelTechnologyPicker.SelectedIndex = 0;
+            LabelManufacturerPicker.SelectedIndex = 0;
+            LabelModelPicker.SelectedIndex = 0;
+            LabelProfilePicker.SelectedItem = printer.LabelProfile;
+            if (LabelProfilePicker.SelectedIndex < 0 && !string.IsNullOrWhiteSpace(printer.LabelProfile))
+                LabelProfilePicker.SelectedIndex = 1;
+            MediaWidthEntry.Text = FormatDecimal(printer.MediaWidthMm ?? 60m);
+            LabelWidthEntry.Text = FormatDecimal(printer.LabelWidthMm ?? 60m);
+            LabelHeightEntry.Text = FormatDecimal(printer.LabelHeightMm ?? 40m);
+            GapSizeEntry.Text = FormatDecimal(printer.GapSizeMm ?? 3m);
+            SensorTypePicker.SelectedIndex = printer.SensorType switch
+            {
+                LabelSensorType.BlackMark => 1,
+                LabelSensorType.Continuous => 2,
+                _ => 0
+            };
+            PrintSpeedEntry.Text = (printer.PrintSpeed ?? 4).ToString(CultureInfo.InvariantCulture);
+            PrintDarknessEntry.Text = (printer.PrintDarkness ?? 0).ToString(CultureInfo.InvariantCulture);
+            HorizontalOffsetEntry.Text = FormatDecimal(printer.HorizontalOffsetMm);
+            VerticalOffsetEntry.Text = FormatDecimal(printer.VerticalOffsetMm);
+            FinishingModePicker.SelectedIndex = printer.FinishingMode == LabelFinishingMode.Cutter ? 1 : 0;
+            CutterInstalledCheckbox.IsChecked = printer.FinishingMode == LabelFinishingMode.Cutter && printer.HasCutter;
+            LabelEnabledCheckbox.IsChecked = printer.IsEnabled;
+            DefaultLabelPrinterCheckbox.IsChecked = printer.IsDefaultLabelPrinter;
+        }
         
         // Set print group - load the group name if exists
         if (!string.IsNullOrEmpty(printer.PrintGroupId))
@@ -611,6 +640,25 @@ public partial class PrinterSetupPage : ContentPage
         CutterCheckbox.IsChecked = true;
         BuzzerCheckbox.IsChecked = false;
         TwoColorCheckbox.IsChecked = false;
+
+        LabelTechnologyPicker.SelectedIndex = 0;
+        LabelManufacturerPicker.SelectedIndex = 0;
+        LabelModelPicker.SelectedIndex = 0;
+        LabelProfilePicker.SelectedIndex = 0;
+        MediaWidthEntry.Text = "60";
+        LabelWidthEntry.Text = "60";
+        LabelHeightEntry.Text = "40";
+        GapSizeEntry.Text = "3";
+        SensorTypePicker.SelectedIndex = 0;
+        PrintSpeedEntry.Text = "4";
+        PrintDarknessEntry.Text = "0";
+        HorizontalOffsetEntry.Text = "0";
+        VerticalOffsetEntry.Text = "0";
+        FinishingModePicker.SelectedIndex = 0;
+        NumberOfCopiesEntry.Text = "1";
+        CutterInstalledCheckbox.IsChecked = false;
+        LabelEnabledCheckbox.IsChecked = true;
+        DefaultLabelPrinterCheckbox.IsChecked = false;
         
         PrintGroupEntry.Text = string.Empty;
         
@@ -710,6 +758,12 @@ public partial class PrinterSetupPage : ContentPage
         {
             SavePrinterButton.IsEnabled = false;
 
+            if (await _dbService.EndpointExistsAsync(ip, port, _editingPrinter?.Id))
+            {
+                await AppAlertService.ShowAlertAsync("Duplicate Printer", "Another printer already uses this IP address and port.");
+                return;
+            }
+
             if (_editingPrinter != null && _selectedType == NetworkPrinterType.Label && _routingService != null)
             {
                 var routingSettings = await _routingService.GetSettingsAsync();
@@ -734,7 +788,38 @@ public partial class PrinterSetupPage : ContentPage
             printer.HasCutter = CutterCheckbox.IsChecked;
             printer.HasBuzzer = BuzzerCheckbox.IsChecked;
             printer.SupportsTwoColor = TwoColorCheckbox.IsChecked;
-            printer.IsEnabled = true;
+            printer.IsEnabled = _selectedType == NetworkPrinterType.Label ? LabelEnabledCheckbox.IsChecked : true;
+
+            if (_selectedType == NetworkPrinterType.Label)
+            {
+                printer.LabelProfile = LabelProfilePicker.SelectedItem?.ToString();
+                printer.MediaWidthMm = ParseDecimal(MediaWidthEntry.Text);
+                printer.LabelWidthMm = ParseDecimal(LabelWidthEntry.Text);
+                printer.LabelHeightMm = ParseDecimal(LabelHeightEntry.Text);
+                printer.GapSizeMm = ParseDecimal(GapSizeEntry.Text);
+                printer.SensorType = SensorTypePicker.SelectedIndex switch
+                {
+                    1 => LabelSensorType.BlackMark,
+                    2 => LabelSensorType.Continuous,
+                    0 => LabelSensorType.Gap,
+                    _ => null
+                };
+                printer.PrintSpeed = ParseInt(PrintSpeedEntry.Text);
+                printer.PrintDarkness = ParseInt(PrintDarknessEntry.Text);
+                printer.HorizontalOffsetMm = ParseDecimal(HorizontalOffsetEntry.Text) ?? decimal.MinValue;
+                printer.VerticalOffsetMm = ParseDecimal(VerticalOffsetEntry.Text) ?? decimal.MinValue;
+                printer.FinishingMode = FinishingModePicker.SelectedIndex == 1 ? LabelFinishingMode.Cutter : LabelFinishingMode.TearOff;
+                printer.NumberOfCopies = ParseInt(NumberOfCopiesEntry.Text) ?? 0;
+                printer.IsDefaultLabelPrinter = DefaultLabelPrinterCheckbox.IsChecked;
+                LabelPrinterProfiles.ApplyToshibaBfv4dGs14(printer);
+
+                var validationError = LabelPrinterConfigurationValidator.Validate(printer, CutterInstalledCheckbox.IsChecked);
+                if (validationError != null)
+                {
+                    await AppAlertService.ShowAlertAsync("Invalid Label Printer", validationError);
+                    return;
+                }
+            }
             
             // Get or create print group from the entered name
             var printGroupName = PrintGroupEntry.Text?.Trim();
@@ -768,6 +853,11 @@ public partial class PrinterSetupPage : ContentPage
             {
                 printer.Id = await _dbService.AddPrinterAsync(printer);
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Printer '{name}' added!");
+            }
+
+            if (printer.PrinterType == NetworkPrinterType.Label && printer.IsDefaultLabelPrinter)
+            {
+                await _dbService.SetDefaultLabelPrinterAsync(printer.Id);
             }
 
             if (!string.Equals(previousPrintGroupId, printer.PrintGroupId, StringComparison.OrdinalIgnoreCase))
@@ -1263,7 +1353,60 @@ public partial class PrinterSetupPage : ContentPage
         {
             BuzzerCheckbox.IsChecked = true;
         }
+
+        var isLabel = type == NetworkPrinterType.Label;
+        LabelConfigurationSection.IsVisible = isLabel;
+        GeneralBrandSection.IsVisible = !isLabel;
+        GeneralPaperWidthSection.IsVisible = !isLabel;
+        GeneralFeaturesSection.IsVisible = !isLabel;
+        if (isLabel)
+        {
+            _selectedBrand = PrinterBrand.Toshiba;
+            PortEntry.Text = string.IsNullOrWhiteSpace(PortEntry.Text) ? "9100" : PortEntry.Text;
+        }
     }
+
+    private void OnLabelModelChanged(object? sender, EventArgs e)
+    {
+        if (LabelModelPicker.SelectedIndex == 0 && string.IsNullOrWhiteSpace(PortEntry.Text))
+            PortEntry.Text = "9100";
+    }
+
+    private void OnLabelProfileChanged(object? sender, EventArgs e)
+    {
+        if (LabelProfilePicker.SelectedIndex != 0) return;
+        MediaWidthEntry.Text = "60";
+        LabelWidthEntry.Text = "60";
+        LabelHeightEntry.Text = "40";
+        GapSizeEntry.Text = "3";
+        SensorTypePicker.SelectedIndex = 0;
+    }
+
+    private void OnSensorTypeChanged(object? sender, EventArgs e)
+    {
+        if (SensorTypePicker.SelectedIndex == 2)
+        {
+            GapSizeEntry.Text = "0";
+            GapSizeEntry.IsEnabled = false;
+        }
+        else
+        {
+            GapSizeEntry.IsEnabled = true;
+            if (ParseDecimal(GapSizeEntry.Text) is null or <= 0)
+                GapSizeEntry.Text = "3";
+        }
+    }
+
+    private static decimal? ParseDecimal(string? value)
+    {
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out var current)) return current;
+        return decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var invariant) ? invariant : null;
+    }
+
+    private static int? ParseInt(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private static string FormatDecimal(decimal value) => value.ToString("0.##", CultureInfo.CurrentCulture);
 
     private void OnWidth80Tapped(object? sender, EventArgs e) => SelectWidth(PaperWidth.Mm80);
     private void OnWidth58Tapped(object? sender, EventArgs e) => SelectWidth(PaperWidth.Mm58);

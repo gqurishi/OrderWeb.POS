@@ -69,7 +69,7 @@ using System.Linq;
             {
                 UpdateZReportTerminalHint();
                 _ = LoadDashboardDataSafely();
-                _ = LoadZReportSummaryAsync(DateTime.Today);
+                _ = LoadZReportSummaryAsync(TradingDayHelper.GetBusinessDate());
                 _ = RefreshIncomingWebOrderBadgeAsync();
                 System.Diagnostics.Debug.WriteLine(" Dashboard initialization complete");
             }
@@ -221,7 +221,7 @@ using System.Linq;
 
                 if (ZReportDateLabel != null)
                 {
-                    ZReportDateLabel.Text = $"{snapshot.DateDisplay} · {snapshot.TerminalName}";
+                    ZReportDateLabel.Text = $"{snapshot.DateDisplay} · {snapshot.TerminalName} · resets {TradingDayHelper.ResetTimeDisplay}";
                 }
 
                 if (ZReportUpdatedLabel != null)
@@ -236,7 +236,7 @@ using System.Linq;
                 if (ZReportCardLabel != null) ZReportCardLabel.Text = snapshot.CardDisplay;
                 if (ZReportGiftTipsLabel != null)
                 {
-                    ZReportGiftTipsLabel.Text = $"£{(snapshot.GiftCardTotal + snapshot.TipsTotal):F2}";
+                    ZReportGiftTipsLabel.Text = snapshot.TipsDisplay;
                 }
                 if (ZReportPosLabel != null)
                 {
@@ -248,6 +248,7 @@ using System.Linq;
                 }
                 if (ZReportTillOutLabel != null) ZReportTillOutLabel.Text = snapshot.TillNetOutDisplay;
                 if (ZReportExpectedCashLabel != null) ZReportExpectedCashLabel.Text = snapshot.ExpectedCashDisplay;
+                if (ZReportWebOrdersLabel != null) ZReportWebOrdersLabel.Text = snapshot.OnlineOrderCount.ToString();
                 if (ZReportVsYesterdayLabel != null) ZReportVsYesterdayLabel.Text = snapshot.SalesVsYesterdayDisplay;
 
                 UpdateZReportTerminalHint();
@@ -335,24 +336,24 @@ using System.Linq;
 
         private async void OnZReportRefreshClicked(object sender, EventArgs e)
         {
-            await LoadZReportSummaryAsync(DateTime.Today);
+            await LoadZReportSummaryAsync(TradingDayHelper.GetBusinessDate());
             _ = RefreshIncomingWebOrderBadgeAsync();
         }
 
         private async void OnZReportShortcutClicked(object sender, EventArgs e)
         {
-            await LoadZReportSummaryAsync(DateTime.Today);
-            await PrintZReportAsync(DateTime.Today, isReprint: false);
+            await LoadZReportSummaryAsync(TradingDayHelper.GetBusinessDate());
+            await PrintZReportAsync(TradingDayHelper.GetBusinessDate(), isReprint: false);
         }
 
         private async void OnPrintZReportTodayClicked(object sender, EventArgs e)
         {
-            await PrintZReportAsync(DateTime.Today, isReprint: false);
+            await PrintZReportAsync(TradingDayHelper.GetBusinessDate(), isReprint: false);
         }
 
         private async void OnPrintZReportYesterdayClicked(object sender, EventArgs e)
         {
-            var yesterday = DateTime.Today.AddDays(-1);
+            var yesterday = TradingDayHelper.GetBusinessDate().AddDays(-1);
             await PrintZReportAsync(yesterday, isReprint: true);
         }
 
@@ -383,7 +384,7 @@ using System.Linq;
                 snapshot.IsReprint = isReprint;
                 _currentZReport = snapshot;
 
-                if (reportDate.Date == DateTime.Today)
+                if (reportDate.Date == TradingDayHelper.GetBusinessDate())
                 {
                     await ApplyZReportToUiAsync(snapshot);
                 }
@@ -479,23 +480,11 @@ using System.Linq;
             NavigationCoordinator.PruneTemporaryPages();
         }
 
-        private async Task RefreshIncomingWebOrderBadgeAsync()
+        private Task RefreshIncomingWebOrderBadgeAsync()
         {
-            try
-            {
-                var count = await _orderService.GetIncomingWebOrderCountAsync();
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    if (ZReportWebOrdersLabel != null)
-                    {
-                        ZReportWebOrdersLabel.Text = Math.Max(0, count).ToString();
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($" Web order badge refresh error: {ex.Message}");
-            }
+            // Total Web Orders is the 3:00-day count from the Z snapshot (OnlineOrderCount).
+            // Do not replace it with every open website order from any date.
+            return Task.CompletedTask;
         }
 
         private async Task OpenWebOrdersAsync()

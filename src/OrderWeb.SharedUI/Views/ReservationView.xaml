@@ -10,158 +10,149 @@
           HorizontalOptions="Fill">
 
         <Grid x:Name="MainLayoutGrid"
-              Padding="20"
-              ColumnDefinitions="300,*"
-              RowDefinitions="Auto,*"
-              ColumnSpacing="16"
-              RowSpacing="14"
+              Padding="12,8,12,10"
+              ColumnDefinitions="348,*"
+              ColumnSpacing="10"
               VerticalOptions="Fill"
               HorizontalOptions="Fill">
 
-            <!-- Summary strip (Phase 1: short + slim) -->
-            <Grid Grid.Row="0"
-                  Grid.ColumnSpan="2"
-                  ColumnDefinitions="*,*,*,Auto"
-                  ColumnSpacing="10"
-                  HeightRequest="64"
-                  VerticalOptions="Start">
-
-                <Border BackgroundColor="{DynamicResource OwSurface}"
-                        Stroke="{DynamicResource OwBorder}"
-                        StrokeThickness="1"
-                        Padding="12,6"
-                        VerticalOptions="Fill"
-                        StrokeShape="RoundRectangle 12">
-                    <VerticalStackLayout Spacing="0"
-                                         VerticalOptions="Center">
-                        <Label Text="BOOKINGS TODAY"
-                               FontSize="10"
-                               FontAttributes="Bold"
-                               CharacterSpacing="0.6"
-                               TextColor="{DynamicResource OwTextMuted}" />
-                        <Label Text="{Binding TodayCountText}"
-                               FontSize="22"
-                               FontAttributes="Bold"
-                               TextColor="{DynamicResource OwTextStrong}" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <Border Grid.Column="1"
-                        BackgroundColor="{DynamicResource OwSurface}"
-                        Stroke="{DynamicResource OwBorder}"
-                        StrokeThickness="1"
-                        Padding="12,6"
-                        VerticalOptions="Fill"
-                        StrokeShape="RoundRectangle 12">
-                    <VerticalStackLayout Spacing="0"
-                                         VerticalOptions="Center">
-                        <Label Text="GUESTS TODAY"
-                               FontSize="10"
-                               FontAttributes="Bold"
-                               CharacterSpacing="0.6"
-                               TextColor="{DynamicResource OwTextMuted}" />
-                        <Label Text="{Binding GuestCountText}"
-                               FontSize="22"
-                               FontAttributes="Bold"
-                               TextColor="{DynamicResource OwSuccessStrong}" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <Border Grid.Column="2"
-                        BackgroundColor="{DynamicResource OwSurface}"
-                        Stroke="{DynamicResource OwBorder}"
-                        StrokeThickness="1"
-                        Padding="12,6"
-                        VerticalOptions="Fill"
-                        StrokeShape="RoundRectangle 12">
-                    <VerticalStackLayout Spacing="0"
-                                         VerticalOptions="Center">
-                        <Label Text="NEXT BOOKING"
-                               FontSize="10"
-                               FontAttributes="Bold"
-                               CharacterSpacing="0.6"
-                               TextColor="{DynamicResource OwTextMuted}" />
-                        <Label Text="{Binding NextReservationText}"
-                               FontSize="22"
-                               FontAttributes="Bold"
-                               TextColor="{DynamicResource OwPrimary}" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <HorizontalStackLayout Grid.Column="3"
-                                       Spacing="8"
-                                       VerticalOptions="Center">
+            <!-- Actions, counts, calendar. Extra space sits under the calendar. -->
+            <Grid Grid.Column="0"
+                  RowDefinitions="Auto,Auto,Auto,*"
+                  RowSpacing="8"
+                  VerticalOptions="Fill">
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="8">
                     <Button Text="Refresh"
+                            Style="{x:Null}"
                             BackgroundColor="{DynamicResource OwPrimarySoft}"
                             TextColor="{DynamicResource OwInfoText}"
                             FontAttributes="Bold"
-                            FontSize="13"
+                            FontSize="14"
                             CornerRadius="10"
-                            HeightRequest="40"
-                            MinimumHeightRequest="40"
-                            Padding="14,0"
+                            HeightRequest="42"
+                            MinimumHeightRequest="42"
+                            MinimumWidthRequest="0"
+                            Padding="0"
+                            HorizontalOptions="Fill"
                             Clicked="OnUpdateClicked" />
-                    <Button Text="New booking"
+                    <Button Grid.Column="1"
+                            Text="New booking"
+                            Style="{x:Null}"
                             BackgroundColor="{DynamicResource OwPrimary}"
                             TextColor="{DynamicResource OwTextOnPrimary}"
                             FontAttributes="Bold"
-                            FontSize="13"
+                            FontSize="14"
                             CornerRadius="10"
-                            HeightRequest="40"
-                            MinimumHeightRequest="40"
-                            Padding="14,0"
+                            HeightRequest="42"
+                            MinimumHeightRequest="42"
+                            MinimumWidthRequest="0"
+                            Padding="0"
+                            HorizontalOptions="Fill"
                             Clicked="OnNewReservationClicked" />
-                </HorizontalStackLayout>
-            </Grid>
+                </Grid>
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="8"
+                      HeightRequest="48">
+                    <Border BackgroundColor="{DynamicResource OwSurface}"
+                            Stroke="{DynamicResource OwBorder}"
+                            StrokeThickness="1"
+                            Padding="10,4"
+                            VerticalOptions="Fill"
+                            StrokeShape="RoundRectangle 10">
+                        <VerticalStackLayout Spacing="0"
+                                             VerticalOptions="Center">
+                            <Label Text="BOOKINGS TODAY"
+                                   FontSize="9"
+                                   FontAttributes="Bold"
+                                   CharacterSpacing="0.5"
+                                   TextColor="{DynamicResource OwTextMuted}" />
+                            <Label Text="{Binding TodayCountText}"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   TextColor="{DynamicResource OwTextStrong}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="1"
+                            BackgroundColor="{DynamicResource OwSurface}"
+                            Stroke="{DynamicResource OwBorder}"
+                            StrokeThickness="1"
+                            Padding="10,4"
+                            VerticalOptions="Fill"
+                            StrokeShape="RoundRectangle 10">
+                        <VerticalStackLayout Spacing="0"
+                                             VerticalOptions="Center">
+                            <Label Text="GUESTS TODAY"
+                                   FontSize="9"
+                                   FontAttributes="Bold"
+                                   CharacterSpacing="0.5"
+                                   TextColor="{DynamicResource OwTextMuted}" />
+                            <Label Text="{Binding GuestCountText}"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   TextColor="{DynamicResource OwSuccessStrong}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
 
-            <!-- Calendar -->
-            <Border Grid.Row="1"
-                    Grid.Column="0"
+            <Border Grid.Row="2"
                     BackgroundColor="{DynamicResource OwSurface}"
                     Stroke="{DynamicResource OwBorder}"
                     StrokeThickness="1"
-                    Padding="16"
-                    StrokeShape="RoundRectangle 16"
-                    VerticalOptions="Fill">
-                <VerticalStackLayout Spacing="12">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    Padding="10"
+                    StrokeShape="RoundRectangle 12"
+                    VerticalOptions="Start">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
                         <Button Text="Prev"
-                                WidthRequest="56"
-                                HeightRequest="36"
+                                Style="{x:Null}"
+                                WidthRequest="52"
+                                HeightRequest="30"
+                                MinimumHeightRequest="30"
+                                MinimumWidthRequest="52"
                                 BackgroundColor="{DynamicResource OwSurfaceMuted}"
                                 TextColor="{DynamicResource OwTextStrong}"
                                 FontAttributes="Bold"
-                                FontSize="13"
-                                CornerRadius="10"
+                                FontSize="12"
+                                CornerRadius="8"
                                 Padding="0"
                                 Clicked="OnPreviousMonthClicked" />
                         <Label Grid.Column="1"
                                Text="{Binding CalendarMonthText}"
-                               FontSize="17"
+                               FontSize="15"
                                FontAttributes="Bold"
                                TextColor="{DynamicResource OwTextStrong}"
                                HorizontalOptions="Center"
                                VerticalOptions="Center" />
                         <Button Grid.Column="2"
                                 Text="Next"
-                                WidthRequest="56"
-                                HeightRequest="36"
-                                BackgroundColor="{DynamicResource OwSurfaceMuted}"
-                                TextColor="{DynamicResource OwTextStrong}"
+                                Style="{x:Null}"
+                                WidthRequest="52"
+                                HeightRequest="30"
+                                MinimumHeightRequest="30"
+                                MinimumWidthRequest="52"
+                                BackgroundColor="{DynamicResource OwSuccessSoft}"
+                                TextColor="{DynamicResource OwSuccessText}"
                                 FontAttributes="Bold"
-                                FontSize="13"
-                                CornerRadius="10"
+                                FontSize="12"
+                                CornerRadius="8"
                                 Padding="0"
                                 Clicked="OnNextMonthClicked" />
                     </Grid>
 
                     <Button Text="Jump to today"
+                            Style="{x:Null}"
                             BackgroundColor="{DynamicResource OwPrimarySoft}"
                             TextColor="{DynamicResource OwPrimary}"
                             FontAttributes="Bold"
-                            FontSize="13"
-                            CornerRadius="10"
-                            HeightRequest="36"
+                            FontSize="12"
+                            CornerRadius="8"
+                            HeightRequest="30"
+                            MinimumHeightRequest="30"
+                            MinimumWidthRequest="0"
+                            Padding="0"
                             Clicked="OnTodayClicked" />
 
                     <Grid ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="2">
@@ -178,27 +169,29 @@
                                     ItemsSource="{Binding CalendarDays}"
                                     SelectionMode="Single"
                                     SelectionChanged="OnCalendarDaySelected"
-                                    HeightRequest="320"
+                                    HeightRequest="296"
                                     ItemSizingStrategy="MeasureFirstItem">
                         <CollectionView.ItemsLayout>
                             <GridItemsLayout Orientation="Vertical"
                                              Span="7"
-                                             HorizontalItemSpacing="3"
-                                             VerticalItemSpacing="3" />
+                                             HorizontalItemSpacing="4"
+                                             VerticalItemSpacing="4" />
                         </CollectionView.ItemsLayout>
                         <CollectionView.ItemTemplate>
                             <DataTemplate>
                                 <Border BackgroundColor="{Binding BackgroundColor}"
                                         Stroke="{Binding BorderColor}"
-                                        StrokeThickness="1"
+                                        StrokeThickness="{Binding StrokeThickness}"
                                         Padding="2"
-                                        HeightRequest="42"
-                                        StrokeShape="RoundRectangle 10">
+                                        HeightRequest="46"
+                                        InputTransparent="{Binding IsPlaceholder}"
+                                        StrokeShape="RoundRectangle 12">
                                     <VerticalStackLayout Spacing="2"
                                                          HorizontalOptions="Center"
-                                                         VerticalOptions="Center">
+                                                         VerticalOptions="Center"
+                                                         InputTransparent="{Binding IsPlaceholder}">
                                         <Label Text="{Binding DayText}"
-                                               FontSize="13"
+                                               FontSize="15"
                                                FontAttributes="Bold"
                                                TextColor="{Binding TextColor}"
                                                HorizontalTextAlignment="Center" />
@@ -215,27 +208,27 @@
                     </CollectionView>
                 </VerticalStackLayout>
             </Border>
+            </Grid>
 
-            <!-- List panel: header fixed; booking CollectionView scrolls (Phase 4) -->
-            <Grid Grid.Row="1"
-                  Grid.Column="1"
+            <!-- Booking list fills the right from the top. -->
+            <Grid Grid.Column="1"
                   RowDefinitions="Auto,*"
-                  RowSpacing="8"
+                  RowSpacing="6"
                   VerticalOptions="Fill"
                   HorizontalOptions="Fill">
 
-                <!-- Phase 2: slim date / sync / Today / search -->
-                <Border BackgroundColor="{DynamicResource OwSurface}"
+                <Border Grid.Row="0"
+                        BackgroundColor="{DynamicResource OwSurface}"
                         Stroke="{DynamicResource OwBorder}"
                         StrokeThickness="1"
-                        Padding="10,8"
-                        StrokeShape="RoundRectangle 12">
-                    <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                        Padding="10,6"
+                        StrokeShape="RoundRectangle 10">
+                    <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <VerticalStackLayout Spacing="0"
                                                  VerticalOptions="Center">
                                 <Label Text="{Binding SelectedDateDisplay}"
-                                       FontSize="15"
+                                       FontSize="14"
                                        FontAttributes="Bold"
                                        TextColor="{DynamicResource OwTextStrong}" />
                                 <HorizontalStackLayout Spacing="6">
@@ -256,14 +249,16 @@
                                                    VerticalOptions="Center" />
                             <Button Grid.Column="2"
                                     Text="Today"
+                                    Style="{x:Null}"
                                     BackgroundColor="{DynamicResource OwSurfaceMuted}"
                                     TextColor="{DynamicResource OwTextStrong}"
                                     FontAttributes="Bold"
                                     FontSize="12"
                                     CornerRadius="8"
-                                    HeightRequest="30"
-                                    MinimumHeightRequest="30"
-                                    WidthRequest="68"
+                                    HeightRequest="28"
+                                    MinimumHeightRequest="28"
+                                    MinimumWidthRequest="64"
+                                    WidthRequest="64"
                                     Padding="0"
                                     Clicked="OnTodayClicked" />
                         </Grid>
@@ -272,9 +267,9 @@
                                 BackgroundColor="{DynamicResource OwBackground}"
                                 Stroke="{DynamicResource OwInputBorder}"
                                 StrokeThickness="1"
-                                Padding="10,2"
-                                HeightRequest="36"
-                                StrokeShape="RoundRectangle 10">
+                                Padding="10,0"
+                                HeightRequest="32"
+                                StrokeShape="RoundRectangle 8">
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnSearchBoxTapped" />
                             </Border.GestureRecognizers>

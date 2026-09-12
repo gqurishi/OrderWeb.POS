@@ -8,12 +8,12 @@
              BackgroundColor="#F8FAFC"
              Title="Gift Cards">
     <Grid RowDefinitions="Auto,*" BackgroundColor="#F8FAFC">
-        <!-- Same SharedUI PosHeader chrome as Mother TopBar (title set in code). -->
-        <layout:ClientTopBar x:Name="TopBar" />
+        <!-- Header stays above the gift-card form so the red icon can be tapped. -->
+        <layout:ClientTopBar x:Name="TopBar" ZIndex="5" />
 
-        <sharedViews:GiftCardView x:Name="Gift" Grid.Row="1" />
+        <sharedViews:GiftCardView x:Name="Gift" Grid.Row="1" ZIndex="0" />
 
-        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" ZIndex="6" IsVisible="False" BackgroundColor="Transparent">
             <BoxView BackgroundColor="Transparent">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackdropTapped" />

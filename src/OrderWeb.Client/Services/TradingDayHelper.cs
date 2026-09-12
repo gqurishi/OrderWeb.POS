@@ -2,7 +2,8 @@ namespace OrderWeb.Client.Services;
 
 public static class TradingDayHelper
 {
-    public static readonly TimeSpan DayStartTime = new(1, 0, 0);
+    /// <summary>Trading day rolls at 3:00 AM. Hours before 3 AM belong to the previous day.</summary>
+    public static readonly TimeSpan DayStartTime = new(3, 0, 0);
 
     public static DateTime GetBusinessDate(DateTime? localNow = null)
     {

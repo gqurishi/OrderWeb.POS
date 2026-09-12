@@ -1311,7 +1311,7 @@ public partial class ReportPage : ContentPage
             var displayName = user == null
                 ? "Admin"
                 : !string.IsNullOrWhiteSpace(user.Name) ? user.Name : user.Username;
-            var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, displayName);
+            var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), displayName);
             snapshot.IsReprint = false;
 
             var confirmDialog = new ModernConfirmDialog();

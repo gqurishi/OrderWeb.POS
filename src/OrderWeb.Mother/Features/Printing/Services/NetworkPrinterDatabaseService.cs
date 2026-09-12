@@ -48,6 +48,29 @@ public class NetworkPrinterDatabaseService
                     display_order INT DEFAULT 0,
                     notes TEXT NULL,
                     print_group_id VARCHAR(36) NULL,
+                    technology VARCHAR(50) NULL,
+                    manufacturer VARCHAR(50) NULL,
+                    model_code VARCHAR(100) NULL,
+                    protocol VARCHAR(30) NULL,
+                    resolution_dpi INT NULL,
+                    printing_method VARCHAR(50) NULL,
+                    max_print_width_mm DECIMAL(7,2) NULL,
+                    supported_media VARCHAR(150) NULL,
+                    transport VARCHAR(50) NULL,
+                    windows_driver VARCHAR(150) NULL,
+                    label_profile VARCHAR(100) NULL,
+                    media_width_mm DECIMAL(7,2) NULL,
+                    label_width_mm DECIMAL(7,2) NULL,
+                    label_height_mm DECIMAL(7,2) NULL,
+                    gap_size_mm DECIMAL(7,2) NULL,
+                    sensor_type VARCHAR(30) NULL,
+                    print_speed INT NULL,
+                    print_darkness INT NULL,
+                    horizontal_offset_mm DECIMAL(7,2) NOT NULL DEFAULT 0,
+                    vertical_offset_mm DECIMAL(7,2) NOT NULL DEFAULT 0,
+                    finishing_mode VARCHAR(30) NOT NULL DEFAULT 'tearoff',
+                    number_of_copies INT NOT NULL DEFAULT 1,
+                    is_default_label_printer BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     UNIQUE INDEX idx_ip_port (ip_address, port)
@@ -181,6 +204,44 @@ public class NetworkPrinterDatabaseService
         return null;
     }
 
+    public async Task<bool> EndpointExistsAsync(string ipAddress, int port, int? exceptPrinterId = null)
+    {
+        using var connection = await _db.GetConnectionAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*)
+            FROM network_printers
+            WHERE ip_address = @ip AND port = @port
+              AND (@exceptId IS NULL OR id <> @exceptId)";
+        cmd.Parameters.AddWithValue("@ip", ipAddress);
+        cmd.Parameters.AddWithValue("@port", port);
+        cmd.Parameters.AddWithValue("@exceptId", exceptPrinterId ?? (object)DBNull.Value);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync()) > 0;
+    }
+
+    public async Task SetDefaultLabelPrinterAsync(int printerId)
+    {
+        using var connection = await _db.GetConnectionAsync();
+        using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            using var clear = connection.CreateCommand();
+            clear.Transaction = transaction;
+            clear.CommandText = @"
+                UPDATE network_printers
+                SET is_default_label_printer = CASE WHEN id = @id THEN TRUE ELSE FALSE END
+                WHERE printer_type = 'label'";
+            clear.Parameters.AddWithValue("@id", printerId);
+            await clear.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     /// <summary>
     /// Add a new printer
     /// </summary>
@@ -194,11 +255,21 @@ public class NetworkPrinterDatabaseService
                 INSERT INTO network_printers 
                 (name, ip_address, port, brand, printer_type, paper_width, 
                  has_cash_drawer, has_cutter, has_buzzer, supports_two_color, is_enabled,
-                 color_code, display_order, notes, print_group_id)
+                 color_code, display_order, notes, print_group_id,
+                 technology, manufacturer, model_code, protocol, resolution_dpi, printing_method,
+                 max_print_width_mm, supported_media, transport, windows_driver, label_profile,
+                 media_width_mm, label_width_mm, label_height_mm, gap_size_mm, sensor_type,
+                 print_speed, print_darkness, horizontal_offset_mm, vertical_offset_mm,
+                 finishing_mode, number_of_copies, is_default_label_printer)
                 VALUES 
                 (@name, @ip, @port, @brand, @type, @width,
                  @drawer, @cutter, @buzzer, @twoColor, @enabled,
-                 @color, @order, @notes, @printGroupId);
+                 @color, @order, @notes, @printGroupId,
+                 @technology, @manufacturer, @modelCode, @protocol, @resolutionDpi, @printingMethod,
+                 @maxPrintWidth, @supportedMedia, @transport, @windowsDriver, @labelProfile,
+                 @mediaWidth, @labelWidth, @labelHeight, @gapSize, @sensorType,
+                 @printSpeed, @printDarkness, @horizontalOffset, @verticalOffset,
+                 @finishingMode, @copies, @isDefaultLabel);
                 SELECT LAST_INSERT_ID();";
 
             cmd.Parameters.AddWithValue("@name", printer.Name);
@@ -216,6 +287,7 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@order", printer.DisplayOrder);
             cmd.Parameters.AddWithValue("@notes", printer.Notes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@printGroupId", printer.PrintGroupId ?? (object)DBNull.Value);
+            AddLabelParameters(cmd, printer);
 
             var result = await cmd.ExecuteScalarAsync();
             var newId = Convert.ToInt32(result);
@@ -255,7 +327,30 @@ public class NetworkPrinterDatabaseService
                     color_code = @color,
                     display_order = @order,
                     notes = @notes,
-                    print_group_id = @printGroupId
+                    print_group_id = @printGroupId,
+                    technology = @technology,
+                    manufacturer = @manufacturer,
+                    model_code = @modelCode,
+                    protocol = @protocol,
+                    resolution_dpi = @resolutionDpi,
+                    printing_method = @printingMethod,
+                    max_print_width_mm = @maxPrintWidth,
+                    supported_media = @supportedMedia,
+                    transport = @transport,
+                    windows_driver = @windowsDriver,
+                    label_profile = @labelProfile,
+                    media_width_mm = @mediaWidth,
+                    label_width_mm = @labelWidth,
+                    label_height_mm = @labelHeight,
+                    gap_size_mm = @gapSize,
+                    sensor_type = @sensorType,
+                    print_speed = @printSpeed,
+                    print_darkness = @printDarkness,
+                    horizontal_offset_mm = @horizontalOffset,
+                    vertical_offset_mm = @verticalOffset,
+                    finishing_mode = @finishingMode,
+                    number_of_copies = @copies,
+                    is_default_label_printer = @isDefaultLabel
                 WHERE id = @id";
 
             cmd.Parameters.AddWithValue("@id", printer.Id);
@@ -274,6 +369,7 @@ public class NetworkPrinterDatabaseService
             cmd.Parameters.AddWithValue("@order", printer.DisplayOrder);
             cmd.Parameters.AddWithValue("@notes", printer.Notes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@printGroupId", printer.PrintGroupId ?? (object)DBNull.Value);
+            AddLabelParameters(cmd, printer);
 
             var rows = await cmd.ExecuteNonQueryAsync();
             System.Diagnostics.Debug.WriteLine($" Updated printer: {printer.Name}");
@@ -493,6 +589,9 @@ public class NetworkPrinterDatabaseService
         await ExecuteNonQueryAsync(connection, @"
             ALTER TABLE network_printers
             MODIFY COLUMN printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL");
+        await ExecuteNonQueryAsync(connection, @"
+            ALTER TABLE network_printers
+            MODIFY COLUMN brand ENUM('epson', 'star', 'toshiba', 'other') NOT NULL DEFAULT 'epson'");
 
         if (!await ColumnExistsAsync(connection, "network_printers", "print_group_id"))
         {
@@ -506,6 +605,41 @@ public class NetworkPrinterDatabaseService
             await ExecuteNonQueryAsync(connection, @"
                 ALTER TABLE network_printers
                 ADD COLUMN supports_two_color BOOLEAN DEFAULT FALSE AFTER has_buzzer");
+        }
+
+        var labelColumns = new (string Name, string Definition)[]
+        {
+            ("technology", "VARCHAR(50) NULL"),
+            ("manufacturer", "VARCHAR(50) NULL"),
+            ("model_code", "VARCHAR(100) NULL"),
+            ("protocol", "VARCHAR(30) NULL"),
+            ("resolution_dpi", "INT NULL"),
+            ("printing_method", "VARCHAR(50) NULL"),
+            ("max_print_width_mm", "DECIMAL(7,2) NULL"),
+            ("supported_media", "VARCHAR(150) NULL"),
+            ("transport", "VARCHAR(50) NULL"),
+            ("windows_driver", "VARCHAR(150) NULL"),
+            ("label_profile", "VARCHAR(100) NULL"),
+            ("media_width_mm", "DECIMAL(7,2) NULL"),
+            ("label_width_mm", "DECIMAL(7,2) NULL"),
+            ("label_height_mm", "DECIMAL(7,2) NULL"),
+            ("gap_size_mm", "DECIMAL(7,2) NULL"),
+            ("sensor_type", "VARCHAR(30) NULL"),
+            ("print_speed", "INT NULL"),
+            ("print_darkness", "INT NULL"),
+            ("horizontal_offset_mm", "DECIMAL(7,2) NOT NULL DEFAULT 0"),
+            ("vertical_offset_mm", "DECIMAL(7,2) NOT NULL DEFAULT 0"),
+            ("finishing_mode", "VARCHAR(30) NOT NULL DEFAULT 'tearoff'"),
+            ("number_of_copies", "INT NOT NULL DEFAULT 1"),
+            ("is_default_label_printer", "BOOLEAN NOT NULL DEFAULT FALSE")
+        };
+
+        foreach (var column in labelColumns)
+        {
+            if (!await ColumnExistsAsync(connection, "network_printers", column.Name))
+            {
+                await ExecuteNonQueryAsync(connection, $"ALTER TABLE network_printers ADD COLUMN {column.Name} {column.Definition}");
+            }
         }
 
         await CreateIndexIfMissingAsync(connection, "network_printers", "idx_network_printers_print_group_id", "CREATE INDEX idx_network_printers_print_group_id ON network_printers(print_group_id)");
@@ -634,6 +768,35 @@ public class NetworkPrinterDatabaseService
 
     #region Mapping Helpers
 
+    private static void AddLabelParameters(MySqlCommand cmd, NetworkPrinter printer)
+    {
+        cmd.Parameters.AddWithValue("@technology", DbValue(printer.Technology));
+        cmd.Parameters.AddWithValue("@manufacturer", DbValue(printer.Manufacturer));
+        cmd.Parameters.AddWithValue("@modelCode", DbValue(printer.ModelCode));
+        cmd.Parameters.AddWithValue("@protocol", DbValue(printer.Protocol));
+        cmd.Parameters.AddWithValue("@resolutionDpi", DbValue(printer.ResolutionDpi));
+        cmd.Parameters.AddWithValue("@printingMethod", DbValue(printer.PrintingMethod));
+        cmd.Parameters.AddWithValue("@maxPrintWidth", DbValue(printer.MaximumPrintWidthMm));
+        cmd.Parameters.AddWithValue("@supportedMedia", DbValue(printer.SupportedMedia));
+        cmd.Parameters.AddWithValue("@transport", DbValue(printer.Transport));
+        cmd.Parameters.AddWithValue("@windowsDriver", DbValue(printer.WindowsDriver));
+        cmd.Parameters.AddWithValue("@labelProfile", DbValue(printer.LabelProfile));
+        cmd.Parameters.AddWithValue("@mediaWidth", DbValue(printer.MediaWidthMm));
+        cmd.Parameters.AddWithValue("@labelWidth", DbValue(printer.LabelWidthMm));
+        cmd.Parameters.AddWithValue("@labelHeight", DbValue(printer.LabelHeightMm));
+        cmd.Parameters.AddWithValue("@gapSize", DbValue(printer.GapSizeMm));
+        cmd.Parameters.AddWithValue("@sensorType", printer.SensorType?.ToString().ToLowerInvariant() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("@printSpeed", DbValue(printer.PrintSpeed));
+        cmd.Parameters.AddWithValue("@printDarkness", DbValue(printer.PrintDarkness));
+        cmd.Parameters.AddWithValue("@horizontalOffset", printer.HorizontalOffsetMm);
+        cmd.Parameters.AddWithValue("@verticalOffset", printer.VerticalOffsetMm);
+        cmd.Parameters.AddWithValue("@finishingMode", printer.FinishingMode.ToString().ToLowerInvariant());
+        cmd.Parameters.AddWithValue("@copies", printer.NumberOfCopies);
+        cmd.Parameters.AddWithValue("@isDefaultLabel", printer.IsDefaultLabelPrinter);
+    }
+
+    private static object DbValue(object? value) => value ?? DBNull.Value;
+
     private NetworkPrinter MapPrinter(IDataReader reader)
     {
         return new NetworkPrinter
@@ -656,10 +819,54 @@ public class NetworkPrinterDatabaseService
             DisplayOrder = reader.GetInt32(reader.GetOrdinal("display_order")),
             Notes = reader.IsDBNull(reader.GetOrdinal("notes")) ? null : reader.GetString(reader.GetOrdinal("notes")),
             PrintGroupId = reader.IsDBNull(reader.GetOrdinal("print_group_id")) ? null : reader.GetString(reader.GetOrdinal("print_group_id")),
+            Technology = ReadNullableString(reader, "technology"),
+            Manufacturer = ReadNullableString(reader, "manufacturer"),
+            ModelCode = ReadNullableString(reader, "model_code"),
+            Protocol = ReadNullableString(reader, "protocol"),
+            ResolutionDpi = ReadNullableInt(reader, "resolution_dpi"),
+            PrintingMethod = ReadNullableString(reader, "printing_method"),
+            MaximumPrintWidthMm = ReadNullableDecimal(reader, "max_print_width_mm"),
+            SupportedMedia = ReadNullableString(reader, "supported_media"),
+            Transport = ReadNullableString(reader, "transport"),
+            WindowsDriver = ReadNullableString(reader, "windows_driver"),
+            LabelProfile = ReadNullableString(reader, "label_profile"),
+            MediaWidthMm = ReadNullableDecimal(reader, "media_width_mm"),
+            LabelWidthMm = ReadNullableDecimal(reader, "label_width_mm"),
+            LabelHeightMm = ReadNullableDecimal(reader, "label_height_mm"),
+            GapSizeMm = ReadNullableDecimal(reader, "gap_size_mm"),
+            SensorType = ParseNullableEnum<LabelSensorType>(ReadNullableString(reader, "sensor_type")),
+            PrintSpeed = ReadNullableInt(reader, "print_speed"),
+            PrintDarkness = ReadNullableInt(reader, "print_darkness"),
+            HorizontalOffsetMm = ReadNullableDecimal(reader, "horizontal_offset_mm") ?? 0,
+            VerticalOffsetMm = ReadNullableDecimal(reader, "vertical_offset_mm") ?? 0,
+            FinishingMode = ParseNullableEnum<LabelFinishingMode>(ReadNullableString(reader, "finishing_mode")) ?? LabelFinishingMode.TearOff,
+            NumberOfCopies = ReadNullableInt(reader, "number_of_copies") ?? 1,
+            IsDefaultLabelPrinter = ReadNullableBoolean(reader, "is_default_label_printer"),
             CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
             UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"))
         };
     }
+
+    private static string? ReadNullableString(IDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static decimal? ReadNullableDecimal(IDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
+    }
+
+    private static bool ReadNullableBoolean(IDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return !reader.IsDBNull(ordinal) && reader.GetBoolean(ordinal);
+    }
+
+    private static TEnum? ParseNullableEnum<TEnum>(string? value) where TEnum : struct, Enum =>
+        Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : null;
 
     private PrintJob MapPrintJob(IDataReader reader)
     {

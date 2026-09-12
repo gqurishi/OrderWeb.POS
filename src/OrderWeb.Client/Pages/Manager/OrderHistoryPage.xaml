@@ -13,12 +13,12 @@
         <BackButtonBehavior IsVisible="False" IsEnabled="False" />
     </Shell.BackButtonBehavior>
     <Grid RowDefinitions="Auto,*" BackgroundColor="#F8F9FA">
-        <layout:ClientTopBar x:Name="TopBar" />
+        <layout:ClientTopBar x:Name="TopBar" ZIndex="5" />
 
         <!-- Same SharedUI board as Mother Order History. -->
         <sharedViews:OrderHistoryBoardView x:Name="Board" Grid.Row="1" />
 
-        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" ZIndex="6" IsVisible="False" BackgroundColor="Transparent">
             <BoxView BackgroundColor="Transparent">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackdropTapped" />

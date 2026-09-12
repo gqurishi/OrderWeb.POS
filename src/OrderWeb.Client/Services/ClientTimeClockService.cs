@@ -3,6 +3,7 @@ using SQLite;
 
 namespace OrderWeb.Client.Services;
 
+/// <summary>Local cache only. Staff Clock on the login screen uses <see cref="MotherTimeClockClient"/>.</summary>
 public sealed class ClientTimeClockService
 {
     private readonly SQLiteAsyncConnection _database;

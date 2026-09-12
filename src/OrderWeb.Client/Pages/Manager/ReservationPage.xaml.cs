@@ -335,8 +335,9 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private async void OnCalendarDaySelected(object sender, SelectionChangedEventArgs e)
     {
-        if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day)
+        if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day || day.IsPlaceholder)
         {
+            Reservation.ClearCalendarSelection();
             return;
         }
 
@@ -374,6 +375,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private async Task OpenSidebarAsync()
     {
+        SidebarLayer.InputTransparent = false;
         SidebarLayer.IsVisible = true;
         Sidebar.TranslationX = -280;
         await Sidebar.TranslateTo(0, 0, 180, Easing.CubicOut);
@@ -383,6 +385,7 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
     {
         await Sidebar.TranslateTo(-280, 0, 160, Easing.CubicIn);
         SidebarLayer.IsVisible = false;
+        SidebarLayer.InputTransparent = true;
     }
 
     private async Task NavigateFromSidebarAsync(string menu)
@@ -427,24 +430,12 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private void RefreshCalendar()
     {
-        CalendarDays.Clear();
-        var firstOfMonth = _displayedMonth.Date;
-        var offset = ((int)firstOfMonth.DayOfWeek + 6) % 7;
-        var gridStart = firstOfMonth.AddDays(-offset);
         var counts = _allReservations
             .GroupBy(row => row.Date.Date)
             .ToDictionary(group => group.Key, group => group.Count());
 
-        for (var index = 0; index < 42; index++)
-        {
-            var date = gridStart.AddDays(index);
-            counts.TryGetValue(date.Date, out var count);
-            CalendarDays.Add(new ReservationCalendarDay(
-                date,
-                date.Month == _displayedMonth.Month,
-                date.Date == _selectedDate.Date,
-                count));
-        }
+        ReservationCalendarDay.FillCurrentMonth(CalendarDays, _displayedMonth, _selectedDate, counts);
+        Reservation.FitCalendarHeight(CalendarDays.Count);
     }
 
     private static ReservationRow ToReservationRow(MotherReservationDto reservation)

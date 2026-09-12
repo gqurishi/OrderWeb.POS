@@ -4,6 +4,8 @@
 
 Client talks only to Mother. Mother talks to MariaDB, printers, and cloud. Mother decides what each Client can see and do. Web orders stay on Mother. Reservations may go to Client.
 
+The detailed Mother-owned label-printing boundaries, durable queue semantics, and vendor-neutral extension model are defined in `docs/TOSHIBA_BFV4D_PHASE_3_PRINTING_ARCHITECTURE.md`.
+
 There is one Mother POS per restaurant. Client POS never stores OrderWeb cloud credentials and never calls the cloud. Network and IP printers are configured and driven on Mother only.
 
 The machine-readable copy of these lists lives in `OrderWeb.Contracts.Access.ClientAccessPolicy`.

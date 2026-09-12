@@ -17,6 +17,32 @@ public class NetworkPrinter
     public NetworkPrinterType PrinterType { get; set; } = NetworkPrinterType.Receipt;
     public PaperWidth PaperWidth { get; set; } = PaperWidth.Mm80;
     public string? PrintGroupId { get; set; } // Link to print_groups table
+
+    // Structured label-printer configuration. These values are ignored for
+    // receipt/kitchen printers and are owned by Mother POS.
+    public string? Technology { get; set; }
+    public string? Manufacturer { get; set; }
+    public string? ModelCode { get; set; }
+    public string? Protocol { get; set; }
+    public int? ResolutionDpi { get; set; }
+    public string? PrintingMethod { get; set; }
+    public decimal? MaximumPrintWidthMm { get; set; }
+    public string? SupportedMedia { get; set; }
+    public string? Transport { get; set; }
+    public string? WindowsDriver { get; set; }
+    public string? LabelProfile { get; set; }
+    public decimal? MediaWidthMm { get; set; }
+    public decimal? LabelWidthMm { get; set; }
+    public decimal? LabelHeightMm { get; set; }
+    public decimal? GapSizeMm { get; set; }
+    public LabelSensorType? SensorType { get; set; }
+    public int? PrintSpeed { get; set; }
+    public int? PrintDarkness { get; set; }
+    public decimal HorizontalOffsetMm { get; set; }
+    public decimal VerticalOffsetMm { get; set; }
+    public LabelFinishingMode FinishingMode { get; set; } = LabelFinishingMode.TearOff;
+    public int NumberOfCopies { get; set; } = 1;
+    public bool IsDefaultLabelPrinter { get; set; }
     
     // Features
     public bool HasCashDrawer { get; set; }
@@ -58,6 +84,7 @@ public class NetworkPrinter
     {
         PrinterBrand.Epson => "Epson",
         PrinterBrand.Star => "Star",
+        PrinterBrand.Toshiba => "Toshiba",
         PrinterBrand.Other => "Other",
         _ => "Unknown"
     };
@@ -70,7 +97,21 @@ public enum PrinterBrand
 {
     Epson,
     Star,
+    Toshiba,
     Other
+}
+
+public enum LabelSensorType
+{
+    Gap,
+    BlackMark,
+    Continuous
+}
+
+public enum LabelFinishingMode
+{
+    TearOff,
+    Cutter
 }
 
 /// <summary>

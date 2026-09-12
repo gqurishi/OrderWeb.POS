@@ -32,7 +32,7 @@ public partial class GiftCardPage : ContentPage
         _giftCards = new MotherGiftCardClient(_cache, _offlinePolicy);
 
         TopBar.MenuClicked += async (_, _) => await OpenSidebarAsync();
-        TopBar.LogoutClicked += async (_, _) => await ClientSignOut.RequestAsync(this);
+        TopBar.LogoutClicked += async (_, _) => await SignOutFromHeaderAsync();
         Sidebar.MenuItemSelected += async (_, menu) => await NavigateFromSidebarAsync(menu);
 
         Gift.FlowChanged += (_, _) => TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
@@ -46,6 +46,12 @@ public partial class GiftCardPage : ContentPage
 
         Gift.ShowFlow(GiftCardFlowKind.Redeem);
         TopBar.SetPageTitle($"Gift Cards - {Gift.FlowTitle}");
+        TopBar.ZIndex = 5;
+    }
+
+    private async Task SignOutFromHeaderAsync()
+    {
+        await ClientSignOut.RequestAsync(this);
     }
 
     protected override async void OnAppearing()

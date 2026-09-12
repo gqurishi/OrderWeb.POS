@@ -113,6 +113,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
             app.MapPost("/api/client/reservations/sync", HandleSyncReservationsAsync);
             app.MapPost("/api/client/login", HandleLoginAsync);
+            app.MapPost("/api/client/time-clock/status", context => HandleTimeClockAsync(context, clockOut: null));
+            app.MapPost("/api/client/time-clock/clock-in", context => HandleTimeClockAsync(context, clockOut: false));
+            app.MapPost("/api/client/time-clock/clock-out", context => HandleTimeClockAsync(context, clockOut: true));
             app.MapGet("/api/client/access", HandleClientAccessAsync);
             app.MapGet("/api/client/cashier/authorization", HandleCashierAuthorizationAsync);
             app.MapGet("/api/client/cashier/dashboard", HandleCashierDashboardAsync);
@@ -2119,6 +2122,138 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName
             }
         });
+    }
+
+    /// <summary>
+    /// Staff clock from a paired Client. Validates the PIN only — does not start a till login.
+    /// Writes the same Mother time-clock rows Mother Staff Clock uses.
+    /// </summary>
+    private async Task HandleTimeClockAsync(HttpContext context, bool? clockOut)
+    {
+        if (!TryAllowRequest(context, "time-clock", 20, TimeSpan.FromMinutes(1)))
+        {
+            await WriteRateLimitedAsync(context);
+            return;
+        }
+
+        var request = await ReadJsonAsync<ClientTimeClockRequestDto>(context);
+        if (request == null || string.IsNullOrWhiteSpace(request.Pin))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new ClientTimeClockResponseDto(
+                false,
+                "PIN is required.",
+                "PIN is required.",
+                TimeClockErrorCodes.Validation));
+            return;
+        }
+
+        var terminal = await ValidateTerminalTokenAsync(context, request.TerminalToken);
+        if (!terminal.Success)
+        {
+            await WriteJsonAsync(context, terminal.StatusCode, new ClientTimeClockResponseDto(
+                false,
+                terminal.Message,
+                terminal.Message,
+                TimeClockErrorCodes.OfflineMother));
+            return;
+        }
+
+        if (!TryValidateRequestCompatibility(context, out var compatibilityMessage))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.UpgradeRequired, new ClientTimeClockResponseDto(
+                false,
+                compatibilityMessage,
+                compatibilityMessage,
+                TimeClockErrorCodes.Validation));
+            return;
+        }
+
+        var pin = await _authenticationService.ValidatePinAsync(request.Pin.Trim());
+        if (!pin.Success || pin.User == null)
+        {
+            var message = string.IsNullOrWhiteSpace(pin.Message) ? "Wrong PIN" : pin.Message;
+            await WriteJsonAsync(context, HttpStatusCode.Unauthorized, new ClientTimeClockResponseDto(
+                false,
+                message,
+                message,
+                TimeClockErrorCodes.WrongPin));
+            return;
+        }
+
+        var clock = new TimeClockService(_databaseService);
+        var action = clockOut switch
+        {
+            false => "client_time_clock_in",
+            true => "client_time_clock_out",
+            _ => "client_time_clock_status"
+        };
+
+        if (clockOut == false)
+        {
+            var result = await clock.ClockInAsync(pin.User, terminal.TerminalName);
+            var state = await clock.GetDashboardStateAsync(pin.User);
+            await AuditSensitiveOperationAsync(terminal.TerminalId, pin.User.Id, action, result.Success ? "success" : "denied");
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.Conflict,
+                ShiftResponse(pin.User, state, result.Success, result.Message, result.Success ? null : TimeClockErrorCodes.AlreadyClockedIn));
+            return;
+        }
+
+        if (clockOut == true)
+        {
+            var result = await clock.ClockOutAsync(pin.User, terminal.TerminalName);
+            var state = await clock.GetDashboardStateAsync(pin.User);
+            await AuditSensitiveOperationAsync(terminal.TerminalId, pin.User.Id, action, result.Success ? "success" : "denied");
+            await WriteJsonAsync(
+                context,
+                result.Success ? HttpStatusCode.OK : HttpStatusCode.Conflict,
+                ShiftResponse(pin.User, state, result.Success, result.Message, result.Success ? null : TimeClockErrorCodes.NotClockedIn));
+            return;
+        }
+
+        var dashboard = await clock.GetDashboardStateAsync(pin.User);
+        if (dashboard == null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new ClientTimeClockResponseDto(
+                false,
+                "Time clock is not available. Check database connection on the mother terminal.",
+                "Time clock is not available. Check database connection on the mother terminal.",
+                TimeClockErrorCodes.Unavailable,
+                StaffName: string.IsNullOrWhiteSpace(pin.User.Name) ? pin.User.Username : pin.User.Name));
+            return;
+        }
+
+        await WriteJsonAsync(context, HttpStatusCode.OK, ShiftResponse(pin.User, dashboard, true, null, null));
+    }
+
+    private static ClientTimeClockResponseDto ShiftResponse(
+        User user,
+        TimeClockDashboardState? state,
+        bool success,
+        string? message,
+        string? errorCode)
+    {
+        var name = string.IsNullOrWhiteSpace(user.Name) ? user.Username : user.Name;
+        if (state == null)
+        {
+            return new ClientTimeClockResponseDto(
+                success,
+                message,
+                success ? null : message,
+                errorCode,
+                name);
+        }
+
+        return new ClientTimeClockResponseDto(
+            success,
+            message,
+            success ? null : message,
+            errorCode,
+            string.IsNullOrWhiteSpace(state.User.Name) ? state.User.Username : state.User.Name,
+            state.IsClockedIn,
+            state.IsClockedIn ? state.OpenSession!.ClockInAt.ToString("h:mm tt") : null,
+            state.TodayHoursDisplay);
     }
 
     private async Task HandleClientAccessAsync(HttpContext context)
@@ -4361,7 +4496,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         try
         {
-            var snapshot = await zReports.GetSummaryAsync(DateTime.Today, includeTopItems: false);
+            var snapshot = await zReports.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), includeTopItems: false);
             await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "cashier_dashboard_viewed", "success");
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
@@ -4409,7 +4544,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
         try
         {
-            var snapshot = await zReports.GetSummaryAsync(DateTime.Today, includeTopItems: false);
+            var snapshot = await zReports.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), includeTopItems: false);
             await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_previewed", "success");
             await WriteJsonAsync(context, HttpStatusCode.OK, new
             {
@@ -4453,7 +4588,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             var reports = ServiceHelper.GetService<ZReportService>(); var printer = ServiceHelper.GetService<ZReportPrintService>();
             if (reports is null || printer is null) { await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new { success = false, errorCode = "printer_unavailable", message = "Mother print service is unavailable." }); return; }
-            var snapshot = await reports.GetSummaryAsync(DateTime.Today, includeTopItems: false); snapshot.IsReprint = false;
+            var snapshot = await reports.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), includeTopItems: false); snapshot.IsReprint = false;
             var result = await printer.PrintAsync(snapshot, false, session.UserId);
             await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "z_report_printed", result.Success ? "success" : "failed");
             await WriteJsonAsync(context, result.Success ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable, new { success = result.Success, printerName = result.PrinterName, message = result.Message, reportReference = snapshot.ReportReference, printedUtc = DateTimeOffset.UtcNow });

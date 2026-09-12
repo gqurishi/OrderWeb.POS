@@ -164,7 +164,7 @@
                             <Border.Shadow>
                                 <Shadow Brush="#0A000000" Offset="0,2" Radius="8" Opacity="0.08"/>
                             </Border.Shadow>
-                            <VerticalStackLayout Spacing="8">
+                            <VerticalStackLayout x:Name="GeneralBrandSection" Spacing="8">
                                 <HorizontalStackLayout Spacing="8">
                                     <BoxView WidthRequest="10" HeightRequest="10" CornerRadius="5" BackgroundColor="#22C55E" VerticalOptions="Center"/>
                                     <Label Text="ONLINE" FontSize="11" FontAttributes="Bold" TextColor="#64748B" CharacterSpacing="1"/>
@@ -650,8 +650,100 @@
                                 </FlexLayout>
                             </VerticalStackLayout>
 
+                            <!-- Structured label-printer selection and media settings -->
+                            <VerticalStackLayout x:Name="LabelConfigurationSection" Spacing="14" IsVisible="False">
+                                <Label Text="Label Printer Configuration" FontSize="15" FontAttributes="Bold" TextColor="#0F172A"/>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="6">
+                                        <Label Text="Technology" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                        <Picker x:Name="LabelTechnologyPicker" Title="Select technology" SelectedIndex="0" IsEnabled="False">
+                                            <Picker.Items><x:String>Label Printer</x:String></Picker.Items>
+                                        </Picker>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                        <Label Text="Manufacturer" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                        <Picker x:Name="LabelManufacturerPicker" Title="Select manufacturer" SelectedIndex="0" IsEnabled="False">
+                                            <Picker.Items><x:String>Toshiba</x:String></Picker.Items>
+                                        </Picker>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Model" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                    <Picker x:Name="LabelModelPicker" Title="Select model" SelectedIndex="0" SelectionChanged="OnLabelModelChanged">
+                                        <Picker.Items><x:String>Toshiba B-FV4D-GS14 LAN</x:String></Picker.Items>
+                                    </Picker>
+                                </VerticalStackLayout>
+
+                                <Border BackgroundColor="#F0FDF4" Stroke="#BBF7D0" StrokeThickness="1" Padding="12">
+                                    <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,*" RowSpacing="5" ColumnSpacing="10">
+                                        <Label Grid.Row="0" Grid.Column="0" Text="Protocol: TPCL" FontSize="11" TextColor="#166534"/>
+                                        <Label Grid.Row="0" Grid.Column="1" Text="Resolution: 203 dpi" FontSize="11" TextColor="#166534"/>
+                                        <Label Grid.Row="1" Grid.Column="0" Text="Direct thermal" FontSize="11" TextColor="#166534"/>
+                                        <Label Grid.Row="1" Grid.Column="1" Text="Raw TCP/IP : 9100" FontSize="11" TextColor="#166534"/>
+                                        <Label Grid.Row="2" Grid.ColumnSpan="2" Text="Maximum print width: 108 mm · Gap / black mark / continuous" FontSize="11" TextColor="#166534"/>
+                                        <Label Grid.Row="3" Grid.ColumnSpan="2" Text="Windows fallback: Toshiba B-FV4 203 dpi TPCL" FontSize="11" TextColor="#166534"/>
+                                    </Grid>
+                                </Border>
+
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="Label Profile" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
+                                    <Picker x:Name="LabelProfilePicker" Title="Select label profile" SelectionChanged="OnLabelProfileChanged">
+                                        <Picker.Items>
+                                            <x:String>60 × 40 mm — Kitchen container</x:String>
+                                            <x:String>Custom certified profile</x:String>
+                                        </Picker.Items>
+                                    </Picker>
+                                </VerticalStackLayout>
+
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Media width (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="MediaWidthEntry" Keyboard="Numeric" Text="60"/></VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Label width (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="LabelWidthEntry" Keyboard="Numeric" Text="60"/></VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="2" Spacing="5"><Label Text="Label height (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="LabelHeightEntry" Keyboard="Numeric" Text="40"/></VerticalStackLayout>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="5">
+                                        <Label Text="Sensor type" FontSize="11" TextColor="#475569"/>
+                                        <Picker x:Name="SensorTypePicker" SelectedIndex="0" SelectionChanged="OnSensorTypeChanged">
+                                            <Picker.Items><x:String>Gap</x:String><x:String>Black mark</x:String><x:String>Continuous</x:String></Picker.Items>
+                                        </Picker>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="5">
+                                        <Label Text="Gap / mark size (mm)" FontSize="11" TextColor="#475569"/>
+                                        <Entry x:Name="GapSizeEntry" Keyboard="Numeric" Text="3"/>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Print speed (ips)" FontSize="11" TextColor="#475569"/><Entry x:Name="PrintSpeedEntry" Keyboard="Numeric" Text="4"/></VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Print darkness (-10 to 10)" FontSize="11" TextColor="#475569"/><Entry x:Name="PrintDarknessEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Horizontal offset (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="HorizontalOffsetEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Vertical offset (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="VerticalOffsetEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="5">
+                                        <Label Text="Finish" FontSize="11" TextColor="#475569"/>
+                                        <Picker x:Name="FinishingModePicker" SelectedIndex="0">
+                                            <Picker.Items><x:String>Tear-off</x:String><x:String>Cutter</x:String></Picker.Items>
+                                        </Picker>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Number of copies" FontSize="11" TextColor="#475569"/><Entry x:Name="NumberOfCopiesEntry" Keyboard="Numeric" Text="1"/></VerticalStackLayout>
+                                </Grid>
+
+                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="CutterInstalledCheckbox"/><Label Text="Optional cutter is physically installed and verified" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
+                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="LabelEnabledCheckbox" IsChecked="True"/><Label Text="Printer enabled" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
+                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="DefaultLabelPrinterCheckbox"/><Label Text="Default label printer" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
+                            </VerticalStackLayout>
+
                             <!-- Paper Width -->
-                            <VerticalStackLayout Spacing="8">
+                            <VerticalStackLayout x:Name="GeneralPaperWidthSection" Spacing="8">
                                 <Label Text="Paper Width" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
                                 <HorizontalStackLayout Spacing="10">
                                     <Border x:Name="Width80Border" 
@@ -703,7 +795,7 @@
                             </VerticalStackLayout>
 
                             <!-- Features -->
-                            <VerticalStackLayout Spacing="12">
+                            <VerticalStackLayout x:Name="GeneralFeaturesSection" Spacing="12">
                                 <Label Text="Features" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
                                 
                                 <Border BackgroundColor="#F8FAFC" Padding="16" StrokeThickness="0">

@@ -274,8 +274,9 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private async void OnCalendarDaySelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day)
+        if (e.CurrentSelection.FirstOrDefault() is not ReservationCalendarDay day || day.IsPlaceholder)
         {
+            Reservation.ClearCalendarSelection();
             return;
         }
 
@@ -529,26 +530,12 @@ public partial class ReservationPage : ContentPage, INotifyPropertyChanged
 
     private void BuildCalendarDays()
     {
-        CalendarDays.Clear();
-
-        var monthStart = new DateTime(_displayedMonth.Year, _displayedMonth.Month, 1);
-        var offset = ((int)monthStart.DayOfWeek + 6) % 7;
-        var gridStart = monthStart.AddDays(-offset);
         var counts = _allReservations
             .GroupBy(row => row.Date.Date)
             .ToDictionary(group => group.Key, group => group.Count());
 
-        for (var i = 0; i < 42; i++)
-        {
-            var date = gridStart.AddDays(i);
-            counts.TryGetValue(date.Date, out var count);
-
-            CalendarDays.Add(new ReservationCalendarDay(
-                date,
-                date.Month == _displayedMonth.Month,
-                date.Date == _selectedDate.Date,
-                count));
-        }
+        ReservationCalendarDay.FillCurrentMonth(CalendarDays, _displayedMonth, _selectedDate, counts);
+        Reservation.FitCalendarHeight(CalendarDays.Count);
     }
 
     public new event PropertyChangedEventHandler? PropertyChanged;

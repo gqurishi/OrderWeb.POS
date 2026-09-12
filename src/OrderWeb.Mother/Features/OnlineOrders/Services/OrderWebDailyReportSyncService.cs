@@ -166,10 +166,10 @@ public sealed class OrderWebDailyReportSyncService
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT DISTINCT DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date
+            SELECT DISTINCT DATE(DATE_SUB(o.created_at, INTERVAL 3 HOUR)) AS business_date
             FROM orders o
             LEFT JOIN orderweb_daily_report_sync_log sync_log
-              ON sync_log.report_date = DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR))
+              ON sync_log.report_date = DATE(DATE_SUB(o.created_at, INTERVAL 3 HOUR))
              AND sync_log.success = 1
             WHERE COALESCE(o.source_channel, 'local') = 'local'
               AND o.created_at >= @earliestStart

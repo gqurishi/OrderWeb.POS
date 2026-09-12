@@ -133,6 +133,81 @@ Preferred initial size:
 
 **60 mm x 40 mm**
 
+### Certified pilot media specification
+
+The first supplier sample and pilot roll should meet all of the following:
+
+| Property | Required pilot specification |
+|---|---|
+| Construction | Die-cut pressure-sensitive labels on a release liner |
+| Print technology | Direct thermal; no ribbon |
+| Finished label size | 60 mm wide x 40 mm high, in the feed orientation approved during calibration |
+| Liner width | Within Toshiba's 25.4-118 mm supported backing-paper range, with enough edge margin for reliable feeding |
+| Label/liner thickness | Within Toshiba's published 0.06-0.19 mm media range |
+| Detection | Clear gap suitable for the fixed transmissive gap sensor |
+| Gap | Supplier-declared and consistent across the roll; the exact measured value must be recorded in the media profile |
+| Roll direction | Inside- or outside-wound only after a physical feed test; record the certified direction |
+| Core | 25.4 mm or 38.1 mm unless the correct optional hardware is supplied for another core |
+| Maximum roll OD | 127 mm with the standard internal roll holder |
+| Face material | Top-coated direct-thermal paper or direct-thermal film selected for the actual kitchen conditions |
+| Adhesive | Supplier-rated for the actual plastic, card, paper, or foil packaging and its application temperature |
+| Colour | White face stock with black-only printing for the first release |
+| Food use | Applied to the outside of packaging; no direct food contact unless the complete label construction is documented as compliant for that use |
+
+### Face-material decision
+
+Use top-coated direct-thermal paper for the first pilot only if labels remain dry, are applied to clean containers, and need to remain readable for only the preparation/delivery period.
+
+Use a top-coated direct-thermal synthetic/film construction when the restaurant regularly has condensation, grease, refrigeration, abrasion, or longer handling times. Film will normally cost more, so it should be an additional certified profile rather than the default before testing demonstrates a need.
+
+### Adhesive profiles
+
+Do not describe an adhesive simply as "permanent". The supplier must identify the label face/adhesive/liner product combination and provide its technical data sheet.
+
+The first certified profile should target:
+
+- clean PP/PET takeaway-container lids;
+- coated or uncoated card containers;
+- paper bags;
+- external foil-container lids or sleeves;
+- application to warm, room-temperature, and chilled surfaces expected in the pilot restaurant;
+- short food-service life from preparation through collection/delivery;
+- resistance to normal kitchen humidity and light condensation.
+
+If one adhesive cannot perform reliably across those surfaces and temperatures, create separate media profiles rather than pretending one roll is universal:
+
+- `Container 60x40 General`;
+- `Container 60x40 Chill/Condensation`;
+- `Bag/Card 60x40`.
+
+### Application and service temperatures
+
+The supplier data sheet must state both values separately:
+
+- minimum application temperature: the surface temperature at the moment staff attach the label;
+- service temperature range: the temperatures the attached label can withstand afterward.
+
+A low service-temperature claim does not prove that a label will adhere when first applied to a cold, wet container. The application-temperature limit must also pass the restaurant test.
+
+### Secondary compact profile
+
+`51 mm x 30 mm` may be introduced after the 60 x 40 mm profile passes. It is suitable only when the content-fit test proves that the complete item name, quantity, essential modifiers, order reference, and time remain legible without unsafe truncation.
+
+The compact profile must have its own coordinates, wrapping rules, media calibration, supplier stock code, and acceptance result. It must not be implemented by merely scaling down the 60 x 40 mm layout.
+
+### Information-fit rule
+
+The 60 x 40 mm template is the default kitchen-container profile. The content hierarchy is:
+
+1. quantity and item name;
+2. essential modifiers/removals;
+3. kitchen note;
+4. order/table/collection/delivery reference;
+5. preparation time;
+6. short, policy-approved allergen instruction.
+
+Critical information must wrap or move to an approved larger template. It must never disappear through silent clipping or automatic font reduction below the certified readable size.
+
 Before purchasing production quantities, the exact stock must pass:
 
 - gap-sensor calibration;
@@ -145,6 +220,38 @@ Before purchasing production quantities, the exact stock must pass:
 - readability for the expected preparation and delivery period.
 
 The supplier must provide the label-stock technical data sheet, adhesive type, operating temperature, application temperature, and food-contact statement.
+
+### Container test matrix
+
+Test at least ten labels for each container/surface condition used by the pilot restaurant:
+
+| Surface | Conditions to test | Pass requirement |
+|---|---|---|
+| PP/PET plastic lid | Dry at room temperature; warm; chilled; light condensation | No lifting edge, sliding, or loss of readability during the full service period |
+| Coated card | Dry and warm | Secure adhesion without damaging information during handling |
+| Uncoated card/paper bag | Dry and slightly rough | Secure adhesion without curling or release |
+| Foil container/lid | Dry; warm; light surface contamination representative of use | Secure adhesion on the intended external application area |
+| Cold-storage container, if used | Chilled surface at the real application temperature | Immediate tack and continued adhesion through the intended storage/delivery period |
+
+For each test, inspect immediately after application, after 5 minutes, after 30 minutes, and at the maximum expected delivery or holding time. Record edge lift, sliding, tearing, print darkening/fading, moisture damage, removal behaviour, and adhesive residue.
+
+### Supplier sample gate
+
+Do not buy production quantities until the supplier provides:
+
+- at least one sample roll of the exact proposed construction;
+- manufacturer and exact stock/product code;
+- technical data sheet;
+- face material, adhesive and liner identification;
+- application and service temperature values;
+- roll direction, core size and outside diameter;
+- label thickness and liner width;
+- adhesive suitability claims for the named packaging substrates;
+- food-packaging/direct-food-contact statement;
+- shelf-life and storage conditions;
+- batch or lot traceability.
+
+Changing supplier, face stock, adhesive, liner, dimensions, gap, core, or winding direction creates a new media revision and requires calibration and container testing again.
 
 ## Tear-off and cutter decision
 

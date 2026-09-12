@@ -183,8 +183,7 @@ public sealed class ZReportService
 
         snapshot.ExpectedCashInDrawer = openingFloat
             + snapshot.CashTotal
-            - snapshot.TillNetOut
-            + snapshot.RefundTotal;
+            - snapshot.TillNetOut;
 
         if (snapshot.LastCashCountAmount.HasValue)
         {
@@ -515,7 +514,7 @@ public sealed class ZReportService
 
         await using var connection = await _databaseService.GetConnectionAsync();
 
-        // POS / local: still paid sales only (cash till accuracy).
+        // POS / local: paid till sales inside the 3:00–3:00 trading day only.
         await using (var localCommand = connection.CreateCommand())
         {
             localCommand.CommandText = $@"
@@ -538,22 +537,19 @@ public sealed class ZReportService
             }
         }
 
-        // Online: website orders for the trading day, plus any still-open web orders
-        // (so Dashboard Online Sales shows £ even before the till closes the order).
+        // Online: website orders placed in this 3:00–3:00 day only. Older open orders stay off today's tile.
         await using (var webCommand = connection.CreateCommand())
         {
-            webCommand.CommandText = $@"
+            webCommand.CommandText = @"
                 SELECT
                     COUNT(*) AS order_count,
                     COALESCE(SUM(total_amount), 0) AS gross_sales
                 FROM orders
-                WHERE LOWER(COALESCE(source_channel, '')) IN ('web', 'online')
+                WHERE created_at >= @startDate
+                  AND created_at < @endDate
+                  AND LOWER(COALESCE(source_channel, '')) IN ('web', 'online')
                   AND COALESCE(status, '') NOT IN ('cancelled', 'voided')
-                  AND COALESCE(local_lifecycle_state, '') <> 'voided'
-                  AND (
-                      (created_at >= @startDate AND created_at < @endDate)
-                      OR LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided')
-                  )";
+                  AND COALESCE(local_lifecycle_state, '') <> 'voided'";
             webCommand.Parameters.AddWithValue("@startDate", start);
             webCommand.Parameters.AddWithValue("@endDate", end);
 

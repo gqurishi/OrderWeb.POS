@@ -100,7 +100,7 @@ public class DatabaseCleanupService
             AND EXISTS (
                 SELECT 1
                 FROM orderweb_daily_report_sync_log report_sync
-                WHERE report_sync.report_date = DATE(DATE_SUB({prefix}created_at, INTERVAL 1 HOUR))
+                WHERE report_sync.report_date = DATE(DATE_SUB({prefix}created_at, INTERVAL 3 HOUR))
                   AND report_sync.success = 1
             )";
     }
@@ -173,7 +173,7 @@ public class DatabaseCleanupService
                     'local_retention_purge', o.id, o.order_id, o.order_number, o.cloud_order_id,
                     COALESCE(o.source_channel, 'local'), o.status, o.local_lifecycle_state,
                     COALESCE(o.total_amount, 0.00), o.payment_method,
-                    DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)),
+                    DATE(DATE_SUB(o.created_at, INTERVAL 3 HOUR)),
                     'Local order exceeded rolling two-year retention; daily financial report confirmed in OrderWeb.net.',
                     'System retention cleanup', @terminalName
                 FROM orders o

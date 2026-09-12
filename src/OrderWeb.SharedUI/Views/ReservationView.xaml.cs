@@ -39,11 +39,14 @@ public partial class ReservationView : ContentView
 
         MainLayoutGrid.ColumnDefinitions[0].Width = pageWidth switch
         {
-            < 1000 => new GridLength(240),
-            < 1250 => new GridLength(270),
-            _ => new GridLength(300)
+            < 1000 => new GridLength(248),
+            < 1250 => new GridLength(312),
+            _ => new GridLength(348)
         };
     }
+
+    public void FitCalendarHeight(int cellCount) =>
+        CalendarCollectionView.HeightRequest = ReservationCalendarDay.HeightForCellCount(cellCount);
 
     private void OnUpdateClicked(object? sender, EventArgs e) => UpdateRequested?.Invoke(this, EventArgs.Empty);
     private void OnNewReservationClicked(object? sender, EventArgs e) => NewReservationRequested?.Invoke(this, EventArgs.Empty);

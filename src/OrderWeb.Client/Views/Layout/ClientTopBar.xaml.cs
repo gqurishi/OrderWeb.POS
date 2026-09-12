@@ -114,9 +114,47 @@ public partial class ClientTopBar : ContentView
         MenuClicked?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnLogoutClicked(object sender, EventArgs e)
+    private bool _logoutBusy;
+
+    private async void OnLogoutClicked(object sender, EventArgs e)
     {
-        LogoutClicked?.Invoke(this, EventArgs.Empty);
+        if (_logoutBusy)
+        {
+            return;
+        }
+
+        _logoutBusy = true;
+        try
+        {
+            var page = FindHostPage();
+            if (page != null)
+            {
+                await ClientSignOut.RequestAsync(page);
+                return;
+            }
+
+            LogoutClicked?.Invoke(this, EventArgs.Empty);
+        }
+        finally
+        {
+            _logoutBusy = false;
+        }
+    }
+
+    private Page? FindHostPage()
+    {
+        Element? current = this;
+        while (current != null)
+        {
+            if (current is Page page)
+            {
+                return page;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 
     private void OnMinimizeClicked(object? sender, EventArgs e)

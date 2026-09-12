@@ -68,7 +68,7 @@ public partial class CashierDashboardPage : ContentPage
         }
 
         IdentityLabel.Text = $"{user.Name} · Cashier";
-        BusinessDateLabel.Text = $"Business date: {DateTime.Today:dddd, dd MMMM yyyy}";
+        BusinessDateLabel.Text = $"Business date: {TradingDayHelper.GetBusinessDate():dddd, dd MMMM yyyy}";
         _shellFrame.UserName = user.Name;
         _shellFrame.UserRole = "Cashier";
         _shellFrame.TerminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
@@ -78,7 +78,7 @@ public partial class CashierDashboardPage : ContentPage
 
     private async Task LoadSummaryAsync(User user)
     {
-        var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, user.Name, includeTopItems: false);
+        var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), user.Name, includeTopItems: false);
         TotalOrdersLabel.Text = snapshot.OrderCount.ToString();
         TotalSalesLabel.Text = $"£{snapshot.GrossSales:N2}";
         VoidsLabel.Text = snapshot.VoidCount.ToString();
@@ -100,7 +100,7 @@ public partial class CashierDashboardPage : ContentPage
             return;
         }
 
-        var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, user.Name, includeTopItems: false);
+        var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), user.Name, includeTopItems: false);
         var canPrint = await permissionService.HasCashierCapabilityAsync(CashierCapabilities.PrintZ);
         var printRequested = await new CashierZReportPreviewDialogPage(snapshot, canPrint).ShowAsync(Navigation);
         if (printRequested) OnPrintZReportClicked(sender, EventArgs.Empty);
@@ -121,7 +121,7 @@ public partial class CashierDashboardPage : ContentPage
         if (button != null) button.IsEnabled = false;
         try
         {
-            var snapshot = await _zReportService.GetSummaryAsync(DateTime.Today, user.Name, includeTopItems: false);
+            var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), user.Name, includeTopItems: false);
             snapshot.IsReprint = false;
             var result = await _zReportPrintService.PrintAsync(snapshot, includeDetailSlip: false, printedByUserId: user.Id);
             await AppAlertService.ShowAlertAsync(result.Success ? "Z Report Printed" : "Print Failed", result.Message);
@@ -197,7 +197,7 @@ public partial class CashierDashboardPage : ContentPage
 
         try
         {
-            var businessDate = DateTime.Today.AddDays(-1);
+            var businessDate = TradingDayHelper.GetBusinessDate().AddDays(-1);
             var snapshot = await _zReportService.GetSummaryAsync(businessDate, user.Name, includeTopItems: false);
             snapshot.IsReprint = true;
             var result = await _zReportPrintService.PrintAsync(snapshot, includeDetailSlip: false, printedByUserId: user.Id);

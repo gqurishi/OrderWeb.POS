@@ -79,7 +79,10 @@ public sealed class TimeClockService
         };
     }
 
-    public async Task<(bool Success, string Message)> ClockInAsync(User user)
+    public Task<(bool Success, string Message)> ClockInAsync(User user) =>
+        ClockInAsync(user, terminalName: null);
+
+    public async Task<(bool Success, string Message)> ClockInAsync(User user, string? terminalName)
     {
         var schema = await EnsureSchemaAsync();
         if (!schema.Success)
@@ -96,7 +99,9 @@ public sealed class TimeClockService
             return (false, $"Already clocked in at {existing.ClockInAt:h:mm tt}. Use Clock Out to finish your shift.");
         }
 
-        var terminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
+        var recordedTerminal = string.IsNullOrWhiteSpace(terminalName)
+            ? TerminalConfigurationService.GetConfiguration().TerminalName
+            : terminalName.Trim();
         const string sql = """
             INSERT INTO time_clock_sessions
                 (user_id, clock_in_at, terminal_in, business_date, status)
@@ -106,14 +111,17 @@ public sealed class TimeClockService
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@userId", user.Id);
-        command.Parameters.AddWithValue("@terminalName", terminalName);
+        command.Parameters.AddWithValue("@terminalName", recordedTerminal);
         command.Parameters.AddWithValue("@businessDate", businessDate);
         await command.ExecuteNonQueryAsync();
 
         return (true, $"Clocked in at {DateTime.Now:h:mm tt}.");
     }
 
-    public async Task<(bool Success, string Message)> ClockOutAsync(User user)
+    public Task<(bool Success, string Message)> ClockOutAsync(User user) =>
+        ClockOutAsync(user, terminalName: null);
+
+    public async Task<(bool Success, string Message)> ClockOutAsync(User user, string? terminalName)
     {
         var schema = await EnsureSchemaAsync();
         if (!schema.Success)
@@ -129,7 +137,9 @@ public sealed class TimeClockService
             return (false, "You are not clocked in.");
         }
 
-        var terminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
+        var recordedTerminal = string.IsNullOrWhiteSpace(terminalName)
+            ? TerminalConfigurationService.GetConfiguration().TerminalName
+            : terminalName.Trim();
         const string sql = """
             UPDATE time_clock_sessions
             SET clock_out_at = NOW(),
@@ -143,7 +153,7 @@ public sealed class TimeClockService
             """;
 
         await using var command = new MySqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@terminalOut", terminalName);
+        command.Parameters.AddWithValue("@terminalOut", recordedTerminal);
         command.Parameters.AddWithValue("@sessionId", openSession.Id);
         command.Parameters.AddWithValue("@userId", user.Id);
         var rows = await command.ExecuteNonQueryAsync();
@@ -280,7 +290,7 @@ public sealed class TimeClockService
             UPDATE time_clock_sessions
             SET clock_out_at = CASE
                     WHEN business_date < @currentBusinessDate
-                        THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00')
+                        THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '03:00:00')
                     ELSE NOW()
                 END,
                 worked_minutes = GREATEST(
@@ -290,7 +300,7 @@ public sealed class TimeClockService
                         clock_in_at,
                         CASE
                             WHEN business_date < @currentBusinessDate
-                                THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00')
+                                THEN TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '03:00:00')
                             ELSE NOW()
                         END)),
                 status = 'closed',
@@ -389,16 +399,16 @@ public sealed class TimeClockService
     {
         const string sql = """
             UPDATE time_clock_sessions
-            SET clock_out_at = TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00'),
+            SET clock_out_at = TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '03:00:00'),
                 worked_minutes = GREATEST(
                     1,
                     TIMESTAMPDIFF(
                         MINUTE,
                         clock_in_at,
-                        TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '01:00:00'))),
+                        TIMESTAMP(DATE_ADD(business_date, INTERVAL 1 DAY), '03:00:00'))),
                 status = 'closed',
                 terminal_out = COALESCE(NULLIF(terminal_out, ''), terminal_in),
-                adjustment_note = COALESCE(adjustment_note, 'Auto-closed at 1:00 AM trading day rollover'),
+                adjustment_note = COALESCE(adjustment_note, 'Auto-closed at 3:00 AM trading day rollover'),
                 updated_at = NOW()
             WHERE status = 'open'
               AND business_date < @currentBusinessDate

@@ -99,13 +99,13 @@ public sealed class ZReportSnapshot
     {
         get
         {
-            if (!SalesVsYesterdayPercent.HasValue)
+            if (!SalesVsYesterdayPercent.HasValue || YesterdayGrossSales.GetValueOrDefault() <= 0)
             {
-                return "No prior day data";
+                return "No sales yesterday";
             }
 
             var sign = SalesVsYesterdayPercent.Value >= 0 ? "+" : string.Empty;
-            return $"{sign}{SalesVsYesterdayPercent.Value:F1}% vs yesterday";
+            return $"{sign}{SalesVsYesterdayPercent.Value:F1}% · yesterday {FormatMoney(YesterdayGrossSales.GetValueOrDefault())}";
         }
     }
 

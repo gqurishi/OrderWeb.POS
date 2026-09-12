@@ -696,7 +696,7 @@ public sealed class DailyReportService
 
 		var bucketExpression = groupByHour
 			? "DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')"
-			: "DATE(DATE_SUB(created_at, INTERVAL 1 HOUR))";
+			: "DATE(DATE_SUB(created_at, INTERVAL 3 HOUR))";
 
 		var query = new StringBuilder($@"
 			SELECT
@@ -1940,7 +1940,7 @@ public sealed class DailyReportService
 					o.order_number,
 					o.cloud_order_id,
 					o.created_at,
-					DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date,
+					DATE(DATE_SUB(o.created_at, INTERVAL 3 HOUR)) AS business_date,
 					o.source_channel,
 					o.order_type,
 					o.status,
@@ -2016,7 +2016,7 @@ public sealed class DailyReportService
 					o.order_number,
 					o.cloud_order_id,
 					o.created_at,
-					DATE(DATE_SUB(o.created_at, INTERVAL 1 HOUR)) AS business_date,
+					DATE(DATE_SUB(o.created_at, INTERVAL 3 HOUR)) AS business_date,
 					o.source_channel,
 					o.order_type,
 					o.status,

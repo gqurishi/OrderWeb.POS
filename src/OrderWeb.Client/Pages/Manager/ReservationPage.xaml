@@ -12,8 +12,10 @@
     <Shell.BackButtonBehavior>
         <BackButtonBehavior IsVisible="False" IsEnabled="False" />
     </Shell.BackButtonBehavior>
-    <Grid x:Name="RootGrid" RowDefinitions="90,*" BackgroundColor="#F8FAFC">
+    <Grid x:Name="RootGrid" RowDefinitions="Auto,*" BackgroundColor="#F8FAFC">
         <layout:ClientTopBar x:Name="TopBar"
+                             Grid.Row="0"
+                             ZIndex="30"
                              RestaurantName="Reservation"
                              ShowConnectionStatus="True"
                              ConnectionStatus="Connected" />
@@ -23,7 +25,12 @@
                                      VerticalOptions="Fill"
                                      HorizontalOptions="Fill" />
 
-        <Grid x:Name="SidebarLayer" Grid.RowSpan="2" IsVisible="False" BackgroundColor="Transparent">
+        <Grid x:Name="SidebarLayer"
+              Grid.RowSpan="2"
+              ZIndex="10"
+              IsVisible="False"
+              InputTransparent="True"
+              BackgroundColor="Transparent">
             <BoxView BackgroundColor="Transparent">
                 <BoxView.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackdropTapped" />

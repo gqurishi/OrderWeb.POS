@@ -1,11 +1,15 @@
 namespace POS_in_NET.Services;
 
 /// <summary>
-/// Restaurant trading day rolls at 1:00 AM local time (hours before 1 AM belong to the previous day).
+/// Restaurant trading day rolls at 3:00 AM local time (hours before 3 AM belong to the previous day).
 /// </summary>
 public static class TradingDayHelper
 {
-    public static readonly TimeSpan DayStartTime = new(1, 0, 0);
+    public static readonly TimeSpan DayStartTime = new(3, 0, 0);
+
+    /// <summary>Short clock label for the dashboard, e.g. "3:00am".</summary>
+    public static string ResetTimeDisplay =>
+        DateTime.Today.Add(DayStartTime).ToString("h:mmtt", System.Globalization.CultureInfo.InvariantCulture).ToLowerInvariant();
 
     public static DateTime GetBusinessDate(DateTime? localNow = null)
     {

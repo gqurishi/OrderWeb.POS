@@ -5,29 +5,81 @@ namespace OrderWeb.SharedUI.Views;
 /// <summary>Calendar cell used by the shared reservation board.</summary>
 public sealed class ReservationCalendarDay
 {
-    public ReservationCalendarDay(DateTime date, bool isCurrentMonth, bool isSelected, int reservationCount)
+    public const double CellHeight = 46;
+    public const double RowGap = 4;
+
+    public ReservationCalendarDay(DateTime date, bool isCurrentMonth, bool isSelected, int reservationCount, bool isPlaceholder = false)
     {
         Date = date;
         IsCurrentMonth = isCurrentMonth;
         IsSelected = isSelected;
         ReservationCount = reservationCount;
+        IsPlaceholder = isPlaceholder;
+    }
+
+    public static ReservationCalendarDay Placeholder() => new(default, false, false, 0, true);
+
+    /// <summary>Monday-aligned current month only. Leading slots stay empty so day 1 lines up.</summary>
+    public static void FillCurrentMonth(
+        ICollection<ReservationCalendarDay> target,
+        DateTime displayedMonth,
+        DateTime selectedDate,
+        IReadOnlyDictionary<DateTime, int> counts)
+    {
+        target.Clear();
+        var monthStart = new DateTime(displayedMonth.Year, displayedMonth.Month, 1);
+        var lead = ((int)monthStart.DayOfWeek + 6) % 7;
+        for (var i = 0; i < lead; i++)
+        {
+            target.Add(Placeholder());
+        }
+
+        var daysInMonth = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            var date = new DateTime(monthStart.Year, monthStart.Month, day);
+            counts.TryGetValue(date, out var count);
+            target.Add(new ReservationCalendarDay(
+                date,
+                isCurrentMonth: true,
+                isSelected: date == selectedDate.Date,
+                reservationCount: count));
+        }
+    }
+
+    public static double HeightForCellCount(int cellCount)
+    {
+        if (cellCount <= 0)
+        {
+            return CellHeight;
+        }
+
+        var rows = (int)Math.Ceiling(cellCount / 7d);
+        // Extra per row covers CollectionView item chrome so the last week is fully visible.
+        return rows * (CellHeight + 10) + Math.Max(0, rows - 1) * RowGap + 6;
     }
 
     public DateTime Date { get; }
     public bool IsCurrentMonth { get; }
     public bool IsSelected { get; }
+    public bool IsPlaceholder { get; }
     public int ReservationCount { get; }
-    public bool HasBookings => ReservationCount > 0;
+    public bool HasBookings => !IsPlaceholder && ReservationCount > 0;
+    public double StrokeThickness => IsPlaceholder ? 0 : 1;
 
-    public string DayText => Date.Day.ToString(CultureInfo.InvariantCulture);
+    public string DayText => IsPlaceholder ? string.Empty : Date.Day.ToString(CultureInfo.InvariantCulture);
 
-    public Color BackgroundColor => IsSelected
+    public Color BackgroundColor => IsPlaceholder
+        ? Colors.Transparent
+        : IsSelected
         ? Color.FromArgb("#2563EB")
         : HasBookings
             ? Color.FromArgb("#EFF6FF")
             : Colors.Transparent;
 
-    public Color BorderColor => IsSelected
+    public Color BorderColor => IsPlaceholder
+        ? Colors.Transparent
+        : IsSelected
         ? Color.FromArgb("#2563EB")
         : HasBookings
             ? Color.FromArgb("#BFDBFE")

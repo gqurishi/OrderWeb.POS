@@ -187,31 +187,24 @@ public sealed class OrderHistoryBoardView : ContentView
         };
         Grid.SetRow(scroll, 0);
 
-        var footer = new Border
+        var footer = new Grid
         {
-            BackgroundColor = Colors.White,
-            Stroke = Color.FromArgb("#E2E8F0"),
-            StrokeThickness = 1,
-            Padding = new Thickness(12, 6),
-            Content = new Grid
+            BackgroundColor = Color.FromArgb("#F8F9FA"),
+            Padding = new Thickness(20, 8, 20, 12),
+            ColumnDefinitions =
             {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition(GridLength.Auto),
-                    new ColumnDefinition(GridLength.Star),
-                    new ColumnDefinition(GridLength.Auto),
-                    new ColumnDefinition(GridLength.Auto),
-                    new ColumnDefinition(GridLength.Auto)
-                },
-                ColumnSpacing = 8,
-                HeightRequest = 32,
-                Children = { _backButton }
-            }
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 8,
+            Children = { _backButton }
         };
-        var footerGrid = (Grid)footer.Content!;
-        footerGrid.Add(_previousPageButton, 2);
-        footerGrid.Add(_pageNumberLabel, 3);
-        footerGrid.Add(_nextPageButton, 4);
+        footer.Add(_previousPageButton, 2);
+        footer.Add(_pageNumberLabel, 3);
+        footer.Add(_nextPageButton, 4);
         Grid.SetRow(footer, 1);
 
         Content = new Grid
@@ -763,8 +756,10 @@ public sealed class OrderHistoryBoardView : ContentView
             HeightRequest = height,
             CornerRadius = 8,
             BorderWidth = 0,
+            BorderColor = Colors.Transparent,
             Padding = new Thickness(8, 2),
             MinimumHeightRequest = 0,
-            MinimumWidthRequest = 0
+            MinimumWidthRequest = 0,
+            Shadow = new Shadow { Opacity = 0, Radius = 0 }
         };
 }

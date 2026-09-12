@@ -139,7 +139,8 @@
                                 <Label x:Name="ZReportDateLabel"
                                        Text="Live day summary"
                                        FontSize="13"
-                                       TextColor="#64748B" />
+                                       TextColor="#64748B"
+                                       LineBreakMode="WordWrap" />
                                 <Label x:Name="ZReportUpdatedLabel"
                                        Text="Updated --:--:--"
                                        FontSize="12"
@@ -188,7 +189,7 @@
                             </Border>
                             <Border Grid.Row="1" Grid.Column="2" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
                                 <VerticalStackLayout Spacing="2">
-                                    <Label Text="Gift / Tips" FontSize="11" TextColor="#475569" />
+                                    <Label Text="Tips" FontSize="11" TextColor="#475569" />
                                     <Label x:Name="ZReportGiftTipsLabel" Text="£0.00" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" />
                                 </VerticalStackLayout>
                             </Border>

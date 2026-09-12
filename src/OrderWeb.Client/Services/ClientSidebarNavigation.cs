@@ -52,6 +52,9 @@ public static class ClientSidebarNavigation
         return route;
     }
 
+    /// <summary>Drop a queued sidebar open so logout cannot land on the dashboard.</summary>
+    public static void ClearPendingRootRoute() => _pendingRootRoute = null;
+
     /// <summary>
     /// Replace the current pushed manager/order page with another sidebar target.
     /// Always clears the stack first so Gift Cards → Loyalty (and User Collection → Live Order) work.
