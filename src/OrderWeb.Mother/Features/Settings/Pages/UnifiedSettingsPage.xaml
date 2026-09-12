@@ -35,134 +35,109 @@
                                     Grid.Row="1"
                                     IsVisible="False" />
         
-        <!-- Elegant Professional Tab Bar -->
-        <Border Grid.Row="2" 
-                BackgroundColor="White"
-                Padding="0"
-                Stroke="#F1F5F9"
-                StrokeThickness="1">
-            <Border.Shadow>
-                <Shadow Brush="#E2E8F0" Radius="8" Opacity="0.06" Offset="0,2"/>
-            </Border.Shadow>
-            
-            <Grid ColumnDefinitions="*,*,*,*,*" Padding="2,2,2,2" ColumnSpacing="2">
-                
-                <!-- Business Info Tab -->
+        <Border Grid.Row="2"
+                BackgroundColor="#F8FAFC"
+                Padding="16,12"
+                StrokeThickness="0">
+            <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="10">
                 <Border x:Name="BusinessTabBorder"
-                        Grid.Column="0"
-                        BackgroundColor="#3B82F6"
+                        BackgroundColor="#2563EB"
                         Padding="0"
-                        HeightRequest="56">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Brush="#3B82F6" Radius="12" Opacity="0.20" Offset="0,3"/>
-                    </Border.Shadow>
-                    <Grid>
-                        <!-- Active indicator -->
-                        <Rectangle Fill="#1E40AF" 
-                                   HeightRequest="3" 
-                                   VerticalOptions="End"
-                                   Margin="16,0,16,0"/>
-                        <Button BackgroundColor="Transparent"
-                                TextColor="White"
-                                Text="Business Info"
-                                FontSize="15"
-                                FontAttributes="Bold"
-                                Padding="24,0"
-                                Clicked="OnBusinessTabClicked"/>
-                    </Grid>
+                        HeightRequest="48"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 12">
+                    <Button BackgroundColor="Transparent"
+                            TextColor="White"
+                            Text="Business Info"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Padding="12,8"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Style="{x:Null}"
+                            Clicked="OnBusinessTabClicked"/>
                 </Border>
-                
-                <!-- User Management Tab -->
                 <Border x:Name="UserTabBorder"
                         Grid.Column="1"
-                        BackgroundColor="Transparent"
+                        BackgroundColor="#FFFFFF"
                         Padding="0"
-                        HeightRequest="56">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Grid>
-                        <!-- Hover effect background -->
-                        <Rectangle Fill="#F8FAFC" 
-                                   Opacity="0"/>
-                        <Button BackgroundColor="Transparent"
-                                TextColor="#475569"
-                                Text="User Management"
-                                FontSize="15"
-                                FontAttributes="Bold"
-                                Padding="24,0"
-                                Clicked="OnUserTabClicked"/>
-                    </Grid>
+                        HeightRequest="48"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12">
+                    <Button BackgroundColor="Transparent"
+                            TextColor="#475569"
+                            Text="User Management"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Padding="12,8"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Style="{x:Null}"
+                            Clicked="OnUserTabClicked"/>
                 </Border>
-                
-                <!-- OrderWeb Tab -->
                 <Border x:Name="OrderWebTabBorder"
                         Grid.Column="2"
-                        BackgroundColor="Transparent"
+                        BackgroundColor="#FFFFFF"
                         Padding="0"
-                        HeightRequest="56">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Grid>
-                        <!-- Hover effect background -->
-                        <Rectangle Fill="#F8FAFC" 
-                                   Opacity="0"/>
-                        <Button BackgroundColor="Transparent"
-                                TextColor="#475569"
-                                Text="OrderWeb"
-                                FontSize="15"
-                                FontAttributes="Bold"
-                                Padding="24,0"
-                                Clicked="OnOrderWebTabClicked"/>
-                    </Grid>
+                        HeightRequest="48"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12">
+                    <Button BackgroundColor="Transparent"
+                            TextColor="#475569"
+                            Text="OrderWeb"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Padding="12,8"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Style="{x:Null}"
+                            Clicked="OnOrderWebTabClicked"/>
                 </Border>
-
-                <!-- Delivery Zone Tab -->
                 <Border x:Name="DeliveryZoneTabBorder"
                         Grid.Column="3"
-                        BackgroundColor="Transparent"
+                        BackgroundColor="#FFFFFF"
                         Padding="0"
-                        HeightRequest="56">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Grid>
-                        <Rectangle Fill="#F8FAFC" Opacity="0"/>
-                        <Button BackgroundColor="Transparent"
-                                TextColor="#475569"
-                                Text="Delivery Zone"
-                                FontSize="15"
-                                FontAttributes="Bold"
-                                Padding="24,0"
-                                Clicked="OnDeliveryZoneTabClicked"/>
-                    </Grid>
+                        HeightRequest="48"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12">
+                    <Button BackgroundColor="Transparent"
+                            TextColor="#475569"
+                            Text="Delivery Zone"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Padding="12,8"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Style="{x:Null}"
+                            Clicked="OnDeliveryZoneTabClicked"/>
                 </Border>
-
-                <!-- Backup Tab -->
                 <Border x:Name="BackupTabBorder"
                         Grid.Column="4"
-                        BackgroundColor="Transparent"
+                        BackgroundColor="#FFFFFF"
                         Padding="0"
-                        HeightRequest="56">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="12"/>
-                    </Border.StrokeShape>
-                    <Grid>
-                        <Rectangle Fill="#F8FAFC" Opacity="0"/>
-                        <Button BackgroundColor="Transparent"
-                                TextColor="#475569"
-                                Text="Backup"
-                                FontSize="15"
-                                FontAttributes="Bold"
-                                Padding="24,0"
-                                Clicked="OnBackupTabClicked"/>
-                    </Grid>
+                        HeightRequest="48"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12">
+                    <Button BackgroundColor="Transparent"
+                            TextColor="#475569"
+                            Text="Backup"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Padding="12,8"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Style="{x:Null}"
+                            Clicked="OnBackupTabClicked"/>
                 </Border>
-                
             </Grid>
         </Border>
         
@@ -442,28 +417,41 @@
                                                    TextColor="#64748B"/>
                                         </VerticalStackLayout>
                                         <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
-                                            <Border Stroke="#DBEAFE" StrokeThickness="1" BackgroundColor="#EFF6FF" Padding="0" WidthRequest="64" HeightRequest="32" StrokeShape="RoundRectangle 8">
-                                                <Entry x:Name="OrderPrefixEntry"
-                                                       Placeholder="KIT"
-                                                       MaxLength="3"
-                                                       FontSize="14"
-                                                       FontAttributes="Bold"
-                                                       BackgroundColor="Transparent"
-                                                       TextColor="#1E3A8A"
-                                                       HorizontalTextAlignment="Center"
-                                                       HeightRequest="32"
-                                                       MinimumHeightRequest="32"
-                                                       VerticalOptions="Center"/>
+                                            <Border Stroke="#DBEAFE" StrokeThickness="1" BackgroundColor="#EFF6FF" Padding="0" WidthRequest="72" HeightRequest="40" StrokeShape="RoundRectangle 8">
+                                                <Grid>
+                                                    <Entry x:Name="OrderPrefixEntry"
+                                                           Placeholder="KIT"
+                                                           MaxLength="3"
+                                                           IsReadOnly="True"
+                                                           IsVisible="False"
+                                                           InputTransparent="True"/>
+                                                    <Label x:Name="OrderPrefixDisplay"
+                                                           Text="KIT"
+                                                           FontSize="15"
+                                                           FontAttributes="Bold"
+                                                           TextColor="#94A3B8"
+                                                           HorizontalOptions="Center"
+                                                           VerticalOptions="Center"
+                                                           InputTransparent="True"/>
+                                                    <Button Text=""
+                                                            BackgroundColor="Transparent"
+                                                            BorderWidth="0"
+                                                            Padding="0"
+                                                            Style="{x:Null}"
+                                                            MinimumHeightRequest="0"
+                                                            MinimumWidthRequest="0"
+                                                            Clicked="OnOrderPrefixClicked"/>
+                                                </Grid>
                                             </Border>
                                             <Button Text="Save"
                                                     BackgroundColor="#2563EB"
                                                     TextColor="White"
-                                                    FontSize="12"
+                                                    FontSize="13"
                                                     FontAttributes="Bold"
                                                     CornerRadius="8"
-                                                    HeightRequest="32"
-                                                    MinimumHeightRequest="32"
-                                                    Padding="12,0"
+                                                    HeightRequest="40"
+                                                    MinimumHeightRequest="40"
+                                                    Padding="14,0"
                                                     VerticalOptions="Center"
                                                     Clicked="OnSaveOrderCodeClicked"/>
                                         </HorizontalStackLayout>

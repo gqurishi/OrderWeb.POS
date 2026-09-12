@@ -1873,10 +1873,24 @@ public partial class MainPage : ContentPage
 
     private async Task PrintCashierZReportAsync(CashierDashboardView dashboard)
     {
-        if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Z Report printing requires a live Mother POS connection.", "OK"); return; }
+        if (!CanRunCashierLiveAction())
+        {
+            await CashDrawerDialogFlow.ShowNoticeAsync(this, "Mother connection", "Z Report printing requires a live Mother POS connection.", "!", "#F59E0B");
+            return;
+        }
         if (!await new PrintZReportConfirmDialogPage().ShowAsync(Navigation)) return;
         dashboard.SetActionsEnabled(false);
-        try { var result = await _cashierClient!.PrintZReportAsync(); await DisplayAlertAsync(result.Success ? "Z Report Printed" : "Print Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
+        try
+        {
+            var result = await _cashierClient!.PrintZReportAsync();
+            await CashDrawerDialogFlow.ShowNoticeAsync(
+                this,
+                result.Success ? "Z Report Printed" : "Print Failed",
+                result.Message,
+                result.Success ? "✓" : "!",
+                result.Success ? "#059669" : "#DC2626");
+            await RefreshCashierDashboardAsync();
+        }
         finally { dashboard.SetActionsEnabled(CanRunCashierLiveAction()); }
     }
 

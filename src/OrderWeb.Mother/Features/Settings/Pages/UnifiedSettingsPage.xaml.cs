@@ -99,6 +99,7 @@ namespace POS_in_NET.Pages
             WireBusinessField(CountyEntry, CountyDisplay);
             WireBusinessField(VATNumberEntry, VATNumberDisplay);
             WireBusinessField(CountryEntry, CountryDisplay);
+            OrderPrefixEntry.TextChanged += (_, _) => RefreshZoneFieldLabel(OrderPrefixDisplay, OrderPrefixEntry);
             _backupHistory = new ObservableCollection<DatabaseBackupFileInfo>();
             BackupHistoryCollectionView.ItemsSource = _backupHistory;
             
@@ -310,22 +311,16 @@ namespace POS_in_NET.Pages
             try
             {
                 // Reset all tabs to inactive state
-                BusinessTabBorder.BackgroundColor = Colors.Transparent;
-                UserTabBorder.BackgroundColor = Colors.Transparent;
-                OrderWebTabBorder.BackgroundColor = Colors.Transparent;
-                DeliveryZoneTabBorder.BackgroundColor = Colors.Transparent;
-                BackupTabBorder.BackgroundColor = Colors.Transparent;
-                
-                // Update button text colors for inactive state
-                UpdateTabButtonColor(BusinessTabBorder, Color.FromArgb("#475569"));
-                UpdateTabButtonColor(UserTabBorder, Color.FromArgb("#475569"));
-                UpdateTabButtonColor(OrderWebTabBorder, Color.FromArgb("#475569"));
-                UpdateTabButtonColor(DeliveryZoneTabBorder, Color.FromArgb("#475569"));
-                UpdateTabButtonColor(BackupTabBorder, Color.FromArgb("#475569"));
-                
-                // Set selected tab to active state
-                selectedTab.BackgroundColor = Color.FromArgb("#3B82F6");
-                UpdateTabButtonColor(selectedTab, Colors.White);
+                SetTabIdle(BusinessTabBorder);
+                SetTabIdle(UserTabBorder);
+                SetTabIdle(OrderWebTabBorder);
+                SetTabIdle(DeliveryZoneTabBorder);
+                SetTabIdle(BackupTabBorder);
+
+                selectedTab.BackgroundColor = Color.FromArgb("#2563EB");
+                selectedTab.Stroke = Color.FromArgb("#2563EB");
+                selectedTab.StrokeThickness = 0;
+                SetTabButton(selectedTab, Colors.White);
                 
                 currentActiveTab = selectedTab;
                 
@@ -337,27 +332,23 @@ namespace POS_in_NET.Pages
             }
         }
         
-        private void UpdateTabButtonColor(Border tabBorder, Color textColor)
+        private static void SetTabIdle(Border tabBorder)
         {
-            try
+            tabBorder.BackgroundColor = Colors.White;
+            tabBorder.Stroke = Color.FromArgb("#E2E8F0");
+            tabBorder.StrokeThickness = 1;
+            SetTabButton(tabBorder, Color.FromArgb("#475569"));
+        }
+
+        private static void SetTabButton(Border tabBorder, Color textColor)
+        {
+            if (tabBorder.Content is not Button button)
             {
-                // Find the button within the tab border and update its text color
-                if (tabBorder.Content is Grid grid)
-                {
-                    foreach (var child in grid.Children)
-                    {
-                        if (child is Button button)
-                        {
-                            button.TextColor = textColor;
-                            break;
-                        }
-                    }
-                }
+                return;
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error updating tab button color: {ex.Message}");
-            }
+
+            button.BackgroundColor = Colors.Transparent;
+            button.TextColor = textColor;
         }
 
         private void ShowContent(string contentType)
@@ -927,6 +918,29 @@ namespace POS_in_NET.Pages
             entry.Text = text;
         }
 
+        private async void OnOrderPrefixClicked(object sender, EventArgs e)
+        {
+            var text = await AskZoneTextAsync("Order number code", "KIT", OrderPrefixEntry.Text, maxLength: 3);
+            if (text is null)
+            {
+                return;
+            }
+
+            var prefix = new string(text.Where(char.IsLetter).ToArray()).ToUpperInvariant();
+            if (prefix.Length > 3)
+            {
+                prefix = prefix[..3];
+            }
+
+            if (prefix.Length != 3)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Order number code", "Enter exactly 3 letters, for example KIT.");
+                return;
+            }
+
+            OrderPrefixEntry.Text = prefix;
+        }
+
         private async void OnBusinessFieldClicked(object sender, EventArgs e)
         {
             if (sender is not Button { Parent: Grid grid } button)
@@ -978,7 +992,8 @@ namespace POS_in_NET.Pages
             string title,
             string? placeholder,
             string? initial,
-            OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode mode = OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes)
+            OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode mode = OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes,
+            int maxLength = 0)
         {
             if (_zoneKeyboardOpen)
             {
@@ -993,6 +1008,11 @@ namespace POS_in_NET.Pages
                 keyboard.SetTextMode(mode);
                 keyboard.SetPlaceholder(placeholder);
                 keyboard.SetRequired(false);
+                if (maxLength > 0)
+                {
+                    keyboard.SetMaximumLength(maxLength);
+                }
+
                 keyboard.SetInitialText(initial ?? string.Empty);
                 return await keyboard.ShowAsync(this);
             }
