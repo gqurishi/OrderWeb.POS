@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
+using OrderWeb.Contracts.Access;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Controls;
@@ -58,6 +59,8 @@ namespace POS_in_NET.Pages
         private bool _serviceChargeEnabled;
         private OrderServiceAvailabilitySettings _orderServices = new();
         private bool _loadingOrderServiceSwitches;
+        private bool _pinKeyboardOpen;
+        private bool _zoneKeyboardOpen;
 
         public UnifiedSettingsPage()
         {
@@ -81,6 +84,21 @@ namespace POS_in_NET.Pages
             // Initialize users collection
             _users = new ObservableCollection<User>();
             UsersCollectionView.ItemsSource = _users;
+            PINEntry.TextChanged += (_, _) => UpdatePinDisplay();
+            UpdatePinDisplay();
+            DeliveryZoneNameEntry.TextChanged += (_, _) => RefreshZoneFieldLabel(DeliveryZoneNameDisplay, DeliveryZoneNameEntry);
+            DeliveryZoneFeeEntry.TextChanged += (_, _) => RefreshZoneFieldLabel(DeliveryZoneFeeDisplay, DeliveryZoneFeeEntry);
+            DeliveryZoneTestPostcodeEntry.TextChanged += (_, _) => RefreshZoneFieldLabel(DeliveryZoneTestDisplay, DeliveryZoneTestPostcodeEntry);
+            WireBusinessField(RestaurantNameEntry, RestaurantNameDisplay);
+            WireBusinessField(EmailEntry, EmailDisplay);
+            WireBusinessField(PhoneEntry, PhoneDisplay);
+            WireBusinessField(WebsiteEntry, WebsiteDisplay);
+            WireBusinessField(AddressEntry, AddressDisplay);
+            WireBusinessField(CityEntry, CityDisplay);
+            WireBusinessField(PostcodeEntry, PostcodeDisplay);
+            WireBusinessField(CountyEntry, CountyDisplay);
+            WireBusinessField(VATNumberEntry, VATNumberDisplay);
+            WireBusinessField(CountryEntry, CountryDisplay);
             _backupHistory = new ObservableCollection<DatabaseBackupFileInfo>();
             BackupHistoryCollectionView.ItemsSource = _backupHistory;
             
@@ -830,6 +848,172 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async void OnDeliveryZoneNameClicked(object sender, EventArgs e) =>
+            await EditZoneTextAsync(DeliveryZoneNameEntry, "Zone name");
+
+        private async void OnDeliveryZoneFeeClicked(object sender, EventArgs e)
+        {
+            if (_zoneKeyboardOpen)
+            {
+                return;
+            }
+
+            _zoneKeyboardOpen = true;
+            try
+            {
+                decimal? current = decimal.TryParse(DeliveryZoneFeeEntry.Text, out var parsed) ? parsed : null;
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+                var amount = await keyboard.ShowCurrencyAsync(current, "Delivery fee", this, 0m);
+                if (amount is null)
+                {
+                    return;
+                }
+
+                DeliveryZoneFeeEntry.Text = amount.Value.ToString("0.00");
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Delivery fee", ex.Message);
+            }
+            finally
+            {
+                _zoneKeyboardOpen = false;
+            }
+        }
+
+        private async void OnDeliveryZoneTestClicked(object sender, EventArgs e) =>
+            await EditZoneTextAsync(DeliveryZoneTestPostcodeEntry, "Test postcode");
+
+        private async void OnZonePostcodeFieldClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button button)
+            {
+                return;
+            }
+
+            var entry = FindSiblingEntry(button);
+            if (entry is null)
+            {
+                return;
+            }
+
+            var text = await AskZoneTextAsync("Add postcode", entry.Placeholder, entry.Text);
+            if (text is null)
+            {
+                return;
+            }
+
+            entry.Text = text;
+            if (button.Parent is Grid grid)
+            {
+                foreach (var child in grid.Children)
+                {
+                    if (child is Label label)
+                    {
+                        RefreshZoneFieldLabel(label, entry);
+                    }
+                }
+            }
+        }
+
+        private async Task EditZoneTextAsync(Entry entry, string title)
+        {
+            var text = await AskZoneTextAsync(title, entry.Placeholder, entry.Text);
+            if (text is null)
+            {
+                return;
+            }
+
+            entry.Text = text;
+        }
+
+        private async void OnBusinessFieldClicked(object sender, EventArgs e)
+        {
+            if (sender is not Button { Parent: Grid grid } button)
+            {
+                return;
+            }
+
+            Entry? entry = null;
+            Label? label = null;
+            foreach (var child in grid.Children)
+            {
+                if (child is Entry foundEntry)
+                {
+                    entry = foundEntry;
+                }
+                else if (child is Label foundLabel)
+                {
+                    label = foundLabel;
+                }
+            }
+
+            if (entry is null)
+            {
+                return;
+            }
+
+            var title = button.CommandParameter as string ?? entry.Placeholder ?? "Edit";
+            var phone = string.Equals(title, "Phone number", StringComparison.Ordinal);
+            var text = await AskZoneTextAsync(
+                title,
+                entry.Placeholder,
+                entry.Text,
+                phone
+                    ? OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Phone
+                    : OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes);
+            if (text is null)
+            {
+                return;
+            }
+
+            entry.Text = text;
+            RefreshZoneFieldLabel(label, entry);
+        }
+
+        private static void WireBusinessField(Entry entry, Label label) =>
+            entry.TextChanged += (_, _) => RefreshZoneFieldLabel(label, entry);
+
+        private async Task<string?> AskZoneTextAsync(
+            string title,
+            string? placeholder,
+            string? initial,
+            OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode mode = OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes)
+        {
+            if (_zoneKeyboardOpen)
+            {
+                return null;
+            }
+
+            _zoneKeyboardOpen = true;
+            try
+            {
+                var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+                keyboard.SetPrompt(title, "Done");
+                keyboard.SetTextMode(mode);
+                keyboard.SetPlaceholder(placeholder);
+                keyboard.SetRequired(false);
+                keyboard.SetInitialText(initial ?? string.Empty);
+                return await keyboard.ShowAsync(this);
+            }
+            finally
+            {
+                _zoneKeyboardOpen = false;
+            }
+        }
+
+        private static void RefreshZoneFieldLabel(Label? label, Entry entry)
+        {
+            if (label is null)
+            {
+                return;
+            }
+
+            var hasText = !string.IsNullOrWhiteSpace(entry.Text);
+            label.Text = hasText ? entry.Text : entry.Placeholder;
+            label.TextColor = Color.FromArgb(hasText ? "#0F172A" : "#94A3B8");
+        }
+
         private async void OnCreateDeliveryZoneClicked(object sender, EventArgs e)
         {
             var zoneName = DeliveryZoneNameEntry.Text?.Trim();
@@ -1080,6 +1264,10 @@ namespace POS_in_NET.Pages
                     PostcodeEntry.Text = businessInfo.Postcode;
                     WebsiteEntry.Text = businessInfo.Website;
                     VATNumberEntry.Text = businessInfo.VATNumber;
+                    var isAdmin = _authService.CurrentUser?.Role == UserRole.Admin;
+                    LogoutMinutesPanel.IsVisible = isAdmin;
+                    LogoutMinutesEntry.Text = businessInfo.TillLogoutMinutes.ToString();
+                    LogoutMinutesEntry.IsEnabled = isAdmin;
 
                     await LoadBusinessLogo();
                 });
@@ -1513,6 +1701,18 @@ namespace POS_in_NET.Pages
                 _currentBusinessInfo.Website = WebsiteEntry.Text ?? "";
                 _currentBusinessInfo.VATNumber = VATNumberEntry.Text ?? "";
 
+                if (_authService.CurrentUser?.Role == UserRole.Admin)
+                {
+                    if (!TillLogoutMinutes.TryParse(LogoutMinutesEntry.Text, out var logoutMinutes, out var logoutError))
+                    {
+                        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Validation", logoutError ?? "Logout time must be from 3 to 60 minutes.");
+                        return;
+                    }
+
+                    _currentBusinessInfo.TillLogoutMinutes = logoutMinutes;
+                    LogoutMinutesEntry.Text = logoutMinutes.ToString();
+                }
+
                 var orderPrefix = (OrderPrefixEntry.Text ?? string.Empty).Trim().ToUpper();
                 if (orderPrefix.Length != 3 || !orderPrefix.All(char.IsLetter))
                 {
@@ -1548,6 +1748,7 @@ namespace POS_in_NET.Pages
                 if (success)
                 {
                     await LoadOrderNumberSettingsAsync();
+                    ApplySavedLogoutMinutes(_currentBusinessInfo.TillLogoutMinutes);
                     await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Business information saved successfully!");
                     
                     // Show success message
@@ -1563,6 +1764,16 @@ namespace POS_in_NET.Pages
                 LoadingIndicator.IsLoading = false;
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", $"Error saving business info: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"OnSaveBusinessInfoClicked error: {ex.Message}");
+            }
+        }
+
+        private static void ApplySavedLogoutMinutes(int minutes)
+        {
+            ServiceHelper.GetService<InactivityService>()?.ApplyStaffLogoutMinutes(minutes);
+            var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
+            if (broadcast != null)
+            {
+                _ = broadcast.PublishDataChangedAsync("settings.updated", minutes.ToString());
             }
         }
 
@@ -1751,6 +1962,65 @@ namespace POS_in_NET.Pages
                 System.Diagnostics.Debug.WriteLine($"Error showing role picker overlay: {ex.Message}");
                 _ = POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Failed to open role selection");
             }
+        }
+
+        private async void OnSecurityPinClicked(object sender, EventArgs e)
+        {
+            if (_pinKeyboardOpen)
+            {
+                return;
+            }
+
+            _pinKeyboardOpen = true;
+            try
+            {
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+                var pin = await keyboard.ShowDigitsAsync(
+                    initialValue: PINEntry.Text,
+                    title: "Security PIN",
+                    maxDigits: 4,
+                    hostPage: this);
+                if (string.IsNullOrWhiteSpace(pin))
+                {
+                    return;
+                }
+
+                var digits = new string(pin.Where(char.IsDigit).ToArray());
+                if (digits.Length != 4)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Security PIN", "Enter a 4-digit PIN.");
+                    return;
+                }
+
+                PINEntry.Text = digits;
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Security PIN", ex.Message);
+            }
+            finally
+            {
+                _pinKeyboardOpen = false;
+            }
+        }
+
+        private void UpdatePinDisplay()
+        {
+            if (PinDisplayLabel == null)
+            {
+                return;
+            }
+
+            var pin = PINEntry.Text ?? string.Empty;
+            if (pin.Length == 0)
+            {
+                PinDisplayLabel.Text = "4-digit PIN";
+                PinDisplayLabel.TextColor = Color.FromArgb("#94A3B8");
+                return;
+            }
+
+            PinDisplayLabel.Text = new string('•', pin.Length);
+            PinDisplayLabel.TextColor = Color.FromArgb("#0F172A");
         }
 
         private void OnSelectRoleClicked(object sender, EventArgs e)

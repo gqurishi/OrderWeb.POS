@@ -108,7 +108,7 @@ public partial class MainPage : ContentPage
     private IReadOnlyList<MotherOrderState> _liveOrderCachedOrders = Array.Empty<MotherOrderState>();
     private bool _suppressLiveOrderFilterEvent;
     private string? _liveOrdersFingerprint;
-    private readonly Label[] _cashierSummaryLabels = new Label[8];
+    private CashierDashboardView? _cashierDashboard;
     private Label? _cashierDataStatusLabel;
     private MotherCashierClient? _cashierClient;
     private readonly IDispatcherTimer _cashierRefreshTimer;
@@ -486,9 +486,10 @@ public partial class MainPage : ContentPage
     {
         // Events carry no business data. Fetch fresh authoritative snapshots
         // from Mother instead of merging event payloads into the Client cache.
-        if (IsFeaturesUpdatedEvent(e))
+        if (IsFeaturesUpdatedEvent(e) || IsSettingsUpdatedEvent(e))
         {
-            await RefreshClientAccessFromMotherAsync(showToast: true);
+            await RefreshClientAccessFromMotherAsync(showToast: IsFeaturesUpdatedEvent(e));
+            _inactivity.SetLogoutMinutes(ClientTillLogoutStore.GetMinutes());
         }
 
         await RefreshAuthoritativeClientCacheAsync();
@@ -556,6 +557,10 @@ public partial class MainPage : ContentPage
     private static bool IsFeaturesUpdatedEvent(MotherDataChangedEventArgs e) =>
         !string.IsNullOrWhiteSpace(e.EventType) &&
         e.EventType.Contains("feature", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSettingsUpdatedEvent(MotherDataChangedEventArgs e) =>
+        !string.IsNullOrWhiteSpace(e.EventType) &&
+        e.EventType.Contains("settings", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsOrderUpdatedEvent(MotherDataChangedEventArgs e) =>
         !string.IsNullOrWhiteSpace(e.EventType) &&
@@ -1779,53 +1784,22 @@ public partial class MainPage : ContentPage
         }
 
         _posSelectedMenu = "Dashboard";
-        // Financial values and final actions remain Mother-authoritative. The
-        // Client deliberately renders no cached totals and provides no local
-        // order, refund, discount, or void workflow for this role.
         Root.Children.Clear();
         Root.BackgroundColor = Color.FromArgb(PageBackground);
         var online = !IsMotherUnavailable();
-        var status = online ? "Connected to Mother POS" : "Mother POS unavailable — read-only access disabled";
-        var content = new VerticalStackLayout
-        {
-            Padding = new Thickness(32),
-            Spacing = 18,
-            HorizontalOptions = LayoutOptions.Center,
-            // Account for the page padding as well as four cards. Without this
-            // the right-most Variance card can extend beyond narrow Client POS
-            // windows and clip "Not counted".
-            MaximumWidthRequest = 820,
-            Children =
-            {
-                new Label { Text = "Cashier Dashboard", FontSize = 30, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText) },
-                new Label { Text = $"{_currentSession.UserName} · {LastTerminalName()} · {status}", FontSize = 15, TextColor = Color.FromArgb(SecondaryText) },
-                BuildCashierSummaryGrid(online)
-            }
-        };
-
-        var reports = new Button { Text = "Z Report Preview", IsEnabled = online, HeightRequest = 64, BackgroundColor = Color.FromArgb("#1D4ED8"), TextColor = Colors.White };
-        reports.Clicked += async (_, _) => await ShowCashierZPreviewAsync(reports);
         var drawerAllowed = ClientHostAccess.Features.Contains(PosFeatureKeys.Payments);
-        var drawer = new Button { Text = "Open Cash Drawer", IsVisible = drawerAllowed, IsEnabled = online && drawerAllowed, HeightRequest = 64, BackgroundColor = Color.FromArgb("#0F766E"), TextColor = Colors.White };
-        drawer.Clicked += async (_, _) => await OpenCashierDrawerAsync(drawer);
-        var print = new Button { Text = "Print Z Report", IsEnabled = online, HeightRequest = 58, BackgroundColor = Color.FromArgb("#7C3AED"), TextColor = Colors.White };
-        print.Clicked += async (_, _) => await PrintCashierZReportAsync(print);
-        var actions = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 14 };
-        actions.Add(drawer); actions.Add(reports, 1); actions.Add(print, 2);
-        content.Children.Add(new Label { Text = "Quick actions", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText) });
-        content.Children.Add(actions);
-        // Use the same shared header/sidebar shell as Mother POS. The shell
-        // owns the identity and connection bar; the Cashier content below is
-        // intentionally limited to read-only summaries and Z-report actions.
-        if (content.Children.Count >= 2)
+        var dashboard = new CashierDashboardView
         {
-            content.Children.RemoveAt(0);
-            content.Children.RemoveAt(0);
-        }
-        // Keep the status value for stale-data safety checks, but the shared
-        // top bar already presents connection state so it need not be repeated.
+            ShowOpenDrawer = drawerAllowed
+        };
+        dashboard.SetActionsEnabled(online);
+        dashboard.RefreshRequested += async (_, _) => await RefreshCashierDashboardAsync();
+        dashboard.OpenDrawerRequested += async (_, _) => await OpenCashierDrawerAsync(dashboard);
+        dashboard.PreviewZRequested += async (_, _) => await ShowCashierZPreviewAsync(dashboard);
+        dashboard.PrintZRequested += async (_, _) => await PrintCashierZReportAsync(dashboard);
+        _cashierDashboard = dashboard;
         _cashierDataStatusLabel = new Label { Text = "Refreshing…", IsVisible = false };
-        var frame = SharedAppFrame("Dashboard", new ScrollView { Content = content }, "dashboard");
+        var frame = SharedAppFrame("Dashboard", dashboard, "dashboard");
         frame.SetSidebarVisible(false);
         frame.MenuItems = new[]
         {
@@ -1837,66 +1811,79 @@ public partial class MainPage : ContentPage
         if (!_cashierRefreshTimer.IsRunning) _cashierRefreshTimer.Start();
     }
 
-    private Grid BuildCashierSummaryGrid(bool online)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitionCollection { new(GridLength.Star), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star) }, RowDefinitions = new RowDefinitionCollection { new(GridLength.Auto), new(GridLength.Auto) }, ColumnSpacing = 12, RowSpacing = 12 };
-        var cards = new[] { ("TOTAL ORDERS", "—"), ("TOTAL SALES", "£0.00"), ("CASH TOTAL", "£0.00"), ("CARD TOTAL", "£0.00"), ("VOIDS", "0"), ("DISCOUNTS", "£0.00"), ("EXPECTED CASH", "£0.00"), ("VARIANCE", online ? "Not counted" : "Offline") };
-        for (var i = 0; i < cards.Length; i++)
-        {
-            var (title, value) = cards[i];
-            var valueLabel = new Label { Text = value, FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb(MainText) };
-            _cashierSummaryLabels[i] = valueLabel;
-            var card = new Border { Stroke = Color.FromArgb("#DCE5F2"), StrokeThickness = 1, BackgroundColor = Colors.White, Padding = 18, Content = new VerticalStackLayout { Spacing = 4, Children = { new Label { Text = title, FontSize = 12, TextColor = Color.FromArgb(SecondaryText) }, valueLabel } } };
-            Grid.SetColumn(card, i % 4); Grid.SetRow(card, i / 4); grid.Children.Add(card);
-        }
-        return grid;
-    }
-
     private async Task RefreshCashierDashboardAsync()
     {
         if (_cashierClient is null || !string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase)) return;
         if (_cashierDataStatusLabel != null) _cashierDataStatusLabel.Text = "Refreshing…";
         var result = await _cashierClient.GetDashboardAsync();
         var summary = result.Summary;
-        if (summary != null)
+        if (summary != null && _cashierDashboard != null)
         {
-            var values = new[] { summary.TotalOrders.ToString(), $"£{summary.TotalSales:N2}", $"£{summary.CashTotal:N2}", $"£{summary.CardTotal:N2}", summary.VoidCount.ToString(), $"£{summary.DiscountTotal:N2}", $"£{summary.ExpectedCash:N2}", summary.Variance is { } variance ? $"£{variance:N2}" : "Not counted" };
-            for (var i = 0; i < values.Length; i++) if (_cashierSummaryLabels[i] != null) _cashierSummaryLabels[i].Text = values[i];
+            _cashierDashboard.Apply(ToCashierDayBoard(summary));
         }
         if (_cashierDataStatusLabel != null)
             _cashierDataStatusLabel.Text = result.Success ? $"Connected — live data · Last updated {summary?.GeneratedUtc.LocalDateTime:HH:mm}" : result.IsStale ? "Connection lost — data may be stale" : result.Message;
+        _cashierDashboard?.SetActionsEnabled(CanRunCashierLiveAction());
+    }
+
+    private static CashierDayBoard ToCashierDayBoard(CashierDashboardSummary summary)
+    {
+        var money = new Func<decimal, string>(value => $"£{value:F2}");
+        return new CashierDayBoard
+        {
+            DateLine = string.IsNullOrWhiteSpace(summary.DateLine)
+                ? $"{summary.BusinessDate:dd MMM yyyy} · {summary.TerminalName}"
+                : summary.DateLine,
+            UpdatedText = string.IsNullOrWhiteSpace(summary.UpdatedText)
+                ? $"Updated {summary.GeneratedUtc.LocalDateTime:HH:mm:ss}"
+                : summary.UpdatedText,
+            Gross = Or(summary.Gross, money(summary.TotalSales)),
+            Net = Or(summary.Net, money(summary.TotalSales)),
+            Vat = Or(summary.Vat, money(0)),
+            Cash = Or(summary.CashDisplay, money(summary.CashTotal)),
+            Card = Or(summary.CardDisplay, money(summary.CardTotal)),
+            Tips = Or(summary.Tips, money(0)),
+            PosSales = Or(summary.PosSales, $"{money(summary.TotalSales)} ({summary.TotalOrders})"),
+            OnlineSales = Or(summary.OnlineSales, "£0.00 (0)"),
+            PettyCashOut = Or(summary.PettyCashOut, money(0)),
+            ExpectedCash = Or(summary.ExpectedCashDisplay, money(summary.ExpectedCash)),
+            WebOrders = Or(summary.WebOrders, "0"),
+            VsYesterday = Or(summary.VsYesterday, "--")
+        };
+
+        static string Or(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 
     private bool CanRunCashierLiveAction() => _cashierClient is not null && !IsMotherUnavailable() && _cashierDataStatusLabel?.Text?.Contains("stale", StringComparison.OrdinalIgnoreCase) != true;
 
-    private async Task ShowCashierZPreviewAsync(Button button)
+    private async Task ShowCashierZPreviewAsync(CashierDashboardView dashboard)
     {
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Z Report preview requires live Mother POS data.", "OK"); return; }
-        button.IsEnabled = false;
+        dashboard.SetActionsEnabled(false);
         try
         {
             var result = await _cashierClient!.GetZReportPreviewAsync();
             if (!result.Success || result.Preview is null) { await DisplayAlertAsync("Z Report Preview", result.Message, "OK"); return; }
             var printRequested = await new ZReportPreviewDialogPage(result.Preview, CanRunCashierLiveAction()).ShowAsync(Navigation);
             await RefreshCashierDashboardAsync();
-            if (printRequested) await PrintCashierZReportAsync(button);
+            if (printRequested) await PrintCashierZReportAsync(dashboard);
         }
-        finally { button.IsEnabled = CanRunCashierLiveAction(); }
+        finally { dashboard.SetActionsEnabled(CanRunCashierLiveAction()); }
     }
 
-    private async Task PrintCashierZReportAsync(Button button)
+    private async Task PrintCashierZReportAsync(CashierDashboardView dashboard)
     {
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Z Report printing requires a live Mother POS connection.", "OK"); return; }
         if (!await new PrintZReportConfirmDialogPage().ShowAsync(Navigation)) return;
-        button.IsEnabled = false;
+        dashboard.SetActionsEnabled(false);
         try { var result = await _cashierClient!.PrintZReportAsync(); await DisplayAlertAsync(result.Success ? "Z Report Printed" : "Print Failed", result.Message, "OK"); await RefreshCashierDashboardAsync(); }
-        finally { button.IsEnabled = CanRunCashierLiveAction(); }
+        finally { dashboard.SetActionsEnabled(CanRunCashierLiveAction()); }
     }
 
-    private async Task OpenCashierDrawerAsync(Button button)
+    private async Task OpenCashierDrawerAsync(CashierDashboardView dashboard)
     {
         if (!CanRunCashierLiveAction()) { await DisplayAlertAsync("Mother connection", "Cash drawer opening requires a live Mother POS connection.", "OK"); return; }
-        button.IsEnabled = false;
+        dashboard.SetActionsEnabled(false);
         try
         {
             var choice = await CashDrawerDialogFlow.CollectAsync(this);
@@ -1924,7 +1911,7 @@ public partial class MainPage : ContentPage
                 result.Success ? "#10B981" : "#EF4444");
             await RefreshCashierDashboardAsync();
         }
-        finally { button.IsEnabled = CanRunCashierLiveAction(); }
+        finally { dashboard.SetActionsEnabled(CanRunCashierLiveAction()); }
     }
 
     private void ShowDashboard()
@@ -3139,7 +3126,7 @@ public partial class MainPage : ContentPage
 
     private void StartIdleAutoLogout()
     {
-        // Same as Mother: 60s back to the role dashboard, then 3 minutes logout.
+        _inactivity.SetLogoutMinutes(ClientTillLogoutStore.GetMinutes());
         _inactivity.Start(
             () => _currentSession?.Role,
             Logout,
@@ -3436,6 +3423,7 @@ public partial class MainPage : ContentPage
 
         if (result.Success)
         {
+            _inactivity.SetLogoutMinutes(ClientTillLogoutStore.GetMinutes());
             await MainThread.InvokeOnMainThreadAsync(RefreshCurrentPosPage);
         }
 

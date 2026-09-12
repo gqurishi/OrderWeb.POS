@@ -34,6 +34,7 @@ namespace POS_in_NET.Views
             EditNameEntry.Text = user.Name;
             EditUsernameEntry.Text = user.Username;
             EditPINEntry.Text = ""; // Always start empty for security
+            UpdatePinDisplay();
             EditSelectedRoleLabel.Text = user.Role.ToString();
             
             IsVisible = true;
@@ -52,11 +53,90 @@ namespace POS_in_NET.Views
             EditNameEntry.Text = "";
             EditUsernameEntry.Text = "";
             EditPINEntry.Text = "";
+            UpdatePinDisplay();
             EditSelectedRoleLabel.Text = "Select Role";
             _currentUser = null;
             _selectedRole = null;
         }
         
+        private bool _pinKeyboardOpen;
+
+        private async void OnEditPinClicked(object sender, EventArgs e)
+        {
+            if (_pinKeyboardOpen)
+            {
+                return;
+            }
+
+            _pinKeyboardOpen = true;
+            try
+            {
+                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
+                var pin = await keyboard.ShowDigitsAsync(
+                    initialValue: EditPINEntry.Text,
+                    title: "New PIN",
+                    maxDigits: 4,
+                    hostPage: FindHostPage());
+                if (string.IsNullOrWhiteSpace(pin))
+                {
+                    return;
+                }
+
+                var digits = new string(pin.Where(char.IsDigit).ToArray());
+                if (digits.Length != 4)
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("New PIN", "Enter a 4-digit PIN.");
+                    return;
+                }
+
+                EditPINEntry.Text = digits;
+                UpdatePinDisplay();
+            }
+            catch (Exception ex)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("New PIN", ex.Message);
+            }
+            finally
+            {
+                _pinKeyboardOpen = false;
+            }
+        }
+
+        private void UpdatePinDisplay()
+        {
+            if (EditPinDisplayLabel == null)
+            {
+                return;
+            }
+
+            var pin = EditPINEntry.Text ?? string.Empty;
+            if (pin.Length == 0)
+            {
+                EditPinDisplayLabel.Text = "Enter new PIN";
+                EditPinDisplayLabel.TextColor = Color.FromArgb("#94A3B8");
+                return;
+            }
+
+            EditPinDisplayLabel.Text = new string('•', pin.Length);
+            EditPinDisplayLabel.TextColor = Color.FromArgb("#1F2937");
+        }
+
+        private ContentPage? FindHostPage()
+        {
+            Element? current = this;
+            while (current is not null)
+            {
+                if (current is ContentPage page)
+                {
+                    return page;
+                }
+
+                current = current.Parent;
+            }
+
+            return Shell.Current?.CurrentPage as ContentPage;
+        }
+
         private void OnEditRolePickerTapped(object sender, EventArgs e)
         {
             System.Diagnostics.Debug.WriteLine("Edit role picker tapped");

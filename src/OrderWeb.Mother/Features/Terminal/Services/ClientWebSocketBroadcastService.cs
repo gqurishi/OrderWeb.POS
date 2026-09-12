@@ -2088,6 +2088,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         var capabilities = ClientAccessPolicy.FilterCapabilities(MotherCapabilityResolver.ForRole(login.User.Role));
         var features = await _clientAccess.GetGrantedFeaturesAsync(terminal.TerminalId, context.RequestAborted);
         var routes = ClientAccessPolicy.RoutesForFeatures(features);
+        var tillLogoutMinutes = await GetTillLogoutMinutesAsync();
         await WriteJsonAsync(context, HttpStatusCode.OK, new
         {
             success = true,
@@ -2106,6 +2107,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             routes,
             restaurant_name = TerminalConfigurationService.GetConfiguration().DatabaseName,
             restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName,
+            tillLogoutMinutes,
+            till_logout_minutes = tillLogoutMinutes,
             // Keep the flat fields for existing till clients and also provide
             // the payload envelope consumed by OrderWeb.Client.
             payload = new
@@ -2119,7 +2122,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 routes,
                 sessionToken,
                 expiresAtUtc = expiresAt,
-                restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName
+                restaurantName = TerminalConfigurationService.GetConfiguration().DatabaseName,
+                tillLogoutMinutes,
+                till_logout_minutes = tillLogoutMinutes
             }
         });
     }
@@ -2267,14 +2272,30 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         var features = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
         var routes = ClientAccessPolicy.RoutesForFeatures(features);
+        var tillLogoutMinutes = await GetTillLogoutMinutesAsync();
         await WriteJsonAsync(context, HttpStatusCode.OK, new
         {
             success = true,
             terminalId = session.TerminalId,
             features,
             routes,
+            tillLogoutMinutes,
+            till_logout_minutes = tillLogoutMinutes,
             generatedUtc = DateTimeOffset.UtcNow
         });
+    }
+
+    private static async Task<int> GetTillLogoutMinutesAsync()
+    {
+        try
+        {
+            var info = await new BusinessSettingsService().GetBusinessInfoAsync();
+            return TillLogoutMinutes.Normalize(info?.TillLogoutMinutes);
+        }
+        catch
+        {
+            return TillLogoutMinutes.DefaultMinutes;
+        }
     }
 
     private async Task HandleHeartbeatAsync(HttpContext context)
@@ -4515,7 +4536,21 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 variance = snapshot.CashCountVariance,
                 terminalName = snapshot.TerminalName,
                 generatedUtc = DateTimeOffset.UtcNow,
-                version = $"cashier-dashboard-{snapshot.GeneratedAt.Ticks}"
+                version = $"cashier-dashboard-{snapshot.GeneratedAt.Ticks}",
+                dateLine = $"{snapshot.DateDisplay} · {snapshot.TerminalName} · resets {TradingDayHelper.ResetTimeDisplay}",
+                updatedText = snapshot.LastUpdatedDisplay,
+                gross = snapshot.GrossDisplay,
+                net = snapshot.NetDisplay,
+                vat = snapshot.VatDisplay,
+                tips = snapshot.TipsDisplay,
+                posSales = $"{snapshot.PosDisplay} ({snapshot.PosOrderCount})",
+                onlineSales = $"{snapshot.OnlineDisplay} ({snapshot.OnlineOrderCount})",
+                pettyCashOut = snapshot.TillNetOutDisplay,
+                webOrders = snapshot.OnlineOrderCount.ToString(),
+                vsYesterday = snapshot.SalesVsYesterdayDisplay,
+                expectedCashDisplay = snapshot.ExpectedCashDisplay,
+                cashDisplay = snapshot.CashDisplay,
+                cardDisplay = snapshot.CardDisplay
             });
         }
         catch (Exception ex)

@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OrderWeb.Client.Models;
+using OrderWeb.Contracts.Access;
 
 namespace OrderWeb.Client.Services;
 
@@ -51,6 +53,12 @@ public sealed class MotherAccessClient
 
             var features = envelope.Features ?? Array.Empty<string>();
             var routes = envelope.Routes ?? Array.Empty<string>();
+            var logoutMinutes = envelope.TillLogoutMinutes ?? envelope.TillLogoutMinutesSnake;
+            if (logoutMinutes is not null)
+            {
+                ClientTillLogoutStore.Save(logoutMinutes.Value);
+            }
+
             var updated = session with { Features = features, Routes = routes };
             await _cache.SaveLoginSessionAsync(updated);
             ClientHostAccess.ApplyFromSession(updated);
@@ -66,7 +74,9 @@ public sealed class MotherAccessClient
         bool Success,
         string? Message,
         IReadOnlyList<string>? Features,
-        IReadOnlyList<string>? Routes);
+        IReadOnlyList<string>? Routes,
+        [property: JsonPropertyName("tillLogoutMinutes")] int? TillLogoutMinutes,
+        [property: JsonPropertyName("till_logout_minutes")] int? TillLogoutMinutesSnake);
 }
 
 public sealed record MotherAccessRefreshResult(

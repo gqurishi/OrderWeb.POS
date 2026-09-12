@@ -1,4 +1,5 @@
 using OrderWeb.Client.Models;
+using OrderWeb.Contracts.Access;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -157,6 +158,8 @@ public sealed class MotherAuthClient
             : new List<string>();
         var features = TryReadStringList(payload, "features") ?? TryReadStringList(root, "features");
         var routes = TryReadStringList(payload, "routes") ?? TryReadStringList(root, "routes");
+        var tillLogoutMinutes = TryReadInt(payload, "tillLogoutMinutes", "till_logout_minutes")
+            ?? TryReadInt(root, "tillLogoutMinutes", "till_logout_minutes");
 
         if (!response.IsSuccessStatusCode || !success || string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(sessionToken))
         {
@@ -176,6 +179,11 @@ public sealed class MotherAuthClient
             }
 
             throw new LoginException(finalMessage, errorCode);
+        }
+
+        if (tillLogoutMinutes is not null)
+        {
+            ClientTillLogoutStore.Save(tillLogoutMinutes.Value);
         }
 
         return new LoginSession(
@@ -240,6 +248,29 @@ public sealed class MotherAuthClient
         }
 
         return root;
+    }
+
+    private static int? TryReadInt(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+            {
+                return TillLogoutMinutes.Normalize(number);
+            }
+
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed))
+            {
+                return TillLogoutMinutes.Normalize(parsed);
+            }
+        }
+
+        return null;
     }
 
     private static string? TryReadString(JsonElement element, params string[] propertyNames)

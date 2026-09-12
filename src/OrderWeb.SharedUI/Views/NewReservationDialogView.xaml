@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="OrderWeb.SharedUI.Views.NewReservationDialogView"
+             BackgroundColor="#990F172A"
+             VerticalOptions="Fill"
+             HorizontalOptions="Fill">
+
+    <Grid x:Name="DialogRoot"
+          VerticalOptions="Fill"
+          HorizontalOptions="Fill">
+        <Grid VerticalOptions="Center"
+              HorizontalOptions="Fill"
+              Padding="32">
+        <Border BackgroundColor="White"
+                Stroke="#CBD5E1"
+                StrokeThickness="1"
+                Padding="28"
+                MaximumWidthRequest="680"
+                HorizontalOptions="Fill"
+                MaximumHeightRequest="780"
+                VerticalOptions="Center">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="18"/>
+            </Border.StrokeShape>
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Opacity="0.14" Radius="18" Offset="0,6"/>
+            </Border.Shadow>
+
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="New Reservation"
+                               FontSize="24"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A" />
+                        <Label Text="Add a booking to the diary"
+                               FontSize="14"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1"
+                            Text="X"
+                            Style="{x:Null}"
+                            WidthRequest="40"
+                            HeightRequest="40"
+                            MinimumWidthRequest="40"
+                            MinimumHeightRequest="40"
+                            CornerRadius="20"
+                            BackgroundColor="#FEE2E2"
+                            TextColor="#DC2626"
+                            FontSize="18"
+                            Padding="0"
+                            Clicked="OnCancelClicked" />
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="14">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Booking date" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                        <Border BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="16,14">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDateFieldTapped" />
+                            </Border.GestureRecognizers>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label x:Name="DateDisplayLabel"
+                                       FontSize="17"
+                                       TextColor="#0F172A"
+                                       VerticalOptions="Center" />
+                                <Label Grid.Column="1"
+                                       Text="Change"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#2563EB"
+                                       VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Grid.Column="1" Spacing="6">
+                        <Label Text="Booking time" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                        <Border BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="16,14">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnTimeFieldTapped" />
+                            </Border.GestureRecognizers>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label x:Name="TimeDisplayLabel"
+                                       FontSize="17"
+                                       TextColor="#0F172A"
+                                       VerticalOptions="Center" />
+                                <Label Grid.Column="1"
+                                       Text="Change"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#2563EB"
+                                       VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+                </Grid>
+
+                <ScrollView Grid.Row="2">
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="14"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="12">
+                        <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="6">
+                            <Label Text="Covers" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="CoversEntry"
+                                       Style="{x:Null}"
+                                       Keyboard="Numeric"
+                                       MaxLength="3"
+                                       Text="2"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="6">
+                            <Label Text="Table (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="TableEntry"
+                                       Style="{x:Null}"
+                                       Placeholder="e.g. T4"
+                                       PlaceholderColor="#94A3B8"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="6">
+                            <Label Text="Full name" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="NameEntry"
+                                       Style="{x:Null}"
+                                       Placeholder="Guest name"
+                                       PlaceholderColor="#94A3B8"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="2" Grid.Column="0" Spacing="6">
+                            <Label Text="Phone" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="PhoneEntry"
+                                       Style="{x:Null}"
+                                       Keyboard="Telephone"
+                                       Placeholder="07..."
+                                       PlaceholderColor="#94A3B8"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="2" Grid.Column="1" Spacing="6">
+                            <Label Text="Email (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="EmailEntry"
+                                       Style="{x:Null}"
+                                       Keyboard="Email"
+                                       Placeholder="you@example.com"
+                                       PlaceholderColor="#94A3B8"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="3" Grid.ColumnSpan="2" Spacing="6">
+                            <Label Text="Promocode (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Entry x:Name="PromoCodeEntry"
+                                       Style="{x:Null}"
+                                       Placeholder="e.g. SUMMER10"
+                                       PlaceholderColor="#94A3B8"
+                                       FontSize="16"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="#F8FAFC"
+                                       HeightRequest="40"
+                                       MinimumHeightRequest="40" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="4" Grid.ColumnSpan="2" Spacing="6">
+                            <Label Text="Allergies / dietary (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Editor x:Name="AllergiesEditor"
+                                        Style="{x:Null}"
+                                        AutoSize="TextChanges"
+                                        MinimumHeightRequest="58"
+                                        Placeholder="e.g. nut allergy, gluten free"
+                                        PlaceholderColor="#94A3B8"
+                                        FontSize="15"
+                                        TextColor="#0F172A"
+                                        BackgroundColor="#F8FAFC" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Row="5" Grid.ColumnSpan="2" Spacing="6">
+                            <Label Text="Special requests (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeShape="RoundRectangle 10" Padding="12,4">
+                                <Editor x:Name="NotesEditor"
+                                        Style="{x:Null}"
+                                        AutoSize="TextChanges"
+                                        MinimumHeightRequest="58"
+                                        Placeholder="High chair, birthday, window table..."
+                                        PlaceholderColor="#94A3B8"
+                                        FontSize="15"
+                                        TextColor="#0F172A"
+                                        BackgroundColor="#F8FAFC" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </Grid>
+                </ScrollView>
+
+                <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,8,0,0">
+                    <Button Grid.Column="0"
+                            Text="Cancel"
+                            Style="{x:Null}"
+                            BackgroundColor="#F1F5F9"
+                            TextColor="#64748B"
+                            FontSize="15"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Padding="0"
+                            Clicked="OnCancelClicked" />
+                    <Button Grid.Column="1"
+                            Text="Save Booking"
+                            Style="{x:Null}"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            FontAttributes="Bold"
+                            FontSize="15"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            MinimumHeightRequest="48"
+                            Padding="0"
+                            Clicked="OnSaveClicked" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="PickerOverlay"
+              IsVisible="False"
+              InputTransparent="True"
+              BackgroundColor="#660F172A">
+            <Border BackgroundColor="White"
+                    Stroke="#CBD5E1"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 18"
+                    WidthRequest="430"
+                    Padding="18"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Opacity="0.18" Radius="18" Offset="0,8" />
+                </Border.Shadow>
+
+                <Grid>
+                    <Grid x:Name="DatePickerPanel"
+                          RowDefinitions="Auto,Auto,Auto"
+                          RowSpacing="14"
+                          IsVisible="False">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                            <Button Text="‹"
+                                    Style="{x:Null}"
+                                    WidthRequest="42"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="42"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="12"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#0F172A"
+                                    FontSize="18"
+                                    Padding="0"
+                                    Clicked="OnPreviousMonthClicked" />
+                            <Label x:Name="PickerMonthLabel"
+                                   Grid.Column="1"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A"
+                                   HorizontalTextAlignment="Center"
+                                   VerticalOptions="Center" />
+                            <Button Grid.Column="2"
+                                    Text="›"
+                                    Style="{x:Null}"
+                                    WidthRequest="42"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="42"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="12"
+                                    BackgroundColor="#ECFDF5"
+                                    TextColor="#065F46"
+                                    FontSize="18"
+                                    Padding="0"
+                                    Clicked="OnNextMonthClicked" />
+                            <Button Grid.Column="3"
+                                    Text="X"
+                                    Style="{x:Null}"
+                                    WidthRequest="38"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="38"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="19"
+                                    BackgroundColor="#FEE2E2"
+                                    TextColor="#DC2626"
+                                    FontSize="16"
+                                    Padding="0"
+                                    Clicked="OnPickerCancelClicked" />
+                        </Grid>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,*,*,*">
+                            <Label Text="Mon" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="1" Text="Tue" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="2" Text="Wed" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="3" Text="Thu" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="4" Text="Fri" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="5" Text="Sat" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="6" Text="Sun" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        </Grid>
+
+                        <Grid x:Name="CalendarDaysGrid"
+                              Grid.Row="2"
+                              ColumnDefinitions="*,*,*,*,*,*,*"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                              ColumnSpacing="6"
+                              RowSpacing="6" />
+                    </Grid>
+
+                    <Grid x:Name="TimePickerPanel"
+                          RowDefinitions="Auto,Auto,Auto,Auto"
+                          RowSpacing="14"
+                          IsVisible="False">
+                        <Label Text="Choose booking time"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"
+                               HorizontalTextAlignment="Center" />
+                        <Border Grid.Row="1"
+                                BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeShape="RoundRectangle 16"
+                                Padding="16,12">
+                            <Label x:Name="PickerTimePreviewLabel"
+                                   FontSize="30"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Hour"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B"
+                                       HorizontalTextAlignment="Center" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 14"
+                                        Padding="6">
+                                    <ScrollView HeightRequest="180">
+                                        <VerticalStackLayout x:Name="HourOptionsStack" Spacing="6" />
+                                    </ScrollView>
+                                </Border>
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                <Label Text="Minute"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B"
+                                       HorizontalTextAlignment="Center" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 14"
+                                        Padding="6">
+                                    <ScrollView HeightRequest="180">
+                                        <VerticalStackLayout x:Name="MinuteOptionsStack" Spacing="6" />
+                                    </ScrollView>
+                                </Border>
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <Button Text="Cancel"
+                                    Style="{x:Null}"
+                                    HeightRequest="46"
+                                    MinimumHeightRequest="46"
+                                    CornerRadius="12"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#64748B"
+                                    FontSize="15"
+                                    Padding="0"
+                                    Clicked="OnPickerCancelClicked" />
+                            <Button Grid.Column="1"
+                                    Text="Use Time"
+                                    Style="{x:Null}"
+                                    HeightRequest="46"
+                                    MinimumHeightRequest="46"
+                                    CornerRadius="12"
+                                    FontAttributes="Bold"
+                                    FontSize="15"
+                                    BackgroundColor="#2563EB"
+                                    TextColor="White"
+                                    Padding="0"
+                                    Clicked="OnPickerDoneClicked" />
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+        </Grid>
+    </Grid>
+</ContentView>

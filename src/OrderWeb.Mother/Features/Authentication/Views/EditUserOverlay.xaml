@@ -68,13 +68,36 @@
                                FontFamily="InterMedium" 
                                FontSize="14" 
                                TextColor="#374151"/>
-                        <Entry x:Name="EditPINEntry"
-                               FontFamily="InterRegular"
-                               FontSize="16"
-                               TextColor="#1F2937"
-                               BackgroundColor="#F9FAFB"
-                               Placeholder="Enter new PIN"
-                               IsPassword="True"/>
+                        <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F9FAFB" HeightRequest="44" StrokeShape="RoundRectangle 8">
+                            <Grid>
+                                <Entry x:Name="EditPINEntry"
+                                       FontFamily="InterRegular"
+                                       FontSize="16"
+                                       TextColor="#1F2937"
+                                       BackgroundColor="Transparent"
+                                       IsPassword="True"
+                                       IsReadOnly="True"
+                                       InputTransparent="True"
+                                       Keyboard="Numeric"
+                                       MaxLength="4"
+                                       IsVisible="False"/>
+                                <Label x:Name="EditPinDisplayLabel"
+                                       Text="Enter new PIN"
+                                       FontSize="16"
+                                       TextColor="#94A3B8"
+                                       VerticalOptions="Center"
+                                       Margin="12,0"
+                                       InputTransparent="True"/>
+                                <Button Text=""
+                                        BackgroundColor="Transparent"
+                                        BorderWidth="0"
+                                        Padding="0"
+                                        Style="{x:Null}"
+                                        MinimumHeightRequest="0"
+                                        MinimumWidthRequest="0"
+                                        Clicked="OnEditPinClicked"/>
+                            </Grid>
+                        </Border>
                     </StackLayout>
                     
                     <!-- Role picker button -->

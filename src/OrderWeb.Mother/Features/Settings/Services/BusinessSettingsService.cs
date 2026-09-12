@@ -1,4 +1,5 @@
 using MySqlConnector;
+using OrderWeb.Contracts.Access;
 using POS_in_NET.Models;
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -96,7 +97,8 @@ public class BusinessSettingsService
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS logo_data MEDIUMBLOB NULL",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_ip VARCHAR(15) DEFAULT NULL COMMENT 'Brother QL-820NWB IP address'",
                 "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_port INT(11) DEFAULT 9100 COMMENT 'Label printer network port'",
-                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_enabled TINYINT(1) DEFAULT 0 COMMENT 'Enable automatic label printing'"
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS label_printer_enabled TINYINT(1) DEFAULT 0 COMMENT 'Enable automatic label printing'",
+                "ALTER TABLE business_info ADD COLUMN IF NOT EXISTS till_logout_minutes INT NOT NULL DEFAULT 3"
             };
 
             foreach (var statement in alterStatements)
@@ -130,6 +132,8 @@ public class BusinessSettingsService
                 return Clone(_cachedBusinessInfo);
             }
 
+            EnsureBusinessInfoTableExists();
+            EnsureBusinessInfoColumnsExist();
             var loaded = await LoadBusinessInfoAsync();
             _cachedBusinessInfo = loaded == null ? null : Clone(loaded);
             _cacheUpdatedAt = DateTime.UtcNow;
@@ -159,6 +163,7 @@ public class BusinessSettingsService
                       phone_number, email, website, vat_number, tax_code, description, logo_path,
                        logo_file_name, logo_mime_type, logo_content_hash, logo_data,
                        label_printer_ip, label_printer_port, label_printer_enabled,
+                       till_logout_minutes,
                        updated_at, updated_by
                 FROM business_info
                 ORDER BY
@@ -199,6 +204,8 @@ public class BusinessSettingsService
                     LabelPrinterIp = reader["label_printer_ip"]?.ToString(),
                     LabelPrinterPort = reader.IsDBNull(reader.GetOrdinal("label_printer_port")) ? 9100 : Convert.ToInt32(reader["label_printer_port"]),
                     LabelPrinterEnabled = reader.IsDBNull(reader.GetOrdinal("label_printer_enabled")) ? false : Convert.ToBoolean(reader["label_printer_enabled"]),
+                    TillLogoutMinutes = TillLogoutMinutes.Normalize(
+                        reader.IsDBNull(reader.GetOrdinal("till_logout_minutes")) ? null : Convert.ToInt32(reader["till_logout_minutes"])),
                     UpdatedAt = Convert.ToDateTime(reader["updated_at"]),
                     UpdatedBy = reader["updated_by"]?.ToString() ?? ""
                 };
@@ -217,6 +224,8 @@ public class BusinessSettingsService
     {
         try
         {
+            EnsureBusinessInfoColumnsExist();
+            businessInfo.TillLogoutMinutes = TillLogoutMinutes.Normalize(businessInfo.TillLogoutMinutes);
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
@@ -238,6 +247,7 @@ public class BusinessSettingsService
                     label_printer_ip = @labelPrinterIp,
                     label_printer_port = @labelPrinterPort,
                     label_printer_enabled = @labelPrinterEnabled,
+                    till_logout_minutes = @tillLogoutMinutes,
                     updated_by = @updatedBy,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = @id
@@ -260,6 +270,7 @@ public class BusinessSettingsService
             command.Parameters.AddWithValue("@labelPrinterIp", (object?)businessInfo.LabelPrinterIp ?? DBNull.Value);
             command.Parameters.AddWithValue("@labelPrinterPort", businessInfo.LabelPrinterPort);
             command.Parameters.AddWithValue("@labelPrinterEnabled", businessInfo.LabelPrinterEnabled);
+            command.Parameters.AddWithValue("@tillLogoutMinutes", businessInfo.TillLogoutMinutes);
             command.Parameters.AddWithValue("@updatedBy", updatedBy);
             command.Parameters.AddWithValue("@id", businessInfo.Id);
 
@@ -282,6 +293,8 @@ public class BusinessSettingsService
     {
         try
         {
+            EnsureBusinessInfoColumnsExist();
+            businessInfo.TillLogoutMinutes = TillLogoutMinutes.Normalize(businessInfo.TillLogoutMinutes);
             using var connection = new MySqlConnection(POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString());
             await connection.OpenAsync();
 
@@ -289,11 +302,11 @@ public class BusinessSettingsService
                 INSERT INTO business_info (
                     restaurant_name, address, city, county, country, postcode,
                     phone_number, email, website, vat_number, tax_code, description,
-                    logo_path, label_printer_ip, label_printer_port, label_printer_enabled, updated_by
+                    logo_path, label_printer_ip, label_printer_port, label_printer_enabled, till_logout_minutes, updated_by
                 ) VALUES (
                     @restaurantName, @address, @city, @county, @country, @postcode,
                     @phoneNumber, @email, @website, @vatNumber, @taxCode, @description,
-                    @logoPath, @labelPrinterIp, @labelPrinterPort, @labelPrinterEnabled, @updatedBy
+                    @logoPath, @labelPrinterIp, @labelPrinterPort, @labelPrinterEnabled, @tillLogoutMinutes, @updatedBy
                 )
             ";
 
@@ -314,6 +327,7 @@ public class BusinessSettingsService
             command.Parameters.AddWithValue("@labelPrinterIp", (object?)businessInfo.LabelPrinterIp ?? DBNull.Value);
             command.Parameters.AddWithValue("@labelPrinterPort", businessInfo.LabelPrinterPort);
             command.Parameters.AddWithValue("@labelPrinterEnabled", businessInfo.LabelPrinterEnabled);
+            command.Parameters.AddWithValue("@tillLogoutMinutes", businessInfo.TillLogoutMinutes);
             command.Parameters.AddWithValue("@updatedBy", createdBy);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
@@ -477,6 +491,7 @@ public class BusinessSettingsService
         UpdatedBy = source.UpdatedBy,
         LabelPrinterIp = source.LabelPrinterIp,
         LabelPrinterPort = source.LabelPrinterPort,
-        LabelPrinterEnabled = source.LabelPrinterEnabled
+        LabelPrinterEnabled = source.LabelPrinterEnabled,
+        TillLogoutMinutes = source.TillLogoutMinutes
     };
 }

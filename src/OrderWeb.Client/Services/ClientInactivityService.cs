@@ -1,14 +1,16 @@
+using OrderWeb.Contracts.Access;
+
 namespace OrderWeb.Client.Services;
 
 /// <summary>
-/// Client idle, same plan as Mother: 60s back to the role dashboard, then 3 minutes logout.
-/// Staff / Manager / User / Cashier log out at 3 minutes. User / Manager / Cashier also
-/// return home at 60s. Uses a one-shot timer rescheduled on activity.
+/// Client idle: 60s back to the role dashboard, then logout after Mother's saved minutes.
+/// Staff / Manager / User / Cashier share that logout time. User / Manager / Cashier also
+/// return home at 60s. Missing or offline value stays at 3 minutes.
 /// </summary>
 public sealed class ClientInactivityService
 {
     private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan StaffManagerUserLogoutTimeout = TimeSpan.FromMinutes(3);
+    private TimeSpan _logoutTimeout = TimeSpan.FromMinutes(ClientTillLogoutStore.GetMinutes());
     private readonly object _sync = new();
     private IDispatcherTimer? _timer;
     private DateTime _lastActivityAt = DateTime.Now;
@@ -21,8 +23,22 @@ public sealed class ClientInactivityService
     private Func<bool>? _isBusy;
     private bool _windowsHooked;
 
+    public void SetLogoutMinutes(int minutes)
+    {
+        lock (_sync)
+        {
+            _logoutTimeout = TimeSpan.FromMinutes(TillLogoutMinutes.Normalize(minutes));
+        }
+
+        ScheduleNextCheck();
+    }
+
     public void Start(Func<string?> getRole, Action logout, Func<Task>? returnToDashboard = null, Func<bool>? isBusy = null)
     {
+        lock (_sync)
+        {
+            _logoutTimeout = TimeSpan.FromMinutes(ClientTillLogoutStore.GetMinutes());
+        }
         _getRole = getRole ?? throw new ArgumentNullException(nameof(getRole));
         _logout = logout ?? throw new ArgumentNullException(nameof(logout));
         _returnToDashboard = returnToDashboard;
@@ -117,7 +133,7 @@ public sealed class ClientInactivityService
 
             role = _getRole.Invoke();
             var elapsed = DateTime.Now - _lastActivityAt;
-            remaining = StaffManagerUserLogoutTimeout - elapsed;
+            remaining = _logoutTimeout - elapsed;
             if (IsDashboardReturnRole(role) && !_hasReturnedToDashboard)
             {
                 var untilHome = DashboardReturnTimeout - elapsed;
@@ -178,7 +194,7 @@ public sealed class ClientInactivityService
                 return;
             }
 
-            if (elapsed >= StaffManagerUserLogoutTimeout)
+            if (elapsed >= _logoutTimeout)
             {
                 _isHandling = true;
                 returnHome = null;

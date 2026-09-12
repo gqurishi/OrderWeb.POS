@@ -1,40 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="POS_in_NET.Pages.CashierDashboardPage" Shell.NavBarIsVisible="False" BackgroundColor="#F8FAFC">
-    <ContentPage.Resources>
-        <Style x:Key="CashierSummaryCard" TargetType="Border">
-            <Setter Property="BackgroundColor" Value="White"/><Setter Property="Stroke" Value="#DCE5F2"/>
-            <Setter Property="StrokeThickness" Value="1"/><Setter Property="Padding" Value="28,24"/><Setter Property="HeightRequest" Value="138"/>
-            <Setter Property="StrokeShape"><Setter.Value><RoundRectangle CornerRadius="0"/></Setter.Value></Setter>
-        </Style>
-    </ContentPage.Resources>
-    <Grid RowDefinitions="Auto,*">
-        <Grid Padding="24,16" BackgroundColor="White" ColumnDefinitions="*,Auto">
-            <VerticalStackLayout Spacing="2"><Label Text="Cashier Dashboard" FontSize="24" FontAttributes="Bold" TextColor="#0F172A"/><Label x:Name="IdentityLabel" Text="Reports and till operations" FontSize="14" TextColor="#64748B"/></VerticalStackLayout>
-            <Button Grid.Column="1" Text="Logout" Clicked="OnLogoutClicked" BackgroundColor="#FEE2E2" TextColor="#B91C1C"/>
-        </Grid>
-        <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="24,20" Spacing="18" WidthRequest="880" MaximumWidthRequest="880" HorizontalOptions="Center">
-                <Label x:Name="BusinessDateLabel" FontSize="15" TextColor="#475569"/>
-                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
-                    <Border Grid.Column="0" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="TOTAL ORDERS" FontSize="12" TextColor="#475569"/><Label x:Name="TotalOrdersLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="1" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="TOTAL SALES" FontSize="12" TextColor="#475569"/><Label x:Name="TotalSalesLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="2" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="CASH TOTAL" FontSize="12" TextColor="#475569"/><Label x:Name="CashTotalLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="3" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="CARD TOTAL" FontSize="12" TextColor="#475569"/><Label x:Name="CardTotalLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                </Grid>
-                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
-                    <Border Grid.Column="0" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="VOIDS" FontSize="12" TextColor="#475569"/><Label x:Name="VoidsLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="1" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="DISCOUNTS" FontSize="12" TextColor="#475569"/><Label x:Name="DiscountsLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="2" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="EXPECTED CASH" FontSize="12" TextColor="#475569"/><Label x:Name="ExpectedCashLabel" Text="—" FontSize="26" TextColor="#172033"/></VerticalStackLayout></Border>
-                    <Border Grid.Column="3" Style="{StaticResource CashierSummaryCard}"><VerticalStackLayout Spacing="10"><Label Text="VARIANCE" FontSize="12" TextColor="#475569"/><Label x:Name="VarianceLabel" Text="—" FontSize="26" TextColor="#172033" LineBreakMode="WordWrap"/></VerticalStackLayout></Border>
-                </Grid>
-                <Label Text="Quick actions" FontSize="18" FontAttributes="Bold" TextColor="#0F172A" Margin="0,8,0,0"/>
-                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
-                    <Button Grid.Column="0" Text="Open Cash Drawer" Clicked="OnOpenCashDrawerClicked" BackgroundColor="#0F766E" TextColor="White" HeightRequest="64" CornerRadius="12"/>
-                    <Button Grid.Column="1" Text="Z Report Preview" Clicked="OnReportsClicked" BackgroundColor="#1D4ED8" TextColor="White" HeightRequest="64" CornerRadius="12"/>
-                    <Button Grid.Column="2" Text="Print Z Report" Clicked="OnPrintZReportClicked" BackgroundColor="#7C3AED" TextColor="White" HeightRequest="64" CornerRadius="12"/>
-                </Grid>
-            </VerticalStackLayout>
-        </ScrollView>
-    </Grid>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:shared="clr-namespace:OrderWeb.SharedUI.Controls;assembly=OrderWeb.SharedUI"
+             x:Class="POS_in_NET.Pages.CashierDashboardPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#F8FAFC">
+
+    <shared:CashierDashboardView x:Name="Dashboard" />
+
 </ContentPage>

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using OrderWeb.Contracts.Access;
 using POS_in_NET.Models;
 
 namespace POS_in_NET.Services;
@@ -6,8 +7,8 @@ namespace POS_in_NET.Services;
 public sealed class InactivityService
 {
     private static readonly TimeSpan DashboardReturnTimeout = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan StaffLogoutTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan AdminLogoutTimeout = TimeSpan.FromMinutes(2);
+    private TimeSpan _staffLogoutTimeout = TimeSpan.FromMinutes(TillLogoutMinutes.DefaultMinutes);
     private readonly AuthenticationService _authService;
     private readonly RoleAccessService _roleAccessService;
     private readonly ConditionalWeakTable<VisualElement, object> _trackedElements = new();
@@ -27,8 +28,17 @@ public sealed class InactivityService
         _roleAccessService = roleAccessService;
     }
 
+    public void ApplyStaffLogoutMinutes(int minutes)
+    {
+        lock (_sync)
+        {
+            _staffLogoutTimeout = TimeSpan.FromMinutes(TillLogoutMinutes.Normalize(minutes));
+        }
+    }
+
     public void Start()
     {
+        _ = ReloadStaffLogoutMinutesAsync();
         if (_timer != null)
         {
             return;
@@ -55,6 +65,20 @@ public sealed class InactivityService
             });
         };
         _timer.Start();
+    }
+
+    private async Task ReloadStaffLogoutMinutesAsync()
+    {
+        try
+        {
+            var info = await new BusinessSettingsService().GetBusinessInfoAsync();
+            ApplyStaffLogoutMinutes(info?.TillLogoutMinutes ?? TillLogoutMinutes.DefaultMinutes);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Idle logout minutes load failed: {ex.Message}");
+            ApplyStaffLogoutMinutes(TillLogoutMinutes.DefaultMinutes);
+        }
     }
 
     public void ResetActivity()
@@ -264,7 +288,7 @@ public sealed class InactivityService
 
             // Only walk the visual tree when idle is near a threshold — not every tick.
             var nearIdle = elapsed >= DashboardReturnTimeout - TimeSpan.FromSeconds(10)
-                || elapsed >= StaffLogoutTimeout - TimeSpan.FromSeconds(10)
+                || elapsed >= _staffLogoutTimeout - TimeSpan.FromSeconds(10)
                 || (role == UserRole.Admin && elapsed >= AdminLogoutTimeout - TimeSpan.FromSeconds(10));
             if (nearIdle && HasActiveModalOrPopup())
             {
@@ -312,7 +336,7 @@ public sealed class InactivityService
             return elapsed >= AdminLogoutTimeout ? IdleAction.Logout : IdleAction.None;
         }
 
-        if (elapsed >= StaffLogoutTimeout)
+        if (elapsed >= _staffLogoutTimeout)
         {
             return IdleAction.Logout;
         }

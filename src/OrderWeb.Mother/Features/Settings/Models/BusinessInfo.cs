@@ -23,4 +23,7 @@ public class BusinessInfo
     public string? LabelPrinterIp { get; set; }
     public int LabelPrinterPort { get; set; } = 9100;
     public bool LabelPrinterEnabled { get; set; }
+
+    /// <summary>Minutes of no taps before User, Manager, and Cashier log out. 3 to 60.</summary>
+    public int TillLogoutMinutes { get; set; } = OrderWeb.Contracts.Access.TillLogoutMinutes.DefaultMinutes;
 }

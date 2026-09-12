@@ -35,7 +35,36 @@ public sealed class MotherCashierClient
 
             var envelope = JsonSerializer.Deserialize<CashierDashboardEnvelope>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
             if (envelope is null || !envelope.Success) return CashierDashboardResult.Unavailable("Mother POS returned an invalid dashboard response.", _lastSummary);
-            _lastSummary = new CashierDashboardSummary(envelope.BusinessDate, envelope.TotalOrders, envelope.TotalSales, envelope.CashTotal, envelope.CardTotal, envelope.OtherPaymentTotal, envelope.VoidCount, envelope.VoidAmount, envelope.DiscountTotal, envelope.ExpectedCash, envelope.CountedCash, envelope.Variance, envelope.TerminalName, envelope.GeneratedUtc, envelope.Version);
+            _lastSummary = new CashierDashboardSummary(
+                envelope.BusinessDate,
+                envelope.TotalOrders,
+                envelope.TotalSales,
+                envelope.CashTotal,
+                envelope.CardTotal,
+                envelope.OtherPaymentTotal,
+                envelope.VoidCount,
+                envelope.VoidAmount,
+                envelope.DiscountTotal,
+                envelope.ExpectedCash,
+                envelope.CountedCash,
+                envelope.Variance,
+                envelope.TerminalName,
+                envelope.GeneratedUtc,
+                envelope.Version,
+                envelope.DateLine,
+                envelope.UpdatedText,
+                envelope.Gross,
+                envelope.Net,
+                envelope.Vat,
+                envelope.Tips,
+                envelope.PosSales,
+                envelope.OnlineSales,
+                envelope.PettyCashOut,
+                envelope.WebOrders,
+                envelope.VsYesterday,
+                envelope.ExpectedCashDisplay,
+                envelope.CashDisplay,
+                envelope.CardDisplay);
             return new CashierDashboardResult(true, false, string.Empty, _lastSummary);
         }
         catch
@@ -156,12 +185,71 @@ public sealed class MotherCashierClient
         catch { return new(false, "Mother POS is unavailable. This action requires a live connection.", null, null); }
     }
 
-    private sealed record CashierDashboardEnvelope(bool Success, DateTime BusinessDate, int TotalOrders, decimal TotalSales, decimal CashTotal, decimal CardTotal, decimal OtherPaymentTotal, int VoidCount, decimal VoidAmount, decimal DiscountTotal, decimal ExpectedCash, decimal? CountedCash, decimal? Variance, string TerminalName, DateTimeOffset GeneratedUtc, string Version);
+    private sealed record CashierDashboardEnvelope(
+        bool Success,
+        DateTime BusinessDate,
+        int TotalOrders,
+        decimal TotalSales,
+        decimal CashTotal,
+        decimal CardTotal,
+        decimal OtherPaymentTotal,
+        int VoidCount,
+        decimal VoidAmount,
+        decimal DiscountTotal,
+        decimal ExpectedCash,
+        decimal? CountedCash,
+        decimal? Variance,
+        string TerminalName,
+        DateTimeOffset GeneratedUtc,
+        string Version,
+        string DateLine = "",
+        string UpdatedText = "",
+        string Gross = "",
+        string Net = "",
+        string Vat = "",
+        string Tips = "",
+        string PosSales = "",
+        string OnlineSales = "",
+        string PettyCashOut = "",
+        string WebOrders = "",
+        string VsYesterday = "",
+        string ExpectedCashDisplay = "",
+        string CashDisplay = "",
+        string CardDisplay = "");
     private sealed record PendingShoppingEnvelope(bool Success, List<PendingShoppingTrip>? Trips);
     private sealed record PendingShoppingTrip(int Id, string? Description, decimal AmountTaken, string? RecordedByName, string? PickerLabel, string? Summary);
 }
 
-public sealed record CashierDashboardSummary(DateTime BusinessDate, int TotalOrders, decimal TotalSales, decimal CashTotal, decimal CardTotal, decimal OtherPaymentTotal, int VoidCount, decimal VoidAmount, decimal DiscountTotal, decimal ExpectedCash, decimal? CountedCash, decimal? Variance, string TerminalName, DateTimeOffset GeneratedUtc, string Version);
+public sealed record CashierDashboardSummary(
+    DateTime BusinessDate,
+    int TotalOrders,
+    decimal TotalSales,
+    decimal CashTotal,
+    decimal CardTotal,
+    decimal OtherPaymentTotal,
+    int VoidCount,
+    decimal VoidAmount,
+    decimal DiscountTotal,
+    decimal ExpectedCash,
+    decimal? CountedCash,
+    decimal? Variance,
+    string TerminalName,
+    DateTimeOffset GeneratedUtc,
+    string Version,
+    string DateLine = "",
+    string UpdatedText = "",
+    string Gross = "",
+    string Net = "",
+    string Vat = "",
+    string Tips = "",
+    string PosSales = "",
+    string OnlineSales = "",
+    string PettyCashOut = "",
+    string WebOrders = "",
+    string VsYesterday = "",
+    string ExpectedCashDisplay = "",
+    string CashDisplay = "",
+    string CardDisplay = "");
 public sealed record CashierDashboardResult(bool Success, bool IsStale, string Message, CashierDashboardSummary? Summary)
 {
     public static CashierDashboardResult Unavailable(string message, CashierDashboardSummary? cached) => new(false, cached is not null, message, cached);

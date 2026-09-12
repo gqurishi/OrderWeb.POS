@@ -21,27 +21,7 @@ public partial class CashierDashboardPage : ContentPage
             ?? throw new InvalidOperationException("Z report service is unavailable.");
         _zReportPrintService = ServiceHelper.GetService<ZReportPrintService>()
             ?? throw new InvalidOperationException("Z report print service is unavailable.");
-        var dashboardContent = Content as View
-            ?? throw new InvalidOperationException("Cashier dashboard content was not initialized.");
-        // The shared shell owns the common header and logout affordance. Hide
-        // the original page-local header so Cashier has the same single top bar
-        // as the other POS surfaces.
-        if (dashboardContent is Grid dashboardGrid && dashboardGrid.Children.Count > 1)
-        {
-            if (dashboardGrid.Children[0] is View originalHeader)
-            {
-                originalHeader.IsVisible = false;
-            }
-
-            // Move the dashboard body into the shell's content area. The
-            // original header is hidden, but the body row must remain
-            // auto-sized; leaving it at zero makes the entire dashboard blank.
-            dashboardGrid.RowDefinitions[0].Height = GridLength.Auto;
-            if (dashboardGrid.Children[1] is View originalBody)
-            {
-                Grid.SetRow(originalBody, 0);
-            }
-        }
+        var dashboardContent = Dashboard;
         _shellFrame = new ApplicationShellFrame
         {
             PageTitle = "Dashboard",
@@ -54,6 +34,16 @@ public partial class CashierDashboardPage : ContentPage
         };
         _shellFrame.NavigationRequested += OnNavigationRequested;
         _shellFrame.LogoutRequested += OnLogoutRequested;
+        Dashboard.RefreshRequested += async (_, _) =>
+        {
+            if (_authService.CurrentUser is { } user)
+            {
+                await LoadSummaryAsync(user);
+            }
+        };
+        Dashboard.OpenDrawerRequested += OnOpenCashDrawerClicked;
+        Dashboard.PreviewZRequested += OnReportsClicked;
+        Dashboard.PrintZRequested += OnPrintZReportClicked;
         Content = _shellFrame;
     }
 
@@ -67,8 +57,6 @@ public partial class CashierDashboardPage : ContentPage
             return;
         }
 
-        IdentityLabel.Text = $"{user.Name} · Cashier";
-        BusinessDateLabel.Text = $"Business date: {TradingDayHelper.GetBusinessDate():dddd, dd MMMM yyyy}";
         _shellFrame.UserName = user.Name;
         _shellFrame.UserRole = "Cashier";
         _shellFrame.TerminalName = TerminalConfigurationService.GetConfiguration().TerminalName;
@@ -79,14 +67,23 @@ public partial class CashierDashboardPage : ContentPage
     private async Task LoadSummaryAsync(User user)
     {
         var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), user.Name, includeTopItems: false);
-        TotalOrdersLabel.Text = snapshot.OrderCount.ToString();
-        TotalSalesLabel.Text = $"£{snapshot.GrossSales:N2}";
-        VoidsLabel.Text = snapshot.VoidCount.ToString();
-        DiscountsLabel.Text = $"£{snapshot.DiscountTotal:N2}";
-        CashTotalLabel.Text = $"£{snapshot.CashTotal:N2}";
-        CardTotalLabel.Text = $"£{snapshot.CardTotal:N2}";
-        ExpectedCashLabel.Text = $"£{snapshot.ExpectedCashInDrawer:N2}";
-        VarianceLabel.Text = snapshot.CashCountVariance is { } variance ? $"£{variance:N2}" : "Not counted";
+        Dashboard.Apply(new CashierDayBoard
+        {
+            DateLine = $"{snapshot.DateDisplay} · {snapshot.TerminalName} · resets {TradingDayHelper.ResetTimeDisplay}",
+            UpdatedText = snapshot.LastUpdatedDisplay,
+            Gross = snapshot.GrossDisplay,
+            Net = snapshot.NetDisplay,
+            Vat = snapshot.VatDisplay,
+            Cash = snapshot.CashDisplay,
+            Card = snapshot.CardDisplay,
+            Tips = snapshot.TipsDisplay,
+            PosSales = $"{snapshot.PosDisplay} ({snapshot.PosOrderCount})",
+            OnlineSales = $"{snapshot.OnlineDisplay} ({snapshot.OnlineOrderCount})",
+            PettyCashOut = snapshot.TillNetOutDisplay,
+            ExpectedCash = snapshot.ExpectedCashDisplay,
+            WebOrders = snapshot.OnlineOrderCount.ToString(),
+            VsYesterday = snapshot.SalesVsYesterdayDisplay
+        });
     }
 
     private async void OnReportsClicked(object sender, EventArgs e)
@@ -117,8 +114,7 @@ public partial class CashierDashboardPage : ContentPage
             return;
         }
 
-        var button = sender as Button;
-        if (button != null) button.IsEnabled = false;
+        Dashboard.SetActionsEnabled(false);
         try
         {
             var snapshot = await _zReportService.GetSummaryAsync(TradingDayHelper.GetBusinessDate(), user.Name, includeTopItems: false);
@@ -132,7 +128,7 @@ public partial class CashierDashboardPage : ContentPage
         }
         finally
         {
-            if (button != null) button.IsEnabled = true;
+            Dashboard.SetActionsEnabled(true);
         }
     }
 
