@@ -1,5 +1,6 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Controls.Shapes;
+using OrderWeb.SharedUI.Controls;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using System;
@@ -18,6 +19,7 @@ namespace POS_in_NET.Views
         private int _selectedFloorId = 0;
         private string _selectedFloorName = string.Empty;
         private List<Border> _floorBorders = new List<Border>();
+        private bool _keyboardOpen;
 
         public AddTableDialog()
         {
@@ -189,22 +191,41 @@ namespace POS_in_NET.Views
 
             TableNumberEntry.Text = string.Empty;
             SelectDesign(1);
+            SharedTouchKeyboard.SetEnabled(TableNumberEntry, false);
             IsVisible = true;
-
-            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(100), () =>
-            {
-                try
-                {
-                    TableNumberEntry.Focus();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"AddTableDialog focus skipped: {ex.Message}");
-                }
-            });
-
             return _taskCompletionSource.Task;
         }
+
+        private async void OnTableNumberTapped(object? sender, TappedEventArgs e)
+        {
+            if (_keyboardOpen)
+            {
+                return;
+            }
+
+            _keyboardOpen = true;
+            try
+            {
+                var value = await new NumericKeyboardDialog().ShowDigitsAsync(
+                    TableNumberEntry.Text,
+                    "Table number",
+                    maxDigits: 6,
+                    hostPage: FindHostPage(),
+                    overlayHost: DialogRoot);
+                if (value is not null)
+                {
+                    TableNumberEntry.Text = value;
+                }
+            }
+            finally
+            {
+                _keyboardOpen = false;
+            }
+        }
+
+        private static ContentPage? FindHostPage() =>
+            Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage
+            ?? Shell.Current?.CurrentPage as ContentPage;
 
         private async void OnCreateClicked(object sender, EventArgs e)
         {
@@ -264,11 +285,6 @@ namespace POS_in_NET.Views
             SelectDesign(3);
         }
 
-        private void OnDesign4Clicked(object sender, EventArgs e)
-        {
-            SelectDesign(4);
-        }
-
         private void SelectDesign(int designNumber)
         {
             // Reset all borders
@@ -283,10 +299,6 @@ namespace POS_in_NET.Views
             Design3Border.BackgroundColor = Colors.White;
             Design3Border.Stroke = Color.FromArgb("#E5E7EB");
             Design3Border.StrokeThickness = 2;
-
-            Design4Border.BackgroundColor = Colors.White;
-            Design4Border.Stroke = Color.FromArgb("#E5E7EB");
-            Design4Border.StrokeThickness = 2;
 
             // Highlight selected design
             switch (designNumber)
@@ -308,12 +320,6 @@ namespace POS_in_NET.Views
                     Design3Border.Stroke = Color.FromArgb("#3B82F6");
                     Design3Border.StrokeThickness = 3;
                     _selectedDesignIcon = "table_3.png";
-                    break;
-                case 4:
-                    Design4Border.BackgroundColor = Color.FromArgb("#F0F9FF");
-                    Design4Border.Stroke = Color.FromArgb("#3B82F6");
-                    Design4Border.StrokeThickness = 3;
-                    _selectedDesignIcon = "table_4.png";
                     break;
             }
         }

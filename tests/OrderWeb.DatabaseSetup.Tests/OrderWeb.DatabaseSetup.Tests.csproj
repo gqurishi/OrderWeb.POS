@@ -34,6 +34,7 @@
     <Compile Include="..\..\src\OrderWeb.Mother\Features\Delivery\Services\RiderOperationPolicy.cs" Link="Policies\RiderOperationPolicy.cs" />
     <Compile Include="..\..\src\OrderWeb.Mother\Features\OnlineOrders\Models\Api\ApiCompatibilityModels.cs" Link="ContractV2\ApiCompatibilityModels.cs" />
     <Compile Include="..\..\src\OrderWeb.Mother\Features\OnlineOrders\Services\OnlineOrderPaymentHelper.cs" Link="ContractV2\OnlineOrderPaymentHelper.cs" />
+    <Compile Include="..\..\src\OrderWeb.Mother\Features\Printing\Services\LabelPrintRules.cs" Link="Policies\LabelPrintRules.cs" />
   </ItemGroup>
 
 </Project>

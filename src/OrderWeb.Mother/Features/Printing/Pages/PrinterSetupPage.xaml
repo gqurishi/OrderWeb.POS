@@ -15,8 +15,12 @@
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
         
         <!-- Content -->
-        <ScrollView Grid.Row="1">
-            <Grid x:Name="PrinterContentGrid" Padding="16,12" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <ScrollView x:Name="PrinterPageScroll"
+                    Grid.Row="1"
+                    Orientation="Vertical"
+                    VerticalScrollBarVisibility="Always"
+                    HorizontalScrollBarVisibility="Never">
+            <Grid x:Name="PrinterContentGrid" Padding="16,12" ColumnDefinitions="*">
                 
                 <!-- Left: Printer List -->
                 <VerticalStackLayout x:Name="PrinterListLayout" Grid.Column="0" Spacing="10">
@@ -26,19 +30,6 @@
                            IsVisible="False"/>
 
                     <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center" JustifyContent="Start">
-                        <Button x:Name="TestAllButton"
-                                Text="Test all print"
-                                BackgroundColor="#2563EB"
-                                TextColor="White"
-                                CornerRadius="8"
-                                HeightRequest="40"
-                                MinimumHeightRequest="40"
-                                Padding="16,0"
-                                FontSize="13"
-                                FontAttributes="Bold"
-                                Style="{x:Null}"
-                                Margin="0,0,8,8"
-                                Clicked="OnTestAllClicked"/>
                         <Button x:Name="RefreshButton"
                                 Text="Refresh"
                                 BackgroundColor="White"
@@ -99,7 +90,8 @@
                                 Style="{x:Null}"
                                 Margin="0,0,8,8"
                                 Clicked="OnOpenDrawerClicked"/>
-                        <Button Text="Logo update"
+                        <Button x:Name="LogoUpdateButton"
+                                Text="Logo update"
                                 BackgroundColor="White"
                                 TextColor="#334155"
                                 BorderColor="#E2E8F0"
@@ -204,61 +196,6 @@
                                 </VerticalStackLayout>
                             </Grid>
 
-                        </Grid>
-                    </Border>
-
-                    <!-- Customer receipt logo -->
-                    <Border x:Name="LogoSizeCard"
-                            IsVisible="False"
-                            BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                            <VerticalStackLayout Spacing="1" VerticalOptions="Center">
-                                <Label Text="Customer Receipt Logo"
-                                       FontSize="15"
-                                       FontAttributes="Bold"
-                                       TextColor="#0F172A"/>
-                                <Label Text="Logo size printed at the top of each receipt"
-                                       FontSize="12"
-                                       TextColor="#64748B"/>
-                                <Label x:Name="LogoSizeStatusLabel"
-                                       Text="Selected: Small"
-                                       FontSize="12"
-                                       FontAttributes="Bold"
-                                       TextColor="#15803D"/>
-                            </VerticalStackLayout>
-
-                            <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
-                                <Button x:Name="SmallLogoSizeButton"
-                                        Text="Small"
-                                        HeightRequest="34"
-                                        MinimumHeightRequest="34"
-                                        MinimumWidthRequest="88"
-                                        CornerRadius="8"
-                                        Padding="12,0"
-                                        FontSize="12"
-                                        FontAttributes="Bold"
-                                        Clicked="OnSmallLogoSizeClicked"/>
-                                <Button x:Name="MediumLogoSizeButton"
-                                        Text="Medium"
-                                        HeightRequest="34"
-                                        MinimumHeightRequest="34"
-                                        MinimumWidthRequest="88"
-                                        CornerRadius="8"
-                                        Padding="12,0"
-                                        FontSize="12"
-                                        FontAttributes="Bold"
-                                        Clicked="OnMediumLogoSizeClicked"/>
-                                <Button x:Name="LargeLogoSizeButton"
-                                        Text="Large"
-                                        HeightRequest="34"
-                                        MinimumHeightRequest="34"
-                                        MinimumWidthRequest="88"
-                                        CornerRadius="8"
-                                        Padding="12,0"
-                                        FontSize="12"
-                                        FontAttributes="Bold"
-                                        Clicked="OnLargeLogoSizeClicked"/>
-                            </HorizontalStackLayout>
                         </Grid>
                     </Border>
 
@@ -389,539 +326,386 @@
 
                 </VerticalStackLayout>
 
-                <!-- Right: Add/Edit Form Panel -->
-                <Border x:Name="FormPanel"
-                        Grid.Column="1"
-                        BackgroundColor="White"
-                        WidthRequest="420"
-                        Padding="28"
-                        StrokeThickness="0"
-                        IsVisible="False">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="16"/>
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Brush="#15000000" Offset="0,8" Radius="24" Opacity="0.12"/>
-                    </Border.Shadow>
-                    
-                    <ScrollView>
-                        <VerticalStackLayout Spacing="20">
-                            <!-- Form Header -->
-                            <Grid ColumnDefinitions="*,Auto">
-                                <Label x:Name="FormTitle"
-                                       Text="Add Printer"
-                                       FontSize="22"
-                                       FontAttributes="Bold"
-                                       TextColor="#0F172A"/>
-                                <Border Grid.Column="1"
-                                        BackgroundColor="#F1F5F9"
-                                        Padding="8"
-                                        StrokeThickness="0"
-                                        WidthRequest="36"
-                                        HeightRequest="36">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnCloseFormClicked"/>
-                                    </Border.GestureRecognizers>
-                                    <Label Text="" 
-                                           FontSize="16" 
-                                           TextColor="#64748B" 
-                                           HorizontalOptions="Center" 
-                                           VerticalOptions="Center"/>
-                                </Border>
+                <VerticalStackLayout x:Name="FormPanel" Grid.Column="0" Spacing="10" IsVisible="False" HorizontalOptions="Fill">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label x:Name="FormTitle"
+                               Text="Add Printer"
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"
+                               VerticalOptions="Center"
+                               IsVisible="False"/>
+                        <Button Grid.Column="1"
+                                Text="Back"
+                                BackgroundColor="#2563EB"
+                                TextColor="White"
+                                BorderColor="#2563EB"
+                                BorderWidth="1"
+                                CornerRadius="8"
+                                HeightRequest="32"
+                                MinimumHeightRequest="32"
+                                Padding="14,0"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                Style="{x:Null}"
+                                HorizontalOptions="End"
+                                Clicked="OnCloseFormClicked"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                        <Border BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="Technology" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <HorizontalStackLayout Spacing="8">
+                                        <Border x:Name="TechThermalBorder" BackgroundColor="#0F172A" Padding="14,8" StrokeThickness="0">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechThermalTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="TechThermalLabel" Text="Thermal" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                        </Border>
+                                        <Border x:Name="TechImpactBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechImpactTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="TechImpactLabel" Text="Dot-matrix" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                        <Border x:Name="TechLabelBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechLabelTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="TechLabelLabel" Text="Label" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                            </VerticalStackLayout>
+                        </Border>
+                        <Border x:Name="BrandCard" Grid.Column="1" BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="Brand" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Border x:Name="BrandEpsonBorder" BackgroundColor="#0F172A" Padding="14,8" StrokeThickness="0">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandEpsonTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandEpsonLabel" Text="EPSON" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                        </Border>
+                                        <Border x:Name="BrandStarBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandStarTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandStarLabel" Text="STAR" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                        <Border x:Name="BrandXprinterBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandXprinterTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandXprinterLabel" Text="XPRINTER" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                        <Border x:Name="BrandToshibaBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1" IsVisible="False">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandToshibaTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandToshibaLabel" Text="TOSHIBA" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                        <Border x:Name="BrandBrotherBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1" IsVisible="False">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandBrotherTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandBrotherLabel" Text="BROTHER" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                        <Border x:Name="BrandOtherBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1" IsVisible="False">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBrandOtherTapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="BrandOtherLabel" Text="OTHER" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                            </VerticalStackLayout>
+                        </Border>
+                        <Border x:Name="ModelCard" Grid.Column="2" BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                            <VerticalStackLayout Spacing="6">
+                                <VerticalStackLayout x:Name="EpsonModelSection" Spacing="6" IsVisible="False">
+                                    <Label Text="Model" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                    <Border BackgroundColor="#F8FAFC" Padding="8,2" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                        <Picker x:Name="EpsonModelPicker" Title="Select model" BackgroundColor="Transparent" TextColor="#0F172A"/>
+                                    </Border>
+                                    <Label x:Name="ModelHintLabel"
+                                           Text="80mm is fixed for thermal. Mother connects by IP on port 9100. No PC driver."
+                                           FontSize="11"
+                                           TextColor="#94A3B8"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout x:Name="GeneralPaperWidthSection" Spacing="6" VerticalOptions="Start">
+                                    <Label Text="Paper width" FontSize="13" FontAttributes="Bold" TextColor="#0F172A"/>
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Border x:Name="Width80Border" BackgroundColor="#0F172A" Padding="16,8" StrokeThickness="0">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnWidth80Tapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="Width80Label" Text="80mm" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                        </Border>
+                                        <Border x:Name="Width58Border" BackgroundColor="#F8FAFC" Padding="16,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                            <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnWidth58Tapped"/></Border.GestureRecognizers>
+                                            <Label x:Name="Width58Label" Text="58mm" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+                        </Border>
+                    </Grid>
+
+                    <Border BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Connection Settings" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                            <Grid ColumnDefinitions="*,*,140" ColumnSpacing="12">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="Printer name" FontSize="12" TextColor="#64748B"/>
+                                    <Border x:Name="PrinterNameField" BackgroundColor="White" Padding="12,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" HeightRequest="40">
+                                        <Grid>
+                                            <Entry x:Name="PrinterNameEntry" IsVisible="False" Text=""/>
+                                            <Label x:Name="PrinterNameValueLabel" Text="Kitchen Hot, Front Counter" FontSize="13" TextColor="#94A3B8" VerticalOptions="Center" InputTransparent="True"/>
+                                            <Button x:Name="PrinterNameTap" BackgroundColor="Transparent" BorderWidth="0" Text="" Style="{x:Null}" MinimumHeightRequest="0" MinimumWidthRequest="0" HorizontalOptions="Fill" VerticalOptions="Fill" ZIndex="2"/>
+                                        </Grid>
+                                    </Border>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                    <Label Text="IP address" FontSize="12" TextColor="#64748B"/>
+                                    <Border x:Name="IpAddressField" BackgroundColor="White" Padding="12,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" HeightRequest="40">
+                                        <Grid>
+                                            <Entry x:Name="IpAddressEntry" IsVisible="False"/>
+                                            <Label x:Name="IpAddressValueLabel" Text="192.168.1.100" FontSize="13" TextColor="#94A3B8" VerticalOptions="Center" InputTransparent="True"/>
+                                            <Button x:Name="IpAddressTap" BackgroundColor="Transparent" BorderWidth="0" Text="" Style="{x:Null}" MinimumHeightRequest="0" MinimumWidthRequest="0" HorizontalOptions="Fill" VerticalOptions="Fill" ZIndex="2"/>
+                                        </Grid>
+                                    </Border>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="2" Spacing="4">
+                                    <Label Text="Port" FontSize="12" TextColor="#64748B"/>
+                                    <Border x:Name="PortField" BackgroundColor="White" Padding="12,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" HeightRequest="40">
+                                        <Grid>
+                                            <Entry x:Name="PortEntry" IsVisible="False" Text="9100"/>
+                                            <Label x:Name="PortValueLabel" Text="9100" FontSize="13" TextColor="#0F172A" VerticalOptions="Center" InputTransparent="True"/>
+                                            <Button x:Name="PortTap" BackgroundColor="Transparent" BorderWidth="0" Text="" Style="{x:Null}" MinimumHeightRequest="0" MinimumWidthRequest="0" HorizontalOptions="Fill" VerticalOptions="Fill" ZIndex="2"/>
+                                        </Grid>
+                                    </Border>
+                                </VerticalStackLayout>
                             </Grid>
+                            <Label Text="Use a private static IP or DHCP reservation. Public addresses are rejected."
+                                   FontSize="11"
+                                   TextColor="#C2410C"/>
+                        </VerticalStackLayout>
+                    </Border>
 
-                            <BoxView HeightRequest="1" BackgroundColor="#E2E8F0"/>
+                    <Border BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="12">
 
-                            <!-- Technology, then brand, then model. -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Technology" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <FlexLayout Wrap="Wrap" JustifyContent="Start" AlignItems="Start">
-                                    <Border x:Name="TechThermalBorder" BackgroundColor="#0F172A" Padding="14,10" Margin="0,0,8,8" StrokeThickness="0">
+                            <VerticalStackLayout x:Name="PurposeSection" Spacing="6">
+                                <Label Text="Purpose" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <Label x:Name="PurposeHintLabel" Text="Select what this printer will be used for." FontSize="12" TextColor="#94A3B8" Margin="0,-2,0,2"/>
+                                <HorizontalStackLayout Spacing="8">
+                                    <Border x:Name="TypeReceiptBorder" BackgroundColor="#22C55E" Padding="14,8" StrokeThickness="0">
                                         <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
-                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechThermalTapped"/></Border.GestureRecognizers>
-                                        <Label x:Name="TechThermalLabel" Text="Thermal" FontSize="12" FontAttributes="Bold" TextColor="White"/>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeReceiptTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeReceiptLabel" Text="Receipt" FontSize="13" FontAttributes="Bold" TextColor="White"/>
                                     </Border>
-                                    <Border x:Name="TechImpactBorder" BackgroundColor="#F1F5F9" Padding="14,10" Margin="0,0,8,8" StrokeThickness="0">
+                                    <Border x:Name="TypeKitchenBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
                                         <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
-                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechImpactTapped"/></Border.GestureRecognizers>
-                                        <Label x:Name="TechImpactLabel" Text="Dot-matrix" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeKitchenTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeKitchenLabel" Text="Kitchen" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
                                     </Border>
-                                    <Border x:Name="TechLabelBorder" BackgroundColor="#F1F5F9" Padding="14,10" Margin="0,0,8,8" StrokeThickness="0">
+                                    <Border x:Name="TypeBarBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
                                         <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
-                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTechLabelTapped"/></Border.GestureRecognizers>
-                                        <Label x:Name="TechLabelLabel" Text="Label" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeBarTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeBarLabel" Text="Bar" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
                                     </Border>
-                                </FlexLayout>
-                            </VerticalStackLayout>
-
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Brand" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <FlexLayout Wrap="Wrap" JustifyContent="Start" AlignItems="Start">
-                                    <Border x:Name="BrandEpsonBorder"
-                                            BackgroundColor="#0F172A"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandEpsonTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandEpsonLabel" Text="EPSON" FontSize="12" FontAttributes="Bold" TextColor="White"/>
+                                    <Border x:Name="TypeOnlineBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeOnlineTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeOnlineLabel" Text="Online Receipt" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
                                     </Border>
-                                    <Border x:Name="BrandStarBorder"
-                                            BackgroundColor="#F1F5F9"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandStarTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandStarLabel" Text="STAR" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                    <Border x:Name="TypeTakeawayBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeTakeawayTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeTakeawayLabel" Text="Takeaway Kitchen" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
                                     </Border>
-                                    <Border x:Name="BrandXprinterBorder"
-                                            BackgroundColor="#F1F5F9"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandXprinterTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandXprinterLabel" Text="XPRINTER" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="BrandToshibaBorder"
-                                            BackgroundColor="#F1F5F9"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            IsVisible="False"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandToshibaTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandToshibaLabel" Text="TOSHIBA" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="BrandBrotherBorder"
-                                            BackgroundColor="#F1F5F9"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            IsVisible="False"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandBrotherTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandBrotherLabel" Text="BROTHER" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="BrandOtherBorder"
-                                            IsVisible="False"
-                                            BackgroundColor="#F1F5F9"
-                                            Padding="18,12"
-                                            Margin="0,0,8,8"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnBrandOtherTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="BrandOtherLabel" Text="OTHER" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                </FlexLayout>
-                            </VerticalStackLayout>
-
-                            <VerticalStackLayout x:Name="EpsonModelSection" Spacing="8" IsVisible="False">
-                                <Label Text="Model" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Border BackgroundColor="#F8FAFC" Padding="10,4" StrokeThickness="1" Stroke="#E2E8F0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Picker x:Name="EpsonModelPicker"
-                                            Title="Select model"
-                                            BackgroundColor="Transparent"
-                                            TextColor="#0F172A"/>
-                                </Border>
-                                <Label x:Name="ModelHintLabel"
-                                       Text="80mm is fixed for thermal. Mother connects by IP on port 9100. No PC driver."
-                                       FontSize="11"
-                                       TextColor="#94A3B8"/>
-                            </VerticalStackLayout>
-
-                            <!-- IP Address -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="IP Address" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Border BackgroundColor="#F8FAFC" Padding="14,12" StrokeThickness="1" Stroke="#E2E8F0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Entry x:Name="IpAddressEntry"
-                                           Placeholder="e.g., 192.168.1.100"
-                                           Keyboard="Url"
-                                           BackgroundColor="Transparent"
-                                           TextColor="#0F172A"
-                                           PlaceholderColor="#94A3B8"
-                                           FontSize="15"/>
-                                </Border>
-                                <Label Text="Use a private static IP or DHCP reservation. The app rejects public printer addresses."
-                                       FontSize="12" TextColor="#B45309"/>
-                            </VerticalStackLayout>
-
-                            <!-- Printer Name -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Printer Name" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Border BackgroundColor="#F8FAFC" Padding="14,12" StrokeThickness="1" Stroke="#E2E8F0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Entry x:Name="PrinterNameEntry"
-                                           Placeholder="e.g., Kitchen Hot, Front Counter"
-                                           BackgroundColor="Transparent"
-                                           TextColor="#0F172A"
-                                           PlaceholderColor="#94A3B8"
-                                           FontSize="15"/>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <!-- Port -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Port" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Border BackgroundColor="#F8FAFC" Padding="14,12" StrokeThickness="1" Stroke="#E2E8F0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Entry x:Name="PortEntry"
-                                           Text="9100"
-                                           Keyboard="Numeric"
-                                           BackgroundColor="Transparent"
-                                           TextColor="#0F172A"
-                                           FontSize="15"/>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <!-- Printer Type -->
-                            <VerticalStackLayout x:Name="PurposeSection" Spacing="8">
-                                <Label Text="Purpose" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Label x:Name="PurposeHintLabel" Text="Where this printer is used." FontSize="11" TextColor="#94A3B8"/>
-                                <FlexLayout Wrap="Wrap" JustifyContent="Start" AlignItems="Start">
-                                    <Border x:Name="TypeReceiptBorder" 
-                                            BackgroundColor="#22C55E" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeReceiptTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeReceiptLabel" Text="Receipt" FontSize="12" FontAttributes="Bold" TextColor="White"/>
-                                    </Border>
-                                    <Border x:Name="TypeKitchenBorder" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeKitchenTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeKitchenLabel" Text="Kitchen" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="TypeBarBorder" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeBarTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeBarLabel" Text="Bar" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="TypeOnlineBorder" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeOnlineTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeOnlineLabel" Text="Online Receipt" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="TypeTakeawayBorder" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeTakeawayTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeTakeawayLabel" Text="Takeaway Kitchen" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                    <Border x:Name="TypeLabelBorder" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="18,12"
-                                            Margin="0,0,10,10"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnTypeLabelTapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="TypeLabelLabel" Text="Label" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Border>
-                                </FlexLayout>
-                            </VerticalStackLayout>
-
-                            <!-- Structured label-printer selection and media settings -->
-                            <VerticalStackLayout x:Name="LabelConfigurationSection" Spacing="14" IsVisible="False">
-                                <Label Text="Label Printer Configuration" FontSize="15" FontAttributes="Bold" TextColor="#0F172A"/>
-
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="6">
-                                        <Label Text="Technology" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
-                                        <Picker x:Name="LabelTechnologyPicker" Title="Select technology" SelectedIndex="0" IsEnabled="False">
-                                            <Picker.Items><x:String>Label Printer</x:String></Picker.Items>
-                                        </Picker>
-                                    </VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="6">
-                                        <Label Text="Manufacturer" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
-                                        <Picker x:Name="LabelManufacturerPicker" Title="Select manufacturer" SelectedIndex="0" IsEnabled="False">
-                                            <Picker.Items><x:String>Toshiba</x:String></Picker.Items>
-                                        </Picker>
-                                    </VerticalStackLayout>
-                                </Grid>
-
-                                <VerticalStackLayout Spacing="6">
-                                    <Label Text="Model" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="LabelModelPicker" Title="Select model" SelectedIndex="0" SelectedIndexChanged="OnLabelModelChanged">
-                                        <Picker.Items><x:String>Toshiba B-FV4D-GS14 LAN</x:String></Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-
-                                <Border BackgroundColor="#F0FDF4" Stroke="#BBF7D0" StrokeThickness="1" Padding="12">
-                                    <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
-                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,*" RowSpacing="5" ColumnSpacing="10">
-                                        <Label Grid.Row="0" Grid.Column="0" Text="Protocol: TPCL" FontSize="11" TextColor="#166534"/>
-                                        <Label Grid.Row="0" Grid.Column="1" Text="Resolution: 203 dpi" FontSize="11" TextColor="#166534"/>
-                                        <Label Grid.Row="1" Grid.Column="0" Text="Direct thermal" FontSize="11" TextColor="#166534"/>
-                                        <Label Grid.Row="1" Grid.Column="1" Text="Raw TCP/IP : 9100" FontSize="11" TextColor="#166534"/>
-                                        <Label Grid.Row="2" Grid.ColumnSpan="2" Text="Maximum print width: 108 mm · Gap / black mark / continuous" FontSize="11" TextColor="#166534"/>
-                                        <Label Grid.Row="3" Grid.ColumnSpan="2" Text="Windows fallback: Toshiba B-FV4 203 dpi TPCL" FontSize="11" TextColor="#166534"/>
-                                    </Grid>
-                                </Border>
-
-                                <VerticalStackLayout Spacing="6">
-                                    <Label Text="Label Profile" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="LabelProfilePicker" Title="Select label profile" SelectedIndexChanged="OnLabelProfileChanged">
-                                        <Picker.Items>
-                                            <x:String>Toshiba 60 × 40 mm Container</x:String>
-                                            <x:String>Toshiba 51 × 30 mm Compact</x:String>
-                                            <x:String>Toshiba 80 × 50 mm Delivery</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-
-                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Media width (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="MediaWidthEntry" Keyboard="Numeric" Text="60"/></VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Label width (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="LabelWidthEntry" Keyboard="Numeric" Text="60"/></VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="2" Spacing="5"><Label Text="Label height (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="LabelHeightEntry" Keyboard="Numeric" Text="40"/></VerticalStackLayout>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="5">
-                                        <Label Text="Sensor type" FontSize="11" TextColor="#475569"/>
-                                        <Picker x:Name="SensorTypePicker" SelectedIndex="0" SelectedIndexChanged="OnSensorTypeChanged">
-                                            <Picker.Items><x:String>Gap</x:String><x:String>Black mark</x:String><x:String>Continuous</x:String></Picker.Items>
-                                        </Picker>
-                                    </VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="5">
-                                        <Label Text="Gap / mark size (mm)" FontSize="11" TextColor="#475569"/>
-                                        <Entry x:Name="GapSizeEntry" Keyboard="Numeric" Text="3"/>
-                                    </VerticalStackLayout>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Print speed (ips)" FontSize="11" TextColor="#475569"/><Entry x:Name="PrintSpeedEntry" Keyboard="Numeric" Text="4"/></VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Print darkness (-10 to 10)" FontSize="11" TextColor="#475569"/><Entry x:Name="PrintDarknessEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="5"><Label Text="Horizontal offset (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="HorizontalOffsetEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Vertical offset (mm)" FontSize="11" TextColor="#475569"/><Entry x:Name="VerticalOffsetEntry" Keyboard="Numeric" Text="0"/></VerticalStackLayout>
-                                </Grid>
-
-                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                    <VerticalStackLayout Grid.Column="0" Spacing="5">
-                                        <Label Text="Finish" FontSize="11" TextColor="#475569"/>
-                                        <Picker x:Name="FinishingModePicker" SelectedIndex="0">
-                                            <Picker.Items><x:String>Tear-off</x:String><x:String>Cutter</x:String></Picker.Items>
-                                        </Picker>
-                                    </VerticalStackLayout>
-                                    <VerticalStackLayout Grid.Column="1" Spacing="5"><Label Text="Number of copies" FontSize="11" TextColor="#475569"/><Entry x:Name="NumberOfCopiesEntry" Keyboard="Numeric" Text="1"/></VerticalStackLayout>
-                                </Grid>
-
-                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="CutterInstalledCheckbox"/><Label Text="Optional cutter is physically installed and verified" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
-                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="LabelEnabledCheckbox" IsChecked="True"/><Label Text="Printer enabled" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
-                                <HorizontalStackLayout Spacing="10"><CheckBox x:Name="DefaultLabelPrinterCheckbox"/><Label Text="Default label printer" VerticalOptions="Center" FontSize="12" TextColor="#475569"/></HorizontalStackLayout>
-                            </VerticalStackLayout>
-
-                            <!-- Paper Width -->
-                            <VerticalStackLayout x:Name="GeneralPaperWidthSection" Spacing="8">
-                                <Label Text="Paper Width" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <HorizontalStackLayout Spacing="10">
-                                    <Border x:Name="Width80Border" 
-                                            BackgroundColor="#0F172A" 
-                                            Padding="24,12"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnWidth80Tapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="Width80Label" Text="80mm" FontSize="12" FontAttributes="Bold" TextColor="White"/>
-                                    </Border>
-                                    <Border x:Name="Width58Border" 
-                                            BackgroundColor="#F1F5F9" 
-                                            Padding="24,12"
-                                            StrokeThickness="0">
-                                        <Border.StrokeShape>
-                                            <RoundRectangle CornerRadius="8"/>
-                                        </Border.StrokeShape>
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnWidth58Tapped"/>
-                                        </Border.GestureRecognizers>
-                                        <Label x:Name="Width58Label" Text="58mm" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
+                                    <Border x:Name="TypeLabelBorder" BackgroundColor="#F8FAFC" Padding="14,8" Stroke="#E2E8F0" StrokeThickness="1">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnTypeLabelTapped"/></Border.GestureRecognizers>
+                                        <Label x:Name="TypeLabelLabel" Text="Label" FontSize="13" FontAttributes="Bold" TextColor="#334155"/>
                                     </Border>
                                 </HorizontalStackLayout>
                             </VerticalStackLayout>
 
-                            <!-- Print Group / Station Assignment -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Print Group / Station" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                <Label Text="Create or assign a station name for item routing (e.g., Kitchen, Bar, Grill)" 
-                                       FontSize="11" 
-                                       TextColor="#94A3B8"
-                                       Margin="0,0,0,4"/>
-                                <Border BackgroundColor="White" Padding="14,12" StrokeThickness="1" Stroke="#E2E8F0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="8"/>
-                                    </Border.StrokeShape>
-                                    <Entry x:Name="PrintGroupEntry"
-                                           Placeholder="e.g., Kitchen, Bar, Grill, Dessert, Tandoor"
-                                           FontSize="15"
-                                           TextColor="#0F172A"
-                                           PlaceholderColor="#94A3B8"
-                                           BackgroundColor="Transparent"
-                                           HorizontalOptions="FillAndExpand"/>
+                            <VerticalStackLayout x:Name="PrintGroupSection" Spacing="4">
+                                <Label Text="Print group / station" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <Label Text="Assign this printer to a group or station." FontSize="12" TextColor="#94A3B8"/>
+                                <Border x:Name="PrintGroupField" BackgroundColor="White" Padding="12,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" HeightRequest="40">
+                                    <Grid>
+                                        <Entry x:Name="PrintGroupEntry" IsVisible="False"/>
+                                        <Label x:Name="PrintGroupValueLabel" Text="Kitchen, Bar, Grill, Dessert, Tandoor" FontSize="13" TextColor="#94A3B8" VerticalOptions="Center" InputTransparent="True"/>
+                                        <Button x:Name="PrintGroupTap" BackgroundColor="Transparent" BorderWidth="0" Text="" Style="{x:Null}" MinimumHeightRequest="0" MinimumWidthRequest="0" HorizontalOptions="Fill" VerticalOptions="Fill" ZIndex="2"/>
+                                    </Grid>
                                 </Border>
                             </VerticalStackLayout>
 
-                            <!-- Features -->
-                            <VerticalStackLayout x:Name="GeneralFeaturesSection" Spacing="12">
-                                <Label Text="Features" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                
-                                <Border BackgroundColor="#F8FAFC" Padding="16" StrokeThickness="0">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="10"/>
-                                    </Border.StrokeShape>
-                                    <VerticalStackLayout Spacing="14">
-                                        <HorizontalStackLayout Spacing="12">
-                                            <CheckBox x:Name="CashDrawerCheckbox" Color="#22C55E" WidthRequest="24" HeightRequest="24"/>
-                                            <Label Text="Cash Drawer" VerticalOptions="Center" TextColor="#334155" FontSize="14"/>
+                            <VerticalStackLayout x:Name="GeneralFeaturesSection" Spacing="6">
+                                <Label Text="Features" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <Label Text="Enable or disable optional features for this printer." FontSize="12" TextColor="#94A3B8"/>
+                                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                                    <Border BackgroundColor="#F8FAFC" Padding="10,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <CheckBox x:Name="CashDrawerCheckbox" Color="#16A34A" VerticalOptions="Center"/>
+                                            <Label Text="Cash drawer" VerticalOptions="Center" TextColor="#334155" FontSize="13"/>
                                         </HorizontalStackLayout>
-                                        
-                                        <HorizontalStackLayout Spacing="12">
-                                            <CheckBox x:Name="CutterCheckbox" IsChecked="True" Color="#22C55E" WidthRequest="24" HeightRequest="24"/>
-                                            <Label Text="Auto Cutter" VerticalOptions="Center" TextColor="#334155" FontSize="14"/>
+                                    </Border>
+                                    <Border Grid.Column="1" BackgroundColor="#F8FAFC" Padding="10,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <CheckBox x:Name="CutterCheckbox" IsChecked="True" Color="#16A34A" VerticalOptions="Center"/>
+                                            <Label Text="Auto cutter" VerticalOptions="Center" TextColor="#334155" FontSize="13"/>
                                         </HorizontalStackLayout>
-                                        
-                                        <HorizontalStackLayout Spacing="12">
-                                            <CheckBox x:Name="BuzzerCheckbox" Color="#22C55E" WidthRequest="24" HeightRequest="24"/>
-                                            <Label Text="Buzzer Alert" VerticalOptions="Center" TextColor="#334155" FontSize="14"/>
+                                    </Border>
+                                    <Border Grid.Column="2" BackgroundColor="#F8FAFC" Padding="10,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <CheckBox x:Name="BuzzerCheckbox" Color="#16A34A" VerticalOptions="Center"/>
+                                            <Label Text="Buzzer" VerticalOptions="Center" TextColor="#334155" FontSize="13"/>
                                         </HorizontalStackLayout>
-
-                                        <HorizontalStackLayout Spacing="12">
-                                            <CheckBox x:Name="TwoColorCheckbox" Color="#EF4444" WidthRequest="24" HeightRequest="24"/>
-                                            <VerticalStackLayout Spacing="1" VerticalOptions="Center">
-                                                <Label Text="Black + Red Ribbon" TextColor="#334155" FontSize="14"/>
-                                                <Label Text="For compatible two-colour ESC/POS kitchen printers" TextColor="#94A3B8" FontSize="11"/>
+                                    </Border>
+                                    <Border Grid.Column="3" BackgroundColor="#F8FAFC" Padding="10,8" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <CheckBox x:Name="TwoColorCheckbox" Color="#DC2626" VerticalOptions="Center"/>
+                                            <VerticalStackLayout Spacing="0" VerticalOptions="Center">
+                                                <Label Text="Black + red" TextColor="#334155" FontSize="13"/>
+                                                <Label Text="Two-colour ribbon" TextColor="#94A3B8" FontSize="11"/>
                                             </VerticalStackLayout>
                                         </HorizontalStackLayout>
-                                    </VerticalStackLayout>
-                                </Border>
+                                    </Border>
+                                </Grid>
                             </VerticalStackLayout>
 
-                            <!-- Test Connection -->
-                            <Button x:Name="TestConnectionButton"
-                                    Text="Test Connection"
-                                    BackgroundColor="#6366F1"
-                                    TextColor="White"
-                                    CornerRadius="10"
-                                    Padding="16,14"
-                                    FontAttributes="Bold"
-                                    FontSize="14"
-                                    Clicked="OnTestConnectionClicked"/>
+                            <VerticalStackLayout x:Name="LabelConfigurationSection" Spacing="8" IsVisible="False">
+                                <Label Text="Sticker size" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                                <Label Text="Pick the roll in the printer. Mother sets the rest." FontSize="12" TextColor="#94A3B8"/>
+                                <HorizontalStackLayout Spacing="8">
+                                    <Border x:Name="LabelSizeNormalBorder" BackgroundColor="#0F172A" Padding="14,10" StrokeThickness="0">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnLabelSizeNormalTapped"/></Border.GestureRecognizers>
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label x:Name="LabelSizeNormalLabel" Text="60 × 40" FontSize="14" FontAttributes="Bold" TextColor="White"/>
+                                            <Label x:Name="LabelSizeNormalHint" Text="Normal" FontSize="11" TextColor="#E2E8F0"/>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                    <Border x:Name="LabelSizeSmallBorder" BackgroundColor="#F8FAFC" Padding="14,10" Stroke="#E2E8F0" StrokeThickness="1">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnLabelSizeSmallTapped"/></Border.GestureRecognizers>
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label x:Name="LabelSizeSmallLabel" Text="51 × 30" FontSize="14" FontAttributes="Bold" TextColor="#334155"/>
+                                            <Label x:Name="LabelSizeSmallHint" Text="Small" FontSize="11" TextColor="#94A3B8"/>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                    <Border x:Name="LabelSizeDeliveryBorder" BackgroundColor="#F8FAFC" Padding="14,10" Stroke="#E2E8F0" StrokeThickness="1">
+                                        <Border.StrokeShape><RoundRectangle CornerRadius="8"/></Border.StrokeShape>
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnLabelSizeDeliveryTapped"/></Border.GestureRecognizers>
+                                        <VerticalStackLayout Spacing="1">
+                                            <Label x:Name="LabelSizeDeliveryLabel" Text="80 × 50" FontSize="14" FontAttributes="Bold" TextColor="#334155"/>
+                                            <Label x:Name="LabelSizeDeliveryHint" Text="Delivery" FontSize="11" TextColor="#94A3B8"/>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </HorizontalStackLayout>
+                                <Picker x:Name="LabelProfilePicker" IsVisible="False" SelectedIndexChanged="OnLabelProfileChanged">
+                                    <Picker.Items>
+                                        <x:String>60 × 40</x:String>
+                                        <x:String>51 × 30</x:String>
+                                        <x:String>80 × 50</x:String>
+                                    </Picker.Items>
+                                </Picker>
+                                <Entry x:Name="MediaWidthEntry" IsVisible="False" Text="60"/>
+                                <Entry x:Name="LabelWidthEntry" IsVisible="False" Text="60"/>
+                                <Entry x:Name="LabelHeightEntry" IsVisible="False" Text="40"/>
+                                <Picker x:Name="SensorTypePicker" IsVisible="False" SelectedIndex="0" SelectedIndexChanged="OnSensorTypeChanged">
+                                    <Picker.Items><x:String>Gap</x:String><x:String>Black mark</x:String><x:String>Continuous</x:String></Picker.Items>
+                                </Picker>
+                                <Entry x:Name="GapSizeEntry" IsVisible="False" Text="3"/>
+                                <Entry x:Name="PrintSpeedEntry" IsVisible="False" Text="4"/>
+                                <Entry x:Name="PrintDarknessEntry" IsVisible="False" Text="0"/>
+                                <Entry x:Name="HorizontalOffsetEntry" IsVisible="False" Text="0"/>
+                                <Entry x:Name="VerticalOffsetEntry" IsVisible="False" Text="0"/>
+                                <Picker x:Name="FinishingModePicker" IsVisible="False" SelectedIndex="0">
+                                    <Picker.Items><x:String>Tear-off</x:String><x:String>Cutter</x:String></Picker.Items>
+                                </Picker>
+                                <Entry x:Name="NumberOfCopiesEntry" IsVisible="False" Text="1"/>
+                                <CheckBox x:Name="CutterInstalledCheckbox" IsVisible="False"/>
+                                <CheckBox x:Name="LabelEnabledCheckbox" IsChecked="True" IsVisible="False"/>
+                                <CheckBox x:Name="DefaultLabelPrinterCheckbox" IsVisible="False"/>
+                            </VerticalStackLayout>
 
-                            <Label x:Name="ConnectionStatusLabel"
-                                   Text="Not tested"
-                                   FontSize="13"
-                                   TextColor="#94A3B8"
-                                   HorizontalOptions="Center"/>
+                            <BoxView HeightRequest="1" Color="#F1F5F9"/>
 
-                            <BoxView HeightRequest="1" BackgroundColor="#E2E8F0"/>
-
-                            <!-- Action Buttons -->
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                                <Button Grid.Column="0"
-                                        Text="Cancel"
-                                        BackgroundColor="#F1F5F9"
-                                        TextColor="#475569"
-                                        CornerRadius="10"
-                                        Padding="16,14"
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                <Label x:Name="ConnectionStatusLabel"
+                                       Text="Not tested"
+                                       FontSize="12"
+                                       TextColor="#94A3B8"
+                                       VerticalOptions="Center"/>
+                                <Button x:Name="TestConnectionButton"
+                                        Grid.Column="1"
+                                        Text="Test connection"
+                                        BackgroundColor="White"
+                                        TextColor="#2563EB"
+                                        BorderColor="#BFDBFE"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="34"
+                                        MinimumHeightRequest="34"
+                                        Padding="12,0"
                                         FontAttributes="Bold"
-                                        FontSize="14"
+                                        FontSize="12"
+                                        Style="{x:Null}"
+                                        Clicked="OnTestConnectionClicked"/>
+                                <Button Grid.Column="2"
+                                        Text="Cancel"
+                                        BackgroundColor="White"
+                                        TextColor="#475569"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="34"
+                                        MinimumHeightRequest="34"
+                                        Padding="12,0"
+                                        FontAttributes="Bold"
+                                        FontSize="12"
+                                        Style="{x:Null}"
                                         Clicked="OnCloseFormClicked"/>
                                 <Button x:Name="SavePrinterButton"
-                                        Grid.Column="1"
+                                        Grid.Column="3"
                                         Text="Save Printer"
                                         BackgroundColor="#0F172A"
                                         TextColor="White"
-                                        CornerRadius="10"
-                                        Padding="16,14"
+                                        CornerRadius="8"
+                                        HeightRequest="34"
+                                        MinimumHeightRequest="34"
+                                        Padding="14,0"
                                         FontAttributes="Bold"
-                                        FontSize="14"
+                                        FontSize="12"
+                                        Style="{x:Null}"
                                         Clicked="OnSavePrinterClicked"/>
                             </Grid>
                         </VerticalStackLayout>
-                    </ScrollView>
-                </Border>
+                    </Border>
+
+                    <Border BackgroundColor="White" Padding="12,10" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="Printers" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                                <Label x:Name="AddedPrintersSummary"
+                                       Grid.Column="1"
+                                       Text="0 connected"
+                                       FontSize="12"
+                                       TextColor="#64748B"
+                                       VerticalOptions="Center"/>
+                            </Grid>
+                            <Label x:Name="NoAddedPrintersLabel"
+                                   Text="No printers configured yet"
+                                   FontSize="12"
+                                   TextColor="#94A3B8"/>
+                            <VerticalStackLayout x:Name="AddedPrintersList" Spacing="6"/>
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 12"
+                            HeightRequest="28"
+                            HorizontalOptions="Fill"/>
+                </VerticalStackLayout>
+
             </Grid>
         </ScrollView>
         </Grid>

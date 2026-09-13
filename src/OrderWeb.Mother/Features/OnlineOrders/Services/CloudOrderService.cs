@@ -964,10 +964,13 @@ public class CloudOrderService
         try
         {
             var cloudOrder = ConvertLocalOrderToCloud(order);
-            var result = await _autoPrintService.PrintOnlineOrderAsync(cloudOrder);
-            return result.Success
-                ? (true, "Receipt and kitchen ticket queued")
-                : (false, result.ErrorMessage ?? "Print queue failed");
+            var result = await _autoPrintService.PrintOnlineOrderAsync(cloudOrder, Guid.NewGuid().ToString("N"));
+            if (!result.Success)
+                return (false, result.ErrorMessage ?? "Print queue failed");
+
+            return (true, result.LabelsQueued > 0
+                ? "Receipt, kitchen ticket, and stickers queued"
+                : "Receipt and kitchen ticket queued");
         }
         catch (Exception ex)
         {

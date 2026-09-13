@@ -36,6 +36,7 @@ public sealed class CashierZReportPreviewDialogPage : ContentPage
                 Row("Gross sales", Money(report.GrossSales), true), Divider(),
                 Row("Voided orders", report.VoidCount.ToString()), Divider(),
                 Row("Discounts", Money(report.DiscountTotal)), Divider(),
+                Row("Cash refund", Money(report.TillRefundTotal)), Divider(),
                 Row("Expected cash", Money(report.ExpectedCashInDrawer), true), Divider(),
                 Row("Counted cash", report.LastCashCountAmount is { } counted ? Money(counted) : "Not counted"), Divider(),
                 Row("Variance", report.CashCountVariance is { } variance ? SignedMoney(variance) : "Not available", report.CashCountVariance is not null)

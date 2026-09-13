@@ -7,13 +7,17 @@ public sealed record ClientCashDrawerOpen(string Reason, decimal? Amount, string
 {
     public static ClientCashDrawerOpen From(CashDrawerUiResult choice) => choice.Kind switch
     {
-        CashDrawerUiKind.Refund => new("Refund", null, null, "Refund"),
+        CashDrawerUiKind.Refund => new(
+            "Refund",
+            choice.Amount,
+            null,
+            choice.Amount is > 0 ? $"Refund · £{choice.Amount:F2}" : "Refund"),
         CashDrawerUiKind.ShoppingTake => new(
             "Shopping",
             choice.Amount,
             choice.Details,
             $"Shopping take · {choice.Details} · £{choice.Amount:F2}"),
-        CashDrawerUiKind.Delivery => new("Delivery", choice.Amount, null, $"Delivery · £{choice.Amount:F2}"),
+        CashDrawerUiKind.Delivery => new("Delivery", choice.Amount, null, $"Delivery Fee · £{choice.Amount:F2}"),
         CashDrawerUiKind.CashCount => new("Cash Count", choice.Amount, null, $"Cash count · £{choice.Amount:F2}"),
         CashDrawerUiKind.Other => new(
             "Other",

@@ -3513,6 +3513,10 @@ namespace POS_in_NET.Pages
                             : await _orderRoutingPrintService.PrintOrderAsync(revisionPrintOrder);
                         await _kitchenRevisionService.MarkPrintResultAsync(revision, legacyPrint);
                         anyKitchenPrint |= legacyPrint.AnyPrinted;
+                        if (legacyPrint.AnyPrinted)
+                        {
+                            await TryPrintLabelsForPrintedItemsAsync(revisionPrintOrder, legacyPrint.PrintedItemIds);
+                        }
                         if (!legacyPrint.AnyPrinted)
                         {
                             await LogOperationalEventAsync("send_failed", new
@@ -3629,7 +3633,7 @@ namespace POS_in_NET.Pages
                 {
                     await _kitchenRevisionService.MarkPrintResultAsync(revision, printResult);
                 }
-                var labelResult = await PrintLabelsForPrintedItemsAsync(printOrder, printResult.PrintedItemIds);
+                var labelResult = await TryPrintLabelsForPrintedItemsAsync(printOrder, printResult.PrintedItemIds);
 
                 var printedSourceIds = revision == null
                     ? printResult.PrintedItemIds
@@ -3722,6 +3726,23 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private async Task<LabelPrintSummary> TryPrintLabelsForPrintedItemsAsync(TableOrder printOrder, ISet<string> printedItemIds)
+        {
+            try
+            {
+                return await PrintLabelsForPrintedItemsAsync(printOrder, printedItemIds);
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log($"[OrderPlacement] Label queue failed after kitchen ticket: {ex.Message}");
+                return new LabelPrintSummary
+                {
+                    Failed = 1,
+                    Errors = { ex.Message }
+                };
+            }
+        }
+
         private async Task<LabelPrintSummary> PrintLabelsForPrintedItemsAsync(TableOrder printOrder, ISet<string> printedItemIds)
         {
             var summary = new LabelPrintSummary();
@@ -3731,10 +3752,21 @@ namespace POS_in_NET.Pages
                 return summary;
             }
 
+            var labelDecision = LabelPrintRules.Decide(GetCanonicalOrderType(), _orderSourceChannel);
+            if (!labelDecision.ShouldPrint)
+            {
+                return summary;
+            }
+
             var toshibaLabels = ServiceHelper.GetService<ToshibaOrderLabelService>();
             if (toshibaLabels != null)
             {
-                var toshibaResult = await toshibaLabels.EnqueueForPrintedItemsAsync(printOrder, printedItemIds, "mother");
+                var toshibaResult = await toshibaLabels.EnqueueForPrintedItemsAsync(
+                    printOrder,
+                    printedItemIds,
+                    "mother",
+                    GetCanonicalOrderType(),
+                    _orderSourceChannel);
                 if (toshibaResult.HandledByToshiba)
                 {
                     summary.Attempted = toshibaResult.Attempted;
@@ -3753,10 +3785,11 @@ namespace POS_in_NET.Pages
             }
 
             var labelService = new LabelPrintingService(labelTarget.IpAddress, labelTarget.Port, enabled: true);
-            var labelContext = BuildLabelPrintContext(printOrder);
+            var labelContext = BuildLabelPrintContext(printOrder, labelDecision);
 
             foreach (var orderItem in printOrder.Items.Where(item =>
                          printedItemIds.Contains(item.Id)
+                         && !item.IsVoided
                          && item.KitchenAction is KitchenChangeAction.New or KitchenChangeAction.Add))
             {
                 var menuItem = await ResolveMenuItemForLabelAsync(orderItem.MenuItemId);
@@ -3765,8 +3798,14 @@ namespace POS_in_NET.Pages
                     continue;
                 }
 
+                var copies = LabelPrintRules.StickerCopies(orderItem.Quantity);
+                if (copies < 1)
+                {
+                    continue;
+                }
+
                 summary.Attempted++;
-                var printed = await labelService.PrintItemLabelAsync(menuItem, labelContext, orderItem.Quantity);
+                var printed = await labelService.PrintItemLabelAsync(menuItem, labelContext, copies);
                 if (printed)
                 {
                     summary.Printed++;
@@ -3847,7 +3886,7 @@ namespace POS_in_NET.Pages
             return null;
         }
 
-        private string BuildLabelPrintContext(TableOrder printOrder)
+        private string BuildLabelPrintContext(TableOrder printOrder, LabelPrintDecision decision)
         {
             var orderReference = !string.IsNullOrWhiteSpace(printOrder.OrderNumber)
                 ? printOrder.OrderNumber
@@ -3858,17 +3897,7 @@ namespace POS_in_NET.Pages
                 orderReference = DateTime.Now.ToString("HH:mm");
             }
 
-            if (_isDeliveryOrder)
-            {
-                return $"Delivery {orderReference}";
-            }
-
-            if (_isCollectionOrder)
-            {
-                return $"Collection {orderReference}";
-            }
-
-            return $"Table {printOrder.TableNumber} · {orderReference}";
+            return LabelPrintRules.FormatSticker(decision, orderReference);
         }
 
         private sealed class LabelPrintSummary

@@ -36,6 +36,7 @@ public static class SharedImageNames
         public const string Restaurant = "restaurant.png";
         public const string Collection = "collection.png";
         public const string Delivery = "delivery.png";
+        public const string Rider = "rider.png";
         public const string LiveOrders = "liveorder.png";
         public const string OrderHistory = "orderhistory.png";
         public const string Customers = "customers.png";

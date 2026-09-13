@@ -193,6 +193,7 @@ public sealed class ZReportPrintService
             .PrintColumns("Net out", snapshot.TillNetOutDisplay)
             .PrintColumns("Shopping", FormatMoney(snapshot.TillShoppingNet))
             .PrintColumns("Delivery", FormatMoney(snapshot.TillDeliveryTotal))
+            .PrintColumns("Refund", FormatMoney(snapshot.TillRefundTotal))
             .PrintColumns("Other", FormatMoney(snapshot.TillOtherTotal))
             .PrintColumns("Returned", FormatMoney(snapshot.TillCashReturned));
 

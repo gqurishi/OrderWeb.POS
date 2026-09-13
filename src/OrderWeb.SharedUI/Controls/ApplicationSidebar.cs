@@ -38,7 +38,7 @@ public class ApplicationSidebar : ContentView
         _role.Use(Label.TextColorProperty, "OwTextMuted");
         var heading = new VerticalStackLayout { Padding = new Thickness(12, 10, 12, 8), Spacing = 2, Children = { _logo, _brand, subtitle, _role } };
 
-        _items = new VerticalStackLayout { Padding = new Thickness(16, 10), Spacing = 5 };
+        _items = new VerticalStackLayout { Padding = new Thickness(12, 8), Spacing = 8 };
         var scroll = new ScrollView { Content = _items };
         _identity = new UserTerminalInfo();
         _connection = new ConnectionIndicator { HorizontalOptions = LayoutOptions.Start };

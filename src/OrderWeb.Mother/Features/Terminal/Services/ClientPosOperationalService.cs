@@ -624,6 +624,8 @@ public sealed partial class ClientPosOperationalService
             order.Status = existing.Status;
             order.LocalLifecycleState = existing.LocalLifecycleState;
             order.IsOpen = existing.IsOpen;
+            order.SourceChannel = string.IsNullOrWhiteSpace(existing.SourceChannel) ? "local" : existing.SourceChannel;
+            order.CloudOrderId = existing.CloudOrderId;
 
             // Resume / open-for-edit must never wipe Mother lines with an empty payload.
             if (incomingLines.Count == 0 && existing.Items.Count > 0)

@@ -178,7 +178,9 @@ public sealed class LabelPrintQueueDatabaseService
         if (!confirmedDelivery)
             await InsertEventAsync(connection, transaction, jobId, "printing", "failed", motherInstance, understandableError);
         await InsertEventAsync(connection, transaction, jobId, confirmedDelivery ? "printing" : "failed", finalStatus, motherInstance,
-            confirmedDelivery ? "Printer returned a valid Toshiba status response after accepting the batch." : understandableError);
+            confirmedDelivery ? (result.PrinterStatusResponse is { Length: > 0 }
+                ? "Printer returned a valid status response after accepting the batch."
+                : "Label data was accepted on the printer socket. Confirm a physical label on the first test.") : understandableError);
         await transaction.CommitAsync();
     }
 

@@ -4,6 +4,7 @@ public enum TillExpenseCategory
 {
     Shopping,
     Delivery,
+    Refund,
     CashCount,
     Other
 }
@@ -44,6 +45,7 @@ public sealed class TillExpense
     {
         TillExpenseCategory.Shopping => "Shopping",
         TillExpenseCategory.Delivery => "Delivery",
+        TillExpenseCategory.Refund => "Refund",
         TillExpenseCategory.CashCount => "Cash Count",
         TillExpenseCategory.Other => "Other",
         _ => Category.ToString()
@@ -82,6 +84,14 @@ public sealed class ShoppingSettleRequest
 }
 
 public sealed class DeliveryPayoutRequest
+{
+    public decimal Amount { get; set; }
+    public string? OrderId { get; set; }
+    public string? OrderNumber { get; set; }
+    public string SourceArea { get; set; } = "pos";
+}
+
+public sealed class RefundPayoutRequest
 {
     public decimal Amount { get; set; }
     public string? OrderId { get; set; }

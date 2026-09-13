@@ -45,5 +45,8 @@ public sealed record ToshibaNetworkResult(
     public static ToshibaNetworkResult ProtocolConfirmed(string endpoint, DateTimeOffset started, byte[] status) =>
         new(endpoint, true, true, true, true, false, status, ToshibaNetworkPhase.Complete, null, started, DateTimeOffset.UtcNow);
 
+    public static ToshibaNetworkResult Accepted(string endpoint, DateTimeOffset started) =>
+        new(endpoint, true, true, true, true, false, null, ToshibaNetworkPhase.Complete, null, started, DateTimeOffset.UtcNow);
+
     public ToshibaNetworkResult ConfirmPhysicalLabel() => this with { PhysicalLabelConfirmed = true };
 }

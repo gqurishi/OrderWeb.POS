@@ -3544,7 +3544,7 @@ public partial class MainPage : ContentPage
                 var card = TableCard(table);
                 var (x, y) = TablePosition(table, index);
                 tableCanvas.Children.Add(card);
-                SetAbsoluteLayout(card, new Rect(x, y, 148, 148), AbsoluteLayoutFlags.None);
+                SetAbsoluteLayout(card, new Rect(x, y, 88, 88), AbsoluteLayoutFlags.None);
             }
         }
 
@@ -3713,29 +3713,68 @@ public partial class MainPage : ContentPage
     {
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => ShowGuestDialog(table);
-        var (bg, border, text) = GetCachedTableColors(table);
+        var (_, fill, ink) = GetCachedTableColors(table);
         var tableImage = TableAssetFor(table);
+        const double imageSize = 80;
+        const double insetSize = 32;
 
         var card = new Border
         {
-            WidthRequest = 148,
-            HeightRequest = 148,
-            Padding = 14,
-            Stroke = border,
-            StrokeThickness = 2,
-            StrokeShape = new RoundRectangle { CornerRadius = 10 },
-            BackgroundColor = bg,
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.14f, Radius = 8, Offset = new Point(0, 3) },
-            Content = new VerticalStackLayout
+            WidthRequest = 88,
+            HeightRequest = 88,
+            Padding = 6,
+            StrokeThickness = 0,
+            BackgroundColor = Colors.Transparent,
+            Content = new Grid
             {
-                Spacing = 6,
+                WidthRequest = imageSize,
+                HeightRequest = imageSize,
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center,
                 Children =
                 {
-                    new Image { Source = tableImage, WidthRequest = 58, HeightRequest = 58, Aspect = Aspect.AspectFit, HorizontalOptions = LayoutOptions.Center },
-                    new Label { Text = table.TableNumber, FontSize = 20, FontFamily = "InterBold", TextColor = text, HorizontalTextAlignment = TextAlignment.Center },
-                    new Label { Text = "●", FontSize = 18, FontFamily = "OpenSansSemibold", TextColor = border, HorizontalTextAlignment = TextAlignment.Center }
+                    new Image
+                    {
+                        Source = tableImage,
+                        WidthRequest = imageSize,
+                        HeightRequest = imageSize,
+                        Aspect = Aspect.AspectFit,
+                        HorizontalOptions = LayoutOptions.Center,
+                        VerticalOptions = LayoutOptions.Center,
+                        InputTransparent = true
+                    },
+                    new Border
+                    {
+                        WidthRequest = insetSize,
+                        HeightRequest = insetSize,
+                        Padding = new Thickness(2, 4),
+                        StrokeThickness = 0,
+                        BackgroundColor = fill,
+                        HorizontalOptions = LayoutOptions.Center,
+                        VerticalOptions = LayoutOptions.Center,
+                        InputTransparent = true,
+                        StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                        Content = new VerticalStackLayout
+                        {
+                            Spacing = 1,
+                            HorizontalOptions = LayoutOptions.Center,
+                            VerticalOptions = LayoutOptions.Center,
+                            InputTransparent = true,
+                            Children =
+                            {
+                                new Label
+                                {
+                                    Text = table.TableNumber,
+                                    FontSize = 18,
+                                    FontFamily = "InterBold",
+                                    TextColor = ink,
+                                    HorizontalTextAlignment = TextAlignment.Center,
+                                    LineBreakMode = LineBreakMode.TailTruncation,
+                                    MaxLines = 1
+                                }
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -3747,15 +3786,14 @@ public partial class MainPage : ContentPage
     {
         if (table.PositionX > 0 || table.PositionY > 0)
         {
-            return (Math.Max(22, table.PositionX), Math.Max(36, table.PositionY));
+            return (Math.Max(8, table.PositionX * 0.62), Math.Max(8, table.PositionY * 0.62));
         }
 
-        const double cardWidth = 148;
-        const double horizontalGap = 64;
-        const double verticalGap = 96;
-        var column = index % 5;
-        var row = index / 5;
-        return (52 + column * (cardWidth + horizontalGap), 64 + row * (cardWidth + verticalGap));
+        const double cardWidth = 88;
+        const double gap = 10;
+        var column = index % 8;
+        var row = index / 8;
+        return (12 + column * (cardWidth + gap), 12 + row * (cardWidth + gap));
     }
 
     private static void SetAbsoluteLayout(IView view, Rect bounds, AbsoluteLayoutFlags flags)
@@ -3772,20 +3810,20 @@ public partial class MainPage : ContentPage
         if (table.SessionStatus?.Equals("Payment", StringComparison.OrdinalIgnoreCase) == true
             || table.SessionStatus?.Equals("Cleaning", StringComparison.OrdinalIgnoreCase) == true)
         {
-            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FCA5A5"), Color.FromArgb(Danger));
+            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FEE2E2"), Color.FromArgb(Danger));
         }
 
         if (!string.IsNullOrWhiteSpace(table.CurrentOrderId) || table.Status.Equals("Occupied", StringComparison.OrdinalIgnoreCase))
         {
-            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FCA5A5"), Color.FromArgb(Danger));
+            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FEE2E2"), Color.FromArgb(Danger));
         }
 
         if (table.Status.Equals("Reserved", StringComparison.OrdinalIgnoreCase))
         {
-            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FCA5A5"), Color.FromArgb(Danger));
+            return (Color.FromArgb("#FEF2F2"), Color.FromArgb("#FEE2E2"), Color.FromArgb(Danger));
         }
 
-        return (Color.FromArgb("#ECFDF5"), Color.FromArgb("#86EFAC"), Color.FromArgb(Success));
+        return (Color.FromArgb("#ECFDF5"), Color.FromArgb("#D1FAE5"), Color.FromArgb(Success));
     }
 
     private static string TableStatusText(CachedTable table)
@@ -3822,7 +3860,7 @@ public partial class MainPage : ContentPage
     {
         if (table.SessionStatus?.Equals("Cleaning", StringComparison.OrdinalIgnoreCase) == true)
         {
-            return "table_4.png";
+            return "table_1.png";
         }
 
         if (table.Status.Equals("Reserved", StringComparison.OrdinalIgnoreCase))

@@ -6,7 +6,8 @@
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
     
-    <Grid VerticalOptions="Fill" 
+    <Grid x:Name="DialogRoot"
+          VerticalOptions="Fill" 
           HorizontalOptions="Fill"
           Padding="24,12">
         <Border BackgroundColor="White"
@@ -44,18 +45,24 @@
                            TextColor="#374151"
                            HorizontalOptions="Start" />
                     
-                    <Border BackgroundColor="#F9FAFB"
+                    <Border x:Name="TableNumberField"
+                            BackgroundColor="#F9FAFB"
                             Stroke="#E5E7EB"
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 10"
                             Padding="15">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTableNumberTapped" />
+                        </Border.GestureRecognizers>
                         <Entry x:Name="TableNumberEntry"
                                FontSize="16"
                                FontFamily="OpenSansRegular"
                                TextColor="#1F2937"
                                PlaceholderColor="#9CA3AF"
-                               Placeholder="Enter table number"
+                               Placeholder="Tap to enter number"
                                BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
                                HeightRequest="40" />
                     </Border>
                 </VerticalStackLayout>
@@ -139,26 +146,6 @@
                                 <TapGestureRecognizer Tapped="OnDesign3Clicked" />
                             </Border.GestureRecognizers>
                             <Image Source="table_3.png"
-                                   WidthRequest="50"
-                                   HeightRequest="50"
-                                   Aspect="AspectFit" />
-                        </Border>
-                        
-                        <!-- Design 4 -->
-                        <Border x:Name="Design4Border"
-                                BackgroundColor="White"
-                                Stroke="#E5E7EB"
-                                StrokeThickness="2"
-                                Padding="12"
-                                WidthRequest="80"
-                                HeightRequest="80">
-                            <Border.StrokeShape>
-                                <RoundRectangle CornerRadius="12" />
-                            </Border.StrokeShape>
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnDesign4Clicked" />
-                            </Border.GestureRecognizers>
-                            <Image Source="table_4.png"
                                    WidthRequest="50"
                                    HeightRequest="50"
                                    Aspect="AspectFit" />

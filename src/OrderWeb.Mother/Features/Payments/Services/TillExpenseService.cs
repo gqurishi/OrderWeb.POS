@@ -176,6 +176,34 @@ public sealed class TillExpenseService
         return (await GetByIdAsync(id))!;
     }
 
+    public async Task<TillExpense> CreateRefundPayoutAsync(RefundPayoutRequest request)
+    {
+        await EnsureSchemaAsync();
+        var user = _authenticationService.CurrentUser;
+
+        await using var connection = await _databaseService.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            INSERT INTO till_expenses
+                (category, status, description, amount_taken, amount_spent, amount_returned, net_amount,
+                 order_id, order_number, source_area, recorded_by_user_id, recorded_by_name, settled_at)
+            VALUES
+                ('refund', 'settled', @description, @amount, @amount, 0, @amount,
+                 @orderId, @orderNumber, @sourceArea, @userId, @userName, NOW());
+            SELECT LAST_INSERT_ID();";
+
+        command.Parameters.AddWithValue("@description", "Refund");
+        command.Parameters.AddWithValue("@amount", request.Amount);
+        command.Parameters.AddWithValue("@orderId", string.IsNullOrWhiteSpace(request.OrderId) ? DBNull.Value : request.OrderId.Trim());
+        command.Parameters.AddWithValue("@orderNumber", string.IsNullOrWhiteSpace(request.OrderNumber) ? DBNull.Value : request.OrderNumber.Trim());
+        command.Parameters.AddWithValue("@sourceArea", request.SourceArea);
+        command.Parameters.AddWithValue("@userId", user?.Id ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@userName", GetUserDisplayName(user));
+
+        var id = Convert.ToInt32(await command.ExecuteScalarAsync());
+        return (await GetByIdAsync(id))!;
+    }
+
     public async Task<TillExpense> CreateCashCountAsync(CashCountRequest request)
     {
         await EnsureSchemaAsync();
@@ -306,6 +334,7 @@ public sealed class TillExpenseService
             PendingShoppingTotal = pending.Sum(e => e.AmountTaken),
             ShoppingNet = expenses.Where(e => e.Category == TillExpenseCategory.Shopping && e.Status == TillExpenseStatus.Settled).Sum(e => e.NetAmount),
             DeliveryTotal = expenses.Where(e => e.Category == TillExpenseCategory.Delivery).Sum(e => e.NetAmount),
+            RefundTotal = expenses.Where(e => e.Category == TillExpenseCategory.Refund).Sum(e => e.NetAmount),
             OtherTotal = expenses.Where(e => e.Category == TillExpenseCategory.Other).Sum(e => e.NetAmount),
             CashReturnTotal = expenses.Where(e => e.Category == TillExpenseCategory.Shopping && e.Status == TillExpenseStatus.Settled).Sum(e => e.AmountReturned ?? 0),
             TotalNetOut = expenses.Where(e => e.Status == TillExpenseStatus.Settled && e.Category != TillExpenseCategory.CashCount).Sum(e => e.NetAmount)
@@ -366,6 +395,7 @@ public sealed class TillExpenseService
         {
             "shopping" => TillExpenseCategory.Shopping,
             "delivery" => TillExpenseCategory.Delivery,
+            "refund" => TillExpenseCategory.Refund,
             "cash_count" => TillExpenseCategory.CashCount,
             "other" => TillExpenseCategory.Other,
             _ => TillExpenseCategory.Other
@@ -403,6 +433,7 @@ public sealed class TillExpenseSummary
     public decimal PendingShoppingTotal { get; set; }
     public decimal ShoppingNet { get; set; }
     public decimal DeliveryTotal { get; set; }
+    public decimal RefundTotal { get; set; }
     public decimal OtherTotal { get; set; }
     public decimal CashReturnTotal { get; set; }
     public decimal TotalNetOut { get; set; }

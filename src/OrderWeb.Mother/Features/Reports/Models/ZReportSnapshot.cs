@@ -50,6 +50,7 @@ public sealed class ZReportSnapshot
     public decimal TillNetOut { get; set; }
     public decimal TillShoppingNet { get; set; }
     public decimal TillDeliveryTotal { get; set; }
+    public decimal TillRefundTotal { get; set; }
     public decimal TillOtherTotal { get; set; }
     public decimal TillCashReturned { get; set; }
     public int TillPendingShoppingCount { get; set; }

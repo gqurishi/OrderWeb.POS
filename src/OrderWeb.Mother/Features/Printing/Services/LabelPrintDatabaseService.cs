@@ -51,6 +51,64 @@ public sealed class LabelPrintDatabaseService
         return result;
     }
 
+    public async Task EnsureBuiltInProfilesAsync()
+    {
+        using var connection = await _database.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            INSERT INTO label_media_profiles
+                (id, profile_name, manufacturer, model_code, width_mm, height_mm, gap_mm, sensor_type, darkness, speed_ips,
+                 horizontal_offset_mm, vertical_offset_mm, finishing_mode, is_active)
+            VALUES
+                ('toshiba-60x40-container', 'Toshiba 60 × 40 mm Container', 'toshiba', 'b-fv4d-gs14', 60, 40, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('toshiba-51x30-compact', 'Toshiba 51 × 30 mm Compact', 'toshiba', 'b-fv4d-gs14', 51, 30, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('toshiba-80x50-delivery', 'Toshiba 80 × 50 mm Delivery', 'toshiba', 'b-fv4d-gs14', 80, 50, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('xprinter-60x40-container', 'Xprinter 60 × 40 mm Container', 'xprinter', 'xp-421b', 60, 40, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('xprinter-51x30-compact', 'Xprinter 51 × 30 mm Compact', 'xprinter', 'xp-421b', 51, 30, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('xprinter-80x50-delivery', 'Xprinter 80 × 50 mm Delivery', 'xprinter', 'xp-421b', 80, 50, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('brother-60x40-container', 'Brother 60 × 40 mm Container', 'brother', 'td-4420dn', 60, 40, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('brother-51x30-compact', 'Brother 51 × 30 mm Compact', 'brother', 'td-4420dn', 51, 30, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1),
+                ('brother-80x50-delivery', 'Brother 80 × 50 mm Delivery', 'brother', 'td-4420dn', 80, 50, 3, 'gap', 0, 4, 0, 0, 'tearoff', 1)
+            ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP";
+        try
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (MySqlException ex) when (ex.Number == 1146)
+        {
+            // Label tables are created by the label migration. Do not block printer setup if they are not applied yet.
+        }
+    }
+
+    public async Task<bool> HasJobsForSourceRequestPrefixAsync(string sourceTerminal, string requestPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(sourceTerminal) || string.IsNullOrWhiteSpace(requestPrefix))
+            return false;
+
+        var escaped = requestPrefix.Trim()
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+
+        try
+        {
+            using var connection = await _database.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT COUNT(*)
+                FROM label_print_jobs
+                WHERE source_terminal = @source
+                  AND client_request_id LIKE @prefix ESCAPE '\\'";
+            command.Parameters.AddWithValue("@source", sourceTerminal.Trim());
+            command.Parameters.AddWithValue("@prefix", escaped + "%");
+            return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+        }
+        catch (MySqlException ex) when (ex.Number == 1146)
+        {
+            return false;
+        }
+    }
+
     public async Task<string> EnqueueAsync(LabelPrintJob job)
     {
         ValidateNewJob(job);

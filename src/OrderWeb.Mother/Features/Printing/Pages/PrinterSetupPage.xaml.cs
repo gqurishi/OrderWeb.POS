@@ -1,3 +1,4 @@
+using OrderWeb.SharedUI.Controls.OrderPlace;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
@@ -34,16 +35,147 @@ public partial class PrinterSetupPage : ContentPage
     {
         InitializeComponent();
         SizeChanged += OnPrinterPageSizeChanged;
+        WirePrinterFieldKeyboards();
     }
 
     private void OnPrinterPageSizeChanged(object? sender, EventArgs e)
     {
-        var compact = Width > 0 && (Width < 1450 || Height < 850);
-        PrinterContentGrid.Padding = compact ? new Thickness(20, 16) : new Thickness(32);
-        PrinterContentGrid.ColumnSpacing = compact ? 20 : 32;
-        PrinterListLayout.Spacing = compact ? 16 : 24;
-        FormPanel.WidthRequest = compact ? 360 : 420;
-        FormPanel.Padding = compact ? new Thickness(20) : new Thickness(28);
+        var top = TopBar.Height > 1 ? TopBar.Height : 72;
+        var scrollHeight = Height - top;
+        if (scrollHeight > 1)
+        {
+            PrinterPageScroll.HeightRequest = scrollHeight;
+        }
+
+        if (Width > 1)
+        {
+            PrinterContentGrid.WidthRequest = Width;
+        }
+
+        PrinterContentGrid.Padding = new Thickness(16, 12, 16, 28);
+        FormPanel.WidthRequest = -1;
+        FormPanel.HorizontalOptions = LayoutOptions.Fill;
+        FormPanel.Padding = new Thickness(0);
+    }
+
+    private bool _printerKeyboardOpen;
+
+    private void WirePrinterFieldKeyboards()
+    {
+        WirePrinterTextField(PrinterNameTap, PrinterNameEntry, PrinterNameValueLabel, "Printer name", "Kitchen Hot, Front Counter");
+        WirePrinterTextField(PrintGroupTap, PrintGroupEntry, PrintGroupValueLabel, "Print group / station", "Kitchen, Bar, Grill, Dessert, Tandoor");
+        WirePrinterIpField();
+        WirePrinterPortField();
+    }
+
+    private void WirePrinterTextField(Button tapButton, Entry entry, Label label, string title, string placeholder)
+    {
+        RefreshPrinterFieldLabel(label, entry, placeholder);
+        entry.TextChanged += (_, _) => RefreshPrinterFieldLabel(label, entry, placeholder);
+        tapButton.Clicked += async (_, _) =>
+        {
+            var text = await AskPrinterTextAsync(title, placeholder, entry.Text);
+            if (text != null)
+            {
+                entry.Text = text.Trim();
+            }
+        };
+    }
+
+    private void WirePrinterIpField()
+    {
+        RefreshPrinterFieldLabel(IpAddressValueLabel, IpAddressEntry, "192.168.1.100");
+        IpAddressEntry.TextChanged += (_, _) => RefreshPrinterFieldLabel(IpAddressValueLabel, IpAddressEntry, "192.168.1.100");
+        IpAddressTap.Clicked += async (_, _) =>
+        {
+            var text = await AskPrinterNumberAsync("IP address", "192.168.1.100", IpAddressEntry.Text, OrderWeb.SharedUI.Controls.VirtualKeyboardNumericMode.IpAddress);
+            if (text != null)
+            {
+                IpAddressEntry.Text = text.Trim();
+            }
+        };
+    }
+
+    private void WirePrinterPortField()
+    {
+        RefreshPrinterFieldLabel(PortValueLabel, PortEntry, "9100");
+        PortEntry.TextChanged += (_, _) => RefreshPrinterFieldLabel(PortValueLabel, PortEntry, "9100");
+        PortTap.Clicked += async (_, _) =>
+        {
+            var text = await AskPrinterNumberAsync("Port", "9100", PortEntry.Text, OrderWeb.SharedUI.Controls.VirtualKeyboardNumericMode.WholeNumber, 1, 65535, 5);
+            if (text != null)
+            {
+                PortEntry.Text = text.Trim();
+            }
+        };
+    }
+
+    private async Task<string?> AskPrinterTextAsync(string title, string placeholder, string? initial)
+    {
+        if (_printerKeyboardOpen)
+        {
+            return null;
+        }
+
+        _printerKeyboardOpen = true;
+        try
+        {
+            var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Text);
+            keyboard.SetPlaceholder(placeholder);
+            keyboard.SetRequired(false);
+            keyboard.SetInitialText(initial ?? string.Empty);
+            return await keyboard.ShowAsync(this);
+        }
+        finally
+        {
+            _printerKeyboardOpen = false;
+        }
+    }
+
+    private async Task<string?> AskPrinterNumberAsync(
+        string title,
+        string placeholder,
+        string? initial,
+        OrderWeb.SharedUI.Controls.VirtualKeyboardNumericMode mode,
+        decimal? minimum = null,
+        decimal? maximum = null,
+        int maxLength = 0)
+    {
+        if (_printerKeyboardOpen)
+        {
+            return null;
+        }
+
+        _printerKeyboardOpen = true;
+        try
+        {
+            var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+            keyboard.SetPrompt(title, "Done");
+            keyboard.SetNumericMode(mode, minimum, maximum);
+            keyboard.SetPlaceholder(placeholder);
+            keyboard.SetRequired(false);
+            if (maxLength > 0)
+            {
+                keyboard.SetMaximumLength(maxLength);
+            }
+
+            keyboard.SetInitialText(initial ?? string.Empty);
+            return await keyboard.ShowAsync(this);
+        }
+        finally
+        {
+            _printerKeyboardOpen = false;
+        }
+    }
+
+    private static void RefreshPrinterFieldLabel(Label label, Entry entry, string placeholder)
+    {
+        var value = entry.Text?.Trim();
+        var empty = string.IsNullOrWhiteSpace(value);
+        label.Text = empty ? placeholder : value;
+        label.TextColor = Color.FromArgb(empty ? "#94A3B8" : "#0F172A");
     }
 
     protected override async void OnAppearing()
@@ -102,6 +234,9 @@ public partial class PrinterSetupPage : ContentPage
             if (_dbService != null)
             {
                 await _dbService.EnsureTablesExistAsync();
+                var labels = ServiceHelper.GetService<LabelPrintDatabaseService>();
+                if (labels != null)
+                    await labels.EnsureBuiltInProfilesAsync();
             }
 
             RoutingModePicker.ItemsSource = new[] { "Dedicated Printers", "One Printer For All" };
@@ -114,6 +249,8 @@ public partial class PrinterSetupPage : ContentPage
         }
     }
 
+    private bool _logoDialogOpen;
+
     private async Task LoadReceiptLogoSizeAsync()
     {
         if (_receiptLogoSettingsService == null)
@@ -122,60 +259,449 @@ public partial class PrinterSetupPage : ContentPage
         }
 
         _receiptLogoSize = await _receiptLogoSettingsService.GetLogoSizeAsync();
-        UpdateReceiptLogoSizeControls();
     }
 
-    private void OnLogoUpdateClicked(object? sender, EventArgs e)
+    private async void OnLogoUpdateClicked(object? sender, EventArgs e)
     {
-        LogoSizeCard.IsVisible = !LogoSizeCard.IsVisible;
-    }
-
-    private async void OnSmallLogoSizeClicked(object? sender, EventArgs e) =>
-        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Small);
-
-    private async void OnMediumLogoSizeClicked(object? sender, EventArgs e) =>
-        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Medium);
-
-    private async void OnLargeLogoSizeClicked(object? sender, EventArgs e) =>
-        await SaveReceiptLogoSizeAsync(ReceiptLogoSize.Large);
-
-    private async Task SaveReceiptLogoSizeAsync(ReceiptLogoSize size)
-    {
-        if (_receiptLogoSettingsService == null)
+        SelectToolbarButton(LogoUpdateButton);
+        if (_logoDialogOpen)
         {
             return;
         }
 
-        SmallLogoSizeButton.IsEnabled = false;
-        MediumLogoSizeButton.IsEnabled = false;
-        LargeLogoSizeButton.IsEnabled = false;
-        var saved = await _receiptLogoSettingsService.SaveLogoSizeAsync(size);
-        SmallLogoSizeButton.IsEnabled = true;
-        MediumLogoSizeButton.IsEnabled = true;
-        LargeLogoSizeButton.IsEnabled = true;
-
-        if (!saved)
+        _logoDialogOpen = true;
+        try
         {
-            await AppAlertService.ShowAlertAsync("Logo Size", "The receipt logo size could not be saved.");
-            return;
+            await ShowLogoUpdateDialogAsync();
+        }
+        finally
+        {
+            _logoDialogOpen = false;
+        }
+    }
+
+    private async Task ShowLogoUpdateDialogAsync()
+    {
+        var businessService = ServiceHelper.GetService<BusinessSettingsService>() ?? new BusinessSettingsService();
+        var business = await businessService.GetBusinessInfoAsync(forceRefresh: true);
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var busy = false;
+
+        var preview = new Image
+        {
+            Aspect = Aspect.AspectFit,
+            Margin = 8,
+            IsVisible = false
+        };
+        var placeholder = new Label
+        {
+            Text = "No logo",
+            FontSize = 12,
+            TextColor = Color.FromArgb("#94A3B8"),
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center
+        };
+        var status = new Label
+        {
+            FontSize = 12,
+            TextColor = Color.FromArgb("#64748B")
+        };
+        var sizeStatus = new Label
+        {
+            FontSize = 12,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#15803D")
+        };
+
+        Button MakeAction(string text, string textColor, string border)
+        {
+            return new Button
+            {
+                Text = text,
+                BackgroundColor = Colors.White,
+                TextColor = Color.FromArgb(textColor),
+                BorderColor = Color.FromArgb(border),
+                BorderWidth = 1,
+                CornerRadius = 8,
+                HeightRequest = 36,
+                MinimumHeightRequest = 36,
+                Padding = new Thickness(14, 0),
+                FontSize = 13,
+                FontAttributes = FontAttributes.Bold,
+                Style = null,
+                HorizontalOptions = LayoutOptions.Start
+            };
         }
 
-        _receiptLogoSize = size;
-        UpdateReceiptLogoSizeControls();
+        var chooseButton = MakeAction("Choose logo", "#2563EB", "#BFDBFE");
+        var removeButton = MakeAction("Remove", "#DC2626", "#FECACA");
+        var smallButton = SizeButton("Small");
+        var mediumButton = SizeButton("Medium");
+        var largeButton = SizeButton("Large");
+        var sizeButtons = new[] { smallButton, mediumButton, largeButton };
+
+        void PaintLogo()
+        {
+            var path = business?.LogoPath;
+            var hasLogo = !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            preview.IsVisible = hasLogo;
+            placeholder.IsVisible = !hasLogo;
+            removeButton.IsVisible = hasLogo;
+            if (hasLogo)
+            {
+                preview.Source = ImageSource.FromFile(path);
+                status.Text = "Logo ready";
+                status.TextColor = Color.FromArgb("#15803D");
+            }
+            else
+            {
+                preview.Source = null;
+                status.Text = business is { Id: > 0 } ? "No logo uploaded" : "Save business information first";
+                status.TextColor = Color.FromArgb("#64748B");
+            }
+        }
+
+        void PaintSize()
+        {
+            SetLogoSizeButtonState(smallButton, _receiptLogoSize == ReceiptLogoSize.Small);
+            SetLogoSizeButtonState(mediumButton, _receiptLogoSize == ReceiptLogoSize.Medium);
+            SetLogoSizeButtonState(largeButton, _receiptLogoSize == ReceiptLogoSize.Large);
+            sizeStatus.Text = _receiptLogoSize switch
+            {
+                ReceiptLogoSize.Small => "Selected: Small. About 60mm wide. Shortest header.",
+                ReceiptLogoSize.Medium => "Selected: Medium. Best size for most receipts.",
+                ReceiptLogoSize.Large => "Selected: Large. Full paper width, uses more paper.",
+                _ => $"Selected: {_receiptLogoSize}"
+            };
+        }
+
+        async Task SaveSizeAsync(ReceiptLogoSize size)
+        {
+            if (busy || _receiptLogoSettingsService == null)
+            {
+                return;
+            }
+
+            busy = true;
+            foreach (var button in sizeButtons)
+            {
+                button.IsEnabled = false;
+            }
+
+            var saved = await _receiptLogoSettingsService.SaveLogoSizeAsync(size);
+            foreach (var button in sizeButtons)
+            {
+                button.IsEnabled = true;
+            }
+
+            busy = false;
+            if (!saved)
+            {
+                sizeStatus.Text = "Could not save size";
+                sizeStatus.TextColor = Color.FromArgb("#DC2626");
+                return;
+            }
+
+            _receiptLogoSize = size;
+            sizeStatus.TextColor = Color.FromArgb("#15803D");
+            PaintSize();
+        }
+
+        chooseButton.Clicked += async (_, _) =>
+        {
+            if (busy)
+            {
+                return;
+            }
+
+            if (business == null || business.Id <= 0)
+            {
+                status.Text = "Save business information first";
+                status.TextColor = Color.FromArgb("#DC2626");
+                return;
+            }
+
+            try
+            {
+                var file = await FilePicker.PickAsync(new PickOptions
+                {
+                    PickerTitle = "Select restaurant logo",
+                    FileTypes = FilePickerFileType.Images
+                });
+                if (file == null)
+                {
+                    return;
+                }
+
+                busy = true;
+                chooseButton.IsEnabled = false;
+                status.Text = "Uploading...";
+                status.TextColor = Color.FromArgb("#D97706");
+
+                await using var stream = await file.OpenReadAsync();
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory);
+                var bytes = memory.ToArray();
+                if (bytes.Length > 5 * 1024 * 1024)
+                {
+                    status.Text = "File too large (max 5MB)";
+                    status.TextColor = Color.FromArgb("#DC2626");
+                    return;
+                }
+
+                var savedPath = await businessService.SaveBusinessLogoAsync(business.Id, file.FileName, file.ContentType, bytes);
+                if (string.IsNullOrWhiteSpace(savedPath))
+                {
+                    status.Text = "Upload failed";
+                    status.TextColor = Color.FromArgb("#DC2626");
+                    return;
+                }
+
+                business.LogoPath = savedPath;
+                PaintLogo();
+            }
+            catch (Exception ex)
+            {
+                status.Text = "Upload failed";
+                status.TextColor = Color.FromArgb("#DC2626");
+                System.Diagnostics.Debug.WriteLine($"Logo upload failed: {ex.Message}");
+            }
+            finally
+            {
+                busy = false;
+                chooseButton.IsEnabled = true;
+            }
+        };
+
+        var confirmRemove = false;
+        removeButton.Clicked += async (_, _) =>
+        {
+            if (busy || business == null || business.Id <= 0)
+            {
+                return;
+            }
+
+            if (!confirmRemove)
+            {
+                confirmRemove = true;
+                removeButton.Text = "Confirm remove";
+                status.Text = "Tap again to remove the logo";
+                status.TextColor = Color.FromArgb("#DC2626");
+                return;
+            }
+
+            busy = true;
+            removeButton.IsEnabled = false;
+            var removed = await businessService.RemoveBusinessLogoAsync(business.Id);
+            if (removed && !string.IsNullOrWhiteSpace(business.LogoPath) && File.Exists(business.LogoPath))
+            {
+                try
+                {
+                    File.Delete(business.LogoPath);
+                }
+                catch
+                {
+                    // The database logo is already cleared.
+                }
+            }
+
+            busy = false;
+            removeButton.IsEnabled = true;
+            confirmRemove = false;
+            removeButton.Text = "Remove";
+            if (!removed)
+            {
+                status.Text = "Could not remove logo";
+                status.TextColor = Color.FromArgb("#DC2626");
+                return;
+            }
+
+            business.LogoPath = null;
+            PaintLogo();
+        };
+
+        smallButton.Clicked += async (_, _) => await SaveSizeAsync(ReceiptLogoSize.Small);
+        mediumButton.Clicked += async (_, _) => await SaveSizeAsync(ReceiptLogoSize.Medium);
+        largeButton.Clicked += async (_, _) => await SaveSizeAsync(ReceiptLogoSize.Large);
+
+        var close = new Button
+        {
+            Text = "Done",
+            BackgroundColor = Color.FromArgb("#0F172A"),
+            TextColor = Colors.White,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            CornerRadius = 10,
+            HeightRequest = 44,
+            MinimumHeightRequest = 44,
+            Style = null
+        };
+        close.Clicked += (_, _) => done.TrySetResult(true);
+
+        PaintLogo();
+        PaintSize();
+
+        var previewBox = new Border
+        {
+            WidthRequest = 88,
+            HeightRequest = 88,
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Content = new Grid
+            {
+                Children = { placeholder, preview }
+            }
+        };
+        var uploadActions = new VerticalStackLayout
+        {
+            Spacing = 6,
+            VerticalOptions = LayoutOptions.Center,
+            Children =
+            {
+                chooseButton,
+                new Label
+                {
+                    Text = "PNG or JPG, up to 5MB",
+                    FontSize = 11,
+                    TextColor = Color.FromArgb("#94A3B8")
+                },
+                status,
+                removeButton
+            }
+        };
+        Grid.SetColumn(previewBox, 0);
+        Grid.SetColumn(uploadActions, 1);
+
+        var card = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            Padding = new Thickness(20, 18),
+            WidthRequest = 440,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Content = new VerticalStackLayout
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Label
+                    {
+                        Text = "Receipt logo",
+                        FontSize = 18,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#0F172A")
+                    },
+                    new Label
+                    {
+                        Text = "This logo prints at the top of customer receipts.",
+                        FontSize = 12,
+                        TextColor = Color.FromArgb("#64748B"),
+                        Margin = new Thickness(0, -8, 0, 0)
+                    },
+                    new Grid
+                    {
+                        ColumnDefinitions = new ColumnDefinitionCollection
+                        {
+                            new ColumnDefinition(GridLength.Auto),
+                            new ColumnDefinition(GridLength.Star)
+                        },
+                        ColumnSpacing = 14,
+                        Children = { previewBox, uploadActions }
+                    },
+                    new BoxView { HeightRequest = 1, Color = Color.FromArgb("#F1F5F9") },
+                    new Border
+                    {
+                        BackgroundColor = Color.FromArgb("#F8FAFC"),
+                        Stroke = Color.FromArgb("#E2E8F0"),
+                        StrokeThickness = 1,
+                        Padding = new Thickness(12, 10),
+                        StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                        Content = new VerticalStackLayout
+                        {
+                            Spacing = 4,
+                            Children =
+                            {
+                                new Label
+                                {
+                                    Text = "Best file",
+                                    FontSize = 12,
+                                    FontAttributes = FontAttributes.Bold,
+                                    TextColor = Color.FromArgb("#0F172A")
+                                },
+                                new Label
+                                {
+                                    Text = "PNG, dark logo on white or transparent. About 600 x 300 px if wide, or 500 x 500 if square. Under 300 px looks soft on the printer.",
+                                    FontSize = 11,
+                                    TextColor = Color.FromArgb("#64748B")
+                                },
+                                new Label
+                                {
+                                    Text = "Printed size",
+                                    FontSize = 12,
+                                    FontAttributes = FontAttributes.Bold,
+                                    TextColor = Color.FromArgb("#0F172A"),
+                                    Margin = new Thickness(0, 4, 0, 0)
+                                },
+                                new Label
+                                {
+                                    Text = "Small is the shortest header. Medium is the best size for most 80mm receipts. Large uses the full paper width and more paper.",
+                                    FontSize = 11,
+                                    TextColor = Color.FromArgb("#64748B")
+                                }
+                            }
+                        }
+                    },
+                    new Label
+                    {
+                        Text = "Size on the receipt",
+                        FontSize = 13,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#0F172A")
+                    },
+                    new HorizontalStackLayout
+                    {
+                        Spacing = 8,
+                        Children = { smallButton, mediumButton, largeButton }
+                    },
+                    sizeStatus,
+                    close
+                }
+            }
+        };
+
+        var overlay = new ContentView
+        {
+            BackgroundColor = Color.FromArgb("#660F172A"),
+            Content = card
+        };
+        await OrderPlaceDialogPresenter.ShowAsync(this, overlay, done);
     }
 
-    private void UpdateReceiptLogoSizeControls()
+    private static Button SizeButton(string text) => new()
     {
-        SetLogoSizeButtonState(SmallLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Small);
-        SetLogoSizeButtonState(MediumLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Medium);
-        SetLogoSizeButtonState(LargeLogoSizeButton, _receiptLogoSize == ReceiptLogoSize.Large);
-        LogoSizeStatusLabel.Text = $"Selected: {_receiptLogoSize} (saved automatically)";
-    }
+        Text = text,
+        CornerRadius = 8,
+        HeightRequest = 36,
+        MinimumHeightRequest = 36,
+        MinimumWidthRequest = 88,
+        Padding = new Thickness(14, 0),
+        FontSize = 13,
+        FontAttributes = FontAttributes.Bold,
+        Style = null
+    };
 
     private static void SetLogoSizeButtonState(Button button, bool isSelected)
     {
-        button.BackgroundColor = Color.FromArgb(isSelected ? "#0F172A" : "#E2E8F0");
+        button.Style = null;
+        button.BackgroundColor = Color.FromArgb(isSelected ? "#2563EB" : "#F8FAFC");
         button.TextColor = Color.FromArgb(isSelected ? "#FFFFFF" : "#334155");
+        button.BorderColor = Color.FromArgb(isSelected ? "#2563EB" : "#E2E8F0");
+        button.BorderWidth = 1;
     }
 
     private async Task LoadRoutingSettingsAsync()
@@ -379,6 +905,8 @@ public partial class PrinterSetupPage : ContentPage
                 {
                     TakeawayPrintersContainer.Children.Add(CreatePrinterCard(printer));
                 }
+
+                FillAddedPrintersList(printers);
             });
         }
         catch (Exception ex)
@@ -549,11 +1077,12 @@ public partial class PrinterSetupPage : ContentPage
 
     private void OnAddPrinterClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(AddPrinterButton);
         _editingPrinter = null;
         FormTitle.Text = "Add Printer";
         SavePrinterButton.Text = "Save Printer";
         ResetForm();
-        FormPanel.IsVisible = true;
+        ShowPrinterForm();
     }
 
     private void OnEditPrinterClicked(NetworkPrinter printer)
@@ -582,29 +1111,8 @@ public partial class PrinterSetupPage : ContentPage
 
         if (printer.PrinterType == NetworkPrinterType.Label)
         {
-            LabelTechnologyPicker.SelectedIndex = 0;
-            LabelManufacturerPicker.SelectedIndex = 0;
-            LabelModelPicker.SelectedIndex = 0;
-            LabelProfilePicker.SelectedItem = printer.LabelProfile;
-            MediaWidthEntry.Text = FormatDecimal(printer.MediaWidthMm ?? 60m);
-            LabelWidthEntry.Text = FormatDecimal(printer.LabelWidthMm ?? 60m);
-            LabelHeightEntry.Text = FormatDecimal(printer.LabelHeightMm ?? 40m);
-            GapSizeEntry.Text = FormatDecimal(printer.GapSizeMm ?? 3m);
-            SensorTypePicker.SelectedIndex = printer.SensorType switch
-            {
-                LabelSensorType.BlackMark => 1,
-                LabelSensorType.Continuous => 2,
-                _ => 0
-            };
-            PrintSpeedEntry.Text = (printer.PrintSpeed ?? 4).ToString(CultureInfo.InvariantCulture);
-            PrintDarknessEntry.Text = (printer.PrintDarkness ?? 0).ToString(CultureInfo.InvariantCulture);
-            HorizontalOffsetEntry.Text = FormatDecimal(printer.HorizontalOffsetMm);
-            VerticalOffsetEntry.Text = FormatDecimal(printer.VerticalOffsetMm);
-            FinishingModePicker.SelectedIndex = printer.FinishingMode == LabelFinishingMode.Cutter ? 1 : 0;
-            NumberOfCopiesEntry.Text = Math.Clamp(printer.NumberOfCopies, 1, 99).ToString(CultureInfo.InvariantCulture);
-            CutterInstalledCheckbox.IsChecked = printer.FinishingMode == LabelFinishingMode.Cutter && printer.HasCutter;
-            LabelEnabledCheckbox.IsChecked = printer.IsEnabled;
-            DefaultLabelPrinterCheckbox.IsChecked = printer.IsDefaultLabelPrinter;
+            SelectLabelModel(printer.Brand, printer.ModelCode);
+            ApplyLabelSize(LabelSizeIndex(printer));
         }
         
         // Set print group - load the group name if exists
@@ -620,12 +1128,139 @@ public partial class PrinterSetupPage : ContentPage
         ConnectionStatusLabel.Text = printer.IsOnline ? "Connected" : "Offline";
         ConnectionStatusLabel.TextColor = printer.IsOnline ? Color.FromArgb("#22C55E") : Color.FromArgb("#EF4444");
         
-        FormPanel.IsVisible = true;
+        ShowPrinterForm();
+        _ = PrinterPageScroll.ScrollToAsync(0, 0, false);
+    }
+
+    private void FillAddedPrintersList(IReadOnlyList<NetworkPrinter> printers)
+    {
+        AddedPrintersList.Children.Clear();
+        var connected = printers.Count(p => p.IsOnline);
+        var offline = printers.Count - connected;
+        AddedPrintersSummary.Text = printers.Count == 0
+            ? "0 connected"
+            : $"{connected} connected, {offline} offline";
+        NoAddedPrintersLabel.IsVisible = printers.Count == 0;
+
+        foreach (var printer in printers.OrderBy(p => p.Name))
+        {
+            AddedPrintersList.Children.Add(CreateAddedPrinterRow(printer));
+        }
+    }
+
+    private View CreateAddedPrinterRow(NetworkPrinter printer)
+    {
+        var edit = new Button
+        {
+            Text = "Edit",
+            BackgroundColor = Colors.White,
+            TextColor = Color.FromArgb("#2563EB"),
+            BorderColor = Color.FromArgb("#BFDBFE"),
+            BorderWidth = 1,
+            CornerRadius = 8,
+            HeightRequest = 30,
+            MinimumHeightRequest = 30,
+            Padding = new Thickness(12, 0),
+            FontSize = 12,
+            FontAttributes = FontAttributes.Bold,
+            Style = null,
+            VerticalOptions = LayoutOptions.Center
+        };
+        edit.Clicked += (_, _) => OnEditPrinterClicked(printer);
+
+        var row = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(new GridLength(180)),
+                new ColumnDefinition(new GridLength(90)),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 10,
+            Padding = new Thickness(8, 6),
+            Children =
+            {
+                new BoxView
+                {
+                    WidthRequest = 8,
+                    HeightRequest = 8,
+                    CornerRadius = 4,
+                    Color = Color.FromArgb(printer.IsOnline ? "#16A34A" : "#DC2626"),
+                    VerticalOptions = LayoutOptions.Center
+                },
+                new VerticalStackLayout
+                {
+                    Spacing = 0,
+                    VerticalOptions = LayoutOptions.Center,
+                    Children =
+                    {
+                        new Label
+                        {
+                            Text = printer.Name,
+                            FontSize = 13,
+                            FontAttributes = FontAttributes.Bold,
+                            TextColor = Color.FromArgb("#0F172A"),
+                            LineBreakMode = LineBreakMode.TailTruncation
+                        },
+                        new Label
+                        {
+                            Text = printer.PrinterType.ToString(),
+                            FontSize = 11,
+                            TextColor = Color.FromArgb("#94A3B8")
+                        }
+                    }
+                },
+                new Label
+                {
+                    Text = $"{printer.IpAddress}:{printer.Port}",
+                    FontSize = 12,
+                    TextColor = Color.FromArgb("#334155"),
+                    VerticalOptions = LayoutOptions.Center
+                },
+                new Label
+                {
+                    Text = printer.IsOnline ? "Connected" : "Offline",
+                    FontSize = 12,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb(printer.IsOnline ? "#15803D" : "#DC2626"),
+                    VerticalOptions = LayoutOptions.Center
+                },
+                edit
+            }
+        };
+        row.SetColumn(row.Children[1], 1);
+        row.SetColumn(row.Children[2], 2);
+        row.SetColumn(row.Children[3], 3);
+        row.SetColumn(edit, 4);
+
+        return new Border
+        {
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Content = row
+        };
     }
 
     private void OnCloseFormClicked(object? sender, EventArgs e)
     {
+        HidePrinterForm();
+        ClearToolbarSelection();
+    }
+
+    private void ShowPrinterForm()
+    {
+        PrinterListLayout.IsVisible = false;
+        FormPanel.IsVisible = true;
+    }
+
+    private void HidePrinterForm()
+    {
         FormPanel.IsVisible = false;
+        PrinterListLayout.IsVisible = true;
         _editingPrinter = null;
     }
 
@@ -644,24 +1279,8 @@ public partial class PrinterSetupPage : ContentPage
         BuzzerCheckbox.IsChecked = false;
         TwoColorCheckbox.IsChecked = false;
 
-        LabelTechnologyPicker.SelectedIndex = 0;
-        LabelManufacturerPicker.SelectedIndex = 0;
-        LabelModelPicker.SelectedIndex = 0;
         LabelProfilePicker.SelectedIndex = 0;
-        MediaWidthEntry.Text = "60";
-        LabelWidthEntry.Text = "60";
-        LabelHeightEntry.Text = "40";
-        GapSizeEntry.Text = "3";
-        SensorTypePicker.SelectedIndex = 0;
-        PrintSpeedEntry.Text = "4";
-        PrintDarknessEntry.Text = "0";
-        HorizontalOffsetEntry.Text = "0";
-        VerticalOffsetEntry.Text = "0";
-        FinishingModePicker.SelectedIndex = 0;
-        NumberOfCopiesEntry.Text = "1";
-        CutterInstalledCheckbox.IsChecked = false;
-        LabelEnabledCheckbox.IsChecked = true;
-        DefaultLabelPrinterCheckbox.IsChecked = false;
+        ApplyLabelSize(0);
         
         PrintGroupEntry.Text = string.Empty;
         
@@ -808,16 +1427,10 @@ public partial class PrinterSetupPage : ContentPage
             printer.SupportsTwoColor = TwoColorCheckbox.IsChecked;
             printer.IsEnabled = _selectedType == NetworkPrinterType.Label ? LabelEnabledCheckbox.IsChecked : true;
 
-            if (_selectedType == NetworkPrinterType.Label && _selectedBrand == PrinterBrand.Toshiba)
+            if (_selectedType == NetworkPrinterType.Label && _selectedBrand is PrinterBrand.Toshiba or PrinterBrand.Xprinter or PrinterBrand.Brother)
             {
                 printer.LabelProfile = LabelProfilePicker.SelectedItem?.ToString();
-                printer.LabelMediaProfileId = LabelProfilePicker.SelectedIndex switch
-                {
-                    0 => "toshiba-60x40-container",
-                    1 => "toshiba-51x30-compact",
-                    2 => "toshiba-80x50-delivery",
-                    _ => null
-                };
+                printer.LabelMediaProfileId = LabelPrinterProfiles.MediaProfileId(_selectedBrand, LabelProfilePicker.SelectedIndex);
                 printer.MediaWidthMm = ParseDecimal(MediaWidthEntry.Text);
                 printer.LabelWidthMm = ParseDecimal(LabelWidthEntry.Text);
                 printer.LabelHeightMm = ParseDecimal(LabelHeightEntry.Text);
@@ -835,11 +1448,14 @@ public partial class PrinterSetupPage : ContentPage
                 printer.VerticalOffsetMm = ParseDecimal(VerticalOffsetEntry.Text) ?? decimal.MinValue;
                 printer.FinishingMode = FinishingModePicker.SelectedIndex == 1 ? LabelFinishingMode.Cutter : LabelFinishingMode.TearOff;
                 printer.NumberOfCopies = ParseInt(NumberOfCopiesEntry.Text) ?? 0;
-                printer.IsDefaultLabelPrinter = DefaultLabelPrinterCheckbox.IsChecked;
-                if (_selectedBrand == PrinterBrand.Toshiba)
-                {
+                var alreadyDefault = printer.IsDefaultLabelPrinter;
+                printer.IsDefaultLabelPrinter = alreadyDefault || !await HasAnotherLabelPrinterAsync(printer.Id);
+                if (_selectedBrand == PrinterBrand.Xprinter)
+                    LabelPrinterProfiles.ApplyXp421bLan(printer);
+                else if (_selectedBrand == PrinterBrand.Brother)
+                    LabelPrinterProfiles.ApplyTd4420Dn(printer);
+                else
                     LabelPrinterProfiles.ApplyToshibaBfv4dGs14(printer);
-                }
 
                 var validationError = LabelPrinterConfigurationValidator.Validate(printer, CutterInstalledCheckbox.IsChecked);
                 if (validationError != null)
@@ -893,8 +1509,8 @@ public partial class PrinterSetupPage : ContentPage
                 await ClearPrintGroupPrinterIfUnusedAsync(previousPrintGroupId, printer.Id);
             }
 
-            FormPanel.IsVisible = false;
-            _editingPrinter = null;
+            HidePrinterForm();
+            ClearToolbarSelection();
             await LoadPrintersAsync();
             await LoadRoutingSettingsAsync();
         }
@@ -1046,38 +1662,183 @@ public partial class PrinterSetupPage : ContentPage
 
     #region Printer Actions
 
+    private void ClearToolbarSelection()
+    {
+        foreach (var button in ToolbarButtons())
+        {
+            button.Style = null;
+            button.BackgroundColor = Colors.White;
+            button.TextColor = Color.FromArgb("#334155");
+            button.BorderColor = Color.FromArgb("#E2E8F0");
+            button.BorderWidth = 1;
+        }
+    }
+
+    private IEnumerable<Button> ToolbarButtons()
+    {
+        yield return RefreshButton;
+        yield return CheckStatusButton;
+        yield return ManageQueueButton;
+        yield return OpenDrawerButton;
+        yield return LogoUpdateButton;
+        yield return PrintDesignButton;
+        yield return AddPrinterButton;
+    }
+
+    private void SelectToolbarButton(Button selected)
+    {
+        foreach (var button in ToolbarButtons())
+        {
+            var isSelected = ReferenceEquals(button, selected);
+            button.Style = null;
+            button.BackgroundColor = Color.FromArgb(isSelected ? "#2563EB" : "#FFFFFF");
+            button.TextColor = isSelected ? Colors.White : Color.FromArgb("#334155");
+            button.BorderColor = Color.FromArgb(isSelected ? "#2563EB" : "#E2E8F0");
+            button.BorderWidth = 1;
+        }
+
+        if (!ReferenceEquals(selected, AddPrinterButton))
+        {
+            HidePrinterForm();
+        }
+    }
+
     private async void OnRefreshClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(RefreshButton);
         await LoadPrintersAsync();
         await LoadRoutingSettingsAsync();
     }
 
-    private async void OnTestAllClicked(object? sender, EventArgs e)
+    private Task ShowStatusCheckNoticeAsync(int online, int offline)
     {
-        if (_dbService == null || _printerService == null) return;
-
-        var printers = await _dbService.GetAllPrintersAsync();
-        if (printers.Count == 0)
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ok = new Button
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("No Printers", "No printers configured to test.");
-            return;
-        }
+            Text = "OK",
+            BackgroundColor = Color.FromArgb("#0F172A"),
+            TextColor = Colors.White,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            CornerRadius = 10,
+            HeightRequest = 44,
+            MinimumHeightRequest = 44,
+            Style = null
+        };
+        ok.Clicked += (_, _) => done.TrySetResult(true);
 
-        int success = 0, failed = 0;
-
-        foreach (var printer in printers.Where(p => p.IsEnabled))
+        var card = new Border
         {
-            var result = await SendPrinterTestAsync(printer);
-            if (result) success++;
-            else failed++;
-        }
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            Padding = new Thickness(22, 20),
+            WidthRequest = 360,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Shadow = new Shadow
+            {
+                Brush = Color.FromArgb("#0F172A"),
+                Opacity = 0.14f,
+                Radius = 18,
+                Offset = new Point(0, 8)
+            },
+            Content = new VerticalStackLayout
+            {
+                Spacing = 14,
+                Children =
+                {
+                    new Label
+                    {
+                        Text = "Status Check",
+                        FontSize = 18,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#0F172A"),
+                        HorizontalTextAlignment = TextAlignment.Center
+                    },
+                    new Grid
+                    {
+                        ColumnDefinitions = new ColumnDefinitionCollection
+                        {
+                            new ColumnDefinition(GridLength.Star),
+                            new ColumnDefinition(GridLength.Star)
+                        },
+                        ColumnSpacing = 10,
+                        Children =
+                        {
+                            StatusChip("Online", online, "#16A34A"),
+                            StatusChip("Offline", offline, "#DC2626", column: 1)
+                        }
+                    },
+                    ok
+                }
+            }
+        };
 
-        await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Test Complete", $"{success} successful, {failed} failed");
-        await LoadPrintersAsync();
+        var overlay = new ContentView
+        {
+            BackgroundColor = Color.FromArgb("#660F172A"),
+            Content = card
+        };
+        return OrderPlaceDialogPresenter.ShowAsync(this, overlay, done);
+    }
+
+    private static Border StatusChip(string title, int count, string color, int column = 0)
+    {
+        var chip = new Border
+        {
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            Padding = new Thickness(12, 10),
+            StrokeShape = new RoundRectangle { CornerRadius = 12 },
+            Content = new VerticalStackLayout
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new HorizontalStackLayout
+                    {
+                        Spacing = 6,
+                        HorizontalOptions = LayoutOptions.Center,
+                        Children =
+                        {
+                            new BoxView
+                            {
+                                WidthRequest = 8,
+                                HeightRequest = 8,
+                                CornerRadius = 4,
+                                Color = Color.FromArgb(color),
+                                VerticalOptions = LayoutOptions.Center
+                            },
+                            new Label
+                            {
+                                Text = title,
+                                FontSize = 12,
+                                TextColor = Color.FromArgb("#64748B"),
+                                VerticalOptions = LayoutOptions.Center
+                            }
+                        }
+                    },
+                    new Label
+                    {
+                        Text = count.ToString(),
+                        FontSize = 22,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#0F172A"),
+                        HorizontalTextAlignment = TextAlignment.Center
+                    }
+                }
+            }
+        };
+        Grid.SetColumn(chip, column);
+        return chip;
     }
 
     private async void OnCheckStatusClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(CheckStatusButton);
         if (_healthService == null)
         {
             await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Error", "Health service not available.");
@@ -1096,9 +1857,7 @@ public partial class PrinterSetupPage : ContentPage
             await UpdateStatusAsync();
             await LoadPrintersAsync();
             
-            await DisplayAlert("Status Check", 
-                $"{_healthService.OnlinePrinters} online, {_healthService.OfflinePrinters} offline", 
-                "OK");
+            await ShowStatusCheckNoticeAsync(_healthService.OnlinePrinters, _healthService.OfflinePrinters);
         }
         catch (Exception ex)
         {
@@ -1113,6 +1872,7 @@ public partial class PrinterSetupPage : ContentPage
 
     private async void OnOpenDrawerClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(OpenDrawerButton);
         if (_dbService == null || _printerService == null) return;
 
         NetworkPrinter? drawerPrinter = null;
@@ -1152,6 +1912,7 @@ public partial class PrinterSetupPage : ContentPage
 
     private async void OnPrintDesignClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(PrintDesignButton);
         await NavigationCoordinator.Shared.PushTemporaryPageAsync(new PrintTemplatesPage(), source: sender as VisualElement);
     }
 
@@ -1171,6 +1932,7 @@ public partial class PrinterSetupPage : ContentPage
 
     private async void OnManageQueueClicked(object? sender, EventArgs e)
     {
+        SelectToolbarButton(ManageQueueButton);
         if (_queueService == null || _dbService == null)
         {
             await AppAlertService.ShowAlertAsync("Error", "Print queue service is unavailable.");
@@ -1275,6 +2037,53 @@ public partial class PrinterSetupPage : ContentPage
 
     private async Task<bool> SendPrinterTestAsync(NetworkPrinter printer)
     {
+        if (printer.PrinterType == NetworkPrinterType.Label
+            && printer.ModuleIdentifier is "toshiba_tpcl" or "xprinter_tspl" or "brother_raster")
+        {
+            var labels = ServiceHelper.GetService<LabelPrintDatabaseService>();
+            var queue = ServiceHelper.GetService<LabelPrintQueueService>();
+            if (labels == null || queue == null || printer.Id <= 0 || string.IsNullOrWhiteSpace(printer.LabelMediaProfileId))
+                return false;
+
+            await labels.EnsureBuiltInProfilesAsync();
+            var modelName = printer.ModuleIdentifier switch
+            {
+                "xprinter_tspl" => "Xprinter XP-421B",
+                "brother_raster" => "Brother TD-4420DN",
+                _ => "Toshiba B-FV4D"
+            };
+            var template = printer.ModuleIdentifier switch
+            {
+                "xprinter_tspl" => "xprinter-tspl-v1",
+                "brother_raster" => "brother-raster-v1",
+                _ => "toshiba-text-v1"
+            };
+            var job = new LabelPrintJob
+            {
+                PrinterId = printer.Id,
+                MediaProfileId = printer.LabelMediaProfileId,
+                SourceTerminal = "mother-test",
+                IdempotencyKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes($"test|{printer.Id}|{DateTime.UtcNow:O}|{Guid.NewGuid():N}"))).ToLowerInvariant(),
+                SendRevision = 1,
+                JobType = LabelJobType.Test,
+                Content = new LabelContentSnapshot(
+                    "item",
+                    "OrderWeb POS",
+                    1,
+                    [modelName, "TEST LABEL"],
+                    $"{printer.IpAddress}:{printer.Port}",
+                    DateTimeOffset.Now,
+                    printer.LabelProfile),
+                LabelTemplateVersion = template,
+                QuantityCopies = 1,
+                Status = LabelJobStatus.Pending
+            };
+            await labels.EnqueueAsync(job);
+            await queue.ProcessQueueAsync();
+            return true;
+        }
+
         if (printer.PrinterType == NetworkPrinterType.Label)
         {
             var labelService = new LabelPrintingService(printer.IpAddress, printer.Port, printer.IsEnabled);
@@ -1371,9 +2180,13 @@ public partial class PrinterSetupPage : ContentPage
         PurposeHintLabel.Text = technology switch
         {
             "impact" => "Kitchen, bar, or takeaway only.",
-            "label" => "Label only.",
-            _ => "Receipt, kitchen, bar, online receipt, or takeaway kitchen."
+            "label" => "Label printers only.",
+            _ => "Select what this printer will be used for."
         };
+        PurposeSection.IsVisible = technology != "label";
+        PrintGroupSection.IsVisible = technology != "label";
+        ModelCard.IsVisible = technology != "label";
+        Grid.SetColumnSpan(BrandCard, technology == "label" ? 2 : 1);
 
         if (technology == "label")
         {
@@ -1425,7 +2238,7 @@ public partial class PrinterSetupPage : ContentPage
         PaintChoice(BrandOtherBorder, BrandOtherLabel, brand == PrinterBrand.Other);
         if (_selectedTechnology == "label")
         {
-            LabelConfigurationSection.IsVisible = brand == PrinterBrand.Toshiba;
+            RefreshLabelForm();
         }
     }
 
@@ -1453,10 +2266,12 @@ public partial class PrinterSetupPage : ContentPage
 
     private static readonly string[] StarThermalModels =
     [
-        "TSP100LAN",
-        "TSP143LAN",
-        "TSP100IIILAN",
-        "TSP143IIILAN"
+        "TSP654IIE3",
+        "TSP654IIE3X",
+        "TSP743IIE3",
+        "TSP743IIE3X",
+        "TSP847IIE3",
+        "TSP847IIE3X"
     ];
 
     private static readonly string[] StarImpactModels = ["SP742", "SP700 Series"];
@@ -1479,11 +2294,13 @@ public partial class PrinterSetupPage : ContentPage
             (_, "impact") => EpsonImpactModels,
             _ => EpsonThermalModels
         };
-        ModelHintLabel.Text = _selectedBrand == PrinterBrand.Xprinter
-            ? "XP-T80Q and XP-N160II are the recommended models. 80mm. Connect by IP on port 9100. No PC driver."
-            : _selectedTechnology == "impact"
-                ? "Connect by IP on port 9100. No PC driver."
-                : "80mm is fixed for thermal. Mother connects by IP on port 9100. No PC driver.";
+        ModelHintLabel.Text = (_selectedBrand, _selectedTechnology) switch
+        {
+            (PrinterBrand.Xprinter, _) => "XP-T80Q and XP-N160II are the recommended models. 80mm. Connect by IP on port 9100. No PC driver.",
+            (PrinterBrand.Star, "thermal") => "Ethernet only. Switch the printer to ESC/POS first (TSP847: DSW1-1 and DSW1-2 OFF, and fit the 80mm guide). Then connect by IP on port 9100. No PC driver.",
+            (_, "impact") => "Connect by IP on port 9100. No PC driver.",
+            _ => "80mm is fixed for thermal. Mother connects by IP on port 9100. No PC driver."
+        };
         var selected = ModelCodeFromLabel(keepModel ?? EpsonModelPicker.SelectedItem?.ToString());
         EpsonModelPicker.ItemsSource = models;
         var index = Array.FindIndex(models, model => string.Equals(ModelCodeFromLabel(model), selected, StringComparison.OrdinalIgnoreCase));
@@ -1507,8 +2324,21 @@ public partial class PrinterSetupPage : ContentPage
 
     private static void PaintChoice(Border border, Label label, bool selected)
     {
-        border.BackgroundColor = selected ? Color.FromArgb("#0F172A") : Color.FromArgb("#F1F5F9");
-        label.TextColor = selected ? Colors.White : Color.FromArgb("#64748B");
+        border.BackgroundColor = selected ? Color.FromArgb("#0F172A") : Colors.White;
+        border.Stroke = Color.FromArgb(selected ? "#0F172A" : "#E2E8F0");
+        border.StrokeThickness = 1;
+        label.TextColor = selected ? Colors.White : Color.FromArgb("#334155");
+    }
+
+    private static void PaintPurpose(Border border, bool selected)
+    {
+        border.BackgroundColor = Colors.White;
+        border.Stroke = Color.FromArgb(selected ? "#F59E0B" : "#E2E8F0");
+        border.StrokeThickness = selected ? 1.5 : 1;
+        if (border.Content is Label label)
+        {
+            label.TextColor = Color.FromArgb(selected ? "#D97706" : "#334155");
+        }
     }
 
     private void OnTypeReceiptTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Receipt);
@@ -1521,36 +2351,12 @@ public partial class PrinterSetupPage : ContentPage
     private void SelectType(NetworkPrinterType type)
     {
         _selectedType = type;
-        
-        // Receipt - green
-        TypeReceiptBorder.BackgroundColor = type == NetworkPrinterType.Receipt ? Color.FromArgb("#22C55E") : Color.FromArgb("#F1F5F9");
-        if (TypeReceiptBorder.Content is Label receiptLabel)
-            receiptLabel.TextColor = type == NetworkPrinterType.Receipt ? Colors.White : Color.FromArgb("#64748B");
-        
-        // Kitchen - orange
-        TypeKitchenBorder.BackgroundColor = type == NetworkPrinterType.Kitchen ? Color.FromArgb("#F59E0B") : Color.FromArgb("#F1F5F9");
-        if (TypeKitchenBorder.Content is Label kitchenLabel)
-            kitchenLabel.TextColor = type == NetworkPrinterType.Kitchen ? Colors.White : Color.FromArgb("#64748B");
-        
-        // Bar - purple
-        TypeBarBorder.BackgroundColor = type == NetworkPrinterType.Bar ? Color.FromArgb("#8B5CF6") : Color.FromArgb("#F1F5F9");
-        if (TypeBarBorder.Content is Label barLabel)
-            barLabel.TextColor = type == NetworkPrinterType.Bar ? Colors.White : Color.FromArgb("#64748B");
-
-        // Online - blue
-        TypeOnlineBorder.BackgroundColor = type == NetworkPrinterType.Online ? Color.FromArgb("#3B82F6") : Color.FromArgb("#F1F5F9");
-        if (TypeOnlineBorder.Content is Label onlineLabel)
-            onlineLabel.TextColor = type == NetworkPrinterType.Online ? Colors.White : Color.FromArgb("#64748B");
-
-        // Takeaway - orange
-        TypeTakeawayBorder.BackgroundColor = type == NetworkPrinterType.Takeaway ? Color.FromArgb("#F97316") : Color.FromArgb("#F1F5F9");
-        if (TypeTakeawayBorder.Content is Label takeawayLabel)
-            takeawayLabel.TextColor = type == NetworkPrinterType.Takeaway ? Colors.White : Color.FromArgb("#64748B");
-
-        // Label - green
-        TypeLabelBorder.BackgroundColor = type == NetworkPrinterType.Label ? Color.FromArgb("#22C55E") : Color.FromArgb("#F1F5F9");
-        if (TypeLabelBorder.Content is Label labelLabel)
-            labelLabel.TextColor = type == NetworkPrinterType.Label ? Colors.White : Color.FromArgb("#64748B");
+        PaintPurpose(TypeReceiptBorder, type == NetworkPrinterType.Receipt);
+        PaintPurpose(TypeKitchenBorder, type == NetworkPrinterType.Kitchen);
+        PaintPurpose(TypeBarBorder, type == NetworkPrinterType.Bar);
+        PaintPurpose(TypeOnlineBorder, type == NetworkPrinterType.Online);
+        PaintPurpose(TypeTakeawayBorder, type == NetworkPrinterType.Takeaway);
+        PaintPurpose(TypeLabelBorder, type == NetworkPrinterType.Label);
         
         // Auto-set buzzer for kitchen/bar/takeaway
         if (type == NetworkPrinterType.Kitchen || type == NetworkPrinterType.Bar || type == NetworkPrinterType.Takeaway)
@@ -1559,7 +2365,7 @@ public partial class PrinterSetupPage : ContentPage
         }
 
         var isLabel = type == NetworkPrinterType.Label;
-        LabelConfigurationSection.IsVisible = isLabel && _selectedBrand == PrinterBrand.Toshiba;
+        RefreshLabelForm();
         GeneralPaperWidthSection.IsVisible = !isLabel && _selectedTechnology != "thermal";
         if (_selectedTechnology == "thermal")
         {
@@ -1572,10 +2378,123 @@ public partial class PrinterSetupPage : ContentPage
         }
     }
 
-    private void OnLabelModelChanged(object? sender, EventArgs e)
+    private static readonly (string Label, PrinterBrand Brand)[] LabelPrinterModels =
+    [
+        ("Xprinter XP-421B", PrinterBrand.Xprinter),
+        ("Brother TD-4420DN", PrinterBrand.Brother),
+        ("Toshiba B-FV4D-GS14", PrinterBrand.Toshiba)
+    ];
+
+    private void RefreshLabelForm()
     {
-        if (LabelModelPicker.SelectedIndex == 0 && string.IsNullOrWhiteSpace(PortEntry.Text))
+        var show = _selectedType == NetworkPrinterType.Label
+                   && _selectedBrand is PrinterBrand.Toshiba or PrinterBrand.Xprinter or PrinterBrand.Brother
+                   && _selectedTechnology == "label";
+        LabelConfigurationSection.IsVisible = show;
+        if (!show)
+            return;
+
+        var profiles = _selectedBrand switch
+        {
+            PrinterBrand.Xprinter => new[] { "Xprinter 60 × 40 mm Container", "Xprinter 51 × 30 mm Compact", "Xprinter 80 × 50 mm Delivery" },
+            PrinterBrand.Brother => new[] { "Brother 60 × 40 mm Container", "Brother 51 × 30 mm Compact", "Brother 80 × 50 mm Delivery" },
+            _ => new[] { "Toshiba 60 × 40 mm Container", "Toshiba 51 × 30 mm Compact", "Toshiba 80 × 50 mm Delivery" }
+        };
+        SetPickerItems(LabelProfilePicker, profiles);
+        ApplyLabelSize(_labelSizeIndex);
+        if (string.IsNullOrWhiteSpace(PortEntry.Text))
             PortEntry.Text = "9100";
+    }
+
+    private int _labelSizeIndex;
+
+    private void OnLabelSizeNormalTapped(object? sender, EventArgs e) => ApplyLabelSize(0);
+    private void OnLabelSizeSmallTapped(object? sender, EventArgs e) => ApplyLabelSize(1);
+    private void OnLabelSizeDeliveryTapped(object? sender, EventArgs e) => ApplyLabelSize(2);
+
+    private static int LabelSizeIndex(NetworkPrinter printer)
+    {
+        var width = printer.LabelWidthMm ?? printer.MediaWidthMm ?? 60m;
+        var height = printer.LabelHeightMm ?? 40m;
+        if (width == 51m && height == 30m)
+            return 1;
+        if (width == 80m && height == 50m)
+            return 2;
+        return 0;
+    }
+
+    private void ApplyLabelSize(int index)
+    {
+        _labelSizeIndex = index is 1 or 2 ? index : 0;
+        var (width, height) = _labelSizeIndex switch
+        {
+            1 => ("51", "30"),
+            2 => ("80", "50"),
+            _ => ("60", "40")
+        };
+        PaintLabelSize(LabelSizeNormalBorder, LabelSizeNormalLabel, LabelSizeNormalHint, _labelSizeIndex == 0);
+        PaintLabelSize(LabelSizeSmallBorder, LabelSizeSmallLabel, LabelSizeSmallHint, _labelSizeIndex == 1);
+        PaintLabelSize(LabelSizeDeliveryBorder, LabelSizeDeliveryLabel, LabelSizeDeliveryHint, _labelSizeIndex == 2);
+        if (LabelProfilePicker.Items.Count > _labelSizeIndex)
+            LabelProfilePicker.SelectedIndex = _labelSizeIndex;
+        MediaWidthEntry.Text = width;
+        LabelWidthEntry.Text = width;
+        LabelHeightEntry.Text = height;
+        GapSizeEntry.Text = "3";
+        SensorTypePicker.SelectedIndex = 0;
+        PrintSpeedEntry.Text = "4";
+        PrintDarknessEntry.Text = "0";
+        HorizontalOffsetEntry.Text = "0";
+        VerticalOffsetEntry.Text = "0";
+        FinishingModePicker.SelectedIndex = 0;
+        NumberOfCopiesEntry.Text = "1";
+        CutterInstalledCheckbox.IsChecked = false;
+        LabelEnabledCheckbox.IsChecked = true;
+    }
+
+    private static void PaintLabelSize(Border border, Label title, Label hint, bool selected)
+    {
+        border.BackgroundColor = selected ? Color.FromArgb("#0F172A") : Color.FromArgb("#F8FAFC");
+        border.Stroke = selected ? Colors.Transparent : Color.FromArgb("#E2E8F0");
+        border.StrokeThickness = selected ? 0 : 1;
+        title.TextColor = selected ? Colors.White : Color.FromArgb("#334155");
+        hint.TextColor = selected ? Color.FromArgb("#E2E8F0") : Color.FromArgb("#94A3B8");
+    }
+
+    private async Task<bool> HasAnotherLabelPrinterAsync(int currentId)
+    {
+        if (_dbService == null)
+            return false;
+        var printers = await _dbService.GetPrintersByTypeAsync(NetworkPrinterType.Label);
+        return printers.Any(printer => printer.IsEnabled && printer.Id != currentId);
+    }
+
+    private void SelectLabelModel(PrinterBrand brand, string? modelCode)
+    {
+        var match = LabelPrinterModels.FirstOrDefault(model => model.Brand == brand);
+        if (match.Label is null && !string.IsNullOrWhiteSpace(modelCode))
+        {
+            match = modelCode.ToLowerInvariant() switch
+            {
+                LabelPrinterProfiles.XprinterXp421bCode => LabelPrinterModels[0],
+                LabelPrinterProfiles.BrotherTd4420DnCode => LabelPrinterModels[1],
+                LabelPrinterProfiles.ToshibaBfv4dGs14Code => LabelPrinterModels[2],
+                _ => default
+            };
+        }
+
+        if (match.Label is not null)
+            SelectBrand(match.Brand);
+    }
+
+    private static void SetPickerItems(Picker picker, string[] items)
+    {
+        var selected = picker.SelectedItem?.ToString();
+        picker.Items.Clear();
+        foreach (var item in items)
+            picker.Items.Add(item);
+        var index = Array.FindIndex(items, item => string.Equals(item, selected, StringComparison.OrdinalIgnoreCase));
+        picker.SelectedIndex = index >= 0 ? index : 0;
     }
 
     private void OnLabelProfileChanged(object? sender, EventArgs e)

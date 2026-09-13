@@ -13,7 +13,15 @@ namespace POS_in_NET.Models
         public int Capacity { get; set; }
         public TableShape Shape { get; set; } = TableShape.Square;
         public TableStatus Status { get; set; } = TableStatus.Available;
-        public string TableDesignIcon { get; set; } = "table_1.png"; // Default table design
+        private string _tableDesignIcon = "table_1.png";
+        public string TableDesignIcon
+        {
+            get => _tableDesignIcon;
+            set => _tableDesignIcon = string.IsNullOrWhiteSpace(value)
+                || value.Equals("table_4.png", StringComparison.OrdinalIgnoreCase)
+                ? "table_1.png"
+                : value.Trim();
+        }
         public DateTime CreatedDate { get; set; }
         public DateTime UpdatedDate { get; set; }
         public bool IsActive { get; set; } = true;

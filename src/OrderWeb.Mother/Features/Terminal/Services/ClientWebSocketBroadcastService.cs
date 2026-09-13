@@ -1410,6 +1410,16 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                         OrderNumber = request.OrderNumber
                     })).Id;
                 }
+                else if (request.Reason == "Refund" && request.Amount.Value > 0)
+                {
+                    expenseId = (await till.CreateRefundPayoutAsync(new RefundPayoutRequest
+                    {
+                        Amount = request.Amount.Value,
+                        SourceArea = source,
+                        OrderId = request.OrderId,
+                        OrderNumber = request.OrderNumber
+                    })).Id;
+                }
                 else if (request.Reason == "Cash Count")
                 {
                     expenseId = (await till.CreateCashCountAsync(new CashCountRequest
@@ -3624,16 +3634,22 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         if (documents.Contains("kitchen_ticket"))
         {
             var routing = ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService();
-            var routingResult = await routing.PrintOrderAsync(ToKitchenPrintOrder(order));
+            var printOrder = ToKitchenPrintOrder(order);
+            var labelDecision = LabelPrintRules.Decide(order.OrderType, order.SourceChannel);
+            var routingResult = labelDecision.ShouldPrint
+                ? await routing.PrintTakeawayOrderAsync(printOrder, order.OrderType ?? "pickup")
+                : await routing.PrintOrderAsync(printOrder);
             if (routingResult.AnyPrinted)
             {
                 anyQueued = true;
                 messages.Add(routingResult.HasFailures
                     ? $"Kitchen/bar tickets partly queued on Mother IP printers: {string.Join("; ", routingResult.FailedRoutes)}"
                     : "Kitchen/bar tickets queued on Mother IP printers.");
-                var labelMessage = await EnqueueToshibaLabelsAsync(ToKitchenPrintOrder(order), routingResult.PrintedItemIds, session.TerminalId);
-                if (!string.IsNullOrWhiteSpace(labelMessage))
-                    messages.Add(labelMessage);
+                await EnqueueClientKitchenLabelsAsync(
+                    printOrder,
+                    routingResult.PrintedItemIds,
+                    session.TerminalId,
+                    order);
             }
             else
             {
@@ -3752,26 +3768,111 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                MotherCapabilityResolver.ForRole(role).Contains(capability);
     }
 
-    private static async Task<string?> EnqueueToshibaLabelsAsync(TableOrder printOrder, ISet<string> printedItemIds, string sourceTerminal)
+    private static async Task<string?> EnqueueClientKitchenLabelsAsync(
+        TableOrder printOrder,
+        ISet<string> printedItemIds,
+        string sourceTerminal,
+        Order order)
+    {
+        if (!LabelPrintRules.Decide(order.OrderType, order.SourceChannel).ShouldPrint)
+            return null;
+
+        var labelOrder = printOrder;
+        var labelItemIds = printedItemIds;
+        if (order.Id > 0)
+        {
+            try
+            {
+                var revisions = ServiceHelper.GetService<KitchenOrderRevisionService>() ?? new KitchenOrderRevisionService(new DatabaseService());
+                var revision = await revisions.CreateRevisionAsync(order.Id, printOrder, sourceTerminal);
+                if (revision == null)
+                    return null;
+
+                var delta = revisions.BuildPrintOrder(printOrder, revision);
+                var copies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var line in delta.Items.Where(item =>
+                             item.KitchenAction is KitchenChangeAction.New or KitchenChangeAction.Add))
+                {
+                    var sourceId = string.IsNullOrWhiteSpace(line.SourceItemId) ? line.Id : line.SourceItemId;
+                    if (!printedItemIds.Contains(sourceId) && !printedItemIds.Contains(line.Id))
+                        continue;
+
+                    var target = printOrder.Items.FirstOrDefault(item =>
+                        string.Equals(item.Id, sourceId, StringComparison.OrdinalIgnoreCase));
+                    if (target == null)
+                        continue;
+
+                    target.KitchenAction = line.KitchenAction;
+                    target.Quantity = line.Quantity;
+                    target.PreviousQuantity = line.PreviousQuantity;
+                    copies.Add(target.Id);
+                }
+
+                if (copies.Count == 0)
+                {
+                    await MarkClientLabelRevisionPrintedAsync(revisions, revision);
+                    return null;
+                }
+
+                await MarkClientLabelRevisionPrintedAsync(revisions, revision);
+                labelOrder = printOrder;
+                labelItemIds = copies;
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.Log($"Client kitchen label delta failed: {ex.Message}");
+            }
+        }
+
+        return await EnqueueToshibaLabelsAsync(
+            labelOrder,
+            labelItemIds,
+            sourceTerminal,
+            order.OrderType,
+            order.SourceChannel);
+    }
+
+    private static async Task MarkClientLabelRevisionPrintedAsync(
+        KitchenOrderRevisionService revisions,
+        KitchenOrderRevision revision)
+    {
+        var printed = new OrderRoutingPrintResult();
+        foreach (var line in revision.Lines)
+            printed.PrintedItemIds.Add(line.LineId);
+        await revisions.MarkPrintResultAsync(revision, printed);
+    }
+
+    private static async Task<string?> EnqueueToshibaLabelsAsync(
+        TableOrder printOrder,
+        ISet<string> printedItemIds,
+        string sourceTerminal,
+        string? orderType,
+        string? sourceChannel)
     {
         try
         {
+            if (!LabelPrintRules.Decide(orderType, sourceChannel).ShouldPrint)
+                return null;
+
             var labels = ServiceHelper.GetService<ToshibaOrderLabelService>();
             if (labels == null || printedItemIds.Count == 0)
                 return null;
 
-            var result = await labels.EnqueueForPrintedItemsAsync(printOrder, printedItemIds, sourceTerminal);
-            if (!result.HandledByToshiba || result.Attempted == 0 && result.Failed == 0)
+            var result = await labels.EnqueueForPrintedItemsAsync(
+                printOrder,
+                printedItemIds,
+                sourceTerminal,
+                orderType,
+                sourceChannel);
+            if (!result.HandledByToshiba || result.Failed == 0)
                 return null;
-            if (result.Failed > 0)
-                return $"Labels need attention: {string.Join("; ", result.Errors)}";
-            return result.Queued > 0
-                ? "Toshiba labels queued on Mother."
-                : null;
+            AppDiagnostics.Log($"Client kitchen labels skipped after ticket: {string.Join("; ", result.Errors)}");
+            return null;
         }
         catch (Exception ex)
         {
-            return $"Labels need attention: {ex.Message}";
+            AppDiagnostics.Log($"Client kitchen labels skipped after ticket: {ex.Message}");
+            return null;
         }
     }
 
@@ -4677,6 +4778,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             if (request.Reason == "Shopping") expenseId = (await till.CreateShoppingTakeAsync(new ShoppingTakeRequest { ItemName = request.Details ?? "Shopping", AmountTaken = request.Amount.Value, SourceArea = source })).Id;
             else if (request.Reason == "Delivery") expenseId = (await till.CreateDeliveryPayoutAsync(new DeliveryPayoutRequest { Amount = request.Amount.Value, SourceArea = source })).Id;
+            else if (request.Reason == "Refund" && request.Amount.Value > 0) expenseId = (await till.CreateRefundPayoutAsync(new RefundPayoutRequest { Amount = request.Amount.Value, SourceArea = source })).Id;
             else if (request.Reason == "Cash Count") expenseId = (await till.CreateCashCountAsync(new CashCountRequest { CountedCash = request.Amount.Value, SourceArea = source })).Id;
             else if (request.Reason == "Other" && request.Amount.Value > 0) expenseId = (await till.CreateOtherExpenseAsync(new OtherTillExpenseRequest { Reason = request.Details ?? "Other", AmountOut = request.Amount.Value, SourceArea = source }))?.Id;
         }
@@ -5533,7 +5635,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         return name switch
         {
             "Shopping" when amount is > 0 => $"Shopping take · {note ?? "Shopping"} · £{amount:F2}",
-            "Delivery" when amount is > 0 => $"Delivery · £{amount:F2}",
+            "Delivery" when amount is > 0 => $"Delivery Fee · £{amount:F2}",
+            "Refund" when amount is > 0 => $"Refund · £{amount:F2}",
             "Cash Count" when amount is >= 0 => $"Cash count · £{amount:F2}",
             "Other" when !string.IsNullOrWhiteSpace(note) && amount is > 0 => $"Other · {note} · £{amount:F2}",
             "Other" when !string.IsNullOrWhiteSpace(note) => $"Other · {note}",

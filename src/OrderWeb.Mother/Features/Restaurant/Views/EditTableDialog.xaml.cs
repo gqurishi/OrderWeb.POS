@@ -1,3 +1,4 @@
+using OrderWeb.SharedUI.Controls;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using Microsoft.Maui.Controls.Shapes;
@@ -14,6 +15,7 @@ public partial class EditTableDialog : ContentView
     private readonly List<Border> _floorBorders = new();
     private int _selectedFloorId;
     private string _selectedFloorName = string.Empty;
+    private bool _keyboardOpen;
 
     public EditTableDialog()
     {
@@ -60,7 +62,6 @@ public partial class EditTableDialog : ContentView
         {
             "table_2.png" => 2,
             "table_3.png" => 3,
-            "table_4.png" => 4,
             _ => 1
         };
         SelectDesign(designNumber);
@@ -77,23 +78,41 @@ public partial class EditTableDialog : ContentView
     public Task<(bool success, int floorId, string floorName, string? tableName, string tableDesignIcon)> ShowAsync()
     {
         _taskCompletionSource = new TaskCompletionSource<(bool, int, string, string?, string)>();
+        SharedTouchKeyboard.SetEnabled(TableNumberEntry, false);
         IsVisible = true;
-        
-        // Auto-focus on table number entry
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(100), () =>
-        {
-            try
-            {
-                TableNumberEntry.Focus();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"EditTableDialog focus skipped: {ex.Message}");
-            }
-        });
-        
         return _taskCompletionSource.Task;
     }
+
+    private async void OnTableNumberTapped(object? sender, TappedEventArgs e)
+    {
+        if (_keyboardOpen)
+        {
+            return;
+        }
+
+        _keyboardOpen = true;
+        try
+        {
+            var value = await new NumericKeyboardDialog().ShowDigitsAsync(
+                TableNumberEntry.Text,
+                "Table number",
+                maxDigits: 6,
+                hostPage: FindHostPage(),
+                overlayHost: DialogRoot);
+            if (value is not null)
+            {
+                TableNumberEntry.Text = value;
+            }
+        }
+        finally
+        {
+            _keyboardOpen = false;
+        }
+    }
+
+    private static ContentPage? FindHostPage() =>
+        Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage
+        ?? Shell.Current?.CurrentPage as ContentPage;
 
     private void OnCancelClicked(object sender, EventArgs e)
     {
@@ -244,11 +263,6 @@ public partial class EditTableDialog : ContentView
         SelectDesign(3);
     }
 
-    private void OnDesign4Clicked(object sender, EventArgs e)
-    {
-        SelectDesign(4);
-    }
-
     private void SelectDesign(int designNumber)
     {
         // Reset all borders
@@ -263,10 +277,6 @@ public partial class EditTableDialog : ContentView
         Design3Border.BackgroundColor = Colors.White;
         Design3Border.Stroke = Color.FromArgb("#E5E7EB");
         Design3Border.StrokeThickness = 2;
-
-        Design4Border.BackgroundColor = Colors.White;
-        Design4Border.Stroke = Color.FromArgb("#E5E7EB");
-        Design4Border.StrokeThickness = 2;
 
         // Highlight selected design
         switch (designNumber)
@@ -288,12 +298,6 @@ public partial class EditTableDialog : ContentView
                 Design3Border.Stroke = Color.FromArgb("#3B82F6");
                 Design3Border.StrokeThickness = 3;
                 _selectedDesignIcon = "table_3.png";
-                break;
-            case 4:
-                Design4Border.BackgroundColor = Color.FromArgb("#F0F9FF");
-                Design4Border.Stroke = Color.FromArgb("#3B82F6");
-                Design4Border.StrokeThickness = 3;
-                _selectedDesignIcon = "table_4.png";
                 break;
         }
     }

@@ -111,12 +111,20 @@ public static class BackgroundSyncJobRegistrar
                                     BackgroundSyncResources.Printer,
                 TerminalScope = BackgroundSyncTerminalScope.ChildSafe,
                 CanRunDuringPaymentOrOrderEntry = false,
-                CanRunWhileUserActive = false
+                CanRunWhileUserActive = true
             },
             async cancellationToken =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await printerHealthService.CheckAllPrintersAsync();
+                if (printerHealthService.TotalPrinters > 0 && printerHealthService.OfflinePrinters > 0)
+                {
+                    return BackgroundSyncRunResult.Failed(
+                        printerHealthService.OfflinePrinters == 1
+                            ? "A printer cannot print."
+                            : $"{printerHealthService.OfflinePrinters} printers cannot print.");
+                }
+
                 return BackgroundSyncRunResult.Completed(
                     $"{printerHealthService.OnlinePrinters}/{printerHealthService.TotalPrinters} printer(s) online.");
             });

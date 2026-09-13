@@ -549,11 +549,11 @@ public partial class AddEditItemPage : ContentPage
             Stroke = Color.FromArgb("#E2E8F0"),
             StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 14 },
-            Padding = new Thickness(16, 14),
-            Margin = new Thickness(0, 6, 0, 10)
+            Padding = new Thickness(10, 8),
+            Margin = new Thickness(0, 2, 0, 6)
         };
 
-        var contentStack = new VerticalStackLayout { Spacing = 14 };
+        var contentStack = new VerticalStackLayout { Spacing = 8 };
         var headerGrid = new Grid
         {
             ColumnDefinitions =
@@ -569,7 +569,7 @@ public partial class AddEditItemPage : ContentPage
         {
             StyleId = "VariantCardTitle",
             Text = "Variant",
-            FontSize = 16,
+            FontSize = 14,
             FontAttributes = FontAttributes.Bold,
             TextColor = Color.FromArgb("#0F172A"),
             VerticalOptions = LayoutOptions.Center
@@ -658,7 +658,7 @@ public partial class AddEditItemPage : ContentPage
         TextColor = Color.FromArgb("#1E293B"),
         PlaceholderColor = Color.FromArgb("#94A3B8"),
         BackgroundColor = Colors.Transparent,
-        HeightRequest = 44
+        HeightRequest = 36
     };
 
     private static View WrapVariantField(string label, Entry entry)
@@ -757,13 +757,13 @@ public partial class AddEditItemPage : ContentPage
             Stroke = Color.FromArgb("#E2E8F0"),
             StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 14 },
-            Padding = new Thickness(16, 14),
-            Margin = new Thickness(0, 6, 0, 10)
+            Padding = new Thickness(10, 8),
+            Margin = new Thickness(0, 2, 0, 6)
         };
 
         var contentStack = new VerticalStackLayout
         {
-            Spacing = 14
+            Spacing = 8
         };
 
         var headerGrid = new Grid
@@ -836,7 +836,7 @@ public partial class AddEditItemPage : ContentPage
             TextColor = Color.FromArgb("#1E293B"),
             PlaceholderColor = Color.FromArgb("#94A3B8"),
             BackgroundColor = Colors.Transparent,
-            HeightRequest = 44
+            HeightRequest = 36
         };
         nameEntry.TextChanged += (s, e) => addon.Name = e.NewTextValue?.Trim() ?? string.Empty;
 
@@ -869,7 +869,7 @@ public partial class AddEditItemPage : ContentPage
             PlaceholderColor = Color.FromArgb("#94A3B8"),
             BackgroundColor = Colors.Transparent,
             Keyboard = Keyboard.Numeric,
-            HeightRequest = 44
+            HeightRequest = 36
         };
         priceEntry.TextChanged += (s, e) =>
         {
@@ -1841,7 +1841,7 @@ public partial class AddEditItemPage : ContentPage
                 TextColor = Color.FromArgb("#94A3B8"),
                 HorizontalOptions = LayoutOptions.Center,
                 HorizontalTextAlignment = TextAlignment.Center,
-                Margin = new Thickness(0, 20)
+                Margin = new Thickness(0, 8)
             });
             return;
         }

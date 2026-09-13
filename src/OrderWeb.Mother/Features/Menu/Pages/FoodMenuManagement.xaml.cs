@@ -349,14 +349,14 @@ namespace POS_in_NET.Pages
             {
                 ColumnDefinitions = new ColumnDefinitionCollection
                 {
-                    new ColumnDefinition { Width = 50 },   // Drag handle
+                    new ColumnDefinition { Width = 36 },   // Move
                     new ColumnDefinition { Width = GridLength.Star }, // Name with color
-                    new ColumnDefinition { Width = 100 },  // Items count
-                    new ColumnDefinition { Width = 100 },  // Status
-                    new ColumnDefinition { Width = 100 },  // Actions
+                    new ColumnDefinition { Width = 78 },  // Items count
+                    new ColumnDefinition { Width = 86 },  // Status
+                    new ColumnDefinition { Width = 86 },  // Actions
                 },
-                ColumnSpacing = 10,
-                Padding = new Thickness(24, 16),
+                ColumnSpacing = 8,
+                Padding = new Thickness(16, 6),
                 BackgroundColor = Colors.White
             };
             
@@ -370,30 +370,12 @@ namespace POS_in_NET.Pages
             
             var arrowStack = new VerticalStackLayout
             {
-                Spacing = 4,
+                Spacing = 1,
                 VerticalOptions = LayoutOptions.Center,
                 HorizontalOptions = LayoutOptions.Center
             };
             
-            // Up arrow button
-            var upBtn = new Border
-            {
-                BackgroundColor = isFirst ? Color.FromArgb("#F1F5F9") : Color.FromArgb("#E2E8F0"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                WidthRequest = 32,
-                HeightRequest = 24,
-                Opacity = isFirst ? 0.5 : 1,
-                Content = new Label
-                {
-                    Text = "↑",
-                    FontSize = 16,
-                    TextColor = isFirst ? Color.FromArgb("#94A3B8") : Color.FromArgb("#475569"),
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
-            
+            var upBtn = CreateMoveChevron(up: true, enabled: !isFirst);
             if (!isFirst)
             {
                 var upTap = new TapGestureRecognizer();
@@ -401,24 +383,7 @@ namespace POS_in_NET.Pages
                 upBtn.GestureRecognizers.Add(upTap);
             }
             
-            // Down arrow button
-            var downBtn = new Border
-            {
-                BackgroundColor = isLast ? Color.FromArgb("#F1F5F9") : Color.FromArgb("#E2E8F0"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                WidthRequest = 32,
-                HeightRequest = 24,
-                Opacity = isLast ? 0.5 : 1,
-                Content = new Label
-                {
-                    Text = "↓",
-                    FontSize = 16,
-                    TextColor = isLast ? Color.FromArgb("#94A3B8") : Color.FromArgb("#475569"),
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
+            var downBtn = CreateMoveChevron(up: false, enabled: !isLast);
             
             if (!isLast)
             {
@@ -452,16 +417,16 @@ namespace POS_in_NET.Pages
             // Category name with color indicator
             var nameStack = new HorizontalStackLayout
             {
-                Spacing = 12,
+                Spacing = 8,
                 VerticalOptions = LayoutOptions.Center
             };
             
             var colorBorder = new Border
             {
                 BackgroundColor = Color.FromArgb(category.Color ?? "#3B82F6"),
-                WidthRequest = 24,
-                HeightRequest = 24,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
+                WidthRequest = 14,
+                HeightRequest = 14,
+                StrokeShape = new RoundRectangle { CornerRadius = 4 },
                 StrokeThickness = 0,
                 VerticalOptions = LayoutOptions.Center
             };
@@ -470,7 +435,7 @@ namespace POS_in_NET.Pages
             nameStack.Add(new Label
             {
                 Text = category.Name,
-                FontSize = 15,
+                FontSize = 14,
                 FontAttributes = FontAttributes.Bold,
                 TextColor = Color.FromArgb("#1E293B"),
                 VerticalOptions = LayoutOptions.Center
@@ -481,16 +446,15 @@ namespace POS_in_NET.Pages
             var countBadge = new Border
             {
                 BackgroundColor = Color.FromArgb("#EFF6FF"),
-                Stroke = Color.FromArgb("#3B82F6"),
-                StrokeThickness = 1,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 4),
+                StrokeThickness = 0,
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center,
                 Content = new Label
                 {
                     Text = $"{itemCount}",
-                    FontSize = 12,
+                    FontSize = 11,
                     TextColor = Color.FromArgb("#3B82F6"),
                     FontAttributes = FontAttributes.Bold
                 }
@@ -504,14 +468,14 @@ namespace POS_in_NET.Pages
             {
                 BackgroundColor = Color.FromArgb(category.Active ? "#D1FAE5" : "#FEE2E2"),
                 StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 6),
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center,
                 Content = new Label
                 {
                     Text = statusText,
-                    FontSize = 12,
+                    FontSize = 11,
                     TextColor = Color.FromArgb(statusColor),
                     FontAttributes = FontAttributes.Bold
                 }
@@ -526,47 +490,17 @@ namespace POS_in_NET.Pages
             // Action buttons
             var actionsStack = new HorizontalStackLayout
             {
-                Spacing = 8,
+                Spacing = 6,
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center
             };
             
-            var editBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#60A5FA"),
-                WidthRequest = 40,
-                HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label
-                {
-                    Text = "\u2710",
-                    FontSize = 22,
-                    TextColor = Colors.White,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
+            var editBtn = CreateRowActionButton(false);
             var editTap = new TapGestureRecognizer();
             editTap.Tapped += (s, e) => OnEditCategoryClicked(category);
             editBtn.GestureRecognizers.Add(editTap);
             
-            var deleteBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#F87171"),
-                WidthRequest = 40,
-                HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label
-                {
-                    Text = "\u2716",
-                    FontSize = 20,
-                    TextColor = Colors.White,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
+            var deleteBtn = CreateRowActionButton(true);
             var deleteTap = new TapGestureRecognizer();
             deleteTap.Tapped += async (s, e) => await OnDeleteCategoryClicked(category);
             deleteBtn.GestureRecognizers.Add(deleteTap);
@@ -875,15 +809,15 @@ namespace POS_in_NET.Pages
             {
                 ColumnDefinitions = new ColumnDefinitionCollection
                 {
-                    new ColumnDefinition { Width = 50 },   // Drag handle
+                    new ColumnDefinition { Width = 36 },
                     new ColumnDefinition { Width = GridLength.Star },
-                    new ColumnDefinition { Width = 150 },
-                    new ColumnDefinition { Width = 100 },
-                    new ColumnDefinition { Width = 100 },
-                    new ColumnDefinition { Width = 100 },
+                    new ColumnDefinition { Width = 140 },
+                    new ColumnDefinition { Width = 72 },
+                    new ColumnDefinition { Width = 86 },
+                    new ColumnDefinition { Width = 86 },
                 },
-                ColumnSpacing = 10,
-                Padding = new Thickness(24, 16),
+                ColumnSpacing = 8,
+                Padding = new Thickness(16, 6),
                 BackgroundColor = Colors.White
             };
             
@@ -897,30 +831,12 @@ namespace POS_in_NET.Pages
             
             var arrowStack = new VerticalStackLayout
             {
-                Spacing = 4,
+                Spacing = 1,
                 VerticalOptions = LayoutOptions.Center,
                 HorizontalOptions = LayoutOptions.Center
             };
             
-            // Up arrow button
-            var upBtn = new Border
-            {
-                BackgroundColor = isFirst ? Color.FromArgb("#F1F5F9") : Color.FromArgb("#E2E8F0"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                WidthRequest = 32,
-                HeightRequest = 24,
-                Opacity = isFirst ? 0.5 : 1,
-                Content = new Label
-                {
-                    Text = "↑",
-                    FontSize = 16,
-                    TextColor = isFirst ? Color.FromArgb("#94A3B8") : Color.FromArgb("#475569"),
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
-            
+            var upBtn = CreateMoveChevron(up: true, enabled: !isFirst);
             if (!isFirst)
             {
                 var upTap = new TapGestureRecognizer();
@@ -928,24 +844,7 @@ namespace POS_in_NET.Pages
                 upBtn.GestureRecognizers.Add(upTap);
             }
             
-            // Down arrow button
-            var downBtn = new Border
-            {
-                BackgroundColor = isLast ? Color.FromArgb("#F1F5F9") : Color.FromArgb("#E2E8F0"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                WidthRequest = 32,
-                HeightRequest = 24,
-                Opacity = isLast ? 0.5 : 1,
-                Content = new Label
-                {
-                    Text = "↓",
-                    FontSize = 16,
-                    TextColor = isLast ? Color.FromArgb("#94A3B8") : Color.FromArgb("#475569"),
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
-                }
-            };
+            var downBtn = CreateMoveChevron(up: false, enabled: !isLast);
             
             if (!isLast)
             {
@@ -977,42 +876,43 @@ namespace POS_in_NET.Pages
             // Sub-category name with color indicator
             var nameStack = new HorizontalStackLayout
             {
-                Spacing = 12,
+                Spacing = 8,
                 VerticalOptions = LayoutOptions.Center
             };
             nameStack.Add(new Border
             {
                 BackgroundColor = Color.FromArgb(subCategory.Color ?? "#8B5CF6"),
-                WidthRequest = 24, HeightRequest = 24,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
+                WidthRequest = 14, HeightRequest = 14,
+                StrokeShape = new RoundRectangle { CornerRadius = 4 },
                 StrokeThickness = 0,
                 VerticalOptions = LayoutOptions.Center
             });
-            nameStack.Add(new Label { Text = subCategory.Name, FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1E293B"), VerticalOptions = LayoutOptions.Center });
+            nameStack.Add(new Label { Text = subCategory.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#1E293B"), VerticalOptions = LayoutOptions.Center });
             grid.Add(nameStack, 1);
             
             // Parent category badge
             var parentBadge = new Border
             {
-                BackgroundColor = Color.FromArgb("#F1F5F9"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(10, 5),
+                BackgroundColor = Color.FromArgb("#F8FAFC"),
+                Stroke = Color.FromArgb("#E2E8F0"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = parentName, FontSize = 12, TextColor = Color.FromArgb("#475569"), FontAttributes = FontAttributes.Bold }
+                HorizontalOptions = LayoutOptions.Start,
+                Content = new Label { Text = parentName, FontSize = 11, TextColor = Color.FromArgb("#475569"), FontAttributes = FontAttributes.Bold }
             };
             grid.Add(parentBadge, 2);
             
             // Items count
             grid.Add(new Border
             {
-                BackgroundColor = Color.FromArgb("#F3E8FF"),
-                Stroke = Color.FromArgb("#8B5CF6"),
-                StrokeThickness = 1,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 4),
+                BackgroundColor = Color.FromArgb("#F5F3FF"),
+                StrokeThickness = 0,
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = $"{itemCount}", FontSize = 12, TextColor = Color.FromArgb("#8B5CF6"), FontAttributes = FontAttributes.Bold }
+                Content = new Label { Text = $"{itemCount}", FontSize = 11, TextColor = Color.FromArgb("#7C3AED"), FontAttributes = FontAttributes.Bold }
             }, 3);
             
             // Status
@@ -1020,10 +920,10 @@ namespace POS_in_NET.Pages
             {
                 BackgroundColor = Color.FromArgb(subCategory.Active ? "#D1FAE5" : "#FEE2E2"),
                 StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 6),
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = subCategory.Active ? "Active" : "Inactive", FontSize = 12, TextColor = Color.FromArgb(subCategory.Active ? "#10B981" : "#EF4444"), FontAttributes = FontAttributes.Bold }
+                Content = new Label { Text = subCategory.Active ? "Active" : "Inactive", FontSize = 11, TextColor = Color.FromArgb(subCategory.Active ? "#10B981" : "#EF4444"), FontAttributes = FontAttributes.Bold }
             };
             var statusTap = new TapGestureRecognizer();
             statusTap.Tapped += async (s, e) => await ToggleSubCategoryStatus(subCategory);
@@ -1031,27 +931,13 @@ namespace POS_in_NET.Pages
             grid.Add(statusBadge, 4);
             
             // Actions
-            var actionsStack = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-            var editBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#60A5FA"),
-                WidthRequest = 40, HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label { Text = "\u2710", FontSize = 22, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
-            };
+            var actionsStack = new HorizontalStackLayout { Spacing = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
+            var editBtn = CreateRowActionButton(false);
             var editTap = new TapGestureRecognizer();
             editTap.Tapped += (s, e) => OnEditSubCategoryClicked(subCategory);
             editBtn.GestureRecognizers.Add(editTap);
             
-            var deleteBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#F87171"),
-                WidthRequest = 40, HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label { Text = "\u2716", FontSize = 20, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
-            };
+            var deleteBtn = CreateRowActionButton(true);
             var deleteTap = new TapGestureRecognizer();
             deleteTap.Tapped += async (s, e) => await OnDeleteSubCategoryClicked(subCategory);
             deleteBtn.GestureRecognizers.Add(deleteTap);
@@ -1356,15 +1242,15 @@ namespace POS_in_NET.Pages
             {
                 ColumnDefinitions = new ColumnDefinitionCollection
                 {
-                    new ColumnDefinition { Width = 60 },   // Row number
+                    new ColumnDefinition { Width = 48 },   // Row number
                     new ColumnDefinition { Width = GridLength.Star },  // Item name & description
-                    new ColumnDefinition { Width = 120 },  // Price
-                    new ColumnDefinition { Width = 150 },  // Category
-                    new ColumnDefinition { Width = 100 },  // Status
-                    new ColumnDefinition { Width = 120 },  // Actions
+                    new ColumnDefinition { Width = 110 },  // Price
+                    new ColumnDefinition { Width = 130 },  // Category
+                    new ColumnDefinition { Width = 90 },  // Status
+                    new ColumnDefinition { Width = 100 },  // Actions
                 },
-                ColumnSpacing = 10,
-                Padding = new Thickness(24, 16),
+                ColumnSpacing = 8,
+                Padding = new Thickness(16, 6),
                 BackgroundColor = Colors.White
             };
             
@@ -1386,13 +1272,13 @@ namespace POS_in_NET.Pages
             // Item name with description
             var nameStack = new VerticalStackLayout
             {
-                Spacing = 4,
+                Spacing = 1,
                 VerticalOptions = LayoutOptions.Center
             };
             nameStack.Add(new Label
             {
                 Text = item.Name,
-                FontSize = 15,
+                FontSize = 14,
                 FontAttributes = FontAttributes.Bold,
                 TextColor = Color.FromArgb("#1E293B")
             });
@@ -1409,17 +1295,17 @@ namespace POS_in_NET.Pages
             grid.Add(nameStack, 1);
             
             // Price
-            grid.Add(new Label { Text = $"£{item.Price:F2}", FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#10B981"), VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Center }, 2);
+            grid.Add(new Label { Text = $"£{item.Price:F2}", FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#10B981"), VerticalOptions = LayoutOptions.Center, HorizontalOptions = LayoutOptions.Center }, 2);
             
             // Category badge
             grid.Add(new Border
             {
                 BackgroundColor = Color.FromArgb("#EFF6FF"),
                 StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 6),
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = categoryName, FontSize = 12, TextColor = Color.FromArgb("#3B82F6"), FontAttributes = FontAttributes.Bold }
+                Content = new Label { Text = categoryName, FontSize = 11, TextColor = Color.FromArgb("#3B82F6"), FontAttributes = FontAttributes.Bold }
             }, 3);
             
             // Status
@@ -1427,35 +1313,21 @@ namespace POS_in_NET.Pages
             {
                 BackgroundColor = Color.FromArgb("#D1FAE5"),
                 StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(12, 6),
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(8, 2),
                 HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center,
-                Content = new Label { Text = "Active", FontSize = 12, TextColor = Color.FromArgb("#10B981"), FontAttributes = FontAttributes.Bold }
+                Content = new Label { Text = "Active", FontSize = 11, TextColor = Color.FromArgb("#10B981"), FontAttributes = FontAttributes.Bold }
             }, 4);
             
             // Actions
-            var actionsStack = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
+            var actionsStack = new HorizontalStackLayout { Spacing = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
             
-            var editBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#60A5FA"),
-                WidthRequest = 40, HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label { Text = "\u2710", FontSize = 22, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
-            };
+            var editBtn = CreateRowActionButton(false);
             var editTap = new TapGestureRecognizer();
             editTap.Tapped += (s, e) => OnEditItemClicked(item);
             editBtn.GestureRecognizers.Add(editTap);
             
-            var deleteBtn = new Border
-            {
-                BackgroundColor = Color.FromArgb("#F87171"),
-                WidthRequest = 40, HeightRequest = 40,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Content = new Label { Text = "\u2716", FontSize = 20, TextColor = Colors.White, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center }
-            };
+            var deleteBtn = CreateRowActionButton(true);
             var deleteTap = new TapGestureRecognizer();
             deleteTap.Tapped += async (s, e) => await OnDeleteItemClicked(item);
             deleteBtn.GestureRecognizers.Add(deleteTap);
@@ -2511,6 +2383,54 @@ namespace POS_in_NET.Pages
 
         #region Helpers
 
+        private static Border CreateMoveChevron(bool up, bool enabled)
+        {
+            var ink = Color.FromArgb(enabled ? "#64748B" : "#CBD5E1");
+            return new Border
+            {
+                BackgroundColor = Colors.Transparent,
+                StrokeThickness = 0,
+                WidthRequest = 22,
+                HeightRequest = 14,
+                Content = new GraphicsView
+                {
+                    Drawable = new MenuChevronDrawable(up, ink),
+                    InputTransparent = true,
+                    WidthRequest = 12,
+                    HeightRequest = 8,
+                    BackgroundColor = Colors.Transparent,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center
+                }
+            };
+        }
+
+        private static Border CreateRowActionButton(bool trash)
+        {
+            var ink = Color.FromArgb(trash ? "#E11D48" : "#2563EB");
+            var button = new Border
+            {
+                BackgroundColor = Color.FromArgb(trash ? "#FFF1F2" : "#EFF6FF"),
+                WidthRequest = 32,
+                HeightRequest = 32,
+                StrokeThickness = 1,
+                Stroke = Color.FromArgb(trash ? "#FECDD3" : "#DBEAFE"),
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(6),
+                Content = new GraphicsView
+                {
+                    Drawable = new MenuStrokeIconDrawable(trash, ink),
+                    InputTransparent = true,
+                    WidthRequest = 18,
+                    HeightRequest = 18,
+                    BackgroundColor = Colors.Transparent,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center
+                }
+            };
+            return button;
+        }
+
         private View CreateEmptyState(string title, string message)
         {
             return new VerticalStackLayout
@@ -2527,5 +2447,112 @@ namespace POS_in_NET.Pages
         }
 
         #endregion
+    }
+
+    /// <summary>Thin stroke edit / delete marks for slim menu rows.</summary>
+    internal sealed class MenuStrokeIconDrawable : IDrawable
+    {
+        private readonly bool _trash;
+        private readonly Color _ink;
+
+        public MenuStrokeIconDrawable(bool trash, Color ink)
+        {
+            _trash = trash;
+            _ink = ink;
+        }
+
+        public void Draw(ICanvas canvas, RectF dirtyRect)
+        {
+            canvas.SaveState();
+            var scale = Math.Min(dirtyRect.Width, dirtyRect.Height) / 24f;
+            canvas.Translate(dirtyRect.X + (dirtyRect.Width - 24f * scale) / 2f, dirtyRect.Y + (dirtyRect.Height - 24f * scale) / 2f);
+            canvas.Scale(scale, scale);
+            canvas.StrokeColor = _ink;
+            canvas.StrokeSize = 1.75f;
+            canvas.StrokeLineCap = LineCap.Round;
+            canvas.StrokeLineJoin = LineJoin.Round;
+
+            if (_trash)
+                DrawTrash(canvas);
+            else
+                DrawPencil(canvas);
+
+            canvas.RestoreState();
+        }
+
+        private static void DrawPencil(ICanvas canvas)
+        {
+            var pencil = new PathF();
+            pencil.MoveTo(13.4f, 4.2f);
+            pencil.LineTo(19.8f, 10.6f);
+            pencil.LineTo(10.4f, 20f);
+            pencil.LineTo(2.6f, 21.4f);
+            pencil.LineTo(4f, 13.6f);
+            pencil.Close();
+            canvas.DrawPath(pencil);
+            canvas.DrawLine(15f, 5.8f, 18.2f, 9f);
+        }
+
+        private static void DrawTrash(ICanvas canvas)
+        {
+            canvas.DrawLine(4.2f, 7f, 19.8f, 7f);
+
+            var handle = new PathF();
+            handle.MoveTo(9.2f, 7f);
+            handle.LineTo(9.6f, 4.4f);
+            handle.QuadTo(12f, 3.4f, 14.4f, 4.4f);
+            handle.LineTo(14.8f, 7f);
+            canvas.DrawPath(handle);
+
+            var bin = new PathF();
+            bin.MoveTo(6.3f, 7f);
+            bin.LineTo(7.5f, 19.6f);
+            bin.QuadTo(12f, 20.8f, 16.5f, 19.6f);
+            bin.LineTo(17.7f, 7f);
+            canvas.DrawPath(bin);
+
+            canvas.DrawLine(10.1f, 10.4f, 10.5f, 16.4f);
+            canvas.DrawLine(13.9f, 10.4f, 13.5f, 16.4f);
+        }
+    }
+
+    internal sealed class MenuChevronDrawable : IDrawable
+    {
+        private readonly bool _up;
+        private readonly Color _ink;
+
+        public MenuChevronDrawable(bool up, Color ink)
+        {
+            _up = up;
+            _ink = ink;
+        }
+
+        public void Draw(ICanvas canvas, RectF dirtyRect)
+        {
+            canvas.StrokeColor = _ink;
+            canvas.StrokeSize = 1.6f;
+            canvas.StrokeLineCap = LineCap.Round;
+            canvas.StrokeLineJoin = LineJoin.Round;
+
+            var inset = 1.5f;
+            var left = dirtyRect.Left + inset;
+            var right = dirtyRect.Right - inset;
+            var mid = dirtyRect.Center.X;
+            var path = new PathF();
+            if (_up)
+            {
+                path.MoveTo(left, dirtyRect.Bottom - inset);
+                path.LineTo(mid, dirtyRect.Top + inset);
+                path.LineTo(right, dirtyRect.Bottom - inset);
+            }
+            else
+            {
+                path.MoveTo(left, dirtyRect.Top + inset);
+                path.LineTo(mid, dirtyRect.Bottom - inset);
+                path.LineTo(right, dirtyRect.Top + inset);
+            }
+
+            canvas.DrawPath(path);
+        }
     }
 }

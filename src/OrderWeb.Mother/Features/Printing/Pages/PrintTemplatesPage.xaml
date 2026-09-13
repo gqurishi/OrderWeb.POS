@@ -41,9 +41,9 @@
 
                         <Button Grid.Column="1"
                                 Text="Back"
-                                BackgroundColor="White"
-                                TextColor="#334155"
-                                BorderColor="#E2E8F0"
+                                BackgroundColor="#2563EB"
+                                TextColor="White"
+                                BorderColor="#2563EB"
                                 BorderWidth="1"
                                 CornerRadius="8"
                                 HeightRequest="36"

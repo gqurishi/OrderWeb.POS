@@ -119,19 +119,17 @@ public partial class AppShell : Shell, INotifyPropertyChanged
 
     private void OnBackgroundSyncStatusChanged(IReadOnlyList<BackgroundSyncJobSnapshot> snapshots)
     {
-        var failed = snapshots.FirstOrDefault(job =>
-            job.Status is BackgroundSyncJobStatus.Failed or BackgroundSyncJobStatus.BackingOff
-            && job.ConsecutiveFailures >= 2);
-        if (failed == null)
+        var notice = StaffSyncNotice.Select(snapshots);
+        if (notice == null)
         {
             return;
         }
 
-        // Toast only — never fullscreen. Throttle so retries don't spam the till.
-        var key = $"{failed.Name}|{failed.Status}|{failed.ConsecutiveFailures}|{failed.LastError}";
+        // One plain warning. Same problem waits a few minutes so the till is not spammed.
+        var key = $"{notice.Value.Title}|{notice.Value.Message}";
         var now = DateTime.UtcNow;
         if (string.Equals(key, _lastBackgroundSyncToastKey, StringComparison.Ordinal)
-            && (now - _lastBackgroundSyncToastUtc).TotalSeconds < 45)
+            && (now - _lastBackgroundSyncToastUtc).TotalMinutes < 3)
         {
             return;
         }
@@ -139,10 +137,10 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         _lastBackgroundSyncToastKey = key;
         _lastBackgroundSyncToastUtc = now;
         _ = Controls.ToastNotification.ShowGlobalAsync(
-            "Background sync",
-            $"{failed.Name}: {failed.LastError ?? "retrying"}",
+            notice.Value.Title,
+            notice.Value.Message,
             NotificationType.Warning,
-            2400);
+            4500);
     }
 
     private void UpdateDateTime()

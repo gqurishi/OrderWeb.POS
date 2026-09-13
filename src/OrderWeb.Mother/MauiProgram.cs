@@ -150,6 +150,10 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ToshibaTpclModule>();
 		builder.Services.AddSingleton<ToshibaRawTcpTransport>();
 		builder.Services.AddSingleton<ToshibaLabelNetworkService>();
+		builder.Services.AddSingleton<XprinterTsplModule>();
+		builder.Services.AddSingleton<XprinterLabelNetworkService>();
+		builder.Services.AddSingleton<BrotherRasterModule>();
+		builder.Services.AddSingleton<BrotherRasterNetworkService>();
 		builder.Services.AddSingleton<LabelPrintQueueService>();
 		builder.Services.AddSingleton<ToshibaOrderLabelService>();
 		builder.Services.AddSingleton<NetworkPrinterService>();

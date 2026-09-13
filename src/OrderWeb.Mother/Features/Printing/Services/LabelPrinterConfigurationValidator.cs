@@ -18,6 +18,10 @@ public static class LabelPrinterConfigurationValidator
         if (printer.Port is < 1 or > 65535)
             return "Enter a TCP port from 1 to 65535 (normally 9100).";
 
+        var maxWidth = printer.MaximumPrintWidthMm is > 0
+            ? printer.MaximumPrintWidthMm.Value
+            : LabelPrinterProfiles.ToshibaBfv4dMaximumPrintWidthMm;
+
         if (string.IsNullOrWhiteSpace(printer.LabelProfile))
             return "Select a label profile.";
 
@@ -25,14 +29,14 @@ public static class LabelPrinterConfigurationValidator
             printer.LabelHeightMm is null or <= 0)
             return "Media width, label width, and label height must be greater than zero.";
 
-        if (printer.LabelWidthMm > LabelPrinterProfiles.ToshibaBfv4dMaximumPrintWidthMm)
-            return $"Label width cannot exceed {LabelPrinterProfiles.ToshibaBfv4dMaximumPrintWidthMm.ToString(CultureInfo.InvariantCulture)} mm for this printer.";
+        if (printer.LabelWidthMm > maxWidth)
+            return $"Label width cannot exceed {maxWidth.ToString(CultureInfo.InvariantCulture)} mm for this printer.";
 
         if (printer.LabelWidthMm > printer.MediaWidthMm)
             return "Label width cannot be greater than media width.";
 
-        if (printer.LabelWidthMm > 108m || printer.LabelHeightMm > 1000m || printer.MediaWidthMm > 112m)
-            return "The entered label dimensions are outside the supported Toshiba B-FV4D range.";
+        if (printer.LabelWidthMm > maxWidth || printer.LabelHeightMm > 1000m || printer.MediaWidthMm > maxWidth + 8m)
+            return "The entered label dimensions are outside the supported range for this printer.";
 
         if (printer.SensorType is null)
             return "Select a media sensor type.";

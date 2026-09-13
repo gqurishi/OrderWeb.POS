@@ -71,7 +71,7 @@ public class DashboardTile : ContentView
 
 public class SidebarItemView : ContentView
 {
-    private readonly Grid _row;
+    private readonly Border _card;
     private readonly Image _icon;
     private readonly Label _label;
     public static readonly BindableProperty TextProperty = BindableProperty.Create(nameof(Text), typeof(string), typeof(SidebarItemView), string.Empty, propertyChanged: (b, _, v) => ((SidebarItemView)b)._label.Text = v?.ToString());
@@ -81,13 +81,55 @@ public class SidebarItemView : ContentView
     public static readonly BindableProperty CommandParameterProperty = BindableProperty.Create(nameof(CommandParameter), typeof(object), typeof(SidebarItemView));
     public SidebarItemView()
     {
-        _icon = new Image { WidthRequest = 30, HeightRequest = 30, Aspect = Aspect.AspectFit };
-        _label = new Label { FontSize = 16, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center };
-        _label.Use(Label.TextColorProperty, "OwTextStrong");
-        _row = new Grid { Padding = new Thickness(16, 13), ColumnDefinitions = { new ColumnDefinition(32), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 18 };
-        _row.Add(_icon); _row.Add(_label, 1);
-        var tap = new TapGestureRecognizer(); tap.Tapped += (_, _) => { Tapped?.Invoke(this, EventArgs.Empty); if (Command?.CanExecute(CommandParameter) == true) Command.Execute(CommandParameter); };
-        _row.GestureRecognizers.Add(tap); Content = _row; ApplySelection();
+        _icon = new Image { WidthRequest = 22, HeightRequest = 22, Aspect = Aspect.AspectFit, VerticalOptions = LayoutOptions.Center, InputTransparent = true };
+        _label = new Label
+        {
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.WordWrap,
+            InputTransparent = true
+        };
+        var row = new Grid
+        {
+            Padding = new Thickness(12, 8),
+            ColumnDefinitions = { new ColumnDefinition(28), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 10,
+            InputTransparent = true
+        };
+        row.Add(_icon);
+        row.Add(_label, 1);
+        var hit = new Button
+        {
+            BackgroundColor = Colors.Transparent,
+            BorderWidth = 0,
+            Text = string.Empty,
+            Style = null,
+            MinimumHeightRequest = 0,
+            MinimumWidthRequest = 0,
+            HorizontalOptions = LayoutOptions.Fill,
+            VerticalOptions = LayoutOptions.Fill,
+            ZIndex = 2
+        };
+        hit.Clicked += (_, _) =>
+        {
+            Tapped?.Invoke(this, EventArgs.Empty);
+            if (Command?.CanExecute(CommandParameter) == true)
+            {
+                Command.Execute(CommandParameter);
+            }
+        };
+        _card = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 10 },
+            MinimumHeightRequest = 44,
+            Content = new Grid { Children = { row, hit } }
+        };
+        Content = _card;
+        ApplySelection();
     }
     public event EventHandler? Tapped;
     public string Text { get => (string)GetValue(TextProperty); set => SetValue(TextProperty, value); }
@@ -95,7 +137,12 @@ public class SidebarItemView : ContentView
     public bool IsSelected { get => (bool)GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
     public ICommand? Command { get => (ICommand?)GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
     public object? CommandParameter { get => GetValue(CommandParameterProperty); set => SetValue(CommandParameterProperty, value); }
-    private void ApplySelection() { if (IsSelected) _row.Use(Grid.BackgroundColorProperty, "OwPrimarySoft"); else _row.BackgroundColor = Colors.Transparent; }
+    private void ApplySelection()
+    {
+        _card.BackgroundColor = Color.FromArgb(IsSelected ? "#2563EB" : "#FFFFFF");
+        _card.Stroke = Color.FromArgb(IsSelected ? "#2563EB" : "#E2E8F0");
+        _label.TextColor = Color.FromArgb(IsSelected ? "#FFFFFF" : "#0F172A");
+    }
 }
 
 public class TableCard : Border

@@ -20,7 +20,7 @@ public static class PosNavigationCatalog
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
         // Mother sidebar only. ClientHostAccess strips this route from the Client menu.
-        Item("weborders", "Rider", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery, PosFeatureKeys.WebOrders], 52),
+        Item("weborders", "Rider", "rider.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery, PosFeatureKeys.WebOrders], 52),
         Item("customers", "Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 60),
         Item("payments", "Payments", "giftcards.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 70),
         Item("cashdrawer", "Cash Drawer", "cashdrawer.png", [PosCapabilityKeys.TakePayments], [PosFeatureKeys.Payments], 20),

@@ -62,7 +62,7 @@ public sealed class CashDrawerFlowService
                 await OpenDrawerAsync("No Sale", context);
                 break;
             case CashDrawerUiKind.Refund:
-                await OpenDrawerAsync("Refund", context);
+                await RecordRefundAsync(choice, context);
                 break;
             case CashDrawerUiKind.ShoppingTake:
                 await RecordShoppingTakeAsync(choice, context);
@@ -121,7 +121,31 @@ public sealed class CashDrawerFlowService
                 OrderNumber = context.OrderNumber,
                 SourceArea = context.SourceArea
             });
-            await OpenDrawerAsync($"Delivery · £{expense.NetAmount:F2}", context, expense.Id);
+            await OpenDrawerAsync($"Delivery Fee · £{expense.NetAmount:F2}", context, expense.Id);
+        }
+        catch (Exception ex)
+        {
+            await ShowFailureAsync(ex.Message);
+        }
+    }
+
+    private async Task RecordRefundAsync(CashDrawerUiResult choice, CashDrawerFlowContext context)
+    {
+        if (choice.Amount is not > 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var expense = await _tillExpenseService.CreateRefundPayoutAsync(new RefundPayoutRequest
+            {
+                Amount = choice.Amount.Value,
+                OrderId = context.OrderId,
+                OrderNumber = context.OrderNumber,
+                SourceArea = context.SourceArea
+            });
+            await OpenDrawerAsync($"Refund · £{expense.NetAmount:F2}", context, expense.Id);
         }
         catch (Exception ex)
         {

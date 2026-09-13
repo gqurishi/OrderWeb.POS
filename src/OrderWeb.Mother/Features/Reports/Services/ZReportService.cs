@@ -149,6 +149,7 @@ public sealed class ZReportService
             TillNetOut = tillSummary.TotalNetOut,
             TillShoppingNet = tillSummary.ShoppingNet,
             TillDeliveryTotal = tillSummary.DeliveryTotal,
+            TillRefundTotal = tillSummary.RefundTotal,
             TillOtherTotal = tillSummary.OtherTotal,
             TillCashReturned = tillSummary.CashReturnTotal,
             TillPendingShoppingCount = tillSummary.PendingShoppingCount,

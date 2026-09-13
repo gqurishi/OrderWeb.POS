@@ -70,6 +70,7 @@ public partial class ReportPage : ContentPage
     private string _tillExpenseNetOutText = "£0.00 out";
     private string _tillExpenseShoppingText = "£0.00";
     private string _tillExpenseDeliveryText = "£0.00";
+    private string _tillExpenseRefundText = "£0.00";
     private string _tillExpenseOtherText = "£0.00";
     private string _tillExpenseCashReturnText = "£0.00";
     private string _tillExpenseCashCountText = "0 counts";
@@ -637,6 +638,19 @@ public partial class ReportPage : ContentPage
             if (_tillExpenseDeliveryText != value)
             {
                 _tillExpenseDeliveryText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string TillExpenseRefundText
+    {
+        get => _tillExpenseRefundText;
+        set
+        {
+            if (_tillExpenseRefundText != value)
+            {
+                _tillExpenseRefundText = value;
                 OnPropertyChanged();
             }
         }
@@ -2513,6 +2527,7 @@ public partial class ReportPage : ContentPage
         TillExpenseNetOutText = $"£{summary.TotalNetOut:F2} out";
         TillExpenseShoppingText = $"£{summary.ShoppingNet:F2}";
         TillExpenseDeliveryText = $"£{summary.DeliveryTotal:F2}";
+        TillExpenseRefundText = $"£{summary.RefundTotal:F2}";
         TillExpenseOtherText = $"£{summary.OtherTotal:F2}";
         TillExpenseCashReturnText = $"£{summary.CashReturnTotal:F2} back";
 

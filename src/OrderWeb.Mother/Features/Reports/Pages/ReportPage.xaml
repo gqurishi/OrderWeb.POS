@@ -904,13 +904,13 @@
                                                         FontFamily="OpenSansSemibold"
                                                         FontSize="14"
                                                         TextColor="#0F172A" />
-                                                 <Label Text="Shopping take &amp; settle, delivery payouts, cash counts, and other till movements."
+                                                 <Label Text="Shopping take &amp; settle, delivery payouts, cash refunds, cash counts, and other till movements."
                                                         FontFamily="OpenSansRegular"
                                                         FontSize="12"
                                                         TextColor="#64748B" />
                                           </VerticalStackLayout>
 
-                                          <Grid ColumnDefinitions="*,*,*,*,*,*" ColumnSpacing="8">
+                                          <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8" RowDefinitions="Auto,Auto" RowSpacing="8">
                                                  <Border Stroke="#FDE68A" StrokeThickness="1" BackgroundColor="#FFFBEB" StrokeShape="RoundRectangle 10" Padding="10">
                                                         <VerticalStackLayout Spacing="2">
                                                                <Label Text="Pending" FontFamily="OpenSansSemibold" FontSize="10" TextColor="#92400E" />
@@ -935,13 +935,19 @@
                                                                <Label Text="{Binding TillExpenseDeliveryText}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#1E3A8A" />
                                                         </VerticalStackLayout>
                                                  </Border>
-                                                 <Border Grid.Column="4" Stroke="#E9D5FF" StrokeThickness="1" BackgroundColor="#FAF5FF" StrokeShape="RoundRectangle 10" Padding="10">
+                                                 <Border Grid.Row="1" Stroke="#FEE2E2" StrokeThickness="1" BackgroundColor="#FFF1F2" StrokeShape="RoundRectangle 10" Padding="10">
+                                                        <VerticalStackLayout Spacing="2">
+                                                               <Label Text="Refund" FontFamily="OpenSansSemibold" FontSize="10" TextColor="#BE123C" />
+                                                               <Label Text="{Binding TillExpenseRefundText}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#9F1239" />
+                                                        </VerticalStackLayout>
+                                                 </Border>
+                                                 <Border Grid.Row="1" Grid.Column="1" Stroke="#E9D5FF" StrokeThickness="1" BackgroundColor="#FAF5FF" StrokeShape="RoundRectangle 10" Padding="10">
                                                         <VerticalStackLayout Spacing="2">
                                                                <Label Text="Other" FontFamily="OpenSansSemibold" FontSize="10" TextColor="#7E22CE" />
                                                                <Label Text="{Binding TillExpenseOtherText}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#6B21A8" />
                                                         </VerticalStackLayout>
                                                  </Border>
-                                                 <Border Grid.Column="5" Stroke="#A7F3D0" StrokeThickness="1" BackgroundColor="#ECFDF5" StrokeShape="RoundRectangle 10" Padding="10">
+                                                 <Border Grid.Row="1" Grid.Column="2" Stroke="#A7F3D0" StrokeThickness="1" BackgroundColor="#ECFDF5" StrokeShape="RoundRectangle 10" Padding="10">
                                                         <VerticalStackLayout Spacing="2">
                                                                <Label Text="Returned" FontFamily="OpenSansSemibold" FontSize="10" TextColor="#047857" />
                                                                <Label Text="{Binding TillExpenseCashReturnText}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#065F46" />
@@ -956,7 +962,7 @@
 
                                           <CollectionView ItemsSource="{Binding TillExpenses}" SelectionMode="None" HeightRequest="320">
                                                  <CollectionView.EmptyView>
-                                                        <Label Text="No till expenses recorded in this date range. Use Cash Drawer from the menu to log shopping, delivery, cash count, or other payouts."
+                                                               <Label Text="No till expenses recorded in this date range. Use Cash Drawer from the menu to log shopping, delivery, refund, cash count, or other payouts."
                                                                FontFamily="OpenSansRegular"
                                                                FontSize="12"
                                                                TextColor="#64748B"

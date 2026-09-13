@@ -36,24 +36,30 @@ public sealed class ToshibaOrderLabelService
         TableOrder order,
         ISet<string> printedItemIds,
         string sourceTerminal,
+        string? orderType,
+        string? sourceChannel,
+        string? reprintKey = null,
         CancellationToken cancellationToken = default)
     {
         if (printedItemIds.Count == 0)
             return ToshibaOrderLabelResult.None;
 
+        var decision = LabelPrintRules.Decide(orderType, sourceChannel);
+        if (!decision.ShouldPrint)
+            return ToshibaOrderLabelResult.Skipped;
+
         var printer = await ResolveToshibaPrinterAsync();
         if (printer == null)
             return ToshibaOrderLabelResult.NotToshiba;
 
+        await _labels.EnsureBuiltInProfilesAsync();
         if (string.IsNullOrWhiteSpace(printer.LabelMediaProfileId))
-        {
-            return new ToshibaOrderLabelResult(true, 0, 0, 1, ["Toshiba label printer has no media profile."]);
-        }
+            return ToshibaOrderLabelResult.Skipped;
 
         var queued = 0;
         var failed = 0;
         var errors = new List<string>();
-        var orderContext = BuildOrderContext(order);
+        var orderContext = BuildOrderContext(order, decision);
 
         foreach (var item in order.Items.Where(item =>
                      printedItemIds.Contains(item.Id)
@@ -86,7 +92,7 @@ public sealed class ToshibaOrderLabelService
                     foreach (var component in components)
                     {
                         var componentCopies = Math.Clamp(component.Quantity * copies, 1, 99);
-                        await EnqueueAsync(printer, order, item, LabelJobType.Component, component.Name, componentCopies, orderContext, menuItem.Name, sourceTerminal);
+                        await EnqueueAsync(printer, order, item, LabelJobType.Component, component.Name, componentCopies, orderContext, menuItem.Name, sourceTerminal, reprintKey);
                         queued++;
                     }
 
@@ -97,7 +103,7 @@ public sealed class ToshibaOrderLabelService
                 if (string.IsNullOrWhiteSpace(menuItem.LabelText) && !menuItem.AlsoPrintMainLabel)
                     continue;
 
-                await EnqueueAsync(printer, order, item, LabelJobType.Item, item.Name, copies, orderContext, menuItem.LabelText, sourceTerminal);
+                await EnqueueAsync(printer, order, item, LabelJobType.Item, item.Name, copies, orderContext, menuItem.LabelText, sourceTerminal, reprintKey);
                 queued++;
             }
             catch (Exception ex)
@@ -122,7 +128,8 @@ public sealed class ToshibaOrderLabelService
         int copies,
         string orderContext,
         string? fixedText,
-        string sourceTerminal)
+        string sourceTerminal,
+        string? reprintKey)
     {
         var modifiers = new List<string>();
         if (jobType == LabelJobType.Component && !string.IsNullOrWhiteSpace(item.Name))
@@ -138,7 +145,10 @@ public sealed class ToshibaOrderLabelService
             MediaProfileId = printer.LabelMediaProfileId!,
             OrderId = item.DatabaseId > 0 ? item.DatabaseId : null,
             SourceTerminal = sourceTerminal,
-            IdempotencyKey = IdempotencyKey(order, item, jobType, name, copies, printer.Id),
+            ClientRequestId = string.IsNullOrWhiteSpace(reprintKey)
+                ? $"{order.Id}|{item.Id}|{jobType}"
+                : $"{order.Id}|reprint|{reprintKey.Trim()}|{item.Id}|{jobType}",
+            IdempotencyKey = IdempotencyKey(order, item, jobType, name, copies, printer.Id, reprintKey),
             SendRevision = Math.Max(1, item.PreviousQuantity + 1),
             JobType = jobType,
             Content = new LabelContentSnapshot(
@@ -149,7 +159,12 @@ public sealed class ToshibaOrderLabelService
                 orderContext,
                 DateTimeOffset.Now,
                 string.IsNullOrWhiteSpace(fixedText) ? null : fixedText.Trim()),
-            LabelTemplateVersion = TemplateVersion,
+            LabelTemplateVersion = printer.ModuleIdentifier switch
+            {
+                LabelPrinterProfiles.XprinterTsplModuleId => "xprinter-tspl-v1",
+                LabelPrinterProfiles.BrotherRasterModuleId => "brother-raster-v1",
+                _ => TemplateVersion
+            },
             QuantityCopies = copies,
             Status = LabelJobStatus.Pending
         };
@@ -159,13 +174,17 @@ public sealed class ToshibaOrderLabelService
     private async Task<NetworkPrinter?> ResolveToshibaPrinterAsync()
     {
         var printers = await _printers.GetPrintersByTypeAsync(NetworkPrinterType.Label);
-        return printers.FirstOrDefault(printer => printer.IsEnabled && printer.IsDefaultLabelPrinter && IsToshiba(printer))
-            ?? printers.FirstOrDefault(printer => printer.IsEnabled && IsToshiba(printer));
+        return printers.FirstOrDefault(printer => printer.IsEnabled && printer.IsDefaultLabelPrinter && IsDurableLabelPrinter(printer))
+            ?? printers.FirstOrDefault(printer => printer.IsEnabled && IsDurableLabelPrinter(printer));
     }
 
-    private static bool IsToshiba(NetworkPrinter printer) =>
+    private static bool IsDurableLabelPrinter(NetworkPrinter printer) =>
         string.Equals(printer.ModuleIdentifier, "toshiba_tpcl", StringComparison.OrdinalIgnoreCase)
-        || printer.Brand == PrinterBrand.Toshiba;
+        || string.Equals(printer.ModuleIdentifier, LabelPrinterProfiles.XprinterTsplModuleId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(printer.ModuleIdentifier, LabelPrinterProfiles.BrotherRasterModuleId, StringComparison.OrdinalIgnoreCase)
+        || printer.Brand == PrinterBrand.Toshiba
+        || printer.Brand == PrinterBrand.Brother
+        || (printer.Brand == PrinterBrand.Xprinter && string.Equals(printer.ModelCode, LabelPrinterProfiles.XprinterXp421bCode, StringComparison.OrdinalIgnoreCase));
 
     private static bool HasLabelWork(FoodMenuItem item) =>
         !string.IsNullOrWhiteSpace(item.LabelText)
@@ -173,27 +192,20 @@ public sealed class ToshibaOrderLabelService
 
     private static int CopiesToPrint(TableOrderItem item)
     {
-        if (item.KitchenAction == KitchenChangeAction.Add)
-            return Math.Clamp(item.Quantity - item.PreviousQuantity, 0, 99);
-        return Math.Clamp(item.Quantity, 1, 99);
+        if (item.KitchenAction is not (KitchenChangeAction.New or KitchenChangeAction.Add))
+            return 0;
+        return LabelPrintRules.StickerCopies(item.Quantity);
     }
 
-    private static string BuildOrderContext(TableOrder order)
+    private static string BuildOrderContext(TableOrder order, LabelPrintDecision decision)
     {
         var reference = string.IsNullOrWhiteSpace(order.OrderNumber)
             ? order.Id
             : order.OrderNumber.Trim();
-        if (string.Equals(order.OrderMode, "delivery", StringComparison.OrdinalIgnoreCase))
-            return $"DELIVERY #{reference}";
-        if (string.Equals(order.OrderMode, "takeaway", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(order.OrderMode, "collection", StringComparison.OrdinalIgnoreCase))
-            return $"COLLECTION #{reference}";
-        return order.TableNumber > 0
-            ? $"TABLE {order.TableNumber} #{reference}"
-            : $"ORDER #{reference}";
+        return LabelPrintRules.FormatSticker(decision, reference);
     }
 
-    private static string IdempotencyKey(TableOrder order, TableOrderItem item, LabelJobType jobType, string name, int copies, int printerId)
+    private static string IdempotencyKey(TableOrder order, TableOrderItem item, LabelJobType jobType, string name, int copies, int printerId, string? reprintKey)
     {
         var raw = string.Join("|",
             order.Id,
@@ -203,7 +215,8 @@ public sealed class ToshibaOrderLabelService
             copies,
             item.PreviousQuantity,
             printerId,
-            TemplateVersion);
+            TemplateVersion,
+            reprintKey?.Trim() ?? "");
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
     }
 
@@ -263,5 +276,6 @@ public sealed record ToshibaOrderLabelResult(
     IReadOnlyList<string> Errors)
 {
     public static ToshibaOrderLabelResult None { get; } = new(true, 0, 0, 0, Array.Empty<string>());
+    public static ToshibaOrderLabelResult Skipped { get; } = new(true, 0, 0, 0, Array.Empty<string>());
     public static ToshibaOrderLabelResult NotToshiba { get; } = new(false, 0, 0, 0, Array.Empty<string>());
 }

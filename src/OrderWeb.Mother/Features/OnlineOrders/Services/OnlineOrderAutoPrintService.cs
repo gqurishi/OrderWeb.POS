@@ -15,6 +15,7 @@ public class AutoPrintResult
     public string? TakeawayPrintJobId { get; set; }
     public string? ErrorMessage { get; set; }
     public int AttemptsMade { get; set; }
+    public int LabelsQueued { get; set; }
 }
 
 /// <summary>
@@ -79,7 +80,7 @@ public class OnlineOrderAutoPrintService
     /// Auto-print an online order to designated printers.
     /// Prints customer receipt to Online printer and kitchen ticket to Takeaway printer.
     /// </summary>
-    public async Task<AutoPrintResult> PrintOnlineOrderAsync(CloudOrderResponse order)
+    public async Task<AutoPrintResult> PrintOnlineOrderAsync(CloudOrderResponse order, string? staffReprintKey = null)
     {
         var result = new AutoPrintResult();
         var printStartTime = DateTime.UtcNow;
@@ -132,6 +133,7 @@ public class OnlineOrderAutoPrintService
                 {
                     result.TakeawayPrintJobId = takeawayResult.JobId;
                     Debug.WriteLine($"Takeaway ticket queued: Job {takeawayResult.JobId}");
+                    result.LabelsQueued = await TryQueueWebsiteLabelsAsync(order, staffReprintKey);
                 }
                 else
                 {
@@ -431,6 +433,106 @@ public class OnlineOrderAutoPrintService
             Debug.WriteLine($"Error printing kitchen ticket: {ex.Message}");
             return (false, null, ex.Message, 1);
         }
+    }
+
+    /// <summary>
+    /// Stickers follow a queued website kitchen ticket. A missing printer, a
+    /// dish with no menu label, or a second arrival must not change the ticket or the OrderWeb ACK.
+    /// </summary>
+    private async Task<int> TryQueueWebsiteLabelsAsync(CloudOrderResponse order, string? staffReprintKey)
+    {
+        try
+        {
+            if (!LabelPrintRules.Decide(order.OrderType, "web").ShouldPrint)
+                return 0;
+
+            var labels = ServiceHelper.GetService<ToshibaOrderLabelService>();
+            var labelDb = ServiceHelper.GetService<LabelPrintDatabaseService>();
+            if (labels == null)
+                return 0;
+
+            var staffReprint = !string.IsNullOrWhiteSpace(staffReprintKey);
+            if (!staffReprint && labelDb != null && await labelDb.HasJobsForSourceRequestPrefixAsync("orderweb", $"{order.Id}|"))
+            {
+                Debug.WriteLine($"Website labels already queued for {order.OrderNumber}; not queueing again");
+                return 0;
+            }
+
+            var printOrder = BuildWebsiteLabelOrder(order);
+            if (printOrder.Items.Count == 0)
+                return 0;
+
+            var printedIds = printOrder.Items.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var result = await labels.EnqueueForPrintedItemsAsync(
+                printOrder,
+                printedIds,
+                "orderweb",
+                order.OrderType,
+                "web",
+                staffReprint ? staffReprintKey : null);
+            if (!result.HandledByToshiba)
+            {
+                Debug.WriteLine($"Website labels skipped for {order.OrderNumber}: no label printer");
+                return 0;
+            }
+
+            if (result.Failed > 0)
+                Debug.WriteLine($"Website labels need attention for {order.OrderNumber}: {string.Join("; ", result.Errors)}");
+            else if (result.Queued > 0)
+                Debug.WriteLine($"Website labels queued for {order.OrderNumber}: {result.Queued}");
+            return result.Queued;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Website labels skipped for {order.OrderNumber}: {ex.Message}");
+            return 0;
+        }
+    }
+
+    private static TableOrder BuildWebsiteLabelOrder(CloudOrderResponse order)
+    {
+        var printOrder = new TableOrder
+        {
+            Id = order.Id,
+            OrderNumber = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber.Trim(),
+            Notes = order.SpecialInstructions
+        };
+
+        var index = 0;
+        foreach (var item in order.Items ?? new List<CloudOrderItem>())
+        {
+            index++;
+            var name = !string.IsNullOrWhiteSpace(item.DisplayName)
+                ? item.DisplayName
+                : item.Name;
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            var notes = new List<string>();
+            if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+                notes.Add(item.SpecialInstructions.Trim());
+            if (item.SelectedAddons != null)
+            {
+                notes.AddRange(item.SelectedAddons
+                    .Select(addon => addon.Name?.Trim())
+                    .Where(addonName => !string.IsNullOrWhiteSpace(addonName))!);
+            }
+
+            printOrder.Items.Add(new TableOrderItem
+            {
+                Id = !string.IsNullOrWhiteSpace(item.Id) ? item.Id.Trim() : $"{item.MenuItemId}:{index}",
+                OrderId = order.Id,
+                MenuItemId = item.MenuItemId ?? string.Empty,
+                Name = name.Trim(),
+                DisplayName = item.DisplayName,
+                Quantity = Math.Max(0, item.Quantity),
+                Notes = notes.Count == 0 ? null : string.Join("; ", notes),
+                KitchenAction = KitchenChangeAction.New,
+                SendStatus = ItemSendStatus.NotSent
+            });
+        }
+
+        return printOrder;
     }
 
     /// <summary>

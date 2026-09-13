@@ -11,13 +11,14 @@ public static class CashDrawerReasons
     public const string NoSale = "No Sale";
     public const string Shopping = "Shopping";
     public const string Delivery = "Delivery";
+    public const string DeliveryLabel = "Delivery Fee";
     public const string Refund = "Refund";
     public const string CashCount = "Cash Count";
     public const string Other = "Other";
 
     public static readonly string[] All =
     [
-        NoSale, Shopping, Delivery, Refund, CashCount, Other
+        NoSale, Shopping, DeliveryLabel, Refund, CashCount, Other
     ];
 }
 
@@ -56,6 +57,11 @@ public static class CashDrawerDialogFlow
             return null;
         }
 
+        if (reason == CashDrawerReasons.DeliveryLabel)
+        {
+            reason = CashDrawerReasons.Delivery;
+        }
+
         switch (reason)
         {
             case CashDrawerReasons.NoSale:
@@ -67,27 +73,39 @@ public static class CashDrawerDialogFlow
                 return new CashDrawerUiResult(CashDrawerUiKind.NoSale, null, null);
 
             case CashDrawerReasons.Refund:
-                if (!await ConfirmOpenAsync(page, CashDrawerReasons.Refund))
+                var refund = await new CashDrawerAmountDialog(
+                    "Refund",
+                    "Enter how much cash is going back to the customer.",
+                    "Refund amount (£)",
+                    "Continue",
+                    requirePositive: true).ShowAsync(page);
+                if (refund is not > 0)
                 {
                     return null;
                 }
 
-                return new CashDrawerUiResult(CashDrawerUiKind.Refund, null, null);
+                if (!await ConfirmOpenAsync(page, $"Refund £{refund.Value:F2}"))
+                {
+                    return null;
+                }
+
+                return new CashDrawerUiResult(CashDrawerUiKind.Refund, refund, null);
 
             case CashDrawerReasons.Shopping:
                 var shopping = await ShowChoicesAsync(
                     page,
                     "Shopping",
-                    ["Take from till", "Settle pending trip"],
+                    ["Take cash out", "Put change back"],
                     grid: false,
                     icon: "£",
-                    iconColor: "#0F766E");
+                    iconColor: "#0F766E",
+                    subtitle: "Take cash to buy something. When you come back, enter what you spent and put the change in.");
                 if (shopping is null)
                 {
                     return null;
                 }
 
-                if (shopping == "Settle pending trip")
+                if (shopping == "Put change back")
                 {
                     return new CashDrawerUiResult(CashDrawerUiKind.ShoppingSettle, null, null);
                 }
@@ -99,7 +117,7 @@ public static class CashDrawerDialogFlow
 
             case CashDrawerReasons.Delivery:
                 var payout = await new CashDrawerAmountDialog(
-                    "Delivery payout",
+                    "Delivery Fee",
                     "Record cash paid out for delivery before opening the drawer.",
                     "Amount out (£)",
                     "Pay & Open",
@@ -150,13 +168,13 @@ public static class CashDrawerDialogFlow
         ArgumentNullException.ThrowIfNull(page);
         if (pending.Count == 0)
         {
-            await ShowNoticeAsync(page, "No pending trips", "There are no shopping trips waiting to be settled.", "i", "#3B82F6");
+            await ShowNoticeAsync(page, "Nothing to put back", "There is no cash out waiting for change.", "i", "#3B82F6");
             return null;
         }
 
         var picked = await ShowChoicesAsync(
             page,
-            "Settle shopping trip",
+            "Put change back",
             pending.Select(trip => trip.PickerLabel).ToList(),
             grid: false,
             icon: "£",
@@ -191,7 +209,8 @@ public static class CashDrawerDialogFlow
         IReadOnlyList<string> options,
         bool grid,
         string icon,
-        string iconColor)
+        string iconColor,
+        string? subtitle = null)
     {
         var sheet = new CashDrawerActionSheetDialog();
         if (grid)
@@ -200,7 +219,7 @@ public static class CashDrawerDialogFlow
         }
         else
         {
-            sheet.SetList(title, options, icon, iconColor);
+            sheet.SetList(title, options, icon, iconColor, subtitle);
         }
 
         return sheet.ShowAsync(page);
@@ -213,6 +232,7 @@ public sealed class CashDrawerActionSheetDialog : ContentView
     private readonly Border _iconBorder;
     private readonly Label _iconLabel;
     private readonly Label _title;
+    private readonly Label _subtitle;
     private readonly VerticalStackLayout _list;
     private readonly Grid _grid;
     private TaskCompletionSource<string?>? _tcs;
@@ -227,6 +247,8 @@ public sealed class CashDrawerActionSheetDialog : ContentView
         _iconLabel = CashDrawerChrome.IconLabel("£");
         _iconBorder = CashDrawerChrome.Icon("#0F766E", _iconLabel);
         _title = CashDrawerChrome.Title("Cash Drawer Reason");
+        _subtitle = CashDrawerChrome.Subtitle(string.Empty);
+        _subtitle.IsVisible = false;
         _list = new VerticalStackLayout { Spacing = 10, Margin = new Thickness(0, 10), IsVisible = false };
         _grid = new Grid
         {
@@ -243,7 +265,7 @@ public sealed class CashDrawerActionSheetDialog : ContentView
         _dialog = CashDrawerChrome.Card(520, new VerticalStackLayout
         {
             Spacing = 20,
-            Children = { _iconBorder, _title, _list, _grid, cancel }
+            Children = { _iconBorder, _title, _subtitle, _list, _grid, cancel }
         });
 
         Content = new Grid
@@ -253,10 +275,10 @@ public sealed class CashDrawerActionSheetDialog : ContentView
         };
     }
 
-    public void SetList(string title, IReadOnlyList<string> options, string icon = "£", string iconColor = "#0F766E")
+    public void SetList(string title, IReadOnlyList<string> options, string icon = "£", string iconColor = "#0F766E", string? subtitle = null)
     {
         _dialog.WidthRequest = 450;
-        ApplyHeader(title, icon, iconColor);
+        ApplyHeader(title, icon, iconColor, subtitle);
         _list.IsVisible = true;
         _list.Children.Clear();
         _grid.IsVisible = false;
@@ -294,9 +316,11 @@ public sealed class CashDrawerActionSheetDialog : ContentView
         return OrderPlaceDialogPresenter.ShowAsync(page, this, _tcs);
     }
 
-    private void ApplyHeader(string title, string icon, string iconColor)
+    private void ApplyHeader(string title, string icon, string iconColor, string? subtitle = null)
     {
         _title.Text = title;
+        _subtitle.Text = subtitle?.Trim() ?? string.Empty;
+        _subtitle.IsVisible = !string.IsNullOrWhiteSpace(_subtitle.Text);
         _iconLabel.Text = string.IsNullOrWhiteSpace(icon) ? "£" : icon.Trim();
         _iconBorder.BackgroundColor = Color.FromArgb(iconColor);
     }
@@ -447,7 +471,7 @@ public sealed class CashDrawerShoppingTakeDialog : ContentView
             Children =
             {
                 CashDrawerChrome.Icon("#0F766E", CashDrawerChrome.IconLabel("£"), 74, new Thickness(0, 0, 0, 4)),
-                CashDrawerChrome.Title("Shopping — Take from till"),
+                CashDrawerChrome.Title("Take cash out"),
                 CashDrawerChrome.Subtitle("Record cash taken before opening the drawer."),
                 CashDrawerChrome.FieldLabel("Item / reason"),
                 CashDrawerChrome.TappableField(_item, EditItemAsync),
@@ -580,7 +604,7 @@ public sealed class CashDrawerShoppingSettleDialog : ContentView
             Children =
             {
                 CashDrawerChrome.Icon("#0F766E", CashDrawerChrome.IconLabel("£"), 74, new Thickness(0, 0, 0, 4)),
-                CashDrawerChrome.Title("Settle shopping trip"),
+                CashDrawerChrome.Title("Put change back"),
                 CashDrawerChrome.Subtitle(summary),
                 CashDrawerChrome.FieldLabel("Actual spent (£)"),
                 CashDrawerChrome.TappableField(_spent, EditSpentAsync),

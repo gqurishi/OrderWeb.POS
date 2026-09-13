@@ -28,7 +28,12 @@ public enum RestaurantSyncMode
 /// <summary>Mother-style floor tabs + positioned table canvas (shared by Mother and Client).</summary>
 public class RestaurantTablesView : ContentView
 {
-    private const int GridSnap = 20;
+    private const int GridSnap = 16;
+    private const double LayoutScale = 0.62;
+    private const double CardSize = 78;
+    private const double TableImageSize = 72;
+    private const double StatusInsetSize = 32;
+    private const double LayoutPitch = 88;
     private readonly HorizontalStackLayout _floorTabs = new() { Spacing = 8, VerticalOptions = LayoutOptions.Center };
     private readonly HorizontalStackLayout _adminToolsHost = new()
     {
@@ -323,7 +328,7 @@ public class RestaurantTablesView : ContentView
         foreach (var (id, host) in _tableHosts)
         {
             var bounds = AbsoluteLayout.GetLayoutBounds(host.Card);
-            map[id] = (bounds.X, bounds.Y);
+            map[id] = (ToStored(bounds.X), ToStored(bounds.Y));
         }
 
         return map;
@@ -445,8 +450,9 @@ public class RestaurantTablesView : ContentView
         foreach (var table in tables)
         {
             keep.Add(table.Id);
-            var x = table.X > 0 ? table.X : 40 + (index % 6) * 140;
-            var y = table.Y > 0 ? table.Y : 40 + (index / 6) * 140;
+            var placed = table.X > 0 || table.Y > 0;
+            var x = placed ? ToView(table.X) : 12 + (index % 8) * LayoutPitch;
+            var y = placed ? ToView(table.Y) : 12 + (index / 8) * LayoutPitch;
             if (_tableHosts.TryGetValue(table.Id, out var host))
             {
                 UpdateTableCard(host, table, x, y);
@@ -454,7 +460,7 @@ public class RestaurantTablesView : ContentView
             else
             {
                 host = CreateTableHost(table);
-                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, 120, 120));
+                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, CardSize, CardSize));
                 AbsoluteLayout.SetLayoutFlags(host.Card, AbsoluteLayoutFlags.None);
                 _canvas.Children.Add(host.Card);
                 _tableHosts[table.Id] = host;
@@ -477,43 +483,52 @@ public class RestaurantTablesView : ContentView
         var nameLabel = new Label
         {
             Text = table.Name,
-            FontSize = 16,
+            FontSize = 18,
             FontFamily = "OpenSansSemibold",
-            HorizontalOptions = LayoutOptions.Center
+            TextColor = Colors.White,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
         };
         var icon = new Image
         {
-            Source = string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon,
-            WidthRequest = 50,
-            HeightRequest = 50,
+            Source = TableIcon(table.Icon),
+            WidthRequest = TableImageSize,
+            HeightRequest = TableImageSize,
             Aspect = Aspect.AspectFit,
-            HorizontalOptions = LayoutOptions.Center
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            InputTransparent = true
         };
-        var statusDot = new Ellipse
+        var statusInset = new Border
         {
-            WidthRequest = 10,
-            HeightRequest = 10,
-            HorizontalOptions = LayoutOptions.Center
+            WidthRequest = StatusInsetSize,
+            HeightRequest = StatusInsetSize,
+            Padding = 0,
+            StrokeThickness = 0,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            InputTransparent = true,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Content = nameLabel
         };
 
         var card = new Border
         {
-            Padding = 8,
-            StrokeThickness = 2,
-            StrokeShape = new RoundRectangle { CornerRadius = 12 },
-            Shadow = new Shadow
+            Padding = 4,
+            BackgroundColor = Colors.Transparent,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Content = new Grid
             {
-                Brush = Brush.Black,
-                Offset = new Point(2, 2),
-                Radius = 8,
-                Opacity = 0.15f
-            },
-            Content = new VerticalStackLayout
-            {
-                Spacing = 4,
+                WidthRequest = TableImageSize,
+                HeightRequest = TableImageSize,
                 HorizontalOptions = LayoutOptions.Center,
                 VerticalOptions = LayoutOptions.Center,
-                Children = { icon, nameLabel, statusDot }
+                Children = { icon, statusInset }
             }
         };
 
@@ -523,7 +538,7 @@ public class RestaurantTablesView : ContentView
             Table = table,
             NameLabel = nameLabel,
             Icon = icon,
-            StatusDot = statusDot,
+            StatusInset = statusInset,
             AppearanceKey = string.Empty
         };
 
@@ -578,9 +593,9 @@ public class RestaurantTablesView : ContentView
             {
                 var canvasWidth = _canvas.Width > 0 ? _canvas.Width : 1200;
                 var canvasHeight = _canvas.Height > 0 ? _canvas.Height : 800;
-                var newX = Math.Max(0, Math.Min(_dragOriginX + e.TotalX, canvasWidth - 120));
-                var newY = Math.Max(0, Math.Min(_dragOriginY + e.TotalY, canvasHeight - 120));
-                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(newX, newY, 120, 120));
+                var newX = Math.Max(0, Math.Min(_dragOriginX + e.TotalX, canvasWidth - CardSize));
+                var newY = Math.Max(0, Math.Min(_dragOriginY + e.TotalY, canvasHeight - CardSize));
+                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(newX, newY, CardSize, CardSize));
                 break;
             }
             case GestureStatus.Completed:
@@ -591,10 +606,10 @@ public class RestaurantTablesView : ContentView
                 var finalBounds = AbsoluteLayout.GetLayoutBounds(host.Card);
                 var snappedX = Math.Round(finalBounds.X / GridSnap) * GridSnap;
                 var snappedY = Math.Round(finalBounds.Y / GridSnap) * GridSnap;
-                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(snappedX, snappedY, 120, 120));
+                AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(snappedX, snappedY, CardSize, CardSize));
                 if (Math.Abs(_dragStartX - snappedX) > 1 || Math.Abs(_dragStartY - snappedY) > 1)
                 {
-                    TableMoved?.Invoke(this, new TableMovedEventArgs(host.Table.Id, snappedX, snappedY));
+                    TableMoved?.Invoke(this, new TableMovedEventArgs(host.Table.Id, ToStored(snappedX), ToStored(snappedY)));
                 }
 
                 break;
@@ -610,7 +625,7 @@ public class RestaurantTablesView : ContentView
             host.NameLabel.Text = table.Name;
         }
 
-        var icon = string.IsNullOrWhiteSpace(table.Icon) ? "table_1.png" : table.Icon;
+        var icon = TableIcon(table.Icon);
         if (host.Icon.Source is not FileImageSource file ||
             !string.Equals(file.File, icon, StringComparison.OrdinalIgnoreCase))
         {
@@ -627,7 +642,7 @@ public class RestaurantTablesView : ContentView
         var bounds = AbsoluteLayout.GetLayoutBounds(host.Card);
         if (Math.Abs(bounds.X - x) > 0.5 || Math.Abs(bounds.Y - y) > 0.5)
         {
-            AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, 120, 120));
+            AbsoluteLayout.SetLayoutBounds(host.Card, new Rect(x, y, CardSize, CardSize));
         }
     }
 
@@ -643,18 +658,17 @@ public class RestaurantTablesView : ContentView
         var table = host.Table;
         var highlighted = !string.IsNullOrWhiteSpace(_highlightedTableId) &&
                           string.Equals(table.Id, _highlightedTableId, StringComparison.OrdinalIgnoreCase);
-        var (bg, border, text) = TableColors(table);
+        var (fill, _, ink) = TableColors(table);
         if (highlighted)
         {
-            bg = Color.FromArgb("#3B82F6");
-            border = Color.FromArgb("#1D4ED8");
-            // Mother keeps status text color while cover popup is open.
+            fill = Color.FromArgb("#BFDBFE");
+            ink = Color.FromArgb("#1D4ED8");
         }
 
-        host.Card.BackgroundColor = bg;
-        host.Card.Stroke = border;
-        host.NameLabel.TextColor = text;
-        host.StatusDot.Fill = new SolidColorBrush(border);
+        host.Card.BackgroundColor = Colors.Transparent;
+        host.Card.Stroke = Colors.Transparent;
+        host.StatusInset.BackgroundColor = fill;
+        host.NameLabel.TextColor = ink;
     }
 
     private void ApplyPresentationState()
@@ -680,7 +694,7 @@ public class RestaurantTablesView : ContentView
 
         if (hasProblem)
         {
-            return (Color.FromArgb("#FEE2E2"), Color.FromArgb("#EF4444"), Color.FromArgb("#991B1B"));
+            return (Color.FromArgb("#FEE2E2"), Color.FromArgb("#FECACA"), Color.FromArgb("#B91C1C"));
         }
 
         var hasActiveSession =
@@ -694,11 +708,20 @@ public class RestaurantTablesView : ContentView
 
         if (hasActiveSession)
         {
-            return (Color.FromArgb("#FEF3C7"), Color.FromArgb("#F59E0B"), Color.FromArgb("#92400E"));
+            return (Color.FromArgb("#FEF3C7"), Color.FromArgb("#FDE68A"), Color.FromArgb("#92400E"));
         }
 
-        return (Color.FromArgb("#D1FAE5"), Color.FromArgb("#10B981"), Color.FromArgb("#065F46"));
+        return (Color.FromArgb("#D1FAE5"), Color.FromArgb("#BBF7D0"), Color.FromArgb("#166534"));
     }
+
+    private static double ToView(double stored) => stored * LayoutScale;
+
+    private static double ToStored(double view) => view / LayoutScale;
+
+    private static string TableIcon(string? icon) =>
+        string.IsNullOrWhiteSpace(icon) || icon.Equals("table_4.png", StringComparison.OrdinalIgnoreCase)
+            ? "table_1.png"
+            : icon;
 
     private sealed class TableCardHost
     {
@@ -706,7 +729,7 @@ public class RestaurantTablesView : ContentView
         public required RestaurantTableDto Table { get; set; }
         public required Label NameLabel { get; init; }
         public required Image Icon { get; init; }
-        public required Ellipse StatusDot { get; init; }
+        public required Border StatusInset { get; init; }
         public required string AppearanceKey { get; set; }
     }
 }
