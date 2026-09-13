@@ -6,15 +6,15 @@ namespace POS_in_NET.Views;
 
 public partial class ComponentLabelDialog : ContentView
 {
-    private TaskCompletionSource<string?> _taskCompletionSource;
+    private TaskCompletionSource<ComponentLabelDialogResult?> _taskCompletionSource;
 
     public ComponentLabelDialog()
     {
         InitializeComponent();
-        _taskCompletionSource = new TaskCompletionSource<string?>();
+        _taskCompletionSource = new TaskCompletionSource<ComponentLabelDialogResult?>();
     }
 
-    public Task<string?> ShowAsync()
+    public Task<ComponentLabelDialogResult?> ShowAsync()
     {
         ComponentNameEntry.Focus();
         return _taskCompletionSource.Task;
@@ -23,9 +23,11 @@ public partial class ComponentLabelDialog : ContentView
     private void OnOkClicked(object sender, EventArgs e)
     {
         var result = ComponentNameEntry.Text?.Trim();
-        if (!string.IsNullOrWhiteSpace(result))
+        if (!string.IsNullOrWhiteSpace(result)
+            && int.TryParse(ComponentQuantityEntry.Text, out var quantity)
+            && quantity is >= 1 and <= 99)
         {
-            _taskCompletionSource.TrySetResult(result);
+            _taskCompletionSource.TrySetResult(new ComponentLabelDialogResult(result, quantity));
         }
         else
         {
@@ -49,3 +51,5 @@ public partial class ComponentLabelDialog : ContentView
         OnOkClicked(sender, e);
     }
 }
+
+public sealed record ComponentLabelDialogResult(string Name, int Quantity);

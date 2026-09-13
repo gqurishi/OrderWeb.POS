@@ -22,7 +22,7 @@ public partial class AddEditItemPage : ContentPage
     private ObservableCollection<Addon> _addons = new();
     private ObservableCollection<MenuItemComponent> _components = new();
     private ObservableCollection<MenuItemQuickNote> _quickNotes = new();
-    private ObservableCollection<string> _componentLabels = new();
+    private ObservableCollection<ComponentLabelSetting> _componentLabels = new();
     private List<PrintGroup> _printGroups = new();
     private string _selectedColor = "#3B82F6";
     private string? _selectedCategoryId;
@@ -258,6 +258,7 @@ public partial class AddEditItemPage : ContentPage
             // Load label print settings
             LabelTextEntry.Text = _editingItem.LabelText;
             PrintComponentLabelsSwitch.IsToggled = _editingItem.PrintComponentLabels;
+            AlsoPrintMainLabelSwitch.IsToggled = _editingItem.AlsoPrintMainLabel;
             PrintInRedSwitch.IsToggled = _editingItem.PrintInRed;
             LoadComponentLabels(_editingItem.ComponentLabelsJson);
             
@@ -1088,6 +1089,7 @@ public partial class AddEditItemPage : ContentPage
                 // Save label print settings
                 _editingItem.LabelText = string.IsNullOrWhiteSpace(LabelTextEntry.Text) ? null : LabelTextEntry.Text.Trim();
                 _editingItem.PrintComponentLabels = PrintComponentLabelsSwitch.IsToggled;
+                _editingItem.AlsoPrintMainLabel = PrintComponentLabelsSwitch.IsToggled && AlsoPrintMainLabelSwitch.IsToggled;
                 _editingItem.ComponentLabelsJson = GetComponentLabelsJson();
                 _editingItem.PrintInRed = PrintInRedSwitch.IsToggled;
                 
@@ -1181,6 +1183,7 @@ public partial class AddEditItemPage : ContentPage
                     // Label print settings
                     LabelText = string.IsNullOrWhiteSpace(LabelTextEntry.Text) ? null : LabelTextEntry.Text.Trim(),
                     PrintComponentLabels = PrintComponentLabelsSwitch.IsToggled,
+                    AlsoPrintMainLabel = PrintComponentLabelsSwitch.IsToggled && AlsoPrintMainLabelSwitch.IsToggled,
                     ComponentLabelsJson = GetComponentLabelsJson(),
                     PrintInRed = PrintInRedSwitch.IsToggled,
                     
@@ -2005,6 +2008,8 @@ public partial class AddEditItemPage : ContentPage
     private void OnPrintComponentLabelsToggled(object sender, ToggledEventArgs e)
     {
         ComponentsListContainer.IsVisible = e.Value;
+        AlsoPrintMainLabelContainer.IsVisible = e.Value;
+        if (!e.Value) AlsoPrintMainLabelSwitch.IsToggled = false;
         
         if (e.Value && _componentLabels.Count == 0)
         {
@@ -2031,12 +2036,12 @@ public partial class AddEditItemPage : ContentPage
         DialogOverlay.IsVisible = false;
         DialogOverlay.Content = null;
         
-        if (!string.IsNullOrWhiteSpace(result))
+        if (result != null)
         {
-            var componentName = result.Trim();
-            if (!_componentLabels.Contains(componentName))
+            var componentName = result.Name.Trim();
+            if (!_componentLabels.Any(label => string.Equals(label.Name, componentName, StringComparison.OrdinalIgnoreCase)))
             {
-                _componentLabels.Add(componentName);
+                _componentLabels.Add(new ComponentLabelSetting { Name = componentName, Quantity = result.Quantity });
                 UpdateComponentLabelsUI();
             }
             else
@@ -2048,10 +2053,10 @@ public partial class AddEditItemPage : ContentPage
     
     private async void OnRemoveComponentLabel(object sender, EventArgs e)
     {
-        if (sender is Button button && button.CommandParameter is string componentLabel)
+        if (sender is Button button && button.CommandParameter is ComponentLabelSetting componentLabel)
         {
             bool confirm = await DisplayAlert("Remove Component Label", 
-                $"Remove '{componentLabel}' from print labels?", 
+                $"Remove '{componentLabel.Name}' from print labels?",
                 "Remove", "Cancel");
             
             if (confirm)
@@ -2077,13 +2082,18 @@ public partial class AddEditItemPage : ContentPage
             
         try
         {
-            var labels = System.Text.Json.JsonSerializer.Deserialize<List<string>>(componentLabelsJson);
-            if (labels != null)
+            using var document = System.Text.Json.JsonDocument.Parse(componentLabelsJson);
+            foreach (var element in document.RootElement.EnumerateArray())
             {
-                foreach (var label in labels)
-                {
-                    _componentLabels.Add(label);
-                }
+                if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+                    _componentLabels.Add(new ComponentLabelSetting { Name = element.GetString() ?? string.Empty, Quantity = 1 });
+                else if (element.ValueKind == System.Text.Json.JsonValueKind.Object
+                         && element.TryGetProperty("name", out var name))
+                    _componentLabels.Add(new ComponentLabelSetting
+                    {
+                        Name = name.GetString() ?? string.Empty,
+                        Quantity = element.TryGetProperty("quantity", out var quantity) ? Math.Clamp(quantity.GetInt32(), 1, 99) : 1
+                    });
             }
         }
         catch (Exception ex)
@@ -2100,6 +2110,15 @@ public partial class AddEditItemPage : ContentPage
         if (_componentLabels.Count == 0)
             return null;
             
-        return System.Text.Json.JsonSerializer.Serialize(_componentLabels.ToList());
+        if (_componentLabels.Any(label => string.IsNullOrWhiteSpace(label.Name) || label.Quantity is < 1 or > 99))
+            throw new InvalidOperationException("Every component label needs a name and quantity from 1 to 99.");
+        return System.Text.Json.JsonSerializer.Serialize(
+            _componentLabels.Select(label => new { name = label.Name.Trim(), quantity = label.Quantity }));
     }
+}
+
+public sealed class ComponentLabelSetting
+{
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
 }

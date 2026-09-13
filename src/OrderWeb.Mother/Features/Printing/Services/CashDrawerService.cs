@@ -235,7 +235,7 @@ public sealed class CashDrawerService
             Port = reader.GetInt32("port"),
             Brand = Enum.TryParse<PrinterBrand>(reader.GetString("brand"), true, out var brand)
                 ? brand
-                : PrinterBrand.Epson,
+                : PrinterBrand.Star,
             PrinterType = NetworkPrinterType.Receipt,
             PaperWidth = reader.GetString("paper_width") == "58mm" ? PaperWidth.Mm58 : PaperWidth.Mm80,
             HasCashDrawer = reader.GetBoolean("has_cash_drawer"),

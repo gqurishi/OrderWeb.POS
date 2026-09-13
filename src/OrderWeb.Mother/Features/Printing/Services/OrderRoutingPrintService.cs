@@ -1076,7 +1076,7 @@ public sealed class OrderRoutingPrintService
             && order.KitchenTicketType.StartsWith("FIRE ", StringComparison.OrdinalIgnoreCase)
                 ? order.KitchenTicketType.ToUpperInvariant()
                 : defaultHeaderText;
-        var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80);
+        var builder = new EscPosBuilder(PrinterBrand.Star, PaperWidth.Mm80);
         var lineWidth = 48;
 
         builder.Initialize();

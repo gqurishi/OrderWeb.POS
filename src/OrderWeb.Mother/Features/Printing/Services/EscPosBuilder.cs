@@ -14,7 +14,7 @@ public enum TextAlign
 }
 
 /// <summary>
-/// Builder for ESC/POS commands compatible with Epson, Star, and other thermal printers
+/// Builder for ESC/POS commands used by the thermal and impact printers Mother talks to by IP.
 /// Uses universal ESC/POS commands that work across brands
 /// </summary>
 public class EscPosBuilder
@@ -52,7 +52,7 @@ public class EscPosBuilder
         public static readonly byte[] LINE_FEED = { 0x0A }; // LF
         public static readonly byte[] CARRIAGE_RETURN = { 0x0D }; // CR
         
-        // Cut (Epson style - most compatible)
+        // Cut (standard ESC/POS)
         public static readonly byte[] CUT_FULL = { 0x1D, 0x56, 0x00 };    // GS V 0 (full cut)
         public static readonly byte[] CUT_PARTIAL = { 0x1D, 0x56, 0x01 }; // GS V 1 (partial cut)
         public static readonly byte[] CUT_FEED_FULL = { 0x1D, 0x56, 0x41, 0x03 };    // GS V A 3 (feed & full cut)
@@ -71,7 +71,7 @@ public class EscPosBuilder
         public static readonly byte[] BUZZER_SHORT = { 0x1B, 0x42, 0x02, 0x05 }; // 2 beeps, shorter
     }
 
-    public EscPosBuilder(PrinterBrand brand = PrinterBrand.Epson, PaperWidth paperWidth = PaperWidth.Mm80)
+    public EscPosBuilder(PrinterBrand brand = PrinterBrand.Star, PaperWidth paperWidth = PaperWidth.Mm80)
     {
         _brand = brand;
         _paperWidth = paperWidth;
@@ -272,7 +272,7 @@ public class EscPosBuilder
         }
         else
         {
-            // Epson and most others
+            // Standard ESC/POS cut for non-Star printers
             _buffer.AddRange(partial ? Commands.CUT_FEED_PARTIAL : Commands.CUT_FEED_FULL);
         }
         return this;

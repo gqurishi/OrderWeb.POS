@@ -23,7 +23,8 @@ public partial class PrinterSetupPage : ContentPage
     private Timer? _refreshTimer;
     
     // Form state
-    private PrinterBrand _selectedBrand = PrinterBrand.Epson;
+    private PrinterBrand _selectedBrand = PrinterBrand.Star;
+    private string _selectedTechnology = "thermal";
     private NetworkPrinterType _selectedType = NetworkPrinterType.Receipt;
     private PaperWidth _selectedWidth = PaperWidth.Mm80;
     private string? _selectedPrintGroupId = null;
@@ -122,6 +123,11 @@ public partial class PrinterSetupPage : ContentPage
 
         _receiptLogoSize = await _receiptLogoSettingsService.GetLogoSizeAsync();
         UpdateReceiptLogoSizeControls();
+    }
+
+    private void OnLogoUpdateClicked(object? sender, EventArgs e)
+    {
+        LogoSizeCard.IsVisible = !LogoSizeCard.IsVisible;
     }
 
     private async void OnSmallLogoSizeClicked(object? sender, EventArgs e) =>
@@ -561,11 +567,9 @@ public partial class PrinterSetupPage : ContentPage
         IpAddressEntry.Text = printer.IpAddress;
         PortEntry.Text = printer.Port.ToString();
         
-        // Set brand
-        SelectBrand(printer.Brand);
-        
-        // Set type
+        SelectTechnology(InferTechnology(printer), printer.Brand);
         SelectType(printer.PrinterType);
+        SelectEpsonModel(printer.ModelCode);
         
         // Set width
         SelectWidth(printer.PaperWidth);
@@ -582,8 +586,6 @@ public partial class PrinterSetupPage : ContentPage
             LabelManufacturerPicker.SelectedIndex = 0;
             LabelModelPicker.SelectedIndex = 0;
             LabelProfilePicker.SelectedItem = printer.LabelProfile;
-            if (LabelProfilePicker.SelectedIndex < 0 && !string.IsNullOrWhiteSpace(printer.LabelProfile))
-                LabelProfilePicker.SelectedIndex = 1;
             MediaWidthEntry.Text = FormatDecimal(printer.MediaWidthMm ?? 60m);
             LabelWidthEntry.Text = FormatDecimal(printer.LabelWidthMm ?? 60m);
             LabelHeightEntry.Text = FormatDecimal(printer.LabelHeightMm ?? 40m);
@@ -599,6 +601,7 @@ public partial class PrinterSetupPage : ContentPage
             HorizontalOffsetEntry.Text = FormatDecimal(printer.HorizontalOffsetMm);
             VerticalOffsetEntry.Text = FormatDecimal(printer.VerticalOffsetMm);
             FinishingModePicker.SelectedIndex = printer.FinishingMode == LabelFinishingMode.Cutter ? 1 : 0;
+            NumberOfCopiesEntry.Text = Math.Clamp(printer.NumberOfCopies, 1, 99).ToString(CultureInfo.InvariantCulture);
             CutterInstalledCheckbox.IsChecked = printer.FinishingMode == LabelFinishingMode.Cutter && printer.HasCutter;
             LabelEnabledCheckbox.IsChecked = printer.IsEnabled;
             DefaultLabelPrinterCheckbox.IsChecked = printer.IsDefaultLabelPrinter;
@@ -632,7 +635,7 @@ public partial class PrinterSetupPage : ContentPage
         IpAddressEntry.Text = string.Empty;
         PortEntry.Text = "9100";
         
-        SelectBrand(PrinterBrand.Epson);
+        SelectTechnology("thermal", PrinterBrand.Epson);
         SelectType(NetworkPrinterType.Receipt);
         SelectWidth(PaperWidth.Mm80);
         
@@ -754,6 +757,12 @@ public partial class PrinterSetupPage : ContentPage
             return;
         }
 
+        if (EpsonModelSection.IsVisible && EpsonModelPicker.SelectedIndex < 0)
+        {
+            await AppAlertService.ShowAlertAsync("Model", "Select the printer model.");
+            return;
+        }
+
         try
         {
             SavePrinterButton.IsEnabled = false;
@@ -783,6 +792,15 @@ public partial class PrinterSetupPage : ContentPage
             printer.Port = port;
             printer.Brand = _selectedBrand;
             printer.PrinterType = _selectedType;
+            printer.Technology = _selectedTechnology;
+            printer.Manufacturer = _selectedBrand.ToString().ToLowerInvariant();
+            printer.ModelCode = EpsonModelSection.IsVisible
+                ? ModelCodeFromLabel(EpsonModelPicker.SelectedItem?.ToString())
+                : printer.ModelCode;
+            if (_selectedTechnology == "thermal")
+            {
+                _selectedWidth = PaperWidth.Mm80;
+            }
             printer.PaperWidth = _selectedWidth;
             printer.HasCashDrawer = CashDrawerCheckbox.IsChecked;
             printer.HasCutter = CutterCheckbox.IsChecked;
@@ -790,9 +808,16 @@ public partial class PrinterSetupPage : ContentPage
             printer.SupportsTwoColor = TwoColorCheckbox.IsChecked;
             printer.IsEnabled = _selectedType == NetworkPrinterType.Label ? LabelEnabledCheckbox.IsChecked : true;
 
-            if (_selectedType == NetworkPrinterType.Label)
+            if (_selectedType == NetworkPrinterType.Label && _selectedBrand == PrinterBrand.Toshiba)
             {
                 printer.LabelProfile = LabelProfilePicker.SelectedItem?.ToString();
+                printer.LabelMediaProfileId = LabelProfilePicker.SelectedIndex switch
+                {
+                    0 => "toshiba-60x40-container",
+                    1 => "toshiba-51x30-compact",
+                    2 => "toshiba-80x50-delivery",
+                    _ => null
+                };
                 printer.MediaWidthMm = ParseDecimal(MediaWidthEntry.Text);
                 printer.LabelWidthMm = ParseDecimal(LabelWidthEntry.Text);
                 printer.LabelHeightMm = ParseDecimal(LabelHeightEntry.Text);
@@ -811,7 +836,10 @@ public partial class PrinterSetupPage : ContentPage
                 printer.FinishingMode = FinishingModePicker.SelectedIndex == 1 ? LabelFinishingMode.Cutter : LabelFinishingMode.TearOff;
                 printer.NumberOfCopies = ParseInt(NumberOfCopiesEntry.Text) ?? 0;
                 printer.IsDefaultLabelPrinter = DefaultLabelPrinterCheckbox.IsChecked;
-                LabelPrinterProfiles.ApplyToshibaBfv4dGs14(printer);
+                if (_selectedBrand == PrinterBrand.Toshiba)
+                {
+                    LabelPrinterProfiles.ApplyToshibaBfv4dGs14(printer);
+                }
 
                 var validationError = LabelPrinterConfigurationValidator.Validate(printer, CutterInstalledCheckbox.IsChecked);
                 if (validationError != null)
@@ -1079,7 +1107,7 @@ public partial class PrinterSetupPage : ContentPage
         finally
         {
             CheckStatusButton.IsEnabled = true;
-            CheckStatusButton.Text = "Check Status";
+            CheckStatusButton.Text = "Check status";
         }
     }
 
@@ -1217,7 +1245,27 @@ public partial class PrinterSetupPage : ContentPage
         
         if (result)
         {
-            await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Test print sent to '{printer.Name}'");
+            if (printer.PrinterType == NetworkPrinterType.Label && _dbService != null)
+            {
+                var physicallyPrinted = await DisplayAlert(
+                    "Confirm Physical Label",
+                    $"The test was sent to '{printer.Name}'. Did a readable label physically print on the correct media?",
+                    "Yes, it printed",
+                    "No");
+                if (physicallyPrinted)
+                {
+                    await _dbService.RecordSuccessfulPhysicalTestAsync(printer.Id);
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Physical label test recorded.");
+                }
+                else
+                {
+                    await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Not Confirmed", "The connection succeeded, but no successful physical test was recorded.");
+                }
+            }
+            else
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", $"Test print sent to '{printer.Name}'");
+            }
         }
         else
         {
@@ -1283,28 +1331,184 @@ public partial class PrinterSetupPage : ContentPage
 
     #region Brand/Type/Width Selection
 
+    private void OnTechThermalTapped(object? sender, EventArgs e) => SelectTechnology("thermal");
+    private void OnTechImpactTapped(object? sender, EventArgs e) => SelectTechnology("impact");
+    private void OnTechLabelTapped(object? sender, EventArgs e) => SelectTechnology("label");
+
     private void OnBrandEpsonTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Epson);
     private void OnBrandStarTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Star);
+    private void OnBrandXprinterTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Xprinter);
+    private void OnBrandToshibaTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Toshiba);
+    private void OnBrandBrotherTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Brother);
     private void OnBrandOtherTapped(object? sender, EventArgs e) => SelectBrand(PrinterBrand.Other);
+
+    private void SelectTechnology(string technology, PrinterBrand? keepBrand = null)
+    {
+        _selectedTechnology = technology;
+        PaintChoice(TechThermalBorder, TechThermalLabel, technology == "thermal");
+        PaintChoice(TechImpactBorder, TechImpactLabel, technology == "impact");
+        PaintChoice(TechLabelBorder, TechLabelLabel, technology == "label");
+
+        var allowed = BrandsFor(technology);
+        BrandEpsonBorder.IsVisible = allowed.Contains(PrinterBrand.Epson);
+        BrandStarBorder.IsVisible = allowed.Contains(PrinterBrand.Star);
+        BrandXprinterBorder.IsVisible = allowed.Contains(PrinterBrand.Xprinter);
+        BrandToshibaBorder.IsVisible = allowed.Contains(PrinterBrand.Toshiba);
+        BrandBrotherBorder.IsVisible = allowed.Contains(PrinterBrand.Brother);
+        BrandOtherBorder.IsVisible = keepBrand == PrinterBrand.Other;
+
+        var brand = keepBrand is PrinterBrand chosen && (allowed.Contains(chosen) || chosen == PrinterBrand.Other)
+            ? chosen
+            : allowed[0];
+        SelectBrand(brand);
+
+        TypeReceiptBorder.IsVisible = technology == "thermal";
+        TypeOnlineBorder.IsVisible = technology == "thermal";
+        TypeKitchenBorder.IsVisible = technology != "label";
+        TypeBarBorder.IsVisible = technology != "label";
+        TypeTakeawayBorder.IsVisible = technology != "label";
+        TypeLabelBorder.IsVisible = technology == "label";
+        PurposeHintLabel.Text = technology switch
+        {
+            "impact" => "Kitchen, bar, or takeaway only.",
+            "label" => "Label only.",
+            _ => "Receipt, kitchen, bar, online receipt, or takeaway kitchen."
+        };
+
+        if (technology == "label")
+        {
+            SelectType(NetworkPrinterType.Label);
+        }
+        else if (_selectedType == NetworkPrinterType.Label
+                 || (technology == "impact" && _selectedType is NetworkPrinterType.Receipt or NetworkPrinterType.Online))
+        {
+            SelectType(technology == "impact" ? NetworkPrinterType.Kitchen : NetworkPrinterType.Receipt);
+        }
+
+        if (technology == "thermal")
+        {
+            _selectedWidth = PaperWidth.Mm80;
+            GeneralPaperWidthSection.IsVisible = false;
+        }
+    }
+
+    private static PrinterBrand[] BrandsFor(string technology) => technology switch
+    {
+        "impact" => [PrinterBrand.Epson, PrinterBrand.Star],
+        "label" => [PrinterBrand.Toshiba, PrinterBrand.Brother, PrinterBrand.Xprinter],
+        _ => [PrinterBrand.Epson, PrinterBrand.Star, PrinterBrand.Xprinter]
+    };
+
+    private static string InferTechnology(NetworkPrinter printer)
+    {
+        var saved = printer.Technology?.Trim().ToLowerInvariant();
+        if (saved is "thermal" or "impact" or "label")
+        {
+            return saved;
+        }
+
+        return printer.PrinterType == NetworkPrinterType.Label
+               || printer.Brand is PrinterBrand.Toshiba or PrinterBrand.Brother
+            ? "label"
+            : "thermal";
+    }
 
     private void SelectBrand(PrinterBrand brand)
     {
         _selectedBrand = brand;
-        
-        // Epson
-        BrandEpsonBorder.BackgroundColor = brand == PrinterBrand.Epson ? Color.FromArgb("#0F172A") : Color.FromArgb("#F1F5F9");
-        if (BrandEpsonBorder.Content is Label epsonLabel)
-            epsonLabel.TextColor = brand == PrinterBrand.Epson ? Colors.White : Color.FromArgb("#64748B");
-        
-        // Star
-        BrandStarBorder.BackgroundColor = brand == PrinterBrand.Star ? Color.FromArgb("#0F172A") : Color.FromArgb("#F1F5F9");
-        if (BrandStarBorder.Content is Label starLabel)
-            starLabel.TextColor = brand == PrinterBrand.Star ? Colors.White : Color.FromArgb("#64748B");
-        
-        // Other
-        BrandOtherBorder.BackgroundColor = brand == PrinterBrand.Other ? Color.FromArgb("#0F172A") : Color.FromArgb("#F1F5F9");
-        if (BrandOtherBorder.Content is Label otherLabel)
-            otherLabel.TextColor = brand == PrinterBrand.Other ? Colors.White : Color.FromArgb("#64748B");
+        PaintChoice(BrandEpsonBorder, BrandEpsonLabel, brand == PrinterBrand.Epson);
+        PaintChoice(BrandStarBorder, BrandStarLabel, brand == PrinterBrand.Star);
+        RefreshEpsonModels();
+        PaintChoice(BrandXprinterBorder, BrandXprinterLabel, brand == PrinterBrand.Xprinter);
+        PaintChoice(BrandToshibaBorder, BrandToshibaLabel, brand == PrinterBrand.Toshiba);
+        PaintChoice(BrandBrotherBorder, BrandBrotherLabel, brand == PrinterBrand.Brother);
+        PaintChoice(BrandOtherBorder, BrandOtherLabel, brand == PrinterBrand.Other);
+        if (_selectedTechnology == "label")
+        {
+            LabelConfigurationSection.IsVisible = brand == PrinterBrand.Toshiba;
+        }
+    }
+
+    private static readonly string[] EpsonThermalModels =
+    [
+        "TM-T20",
+        "TM-T20II",
+        "TM-T20III",
+        "TM-T20X",
+        "TM-T70II",
+        "TM-T88VI",
+        "TM-T88VII"
+    ];
+
+    private static readonly string[] EpsonImpactModels = ["TM-U220B", "TM-U220IIB"];
+
+    private static readonly string[] XprinterThermalModels =
+    [
+        "XP-T80Q (Recommended)",
+        "XP-N160II (Recommended)",
+        "XP-Q200",
+        "XP-Q300",
+        "XP-Q200II"
+    ];
+
+    private static readonly string[] StarThermalModels =
+    [
+        "TSP100LAN",
+        "TSP143LAN",
+        "TSP100IIILAN",
+        "TSP143IIILAN"
+    ];
+
+    private static readonly string[] StarImpactModels = ["SP742", "SP700 Series"];
+
+    private void RefreshEpsonModels(string? keepModel = null)
+    {
+        var show = _selectedTechnology == "thermal" && _selectedBrand is PrinterBrand.Epson or PrinterBrand.Xprinter or PrinterBrand.Star
+                   || _selectedTechnology == "impact" && _selectedBrand is PrinterBrand.Epson or PrinterBrand.Star;
+        EpsonModelSection.IsVisible = show;
+        if (!show)
+        {
+            return;
+        }
+
+        var models = (_selectedBrand, _selectedTechnology) switch
+        {
+            (PrinterBrand.Xprinter, _) => XprinterThermalModels,
+            (PrinterBrand.Star, "impact") => StarImpactModels,
+            (PrinterBrand.Star, _) => StarThermalModels,
+            (_, "impact") => EpsonImpactModels,
+            _ => EpsonThermalModels
+        };
+        ModelHintLabel.Text = _selectedBrand == PrinterBrand.Xprinter
+            ? "XP-T80Q and XP-N160II are the recommended models. 80mm. Connect by IP on port 9100. No PC driver."
+            : _selectedTechnology == "impact"
+                ? "Connect by IP on port 9100. No PC driver."
+                : "80mm is fixed for thermal. Mother connects by IP on port 9100. No PC driver.";
+        var selected = ModelCodeFromLabel(keepModel ?? EpsonModelPicker.SelectedItem?.ToString());
+        EpsonModelPicker.ItemsSource = models;
+        var index = Array.FindIndex(models, model => string.Equals(ModelCodeFromLabel(model), selected, StringComparison.OrdinalIgnoreCase));
+        EpsonModelPicker.SelectedIndex = index >= 0 ? index : 0;
+    }
+
+    private static string? ModelCodeFromLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        const string recommended = " (Recommended)";
+        return label.EndsWith(recommended, StringComparison.Ordinal)
+            ? label[..^recommended.Length]
+            : label.Trim();
+    }
+
+    private void SelectEpsonModel(string? modelCode) => RefreshEpsonModels(modelCode);
+
+    private static void PaintChoice(Border border, Label label, bool selected)
+    {
+        border.BackgroundColor = selected ? Color.FromArgb("#0F172A") : Color.FromArgb("#F1F5F9");
+        label.TextColor = selected ? Colors.White : Color.FromArgb("#64748B");
     }
 
     private void OnTypeReceiptTapped(object? sender, EventArgs e) => SelectType(NetworkPrinterType.Receipt);
@@ -1355,14 +1559,16 @@ public partial class PrinterSetupPage : ContentPage
         }
 
         var isLabel = type == NetworkPrinterType.Label;
-        LabelConfigurationSection.IsVisible = isLabel;
-        GeneralBrandSection.IsVisible = !isLabel;
-        GeneralPaperWidthSection.IsVisible = !isLabel;
-        GeneralFeaturesSection.IsVisible = !isLabel;
-        if (isLabel)
+        LabelConfigurationSection.IsVisible = isLabel && _selectedBrand == PrinterBrand.Toshiba;
+        GeneralPaperWidthSection.IsVisible = !isLabel && _selectedTechnology != "thermal";
+        if (_selectedTechnology == "thermal")
         {
-            _selectedBrand = PrinterBrand.Toshiba;
-            PortEntry.Text = string.IsNullOrWhiteSpace(PortEntry.Text) ? "9100" : PortEntry.Text;
+            _selectedWidth = PaperWidth.Mm80;
+        }
+        GeneralFeaturesSection.IsVisible = !isLabel;
+        if (isLabel && string.IsNullOrWhiteSpace(PortEntry.Text))
+        {
+            PortEntry.Text = "9100";
         }
     }
 
@@ -1374,10 +1580,17 @@ public partial class PrinterSetupPage : ContentPage
 
     private void OnLabelProfileChanged(object? sender, EventArgs e)
     {
-        if (LabelProfilePicker.SelectedIndex != 0) return;
-        MediaWidthEntry.Text = "60";
-        LabelWidthEntry.Text = "60";
-        LabelHeightEntry.Text = "40";
+        var dimensions = LabelProfilePicker.SelectedIndex switch
+        {
+            0 => (Width: "60", Height: "40"),
+            1 => (Width: "51", Height: "30"),
+            2 => (Width: "80", Height: "50"),
+            _ => default
+        };
+        if (dimensions == default) return;
+        MediaWidthEntry.Text = dimensions.Width;
+        LabelWidthEntry.Text = dimensions.Width;
+        LabelHeightEntry.Text = dimensions.Height;
         GapSizeEntry.Text = "3";
         SensorTypePicker.SelectedIndex = 0;
     }

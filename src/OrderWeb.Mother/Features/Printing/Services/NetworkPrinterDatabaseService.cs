@@ -52,6 +52,7 @@ public class NetworkPrinterDatabaseService
                     manufacturer VARCHAR(50) NULL,
                     model_code VARCHAR(100) NULL,
                     protocol VARCHAR(30) NULL,
+                    module_identifier VARCHAR(80) NULL,
                     resolution_dpi INT NULL,
                     printing_method VARCHAR(50) NULL,
                     max_print_width_mm DECIMAL(7,2) NULL,
@@ -59,6 +60,7 @@ public class NetworkPrinterDatabaseService
                     transport VARCHAR(50) NULL,
                     windows_driver VARCHAR(150) NULL,
                     label_profile VARCHAR(100) NULL,
+                    label_media_profile_id VARCHAR(36) NULL,
                     media_width_mm DECIMAL(7,2) NULL,
                     label_width_mm DECIMAL(7,2) NULL,
                     label_height_mm DECIMAL(7,2) NULL,
@@ -71,6 +73,8 @@ public class NetworkPrinterDatabaseService
                     finishing_mode VARCHAR(30) NOT NULL DEFAULT 'tearoff',
                     number_of_copies INT NOT NULL DEFAULT 1,
                     is_default_label_printer BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_successful_physical_test DATETIME NULL,
+                    firmware_version VARCHAR(100) NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     UNIQUE INDEX idx_ip_port (ip_address, port)
@@ -256,20 +260,22 @@ public class NetworkPrinterDatabaseService
                 (name, ip_address, port, brand, printer_type, paper_width, 
                  has_cash_drawer, has_cutter, has_buzzer, supports_two_color, is_enabled,
                  color_code, display_order, notes, print_group_id,
-                 technology, manufacturer, model_code, protocol, resolution_dpi, printing_method,
-                 max_print_width_mm, supported_media, transport, windows_driver, label_profile,
+                 technology, manufacturer, model_code, protocol, module_identifier, resolution_dpi, printing_method,
+                 max_print_width_mm, supported_media, transport, windows_driver, label_profile, label_media_profile_id,
                  media_width_mm, label_width_mm, label_height_mm, gap_size_mm, sensor_type,
                  print_speed, print_darkness, horizontal_offset_mm, vertical_offset_mm,
-                 finishing_mode, number_of_copies, is_default_label_printer)
+                 finishing_mode, number_of_copies, is_default_label_printer,
+                 last_successful_physical_test, firmware_version)
                 VALUES 
                 (@name, @ip, @port, @brand, @type, @width,
                  @drawer, @cutter, @buzzer, @twoColor, @enabled,
                  @color, @order, @notes, @printGroupId,
-                 @technology, @manufacturer, @modelCode, @protocol, @resolutionDpi, @printingMethod,
-                 @maxPrintWidth, @supportedMedia, @transport, @windowsDriver, @labelProfile,
+                 @technology, @manufacturer, @modelCode, @protocol, @moduleIdentifier, @resolutionDpi, @printingMethod,
+                 @maxPrintWidth, @supportedMedia, @transport, @windowsDriver, @labelProfile, @labelMediaProfileId,
                  @mediaWidth, @labelWidth, @labelHeight, @gapSize, @sensorType,
                  @printSpeed, @printDarkness, @horizontalOffset, @verticalOffset,
-                 @finishingMode, @copies, @isDefaultLabel);
+                 @finishingMode, @copies, @isDefaultLabel,
+                 @lastPhysicalTest, @firmwareVersion);
                 SELECT LAST_INSERT_ID();";
 
             cmd.Parameters.AddWithValue("@name", printer.Name);
@@ -332,6 +338,7 @@ public class NetworkPrinterDatabaseService
                     manufacturer = @manufacturer,
                     model_code = @modelCode,
                     protocol = @protocol,
+                    module_identifier = @moduleIdentifier,
                     resolution_dpi = @resolutionDpi,
                     printing_method = @printingMethod,
                     max_print_width_mm = @maxPrintWidth,
@@ -339,6 +346,7 @@ public class NetworkPrinterDatabaseService
                     transport = @transport,
                     windows_driver = @windowsDriver,
                     label_profile = @labelProfile,
+                    label_media_profile_id = @labelMediaProfileId,
                     media_width_mm = @mediaWidth,
                     label_width_mm = @labelWidth,
                     label_height_mm = @labelHeight,
@@ -350,7 +358,9 @@ public class NetworkPrinterDatabaseService
                     vertical_offset_mm = @verticalOffset,
                     finishing_mode = @finishingMode,
                     number_of_copies = @copies,
-                    is_default_label_printer = @isDefaultLabel
+                    is_default_label_printer = @isDefaultLabel,
+                    last_successful_physical_test = @lastPhysicalTest,
+                    firmware_version = @firmwareVersion
                 WHERE id = @id";
 
             cmd.Parameters.AddWithValue("@id", printer.Id);
@@ -428,6 +438,18 @@ public class NetworkPrinterDatabaseService
         {
             System.Diagnostics.Debug.WriteLine($" Error updating printer status: {ex.Message}");
         }
+    }
+
+    public async Task RecordSuccessfulPhysicalTestAsync(int id)
+    {
+        using var connection = await _db.GetConnectionAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE network_printers
+            SET last_successful_physical_test = NOW(), last_seen = NOW(), is_online = TRUE
+            WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -591,7 +613,7 @@ public class NetworkPrinterDatabaseService
             MODIFY COLUMN printer_type ENUM('receipt', 'kitchen', 'bar', 'label', 'online', 'takeaway') NOT NULL");
         await ExecuteNonQueryAsync(connection, @"
             ALTER TABLE network_printers
-            MODIFY COLUMN brand ENUM('epson', 'star', 'toshiba', 'other') NOT NULL DEFAULT 'epson'");
+            MODIFY COLUMN brand ENUM('epson', 'star', 'xprinter', 'toshiba', 'brother', 'other') NOT NULL DEFAULT 'epson'");
 
         if (!await ColumnExistsAsync(connection, "network_printers", "print_group_id"))
         {
@@ -613,6 +635,7 @@ public class NetworkPrinterDatabaseService
             ("manufacturer", "VARCHAR(50) NULL"),
             ("model_code", "VARCHAR(100) NULL"),
             ("protocol", "VARCHAR(30) NULL"),
+            ("module_identifier", "VARCHAR(80) NULL"),
             ("resolution_dpi", "INT NULL"),
             ("printing_method", "VARCHAR(50) NULL"),
             ("max_print_width_mm", "DECIMAL(7,2) NULL"),
@@ -620,6 +643,7 @@ public class NetworkPrinterDatabaseService
             ("transport", "VARCHAR(50) NULL"),
             ("windows_driver", "VARCHAR(150) NULL"),
             ("label_profile", "VARCHAR(100) NULL"),
+            ("label_media_profile_id", "VARCHAR(36) NULL"),
             ("media_width_mm", "DECIMAL(7,2) NULL"),
             ("label_width_mm", "DECIMAL(7,2) NULL"),
             ("label_height_mm", "DECIMAL(7,2) NULL"),
@@ -631,7 +655,9 @@ public class NetworkPrinterDatabaseService
             ("vertical_offset_mm", "DECIMAL(7,2) NOT NULL DEFAULT 0"),
             ("finishing_mode", "VARCHAR(30) NOT NULL DEFAULT 'tearoff'"),
             ("number_of_copies", "INT NOT NULL DEFAULT 1"),
-            ("is_default_label_printer", "BOOLEAN NOT NULL DEFAULT FALSE")
+            ("is_default_label_printer", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("last_successful_physical_test", "DATETIME NULL"),
+            ("firmware_version", "VARCHAR(100) NULL")
         };
 
         foreach (var column in labelColumns)
@@ -774,6 +800,7 @@ public class NetworkPrinterDatabaseService
         cmd.Parameters.AddWithValue("@manufacturer", DbValue(printer.Manufacturer));
         cmd.Parameters.AddWithValue("@modelCode", DbValue(printer.ModelCode));
         cmd.Parameters.AddWithValue("@protocol", DbValue(printer.Protocol));
+        cmd.Parameters.AddWithValue("@moduleIdentifier", DbValue(printer.ModuleIdentifier));
         cmd.Parameters.AddWithValue("@resolutionDpi", DbValue(printer.ResolutionDpi));
         cmd.Parameters.AddWithValue("@printingMethod", DbValue(printer.PrintingMethod));
         cmd.Parameters.AddWithValue("@maxPrintWidth", DbValue(printer.MaximumPrintWidthMm));
@@ -781,6 +808,7 @@ public class NetworkPrinterDatabaseService
         cmd.Parameters.AddWithValue("@transport", DbValue(printer.Transport));
         cmd.Parameters.AddWithValue("@windowsDriver", DbValue(printer.WindowsDriver));
         cmd.Parameters.AddWithValue("@labelProfile", DbValue(printer.LabelProfile));
+        cmd.Parameters.AddWithValue("@labelMediaProfileId", DbValue(printer.LabelMediaProfileId));
         cmd.Parameters.AddWithValue("@mediaWidth", DbValue(printer.MediaWidthMm));
         cmd.Parameters.AddWithValue("@labelWidth", DbValue(printer.LabelWidthMm));
         cmd.Parameters.AddWithValue("@labelHeight", DbValue(printer.LabelHeightMm));
@@ -793,6 +821,8 @@ public class NetworkPrinterDatabaseService
         cmd.Parameters.AddWithValue("@finishingMode", printer.FinishingMode.ToString().ToLowerInvariant());
         cmd.Parameters.AddWithValue("@copies", printer.NumberOfCopies);
         cmd.Parameters.AddWithValue("@isDefaultLabel", printer.IsDefaultLabelPrinter);
+        cmd.Parameters.AddWithValue("@lastPhysicalTest", DbValue(printer.LastSuccessfulPhysicalTest));
+        cmd.Parameters.AddWithValue("@firmwareVersion", DbValue(printer.FirmwareVersion));
     }
 
     private static object DbValue(object? value) => value ?? DBNull.Value;
@@ -823,6 +853,7 @@ public class NetworkPrinterDatabaseService
             Manufacturer = ReadNullableString(reader, "manufacturer"),
             ModelCode = ReadNullableString(reader, "model_code"),
             Protocol = ReadNullableString(reader, "protocol"),
+            ModuleIdentifier = ReadNullableString(reader, "module_identifier"),
             ResolutionDpi = ReadNullableInt(reader, "resolution_dpi"),
             PrintingMethod = ReadNullableString(reader, "printing_method"),
             MaximumPrintWidthMm = ReadNullableDecimal(reader, "max_print_width_mm"),
@@ -830,6 +861,7 @@ public class NetworkPrinterDatabaseService
             Transport = ReadNullableString(reader, "transport"),
             WindowsDriver = ReadNullableString(reader, "windows_driver"),
             LabelProfile = ReadNullableString(reader, "label_profile"),
+            LabelMediaProfileId = ReadNullableString(reader, "label_media_profile_id"),
             MediaWidthMm = ReadNullableDecimal(reader, "media_width_mm"),
             LabelWidthMm = ReadNullableDecimal(reader, "label_width_mm"),
             LabelHeightMm = ReadNullableDecimal(reader, "label_height_mm"),
@@ -842,6 +874,8 @@ public class NetworkPrinterDatabaseService
             FinishingMode = ParseNullableEnum<LabelFinishingMode>(ReadNullableString(reader, "finishing_mode")) ?? LabelFinishingMode.TearOff,
             NumberOfCopies = ReadNullableInt(reader, "number_of_copies") ?? 1,
             IsDefaultLabelPrinter = ReadNullableBoolean(reader, "is_default_label_printer"),
+            LastSuccessfulPhysicalTest = ReadNullableDateTime(reader, "last_successful_physical_test"),
+            FirmwareVersion = ReadNullableString(reader, "firmware_version"),
             CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
             UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"))
         };
@@ -863,6 +897,12 @@ public class NetworkPrinterDatabaseService
     {
         var ordinal = reader.GetOrdinal(name);
         return !reader.IsDBNull(ordinal) && reader.GetBoolean(ordinal);
+    }
+
+    private static DateTime? ReadNullableDateTime(IDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal);
     }
 
     private static TEnum? ParseNullableEnum<TEnum>(string? value) where TEnum : struct, Enum =>

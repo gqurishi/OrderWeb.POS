@@ -3731,6 +3731,20 @@ namespace POS_in_NET.Pages
                 return summary;
             }
 
+            var toshibaLabels = ServiceHelper.GetService<ToshibaOrderLabelService>();
+            if (toshibaLabels != null)
+            {
+                var toshibaResult = await toshibaLabels.EnqueueForPrintedItemsAsync(printOrder, printedItemIds, "mother");
+                if (toshibaResult.HandledByToshiba)
+                {
+                    summary.Attempted = toshibaResult.Attempted;
+                    summary.Printed = toshibaResult.Queued;
+                    summary.Failed = toshibaResult.Failed;
+                    summary.Errors.AddRange(toshibaResult.Errors);
+                    return summary;
+                }
+            }
+
             var labelTarget = await ResolveLabelPrinterTargetAsync();
             if (labelTarget == null)
             {

@@ -51,12 +51,11 @@ namespace MyFirstMauiApp.Services
         /// <summary>
         /// Print a label with item name and custom text
         /// </summary>
-        public async Task<bool> PrintItemLabelAsync(string itemName, string? customText = null, 
-            bool useRedInk = false, string? additionalInfo = null)
+        public async Task<bool> PrintItemLabelAsync(string itemName, string? labelText = null, bool useRedInk = false)
         {
             try
             {
-                var labelData = GenerateItemLabel(itemName, customText, useRedInk, additionalInfo);
+                var labelData = GenerateItemLabel(itemName, labelText, useRedInk);
                 await SendToPrinterAsync(labelData);
                 return true;
             }
@@ -70,14 +69,13 @@ namespace MyFirstMauiApp.Services
         /// <summary>
         /// Print a component label for meal deals
         /// </summary>
-        public async Task<bool> PrintComponentLabelAsync(string mealDealName, string componentName, 
-            string componentType, int quantity = 1)
+        public async Task<bool> PrintComponentLabelAsync(string parentItemName, string componentName, int quantity = 1)
         {
             try
             {
                 for (int i = 0; i < quantity; i++)
                 {
-                    var labelData = GenerateComponentLabel(mealDealName, componentName, componentType, i + 1, quantity);
+                    var labelData = GenerateComponentLabel(parentItemName, componentName);
                     await SendToPrinterAsync(labelData);
                     
                     if (i < quantity - 1)
@@ -141,7 +139,7 @@ namespace MyFirstMauiApp.Services
             return label.ToArray();
         }
 
-        private byte[] GenerateItemLabel(string itemName, string? customText, bool useRedInk, string? additionalInfo)
+        private byte[] GenerateItemLabel(string itemName, string? labelText, bool useRedInk)
         {
             var label = new List<byte>();
             
@@ -156,34 +154,18 @@ namespace MyFirstMauiApp.Services
                 label.AddRange(ESCCommands.SelectRedInk());
             }
             label.AddRange(ESCCommands.PrintText(itemName, ESCCommands.FontSize.Large, ESCCommands.TextAlign.Center, true));
-            
-            // Switch to black for details
-            if (useRedInk)
+
+            if (!string.IsNullOrWhiteSpace(labelText))
             {
-                label.AddRange(ESCCommands.SelectBlackInk());
+                label.AddRange(ESCCommands.PrintText(labelText.Trim(), ESCCommands.FontSize.Medium, ESCCommands.TextAlign.Center));
             }
-            
-            // Print custom text if provided
-            if (!string.IsNullOrEmpty(customText))
-            {
-                label.AddRange(ESCCommands.PrintText($"\"{customText}\"", ESCCommands.FontSize.Medium, ESCCommands.TextAlign.Center));
-            }
-            
-            // Print additional info (table number, time, etc.)
-            if (!string.IsNullOrEmpty(additionalInfo))
-            {
-                label.AddRange(ESCCommands.PrintText(additionalInfo, ESCCommands.FontSize.Small, ESCCommands.TextAlign.Center));
-            }
-            
-            // Print timestamp
-            label.AddRange(ESCCommands.PrintText(DateTime.Now.ToString("HH:mm"), ESCCommands.FontSize.Small, ESCCommands.TextAlign.Right));
             
             label.AddRange(ESCCommands.PrintAndFeed());
             
             return label.ToArray();
         }
 
-        private byte[] GenerateComponentLabel(string mealDealName, string componentName, string componentType, int currentQty, int totalQty)
+        private byte[] GenerateComponentLabel(string parentItemName, string componentName)
         {
             var label = new List<byte>();
             
@@ -192,32 +174,8 @@ namespace MyFirstMauiApp.Services
             label.AddRange(ESCCommands.SetLabelSize(62));
             label.AddRange(ESCCommands.SetPrintQuality(true));
             
-            // Meal deal header (small)
-            label.AddRange(ESCCommands.PrintText(mealDealName, ESCCommands.FontSize.Small, ESCCommands.TextAlign.Center));
-            
-            // Component name (large, bold)
-            label.AddRange(ESCCommands.PrintText($"→ {componentName}", ESCCommands.FontSize.Large, ESCCommands.TextAlign.Left, true));
-            
-            // Component type and VAT info
-            var typeInfo = componentType switch
-            {
-                "HotFood" => "(HOT - 20% VAT)",
-                "ColdFood" => "(COLD - 0% VAT)",
-                "HotBeverage" => "(HOT DRINK - 20% VAT)",
-                "ColdBeverage" => "(COLD DRINK - 0% VAT)",
-                "Alcohol" => "(ALCOHOL - 20% VAT)",
-                _ => ""
-            };
-            label.AddRange(ESCCommands.PrintText(typeInfo, ESCCommands.FontSize.Small, ESCCommands.TextAlign.Left));
-            
-            // Quantity indicator
-            if (totalQty > 1)
-            {
-                label.AddRange(ESCCommands.PrintText($"#{currentQty} of {totalQty}", ESCCommands.FontSize.Small, ESCCommands.TextAlign.Right));
-            }
-            
-            // Timestamp
-            label.AddRange(ESCCommands.PrintText(DateTime.Now.ToString("HH:mm"), ESCCommands.FontSize.Small, ESCCommands.TextAlign.Right));
+            label.AddRange(ESCCommands.PrintText(componentName, ESCCommands.FontSize.Large, ESCCommands.TextAlign.Center, true));
+            label.AddRange(ESCCommands.PrintText(parentItemName, ESCCommands.FontSize.Small, ESCCommands.TextAlign.Center));
             
             label.AddRange(ESCCommands.PrintAndFeed());
             

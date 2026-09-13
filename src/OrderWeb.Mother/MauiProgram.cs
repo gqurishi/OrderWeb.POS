@@ -145,6 +145,13 @@ public static class MauiProgram
 		
 		// Register Network Printer Services
 		builder.Services.AddSingleton<NetworkPrinterDatabaseService>();
+		builder.Services.AddSingleton<LabelPrintDatabaseService>();
+		builder.Services.AddSingleton<LabelPrintQueueDatabaseService>();
+		builder.Services.AddSingleton<ToshibaTpclModule>();
+		builder.Services.AddSingleton<ToshibaRawTcpTransport>();
+		builder.Services.AddSingleton<ToshibaLabelNetworkService>();
+		builder.Services.AddSingleton<LabelPrintQueueService>();
+		builder.Services.AddSingleton<ToshibaOrderLabelService>();
 		builder.Services.AddSingleton<NetworkPrinterService>();
 		builder.Services.AddSingleton<PrinterRoutingService>();
 		builder.Services.AddSingleton<CashDrawerService>();

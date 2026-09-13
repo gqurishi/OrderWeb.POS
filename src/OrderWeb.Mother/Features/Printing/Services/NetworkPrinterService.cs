@@ -7,7 +7,7 @@ namespace POS_in_NET.Services;
 
 /// <summary>
 /// Service for direct TCP communication with network thermal printers
-/// Supports ESC/POS compatible printers (Epson, Star, etc.)
+/// Sends ESC/POS bytes over the network. No Windows printer driver is installed or used.
 /// </summary>
 public class NetworkPrinterService
 {
@@ -358,7 +358,7 @@ public class NetworkPrinterService
                    .SetBold(false)
                    .SetNormalSize();
 
-            if (printer.SupportsTwoColor && printer.Brand == PrinterBrand.Epson)
+            if (printer.SupportsTwoColor)
             {
                 builder.PrintLine("BLACK INK TEST")
                        .SetRedInk(true)

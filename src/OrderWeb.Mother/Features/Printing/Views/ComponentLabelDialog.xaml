@@ -11,7 +11,7 @@
         
         <!-- Dialog Card -->
         <Border WidthRequest="420"
-                HeightRequest="300"
+                HeightRequest="390"
                 BackgroundColor="White"
                 StrokeThickness="0"
                 StrokeShape="RoundRectangle 20"
@@ -73,13 +73,18 @@
                                Margin="16,12"
                                Completed="OnEntryCompleted" />
                     </Border>
+
+                    <Grid ColumnDefinitions="*,120" ColumnSpacing="12">
+                        <Label Grid.Column="0" Text="Labels per ordered item" FontSize="13" TextColor="#64748B" VerticalOptions="Center"/>
+                        <Entry Grid.Column="1" x:Name="ComponentQuantityEntry" Text="1" Keyboard="Numeric" MaxLength="2" HorizontalTextAlignment="Center"/>
+                    </Grid>
                     
                     <!-- Helper Text -->
                     <HorizontalStackLayout Spacing="6" Margin="4,0,0,0">
                         <Label Text=""
                                FontSize="14"
                                VerticalOptions="Center" />
-                        <Label Text="Examples: Roti, Curry, Rice, Naan, Salad"
+                        <Label Text="Example: quantity 2 means two labels for this component per ordered meal"
                                FontSize="12"
                                TextColor="#94A3B8"
                                VerticalOptions="Center" />

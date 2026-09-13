@@ -863,28 +863,13 @@
                                    VerticalOptions="Center" />
                         </Grid>
 
-                        <!-- Label Text Input -->
                         <VerticalStackLayout Spacing="8">
-                            <Label Text="Label Text"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   TextColor="#475569" />
-                            <Label Text="Leave empty if no label printing required"
-                                   FontSize="12"
-                                   TextColor="#94A3B8"
-                                   Margin="0,0,0,4" />
-                            <Border BackgroundColor="White"
-                                    StrokeThickness="2"
-                                    Stroke="#CBD5E1"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="0">
-                                <Entry x:Name="LabelTextEntry"
-                                       Placeholder="Custom text for label printer"
-                                       FontSize="14"
-                                       TextColor="#0F172A"
-                                       BackgroundColor="Transparent"
-                                       MaxLength="100"
-                                       Margin="14,10" />
+                            <Label Text="Label Text" FontSize="14" FontAttributes="Bold" TextColor="#475569" />
+                            <Label Text="Leave empty for no standard item label. The item name is always the main heading; this is optional fixed preparation or identification text."
+                                   FontSize="12" TextColor="#94A3B8" LineBreakMode="WordWrap" />
+                            <Border BackgroundColor="White" StrokeThickness="2" Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" Padding="0">
+                                <Entry x:Name="LabelTextEntry" Placeholder="e.g., Contains one mint sauce" FontSize="14"
+                                       TextColor="#0F172A" BackgroundColor="Transparent" MaxLength="100" Margin="14,10" />
                             </Border>
                         </VerticalStackLayout>
 
@@ -906,6 +891,15 @@
                                         ThumbColor="White"
                                         VerticalOptions="Center"
                                         Toggled="OnPrintComponentLabelsToggled" />
+                             </Grid>
+
+                            <Grid x:Name="AlsoPrintMainLabelContainer" ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="False">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label Text="Also Print Main Item Label" FontSize="14" FontAttributes="Bold" TextColor="#475569" />
+                                    <Label Text="Off: component labels replace the main label. On: print both component labels and the main item label."
+                                           FontSize="12" TextColor="#94A3B8" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                                <Switch x:Name="AlsoPrintMainLabelSwitch" Grid.Column="1" OnColor="#8B5CF6" ThumbColor="White" VerticalOptions="Center" />
                             </Grid>
                             
                             <!-- Components List (Visible when toggle is ON) -->
@@ -925,14 +919,16 @@
                                                SelectionMode="None">
                                     <CollectionView.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="*,Auto" 
+                                            <Grid ColumnDefinitions="*,Auto,Auto"
                                                   ColumnSpacing="8"
                                                   Padding="0,4">
-                                                <Label Text="{Binding .}"
+                                                <Label Text="{Binding Name}"
                                                        FontSize="14"
                                                        TextColor="#0F172A"
                                                        VerticalOptions="Center"
                                                        Grid.Column="0" />
+                                                <Entry Grid.Column="1" Text="{Binding Quantity, Mode=TwoWay}" Keyboard="Numeric"
+                                                       WidthRequest="58" MaxLength="2" HorizontalTextAlignment="Center" />
                                                 <Button Text=""
                                                         BackgroundColor="#EF4444"
                                                         TextColor="White"
@@ -943,7 +939,7 @@
                                                         Padding="0"
                                                         Clicked="OnRemoveComponentLabel"
                                                         CommandParameter="{Binding .}"
-                                                        Grid.Column="1" />
+                                                        Grid.Column="2" />
                                             </Grid>
                                         </DataTemplate>
                                     </CollectionView.ItemTemplate>

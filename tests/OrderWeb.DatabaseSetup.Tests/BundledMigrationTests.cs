@@ -12,8 +12,8 @@ public class BundledMigrationTests
         Assert.NotNull(migrationsPath);
 
         var engine = new MigrationEngine(migrationsPath!, "1.0.0");
-        Assert.Equal(37, engine.GetBundledSchemaVersion());
-        Assert.Equal(37, OrderWeb.DatabaseSetup.Models.PosDefaults.RequiredSchemaVersion);
+        Assert.Equal(42, engine.GetBundledSchemaVersion());
+        Assert.Equal(42, OrderWeb.DatabaseSetup.Models.PosDefaults.RequiredSchemaVersion);
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "030_kitchen_red_printing");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "031_course_fire_status");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "032_local_order_retention");
@@ -21,6 +21,11 @@ public class BundledMigrationTests
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "034_orderweb_payment_details");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "035_orderweb_contract_v2");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "036_rider_operations");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "038_toshiba_label_printer_configuration");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "039_label_media_profiles_and_jobs");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "040_item_label_configuration");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "041_label_network_results");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "042_durable_label_queue");
     }
 
     [Fact]

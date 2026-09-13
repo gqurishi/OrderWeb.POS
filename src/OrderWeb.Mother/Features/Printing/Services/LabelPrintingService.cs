@@ -41,7 +41,7 @@ namespace POS_in_NET.Services
             var componentLabels = GetConfiguredComponentLabels(item);
 
             // Check if item has any label work configured
-            if (string.IsNullOrWhiteSpace(item.LabelText) && (!item.PrintComponentLabels || componentLabels.Count == 0))
+            if (string.IsNullOrWhiteSpace(item.LabelText) && !item.PrintComponentLabels)
             {
                 System.Diagnostics.Debug.WriteLine($"[INFO] No label text for item: {item.Name}");
                 return false;
@@ -50,22 +50,28 @@ namespace POS_in_NET.Services
             try
             {
                 // Check if this is a meal deal with component printing enabled
-                if (item.PrintComponentLabels && componentLabels.Count > 0)
+                if (item.PrintComponentLabels)
                 {
-                    return await PrintConfiguredComponentLabelsAsync(item, componentLabels, tableNumber, quantity);
+                    if (componentLabels.Count == 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[WARNING] Component labels are enabled but none are configured for: {item.Name}");
+                        return false;
+                    }
+
+                    var componentsPrinted = await PrintConfiguredComponentLabelsAsync(item, componentLabels, quantity);
+                    if (!componentsPrinted || !item.AlsoPrintMainLabel)
+                        return componentsPrinted;
                 }
-                else
+
+                if (!string.IsNullOrWhiteSpace(item.LabelText))
                 {
                     // Print standard item label
-                    string? additionalInfo = !string.IsNullOrWhiteSpace(tableNumber) ? tableNumber : null;
-                    
                     for (int i = 0; i < quantity; i++)
                     {
                         await _printer.PrintItemLabelAsync(
                             itemName: item.Name,
-                            customText: item.LabelText,
-                            useRedInk: item.PrintInRed,
-                            additionalInfo: additionalInfo
+                            labelText: item.LabelText,
+                            useRedInk: item.PrintInRed
                         );
                         
                         if (i < quantity - 1)
@@ -75,8 +81,9 @@ namespace POS_in_NET.Services
                     }
                     
                     System.Diagnostics.Debug.WriteLine($"[SUCCESS] Printed {quantity} label(s) for: {item.Name}");
-                    return true;
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
@@ -107,9 +114,8 @@ namespace POS_in_NET.Services
                     
                     // Print label for each quantity
                     await _printer.PrintComponentLabelAsync(
-                        mealDealName: mealDeal.LabelText ?? mealDeal.Name,
+                        parentItemName: mealDeal.Name,
                         componentName: component.ComponentName,
-                        componentType: component.ComponentType,
                         quantity: componentQty
                     );
                     
@@ -128,23 +134,19 @@ namespace POS_in_NET.Services
 
         private async Task<bool> PrintConfiguredComponentLabelsAsync(
             FoodMenuItem item,
-            List<string> componentLabels,
-            string? tableNumber,
+            List<ConfiguredComponentLabel> componentLabels,
             int orderQuantity)
         {
             try
             {
                 var totalLabels = 0;
-                var mealDealName = item.LabelText ?? item.Name;
-
-                foreach (var componentName in componentLabels)
+                foreach (var component in componentLabels)
                 {
-                    var componentQty = DetermineComponentQuantity(componentName) * Math.Max(orderQuantity, 1);
+                    var componentQty = component.Quantity * Math.Max(orderQuantity, 1);
 
                     await _printer!.PrintComponentLabelAsync(
-                        mealDealName: mealDealName,
-                        componentName: componentName,
-                        componentType: item.VatCategory,
+                        parentItemName: item.Name,
+                        componentName: component.Name,
                         quantity: componentQty
                     );
 
@@ -161,17 +163,38 @@ namespace POS_in_NET.Services
             }
         }
 
-        private static List<string> GetConfiguredComponentLabels(FoodMenuItem item)
+        private static List<ConfiguredComponentLabel> GetConfiguredComponentLabels(FoodMenuItem item)
         {
             if (!string.IsNullOrWhiteSpace(item.ComponentLabelsJson))
             {
                 try
                 {
-                    return JsonSerializer.Deserialize<List<string>>(item.ComponentLabelsJson)?
-                        .Where(label => !string.IsNullOrWhiteSpace(label))
-                        .Select(label => label.Trim())
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList() ?? new List<string>();
+                    using var document = JsonDocument.Parse(item.ComponentLabelsJson);
+                    var labels = new List<ConfiguredComponentLabel>();
+                    foreach (var element in document.RootElement.EnumerateArray())
+                    {
+                        if (element.ValueKind == JsonValueKind.String)
+                        {
+                            var legacyName = element.GetString()?.Trim();
+                            if (!string.IsNullOrWhiteSpace(legacyName))
+                                labels.Add(new ConfiguredComponentLabel(legacyName, 1));
+                        }
+                        else if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("name", out var nameProperty))
+                        {
+                            var name = nameProperty.GetString()?.Trim();
+                            var configuredQuantity = element.TryGetProperty("quantity", out var quantityProperty)
+                                && quantityProperty.TryGetInt32(out var parsedQuantity)
+                                ? Math.Clamp(parsedQuantity, 1, 99)
+                                : 1;
+                            if (!string.IsNullOrWhiteSpace(name))
+                                labels.Add(new ConfiguredComponentLabel(name, configuredQuantity));
+                        }
+                    }
+
+                    return labels
+                        .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
+                        .ToList();
                 }
                 catch (Exception ex)
                 {
@@ -181,9 +204,10 @@ namespace POS_in_NET.Services
 
             return item.Components?
                 .Where(component => !string.IsNullOrWhiteSpace(component.ComponentName))
-                .Select(component => component.ComponentName.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? new List<string>();
+                .Select(component => new ConfiguredComponentLabel(component.ComponentName.Trim(), 1))
+                .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList() ?? new List<ConfiguredComponentLabel>();
         }
 
         /// <summary>
@@ -202,6 +226,8 @@ namespace POS_in_NET.Services
             
             return 1; // Default quantity
         }
+
+        private sealed record ConfiguredComponentLabel(string Name, int Quantity);
 
         /// <summary>
         /// Test printer connection
@@ -237,7 +263,7 @@ namespace POS_in_NET.Services
             try
             {
                 await _printer.PrintTextLabelAsync(
-                    text: $"Test Label\n{DateTime.Now:yyyy-MM-dd HH:mm}\nPrinter OK!",
+                    text: "TEST LABEL",
                     useRedInk: false,
                     copies: 1
                 );

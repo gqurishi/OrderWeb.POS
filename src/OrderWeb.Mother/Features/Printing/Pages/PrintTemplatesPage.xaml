@@ -7,7 +7,7 @@
              SizeChanged="OnPrintTemplatesPageSizeChanged"
              Shell.NavBarIsVisible="False">
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,96">
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
 
         <ScrollView Grid.Row="1"
@@ -15,103 +15,194 @@
                     HorizontalScrollBarVisibility="Never"
                     VerticalScrollBarVisibility="Always">
             <Grid x:Name="TemplateLayoutGrid"
-                  Padding="32"
-                  ColumnDefinitions="*,420"
-                  RowDefinitions="Auto"
-                  ColumnSpacing="28">
+                  Padding="16,12,16,28"
+                  ColumnDefinitions="380,*"
+                  RowDefinitions="Auto,Auto,Auto"
+                  ColumnSpacing="12"
+                  RowSpacing="10">
 
-                <VerticalStackLayout Grid.Column="0" Spacing="18">
+                <VerticalStackLayout x:Name="TemplateHeaderPanel"
+                                     Grid.Row="0"
+                                     Grid.Column="0"
+                                     Grid.ColumnSpan="2"
+                                     Spacing="10">
                     <Grid ColumnDefinitions="*,Auto">
-                        <VerticalStackLayout Spacing="4">
+                        <VerticalStackLayout Spacing="1" VerticalOptions="Center">
                             <Label x:Name="PageHeadingLabel"
                                    Text="Kitchen Template"
-                                   FontSize="30"
+                                   FontSize="20"
                                    FontAttributes="Bold"
                                    TextColor="#0F172A"/>
                             <Label x:Name="PageSubheadingLabel"
                                    Text="80mm kitchen ticket preview"
-                                   FontSize="15"
+                                   FontSize="12"
                                    TextColor="#64748B"/>
                         </VerticalStackLayout>
 
                         <Button Grid.Column="1"
                                 Text="Back"
-                                BackgroundColor="#E2E8F0"
+                                BackgroundColor="White"
                                 TextColor="#334155"
+                                BorderColor="#E2E8F0"
+                                BorderWidth="1"
                                 CornerRadius="8"
-                                Padding="18,10"
+                                HeightRequest="36"
+                                MinimumHeightRequest="36"
+                                Padding="14,0"
+                                FontSize="13"
                                 FontAttributes="Bold"
+                                Style="{x:Null}"
                                 Clicked="OnBackClicked"/>
                     </Grid>
 
-                    <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="Start"
-                                AlignItems="Center" AlignContent="Start">
-                        <Button x:Name="KitchenTemplateButton"
-                                Margin="0,0,10,10"
-                                Text="Kitchen Ticket"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnKitchenTemplateClicked"/>
-                        <Button x:Name="CollectionReceiptTemplateButton"
-                                Margin="0,0,10,10"
-                                Text="Collection Receipt"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnCollectionReceiptTemplateClicked"/>
-                        <Button x:Name="DeliveryReceiptTemplateButton"
-                                Margin="0,0,10,10"
-                                Text="Delivery Receipt"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnDeliveryReceiptTemplateClicked"/>
-                        <Button x:Name="TableBillTemplateButton"
-                                Margin="0,0,10,10"
-                                Text="Table Bill"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnTableBillTemplateClicked"/>
-                        <Button x:Name="TablePaymentTemplateButton"
-                                Margin="0,0,10,10"
-                                Text="Table Payment"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnTablePaymentTemplateClicked"/>
-                    </FlexLayout>
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            Padding="10,8"
+                            StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Template"
+                                   FontSize="12"
+                                   TextColor="#64748B"/>
+                            <FlexLayout Direction="Row" Wrap="Wrap" JustifyContent="Start"
+                                        AlignItems="Center" AlignContent="Start">
+                                <Button x:Name="KitchenTemplateButton"
+                                        Margin="0,0,8,0"
+                                        Text="Kitchen Ticket"
+                                        BackgroundColor="#2563EB"
+                                        TextColor="White"
+                                        BorderColor="#2563EB"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnKitchenTemplateClicked"/>
+                                <Button x:Name="CollectionReceiptTemplateButton"
+                                        Margin="0,0,8,0"
+                                        Text="Collection Receipt"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnCollectionReceiptTemplateClicked"/>
+                                <Button x:Name="DeliveryReceiptTemplateButton"
+                                        Margin="0,0,8,0"
+                                        Text="Delivery Receipt"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnDeliveryReceiptTemplateClicked"/>
+                                <Button x:Name="TableBillTemplateButton"
+                                        Margin="0,0,8,0"
+                                        Text="Table Bill"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnTableBillTemplateClicked"/>
+                                <Button x:Name="TablePaymentTemplateButton"
+                                        Text="Table Payment"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnTablePaymentTemplateClicked"/>
+                            </FlexLayout>
 
-                    <FlexLayout x:Name="KitchenPreviewModes" Direction="Row" Wrap="Wrap"
-                                JustifyContent="Start" AlignItems="Center" AlignContent="Start">
-                        <Button x:Name="TablePreviewButton"
-                                Margin="0,0,10,10"
-                                Text="Table"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnTablePreviewClicked"/>
-                        <Button x:Name="CollectionPreviewButton"
-                                Margin="0,0,10,10"
-                                Text="Collection"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnCollectionPreviewClicked"/>
-                        <Button x:Name="DeliveryPreviewButton"
-                                Margin="0,0,10,10"
-                                Text="Delivery"
-                                CornerRadius="8"
-                                Padding="18,10"
-                                FontAttributes="Bold"
-                                Clicked="OnDeliveryPreviewClicked"/>
-                    </FlexLayout>
+                            <FlexLayout x:Name="KitchenPreviewModes" Direction="Row" Wrap="Wrap"
+                                        JustifyContent="Start" AlignItems="Center" AlignContent="Start">
+                                <Button x:Name="TablePreviewButton"
+                                        Margin="0,0,8,0"
+                                        Text="Table"
+                                        BackgroundColor="#2563EB"
+                                        TextColor="White"
+                                        BorderColor="#2563EB"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="32"
+                                        MinimumHeightRequest="32"
+                                        Padding="14,0"
+                                        FontSize="12"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnTablePreviewClicked"/>
+                                <Button x:Name="CollectionPreviewButton"
+                                        Margin="0,0,8,0"
+                                        Text="Collection"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="32"
+                                        MinimumHeightRequest="32"
+                                        Padding="14,0"
+                                        FontSize="12"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnCollectionPreviewClicked"/>
+                                <Button x:Name="DeliveryPreviewButton"
+                                        Text="Delivery"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="32"
+                                        MinimumHeightRequest="32"
+                                        Padding="14,0"
+                                        FontSize="12"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnDeliveryPreviewClicked"/>
+                            </FlexLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
 
+                <VerticalStackLayout x:Name="TemplatePreviewPanel"
+                                     Grid.Row="1"
+                                     Grid.Column="0"
+                                     Spacing="0"
+                                     VerticalOptions="Start">
                     <Border BackgroundColor="#E2E8F0"
-                            Padding="24"
+                            Padding="12"
                             StrokeThickness="0"
-                            HorizontalOptions="Start">
+                            HorizontalOptions="Start"
+                            VerticalOptions="Start">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8"/>
                         </Border.StrokeShape>
@@ -119,9 +210,10 @@
                         <Border BackgroundColor="White"
                                 Stroke="#CBD5E1"
                                 StrokeThickness="1"
-                                Padding="20"
-                                WidthRequest="420"
-                                HorizontalOptions="Start">
+                                Padding="14,10"
+                                WidthRequest="340"
+                                HorizontalOptions="Start"
+                                VerticalOptions="Start">
                             <Border.StrokeShape>
                                 <RoundRectangle CornerRadius="4"/>
                             </Border.StrokeShape>
@@ -129,11 +221,11 @@
                                 <Shadow Brush="#22000000" Offset="0,4" Radius="16" Opacity="0.18"/>
                             </Border.Shadow>
 
-                            <ScrollView Orientation="Both"
-                                        HeightRequest="620"
-                                        HorizontalScrollBarVisibility="Always"
-                                        VerticalScrollBarVisibility="Always">
-                                <Grid WidthRequest="380">
+                            <ScrollView Orientation="Vertical"
+                                        HeightRequest="480"
+                                        HorizontalScrollBarVisibility="Never"
+                                        VerticalScrollBarVisibility="Default">
+                                <Grid WidthRequest="312">
                                     <VerticalStackLayout x:Name="KitchenPreviewLines"
                                                          Spacing="0"
                                                          IsVisible="True"/>
@@ -149,183 +241,174 @@
                     </Border>
                 </VerticalStackLayout>
 
-                <VerticalStackLayout x:Name="TemplateSettingsPanel" Grid.Column="1" Spacing="16">
-                    <Border BackgroundColor="White" Padding="22" StrokeThickness="0">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="8"/>
-                        </Border.StrokeShape>
-                        <VerticalStackLayout Spacing="14">
+                <Grid x:Name="TemplateSettingsPanel"
+                      Grid.Row="1"
+                      Grid.Column="1"
+                      RowDefinitions="Auto,Auto"
+                      RowSpacing="8"
+                      VerticalOptions="Start">
+                    <Border BackgroundColor="White"
+                            Padding="12,10"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 12">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                             <Label x:Name="PreviewTitleLabel"
                                    Text="Table kitchen ticket"
-                                   FontSize="22"
+                                   FontSize="16"
                                    FontAttributes="Bold"
-                                   TextColor="#0F172A"/>
-                            <Label Text="Paper"
-                                   FontSize="12"
-                                   FontAttributes="Bold"
-                                   TextColor="#64748B"
-                                   CharacterSpacing="1"/>
-                            <Label Text="80mm fixed"
-                                   FontSize="18"
-                                   FontAttributes="Bold"
-                                   TextColor="#0F172A"/>
-                        </VerticalStackLayout>
+                                   TextColor="#0F172A"
+                                   VerticalOptions="Center"/>
+                            <Border Grid.Column="1"
+                                    BackgroundColor="#F8FAFC"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    Padding="10,4"
+                                    StrokeShape="RoundRectangle 8"
+                                    VerticalOptions="Center">
+                                <Label Text="80mm fixed"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#334155"/>
+                            </Border>
+                        </Grid>
                     </Border>
 
                     <Border x:Name="KitchenControlsPanel"
+                            Grid.Row="1"
                             BackgroundColor="White"
-                            Padding="22"
-                            StrokeThickness="0">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="8"/>
-                        </Border.StrokeShape>
-                        <VerticalStackLayout Spacing="14">
+                            Padding="14,12"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 12"
+                            VerticalOptions="Start"
+                            Margin="0,0,0,8">
+                        <VerticalStackLayout Spacing="8">
                             <Label Text="Kitchen Customise"
-                                   FontSize="18"
+                                   FontSize="15"
                                    FontAttributes="Bold"
                                    TextColor="#0F172A"/>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                                  ColumnSpacing="14"
-                                  RowSpacing="12">
-                                <VerticalStackLayout Spacing="6">
-                                    <Label Text="Main heading"
-                                           FontSize="13"
-                                           FontAttributes="Bold"
-                                           TextColor="#475569"/>
-                                    <Picker x:Name="HeadingSizePicker"
-                                            BackgroundColor="#F8FAFC"
-                                            TextColor="#0F172A"
-                                            SelectedIndexChanged="OnKitchenSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-
-                                <HorizontalStackLayout Grid.Column="1"
-                                                       Spacing="10"
-                                                       VerticalOptions="End"
-                                                       Padding="0,0,0,8">
-                                    <Switch x:Name="HeadingBoldSwitch"
-                                            Toggled="OnKitchenSettingChanged"/>
-                                    <Label Text="Bold"
-                                           FontAttributes="Bold"
-                                           TextColor="#334155"
-                                           VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="1" Spacing="6">
-                                    <Label Text="Order info"
-                                           FontSize="13"
-                                           FontAttributes="Bold"
-                                           TextColor="#475569"/>
-                                    <Picker x:Name="OrderInfoSizePicker"
-                                            BackgroundColor="#F8FAFC"
-                                            TextColor="#0F172A"
-                                            SelectedIndexChanged="OnKitchenSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-
-                                <HorizontalStackLayout Grid.Row="1"
-                                                       Grid.Column="1"
-                                                       Spacing="10"
-                                                       VerticalOptions="End"
-                                                       Padding="0,0,0,8">
-                                    <Switch x:Name="OrderInfoBoldSwitch"
-                                            Toggled="OnKitchenSettingChanged"/>
-                                    <Label Text="Bold"
-                                           FontAttributes="Bold"
-                                           TextColor="#334155"
-                                           VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="2" Spacing="6">
-                                    <Label Text="Section heading"
-                                           FontSize="13"
-                                           FontAttributes="Bold"
-                                           TextColor="#475569"/>
-                                    <Picker x:Name="SectionSizePicker"
-                                            BackgroundColor="#F8FAFC"
-                                            TextColor="#0F172A"
-                                            SelectedIndexChanged="OnKitchenSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-
-                                <HorizontalStackLayout Grid.Row="2"
-                                                       Grid.Column="1"
-                                                       Spacing="10"
-                                                       VerticalOptions="End"
-                                                       Padding="0,0,0,8">
-                                    <Switch x:Name="SectionBoldSwitch"
-                                            Toggled="OnKitchenSettingChanged"/>
-                                    <Label Text="Bold"
-                                           FontAttributes="Bold"
-                                           TextColor="#334155"
-                                           VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <HorizontalStackLayout Grid.Row="3"
-                                                       Grid.ColumnSpan="2"
-                                                       Spacing="10">
-                                    <Switch x:Name="CheckedBySwitch"
-                                            Toggled="OnKitchenSettingChanged"/>
-                                    <Label Text="Show checked-by line"
-                                           FontAttributes="Bold"
-                                           TextColor="#334155"
-                                           VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="4"
-                                                     Grid.ColumnSpan="2"
-                                                     Spacing="6">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <Label Text="Footer text"
-                                               FontSize="13"
-                                               FontAttributes="Bold"
-                                               TextColor="#475569"/>
-                                        <Label x:Name="FooterCounterLabel"
-                                               Grid.Column="1"
-                                               Text="0 / 60"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#64748B"/>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <VerticalStackLayout Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="Main heading" FontSize="12" TextColor="#64748B"/>
+                                            <Picker x:Name="HeadingSizePicker"
+                                                    BackgroundColor="#F8FAFC"
+                                                    TextColor="#0F172A"
+                                                    FontSize="13"
+                                                    HeightRequest="36"
+                                                    HorizontalOptions="Fill"
+                                                    SelectedIndexChanged="OnKitchenSettingChanged">
+                                                <Picker.Items>
+                                                    <x:String>Normal</x:String>
+                                                    <x:String>Large</x:String>
+                                                    <x:String>Extra Large</x:String>
+                                                </Picker.Items>
+                                            </Picker>
+                                        </VerticalStackLayout>
+                                        <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="End" Margin="0,0,0,4">
+                                            <Switch x:Name="HeadingBoldSwitch" Toggled="OnKitchenSettingChanged"/>
+                                            <Label Text="Bold" FontSize="12" TextColor="#334155" VerticalOptions="Center"/>
+                                        </HorizontalStackLayout>
                                     </Grid>
-                                    <Entry x:Name="FooterTextEntry"
-                                           MaxLength="60"
-                                           BackgroundColor="#F8FAFC"
-                                           TextColor="#0F172A"
-                                           Placeholder="Thank you for your order"
-                                           TextChanged="OnKitchenFooterTextChanged"/>
-                                    <Label x:Name="FooterWarningLabel"
-                                           Text="Keep footer short: max 2 centered receipt lines."
-                                           FontSize="12"
-                                           TextColor="#64748B"/>
+
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="Section heading" FontSize="12" TextColor="#64748B"/>
+                                            <Picker x:Name="SectionSizePicker"
+                                                    BackgroundColor="#F8FAFC"
+                                                    TextColor="#0F172A"
+                                                    FontSize="13"
+                                                    HeightRequest="36"
+                                                    HorizontalOptions="Fill"
+                                                    SelectedIndexChanged="OnKitchenSettingChanged">
+                                                <Picker.Items>
+                                                    <x:String>Normal</x:String>
+                                                    <x:String>Large</x:String>
+                                                    <x:String>Extra Large</x:String>
+                                                </Picker.Items>
+                                            </Picker>
+                                        </VerticalStackLayout>
+                                        <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="End" Margin="0,0,0,4">
+                                            <Switch x:Name="SectionBoldSwitch" Toggled="OnKitchenSettingChanged"/>
+                                            <Label Text="Bold" FontSize="12" TextColor="#334155" VerticalOptions="Center"/>
+                                        </HorizontalStackLayout>
+                                    </Grid>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="Order info" FontSize="12" TextColor="#64748B"/>
+                                            <Picker x:Name="OrderInfoSizePicker"
+                                                    BackgroundColor="#F8FAFC"
+                                                    TextColor="#0F172A"
+                                                    FontSize="13"
+                                                    HeightRequest="36"
+                                                    HorizontalOptions="Fill"
+                                                    SelectedIndexChanged="OnKitchenSettingChanged">
+                                                <Picker.Items>
+                                                    <x:String>Normal</x:String>
+                                                    <x:String>Large</x:String>
+                                                    <x:String>Extra Large</x:String>
+                                                </Picker.Items>
+                                            </Picker>
+                                        </VerticalStackLayout>
+                                        <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="End" Margin="0,0,0,4">
+                                            <Switch x:Name="OrderInfoBoldSwitch" Toggled="OnKitchenSettingChanged"/>
+                                            <Label Text="Bold" FontSize="12" TextColor="#334155" VerticalOptions="Center"/>
+                                        </HorizontalStackLayout>
+                                    </Grid>
+
+                                    <HorizontalStackLayout Spacing="8" VerticalOptions="End" Margin="0,18,0,4">
+                                        <Switch x:Name="CheckedBySwitch" Toggled="OnKitchenSettingChanged"/>
+                                        <Label Text="Show checked-by line"
+                                               FontSize="13"
+                                               TextColor="#334155"
+                                               VerticalOptions="Center"/>
+                                    </HorizontalStackLayout>
                                 </VerticalStackLayout>
                             </Grid>
 
+                            <VerticalStackLayout Spacing="4">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Text="Footer text" FontSize="12" TextColor="#64748B"/>
+                                    <Label x:Name="FooterCounterLabel"
+                                           Grid.Column="1"
+                                           Text="0 / 60"
+                                           FontSize="12"
+                                           TextColor="#64748B"/>
+                                </Grid>
+                                <Entry x:Name="FooterTextEntry"
+                                       MaxLength="60"
+                                       HeightRequest="40"
+                                       BackgroundColor="#F8FAFC"
+                                       TextColor="#0F172A"
+                                       Placeholder="Thank you for your order"
+                                       TextChanged="OnKitchenFooterTextChanged"/>
+                                <Label x:Name="FooterWarningLabel"
+                                       Text="Keep footer short: max 2 centered receipt lines."
+                                       FontSize="11"
+                                       TextColor="#94A3B8"/>
+                            </VerticalStackLayout>
+
                             <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="10"
-                                  Margin="0,4,0,0">
+                                  ColumnSpacing="8"
+                                  Margin="0,8,0,16">
                                 <Button Text="Reset"
-                                        BackgroundColor="#E2E8F0"
+                                        BackgroundColor="#F8FAFC"
                                         TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
                                         CornerRadius="8"
-                                        Padding="16,10"
+                                        HeightRequest="44"
+                                        MinimumHeightRequest="44"
+                                        Padding="12,0"
+                                        FontSize="13"
                                         FontAttributes="Bold"
+                                        Style="{x:Null}"
                                         Clicked="OnResetKitchenSettingsClicked"/>
                                 <Button Grid.Column="1"
                                         x:Name="SaveKitchenSettingsButton"
@@ -333,254 +416,295 @@
                                         BackgroundColor="#0F172A"
                                         TextColor="White"
                                         CornerRadius="8"
-                                        Padding="16,10"
+                                        HeightRequest="44"
+                                        MinimumHeightRequest="44"
+                                        Padding="12,0"
+                                        FontSize="13"
                                         FontAttributes="Bold"
+                                        Style="{x:Null}"
                                         Clicked="OnSaveKitchenSettingsClicked"/>
                             </Grid>
                         </VerticalStackLayout>
                     </Border>
 
                     <Border x:Name="CollectionControlsPanel"
+                            Grid.Row="1"
                             BackgroundColor="White"
-                            Padding="22"
-                            StrokeThickness="0"
-                            IsVisible="False">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="8"/>
-                        </Border.StrokeShape>
-                        <VerticalStackLayout Spacing="14">
+                            Padding="12,10"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 12"
+                            IsVisible="False"
+                            VerticalOptions="Start"
+                            Margin="0,0,0,8">
+                        <VerticalStackLayout Spacing="8">
                             <Label x:Name="CustomerReceiptControlsTitleLabel"
                                    Text="Collection Customise"
-                                   FontSize="18"
+                                   FontSize="15"
                                    FontAttributes="Bold"
                                    TextColor="#0F172A"/>
+                            <Grid ColumnDefinitions="*,*"
+                                      ColumnSpacing="10"
+                                      HorizontalOptions="Fill">
+                                    <VerticalStackLayout Spacing="4">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="Business name" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionBusinessNameSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionBusinessNameBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="TableNumberField" ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="False">
+                                            <VerticalStackLayout x:Name="TableNumberSizeControls" Spacing="1">
+                                                <Label Text="Table number" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="TableNumberSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="TableNumberBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="TableNumberBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="PaidStatusField" ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="False">
+                                            <VerticalStackLayout x:Name="PaidStatusSizeControls" Spacing="1">
+                                                <Label Text="Paid status" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="PaidStatusSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="PaidStatusBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="PaidStatusBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="Telephone" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionPhoneSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionPhoneBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="Receipt heading" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionHeadingSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionHeadingBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="CustomerNameField" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout x:Name="CustomerNameSizeControls" Spacing="1">
+                                                <Label Text="Customer name" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionCustomerNameSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="CustomerNameBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionCustomerNameBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="DeliveryAddressField" ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="False">
+                                            <VerticalStackLayout x:Name="DeliveryAddressSizeControls" Spacing="1">
+                                                <Label Text="Delivery address" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="DeliveryAddressSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="DeliveryAddressBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="DeliveryAddressBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+                                    </VerticalStackLayout>
+
+                                    <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="Address" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionAddressSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionAddressBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="ServiceChargeField" ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="False">
+                                            <VerticalStackLayout x:Name="ServiceChargeSizeControls" Spacing="1">
+                                                <Label Text="Service charge" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="ServiceChargeSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="ServiceChargeBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="ServiceChargeBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="VAT number" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionVatSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionVatBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="Order info" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionOrderInfoSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionOrderInfoBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="CustomerPhoneField" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout x:Name="CustomerPhoneSizeControls" Spacing="1">
+                                                <Label Text="Customer phone" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionCustomerPhoneSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="CustomerPhoneBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionCustomerPhoneBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                        <Grid x:Name="PaymentField" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <VerticalStackLayout x:Name="PaymentSizeControls" Spacing="1">
+                                                <Label x:Name="PaymentControlsLabel" Text="Payment" FontSize="11" TextColor="#64748B"/>
+                                                <Picker x:Name="CollectionPaymentSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" FontSize="12" HeightRequest="32" HorizontalOptions="Fill" MinimumWidthRequest="0" SelectedIndexChanged="OnCollectionSettingChanged">
+                                                    <Picker.Items>
+                                                        <x:String>Normal</x:String>
+                                                        <x:String>Large</x:String>
+                                                        <x:String>Extra Large</x:String>
+                                                    </Picker.Items>
+                                                </Picker>
+                                            </VerticalStackLayout>
+                                            <HorizontalStackLayout x:Name="PaymentBoldControls" Grid.Column="1" Spacing="4" VerticalOptions="End" Margin="0,0,0,2">
+                                                <Switch x:Name="CollectionPaymentBoldSwitch" Scale="0.8" Toggled="OnCollectionSettingChanged"/>
+                                                <Label Text="Bold" FontSize="11" TextColor="#334155" VerticalOptions="Center"/>
+                                            </HorizontalStackLayout>
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                            <VerticalStackLayout Spacing="2">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Text="Footer text" FontSize="11" TextColor="#64748B"/>
+                                    <Label x:Name="CollectionFooterCounterLabel" Grid.Column="1" Text="0 / 60" FontSize="11" TextColor="#64748B"/>
+                                </Grid>
+                                <Entry x:Name="CollectionFooterTextEntry"
+                                       MaxLength="60"
+                                       HeightRequest="34"
+                                       BackgroundColor="#F8FAFC"
+                                       TextColor="#0F172A"
+                                       Placeholder="Thank you for your order"
+                                       TextChanged="OnCollectionFooterTextChanged"/>
+                                <Label x:Name="CollectionFooterWarningLabel"
+                                       Text="Keep footer short: max 2 centered receipt lines."
+                                       FontSize="11"
+                                       TextColor="#94A3B8"/>
+                            </VerticalStackLayout>
 
                             <Grid ColumnDefinitions="*,*"
-                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                                  ColumnSpacing="14"
-                                  RowSpacing="12">
-                                <VerticalStackLayout Spacing="6">
-                                    <Label Text="Business name" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionBusinessNameSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionBusinessNameBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="1" Spacing="6">
-                                    <Label Text="Address" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionAddressSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionAddressBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="2" Spacing="6">
-                                    <Label Text="Telephone" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionPhoneSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Row="2" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionPhoneBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="3" Spacing="6">
-                                    <Label Text="VAT number" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionVatSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Row="3" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionVatBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="4" Spacing="6">
-                                    <Label Text="Receipt heading" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionHeadingSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Row="4" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionHeadingBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="5" Spacing="6">
-                                    <Label Text="Order info" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionOrderInfoSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout Grid.Row="5" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionOrderInfoBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="CustomerNameSizeControls" Grid.Row="6" Spacing="6">
-                                    <Label Text="Customer name" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionCustomerNameSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="CustomerNameBoldControls" Grid.Row="6" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionCustomerNameBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="TableNumberSizeControls" Grid.Row="6" Spacing="6" IsVisible="False">
-                                    <Label Text="Table number" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="TableNumberSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="TableNumberBoldControls" Grid.Row="6" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8" IsVisible="False">
-                                    <Switch x:Name="TableNumberBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="CustomerPhoneSizeControls" Grid.Row="7" Spacing="6">
-                                    <Label Text="Customer phone" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionCustomerPhoneSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="CustomerPhoneBoldControls" Grid.Row="7" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionCustomerPhoneBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="PaidStatusSizeControls" Grid.Row="7" Spacing="6" IsVisible="False">
-                                    <Label Text="Paid status" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="PaidStatusSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="PaidStatusBoldControls" Grid.Row="7" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8" IsVisible="False">
-                                    <Switch x:Name="PaidStatusBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="DeliveryAddressSizeControls" Grid.Row="8" Spacing="6" IsVisible="False">
-                                    <Label Text="Delivery address" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="DeliveryAddressSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="DeliveryAddressBoldControls" Grid.Row="8" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8" IsVisible="False">
-                                    <Switch x:Name="DeliveryAddressBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="ServiceChargeSizeControls" Grid.Row="8" Spacing="6" IsVisible="False">
-                                    <Label Text="Service charge" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="ServiceChargeSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="ServiceChargeBoldControls" Grid.Row="8" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8" IsVisible="False">
-                                    <Switch x:Name="ServiceChargeBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout x:Name="PaymentSizeControls" Grid.Row="9" Spacing="6">
-                                    <Label x:Name="PaymentControlsLabel" Text="Payment" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                    <Picker x:Name="CollectionPaymentSizePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A" SelectedIndexChanged="OnCollectionSettingChanged">
-                                        <Picker.Items>
-                                            <x:String>Normal</x:String>
-                                            <x:String>Large</x:String>
-                                            <x:String>Extra Large</x:String>
-                                        </Picker.Items>
-                                    </Picker>
-                                </VerticalStackLayout>
-                                <HorizontalStackLayout x:Name="PaymentBoldControls" Grid.Row="9" Grid.Column="1" Spacing="10" VerticalOptions="End" Padding="0,0,0,8">
-                                    <Switch x:Name="CollectionPaymentBoldSwitch" Toggled="OnCollectionSettingChanged"/>
-                                    <Label Text="Bold" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center"/>
-                                </HorizontalStackLayout>
-
-                                <VerticalStackLayout Grid.Row="10" Grid.ColumnSpan="2" Spacing="6">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <Label Text="Footer text" FontSize="13" FontAttributes="Bold" TextColor="#475569"/>
-                                        <Label x:Name="CollectionFooterCounterLabel" Grid.Column="1" Text="0 / 60" FontSize="12" FontAttributes="Bold" TextColor="#64748B"/>
-                                    </Grid>
-                                    <Entry x:Name="CollectionFooterTextEntry"
-                                           MaxLength="60"
-                                           BackgroundColor="#F8FAFC"
-                                           TextColor="#0F172A"
-                                           Placeholder="Thank you for your order"
-                                           TextChanged="OnCollectionFooterTextChanged"/>
-                                    <Label x:Name="CollectionFooterWarningLabel"
-                                           Text="Keep footer short: max 2 centered receipt lines."
-                                           FontSize="12"
-                                           TextColor="#64748B"/>
-                                </VerticalStackLayout>
-                            </Grid>
-
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="10"
-                                  Margin="0,4,0,0">
+                                  ColumnSpacing="8"
+                                  Margin="0,8,0,16">
                                 <Button Text="Reset"
-                                        BackgroundColor="#E2E8F0"
+                                        BackgroundColor="#F8FAFC"
                                         TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
                                         CornerRadius="8"
-                                        Padding="16,10"
+                                        HeightRequest="44"
+                                        MinimumHeightRequest="44"
+                                        Padding="12,0"
+                                        FontSize="13"
                                         FontAttributes="Bold"
+                                        Style="{x:Null}"
                                         Clicked="OnResetCollectionSettingsClicked"/>
                                 <Button Grid.Column="1"
                                         x:Name="SaveCollectionSettingsButton"
@@ -588,15 +712,30 @@
                                         BackgroundColor="#0F172A"
                                         TextColor="White"
                                         CornerRadius="8"
-                                        Padding="16,10"
+                                        HeightRequest="44"
+                                        MinimumHeightRequest="44"
+                                        Padding="12,0"
+                                        FontSize="13"
                                         FontAttributes="Bold"
+                                        Style="{x:Null}"
                                         Clicked="OnSaveCollectionSettingsClicked"/>
                             </Grid>
                         </VerticalStackLayout>
                     </Border>
 
-                </VerticalStackLayout>
+                </Grid>
+
+                <BoxView x:Name="PageScrollSpacer"
+                         Grid.Row="2"
+                         Grid.Column="0"
+                         Grid.ColumnSpan="2"
+                         HeightRequest="160"
+                         BackgroundColor="Transparent"/>
             </Grid>
         </ScrollView>
+
+        <BoxView Grid.Row="2"
+                 BackgroundColor="#F1F5F9"
+                 HeightRequest="96"/>
     </Grid>
 </ContentPage>

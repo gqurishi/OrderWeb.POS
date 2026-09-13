@@ -54,31 +54,48 @@ public partial class PrintTemplatesPage : ContentPage
             return;
         }
 
-        var tablet = Width <= 1280 || Height <= 800;
+        var stack = Width < 980;
         TemplateLayoutGrid.ColumnDefinitions.Clear();
         TemplateLayoutGrid.RowDefinitions.Clear();
+        TemplateLayoutGrid.Padding = new Thickness(16, 12, 16, 28);
+        TemplateLayoutGrid.ColumnSpacing = stack ? 0 : 12;
+        TemplateLayoutGrid.RowSpacing = 10;
 
-        if (tablet)
+        if (stack)
         {
             TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
             TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            TemplateLayoutGrid.Padding = new Thickness(16);
-            TemplateLayoutGrid.ColumnSpacing = 0;
-            TemplateLayoutGrid.RowSpacing = 18;
+            TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            Grid.SetColumn(TemplateHeaderPanel, 0);
+            Grid.SetRow(TemplateHeaderPanel, 0);
+            Grid.SetColumnSpan(TemplateHeaderPanel, 1);
+            Grid.SetColumn(TemplatePreviewPanel, 0);
+            Grid.SetRow(TemplatePreviewPanel, 1);
             Grid.SetColumn(TemplateSettingsPanel, 0);
-            Grid.SetRow(TemplateSettingsPanel, 1);
+            Grid.SetRow(TemplateSettingsPanel, 2);
+            Grid.SetColumn(PageScrollSpacer, 0);
+            Grid.SetRow(PageScrollSpacer, 3);
+            Grid.SetColumnSpan(PageScrollSpacer, 1);
             return;
         }
 
+        TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(380)));
         TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-        TemplateLayoutGrid.ColumnDefinitions.Add(new ColumnDefinition(420));
         TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        TemplateLayoutGrid.Padding = new Thickness(32);
-        TemplateLayoutGrid.ColumnSpacing = 28;
-        TemplateLayoutGrid.RowSpacing = 0;
+        TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        TemplateLayoutGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        Grid.SetColumn(TemplateHeaderPanel, 0);
+        Grid.SetRow(TemplateHeaderPanel, 0);
+        Grid.SetColumnSpan(TemplateHeaderPanel, 2);
+        Grid.SetColumn(TemplatePreviewPanel, 0);
+        Grid.SetRow(TemplatePreviewPanel, 1);
         Grid.SetColumn(TemplateSettingsPanel, 1);
-        Grid.SetRow(TemplateSettingsPanel, 0);
+        Grid.SetRow(TemplateSettingsPanel, 1);
+        Grid.SetColumn(PageScrollSpacer, 0);
+        Grid.SetRow(PageScrollSpacer, 2);
+        Grid.SetColumnSpan(PageScrollSpacer, 2);
     }
 
     protected override async void OnAppearing()
@@ -267,8 +284,11 @@ public partial class PrintTemplatesPage : ContentPage
 
     private static void StylePreviewButton(Button button, bool isSelected)
     {
-        button.BackgroundColor = Color.FromArgb(isSelected ? "#0F172A" : "#E2E8F0");
+        button.Style = null;
+        button.BackgroundColor = Color.FromArgb(isSelected ? "#2563EB" : "#FFFFFF");
         button.TextColor = Color.FromArgb(isSelected ? "#FFFFFF" : "#334155");
+        button.BorderColor = Color.FromArgb(isSelected ? "#2563EB" : "#E2E8F0");
+        button.BorderWidth = 1;
     }
 
     private async Task LoadKitchenSettingsAsync()
@@ -408,20 +428,13 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.TablePayment => "Table Payment Customise",
             _ => "Collection Customise"
         };
-        CustomerNameSizeControls.IsVisible = !isTableReceipt;
-        CustomerNameBoldControls.IsVisible = !isTableReceipt;
-        CustomerPhoneSizeControls.IsVisible = !isTableReceipt;
-        CustomerPhoneBoldControls.IsVisible = !isTableReceipt;
-        PaidStatusSizeControls.IsVisible = isTablePayment;
-        PaidStatusBoldControls.IsVisible = isTablePayment;
-        TableNumberSizeControls.IsVisible = isTableReceipt;
-        TableNumberBoldControls.IsVisible = isTableReceipt;
-        DeliveryAddressSizeControls.IsVisible = isDelivery;
-        DeliveryAddressBoldControls.IsVisible = isDelivery;
-        ServiceChargeSizeControls.IsVisible = isTableReceipt;
-        ServiceChargeBoldControls.IsVisible = isTableReceipt;
-        PaymentSizeControls.IsVisible = !isTableBill;
-        PaymentBoldControls.IsVisible = !isTableBill;
+        CustomerNameField.IsVisible = !isTableReceipt;
+        CustomerPhoneField.IsVisible = !isTableReceipt;
+        PaidStatusField.IsVisible = isTablePayment;
+        TableNumberField.IsVisible = isTableReceipt;
+        DeliveryAddressField.IsVisible = isDelivery;
+        ServiceChargeField.IsVisible = isTableReceipt;
+        PaymentField.IsVisible = !isTableBill;
         PaymentControlsLabel.Text = isTablePayment ? "Payment details" : "Payment";
         CollectionBusinessNameSizePicker.SelectedIndex = GetSizeIndex(settings.BusinessNameSize);
         CollectionBusinessNameBoldSwitch.IsToggled = settings.BusinessNameBold;

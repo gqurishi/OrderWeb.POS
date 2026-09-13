@@ -16,5 +16,5 @@ public static class PosDatabaseDefaults
     public const string InstallerConfigFolderName = "OrderWebPOS";
 
     /// <summary>Must match the highest numbered migration in database/migrations/.</summary>
-    public const int RequiredSchemaVersion = 36;
+    public const int RequiredSchemaVersion = 42;
 }

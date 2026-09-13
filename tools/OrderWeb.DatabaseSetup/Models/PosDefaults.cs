@@ -9,5 +9,5 @@ public static class PosDefaults
     public const string BackupExtension = ".orderwebbackup";
     public const string BackupFormat = "orderwebbackup-v2-aes256gcm";
     public const string ProductName = "OrderWebPOS";
-    public const int RequiredSchemaVersion = 37;
+    public const int RequiredSchemaVersion = 42;
 }

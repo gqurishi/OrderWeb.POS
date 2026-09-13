@@ -65,7 +65,7 @@ The architecture must allow later `Brother QL` and `Xprinter TSPL` adapters to c
 
 An accepted response means the durable job exists; it does not mean the label has physically printed. The UI must distinguish `Accepted/Queued` from `Printed`.
 
-Mother builds the printable snapshot from authoritative data. Client supplies identities and intent, not trusted printable item names, allergen text, prices, printer addresses, TPCL, or arbitrary commands.
+Mother builds the printable name snapshot from authoritative data. Client supplies identities and intent, not trusted printable text, printer addresses, TPCL, or arbitrary commands.
 
 ## Component boundaries
 
@@ -73,23 +73,13 @@ Mother builds the printable snapshot from authoritative data. Client supplies id
 
 Label content describes meaning only. It has no coordinates, printer commands, IP address, or retry information.
 
-The canonical snapshot can contain:
+The printable snapshot contains exactly one value: the authoritative item name or component name. The physical label must not contain quantity text, modifiers, notes, order number, table/customer reference, date/time, allergen text, price, or other information.
 
-- item name;
-- quantity represented by this label;
-- modifiers/options;
-- preparation notes;
-- order reference;
-- table, collection, delivery, or customer reference;
-- order and preparation times;
-- short allergen warning;
-- stable order, order-line, request, and label identifiers;
-- copy number and total copies when one label is produced per container/component;
-- source terminal and requesting user identifiers for audit only.
+Order ID, order-item ID, content type (`item` or `component`), copy count, source terminal, and request/job identities are stored as job metadata for routing, deduplication, and audit. They are not label content and must not be passed into the printable template.
 
 Content is snapshotted when the durable job is created. A retry uses that immutable snapshot so later order edits cannot silently change an already accepted label.
 
-Do not place full customer details, phone numbers, addresses, payment information, or unnecessary personal data on an item label. A template may use a short collection/customer reference only when operationally required.
+No customer or payment data is permitted in the printable snapshot.
 
 ### 2. Logical label template
 
@@ -99,19 +89,19 @@ The logical template describes layout independently of TPCL, Brother commands, o
 - media profile and orientation;
 - label width and height in millimetres;
 - safe margins;
-- logical fields and priority;
-- font role and size intent;
+- item/component name, quantity, modifiers, operational order context and preparation time fields;
+- font size and emphasis;
 - alignment, maximum lines, truncation/wrapping policy, and overflow behaviour;
-- field positions or layout regions;
-- barcode/QR payload, position, and size when enabled;
-- optional rules, separators, and emphasis;
-- minimum readable allergen treatment.
+- field positions within the safe print area;
+- deterministic wrapping and overflow handling.
 
 The initial production template targets the certified `60 x 40 mm` media profile. `51 x 30 mm` will be a separate compact template/profile, not an automatic scale-down of the larger template.
 
 The job records the selected template ID and revision. Editing a template affects future jobs only. Reprints of an existing job use the stored content and template revision unless an authorised operator explicitly requests regeneration using the current order and template.
 
 Text fitting must be deterministic. Every template defines maximum lines and an explicit overflow rule. Printer adapters must not invent different wrapping rules for the same logical template.
+
+The v1 text template does not contain barcode, QR, logos or graphics.
 
 ### 3. Model/media profile
 
@@ -354,4 +344,3 @@ Phase 3 architecture is approved when:
 - no user-controlled data can become executable TPCL;
 - future Brother QL and Xprinter TSPL support can reuse all vendor-neutral layers;
 - physical printer confirmation remains a later hardware test rather than an architectural assumption.
-

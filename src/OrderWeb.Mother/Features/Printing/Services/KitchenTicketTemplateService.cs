@@ -15,7 +15,7 @@ public static class KitchenTicketTemplateService
         NetworkPrinter? printer = null)
     {
         var builder = new EscPosBuilder(
-            printer?.Brand ?? PrinterBrand.Epson,
+            printer?.Brand ?? PrinterBrand.Star,
             printer?.PaperWidth ?? PaperWidth.Mm80).Initialize();
         var fireText = string.IsNullOrWhiteSpace(order.KitchenTicketType)
             ? "FIRE COURSE"
@@ -55,7 +55,7 @@ public static class KitchenTicketTemplateService
         NetworkPrinter? printer = null)
     {
         settings = NormalizeSettings(settings);
-        var builder = new EscPosBuilder(PrinterBrand.Epson, PaperWidth.Mm80).Initialize();
+        var builder = new EscPosBuilder(PrinterBrand.Star, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
         var tableTitle = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
@@ -278,7 +278,7 @@ public static class KitchenTicketTemplateService
     }
 
     private static bool SupportsRedInk(NetworkPrinter? printer) =>
-        printer is { SupportsTwoColor: true, Brand: PrinterBrand.Epson };
+        printer is { SupportsTwoColor: true };
 
     private static void PrintCloudItem(EscPosBuilder builder, CloudOrderItem item)
     {

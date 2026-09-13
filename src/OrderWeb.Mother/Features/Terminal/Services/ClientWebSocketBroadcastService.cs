@@ -3631,6 +3631,9 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 messages.Add(routingResult.HasFailures
                     ? $"Kitchen/bar tickets partly queued on Mother IP printers: {string.Join("; ", routingResult.FailedRoutes)}"
                     : "Kitchen/bar tickets queued on Mother IP printers.");
+                var labelMessage = await EnqueueToshibaLabelsAsync(ToKitchenPrintOrder(order), routingResult.PrintedItemIds, session.TerminalId);
+                if (!string.IsNullOrWhiteSpace(labelMessage))
+                    messages.Add(labelMessage);
             }
             else
             {
@@ -3747,6 +3750,29 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         return Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) &&
                role != UserRole.Admin &&
                MotherCapabilityResolver.ForRole(role).Contains(capability);
+    }
+
+    private static async Task<string?> EnqueueToshibaLabelsAsync(TableOrder printOrder, ISet<string> printedItemIds, string sourceTerminal)
+    {
+        try
+        {
+            var labels = ServiceHelper.GetService<ToshibaOrderLabelService>();
+            if (labels == null || printedItemIds.Count == 0)
+                return null;
+
+            var result = await labels.EnqueueForPrintedItemsAsync(printOrder, printedItemIds, sourceTerminal);
+            if (!result.HandledByToshiba || result.Attempted == 0 && result.Failed == 0)
+                return null;
+            if (result.Failed > 0)
+                return $"Labels need attention: {string.Join("; ", result.Errors)}";
+            return result.Queued > 0
+                ? "Toshiba labels queued on Mother."
+                : null;
+        }
+        catch (Exception ex)
+        {
+            return $"Labels need attention: {ex.Message}";
+        }
     }
 
     private static TableOrder ToKitchenPrintOrder(Order order)

@@ -6,19 +6,20 @@ namespace POS_in_NET.Models;
 /// </summary>
 public static class LabelPrinterProfiles
 {
-    public const string ToshibaManufacturer = "Toshiba";
+    public const string ToshibaManufacturer = "toshiba";
     public const string ToshibaBfv4dGs14Model = "Toshiba B-FV4D-GS14 LAN";
-    public const string ToshibaBfv4dGs14Code = "B-FV4D-GS14-QM-R";
+    public const string ToshibaBfv4dGs14Code = "b-fv4d-gs14";
     public const decimal ToshibaBfv4dMaximumPrintWidthMm = 108m;
 
     public static void ApplyToshibaBfv4dGs14(NetworkPrinter printer)
     {
         printer.Brand = PrinterBrand.Toshiba;
         printer.PrinterType = NetworkPrinterType.Label;
-        printer.Technology = "Label Printer";
+        printer.Technology = "label";
         printer.Manufacturer = ToshibaManufacturer;
         printer.ModelCode = ToshibaBfv4dGs14Code;
         printer.Protocol = "TPCL";
+        printer.ModuleIdentifier = "toshiba_tpcl";
         printer.ResolutionDpi = 203;
         printer.PrintingMethod = "Direct thermal";
         printer.MaximumPrintWidthMm = ToshibaBfv4dMaximumPrintWidthMm;

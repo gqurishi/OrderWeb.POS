@@ -171,12 +171,12 @@ namespace MyFirstMauiApp.Services
                     (Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder, IsFeatured,
                      PreparationTime, VatRate, VatType, IsVatExempt, VatNotes, Addons, Tags, print_in_red,
                      vat_config_type, vat_category, calculated_vat_rate, ItemType, label_text, print_component_labels,
-                     component_labels_json, print_group_id, CreatedAt, UpdatedAt)
+                     component_labels_json, also_print_main_label, print_group_id, CreatedAt, UpdatedAt)
                     VALUES 
                     (@Id, @CategoryId, @Name, @Description, @Price, @PriceDineIn, @PriceTakeaway, @Color, @DisplayOrder, @IsFeatured,
                      @PreparationTime, @VatRate, @VatType, @IsVatExempt, @VatNotes, @Addons, @Tags, @PrintInRed,
                      @VatConfigType, @VatCategory, @CalculatedVatRate, @ItemType, @LabelText, @PrintComponentLabels,
-                     @ComponentLabelsJson, @PrintGroupId, @CreatedAt, @UpdatedAt)";
+                     @ComponentLabelsJson, @AlsoPrintMainLabel, @PrintGroupId, @CreatedAt, @UpdatedAt)";
 
                 using var command = new MySqlCommand(query, connection);
                 AddFoodMenuItemParameters(command, item);
@@ -234,6 +234,7 @@ namespace MyFirstMauiApp.Services
                         label_text = @LabelText,
                         print_component_labels = @PrintComponentLabels,
                         component_labels_json = @ComponentLabelsJson,
+                        also_print_main_label = @AlsoPrintMainLabel,
                         print_group_id = @PrintGroupId,
                         UpdatedAt = @UpdatedAt
                     WHERE Id = @Id";
@@ -429,6 +430,7 @@ namespace MyFirstMauiApp.Services
                 ADD COLUMN IF NOT EXISTS label_text VARCHAR(100) NULL,
                 ADD COLUMN IF NOT EXISTS print_component_labels TINYINT(1) NOT NULL DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS component_labels_json TEXT NULL,
+                ADD COLUMN IF NOT EXISTS also_print_main_label TINYINT(1) NOT NULL DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL";
 
             using (var alterCommand = new MySqlCommand(alterSql, connection))
@@ -737,6 +739,13 @@ namespace MyFirstMauiApp.Services
 
             try
             {
+                var ordinal = reader.GetOrdinal("also_print_main_label");
+                if (!reader.IsDBNull(ordinal)) item.AlsoPrintMainLabel = reader.GetBoolean(ordinal);
+            }
+            catch { /* Column doesn't exist yet */ }
+
+            try
+            {
                 var takeawayOrdinal = reader.GetOrdinal("price_takeaway");
                 if (!reader.IsDBNull(takeawayOrdinal))
                 {
@@ -879,6 +888,7 @@ namespace MyFirstMauiApp.Services
             command.Parameters.AddWithValue("@LabelText", (object?)item.LabelText ?? DBNull.Value);
             command.Parameters.AddWithValue("@PrintComponentLabels", item.PrintComponentLabels);
             command.Parameters.AddWithValue("@ComponentLabelsJson", (object?)item.ComponentLabelsJson ?? DBNull.Value);
+            command.Parameters.AddWithValue("@AlsoPrintMainLabel", item.AlsoPrintMainLabel);
             
             // Add print group
             command.Parameters.AddWithValue("@PrintGroupId", (object?)item.PrintGroupId ?? DBNull.Value);

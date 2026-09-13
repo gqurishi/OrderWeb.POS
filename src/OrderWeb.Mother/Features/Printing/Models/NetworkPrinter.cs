@@ -13,7 +13,7 @@ public class NetworkPrinter
     public int Port { get; set; } = 9100;
     
     // Configuration
-    public PrinterBrand Brand { get; set; } = PrinterBrand.Epson;
+    public PrinterBrand Brand { get; set; } = PrinterBrand.Star;
     public NetworkPrinterType PrinterType { get; set; } = NetworkPrinterType.Receipt;
     public PaperWidth PaperWidth { get; set; } = PaperWidth.Mm80;
     public string? PrintGroupId { get; set; } // Link to print_groups table
@@ -24,6 +24,7 @@ public class NetworkPrinter
     public string? Manufacturer { get; set; }
     public string? ModelCode { get; set; }
     public string? Protocol { get; set; }
+    public string? ModuleIdentifier { get; set; }
     public int? ResolutionDpi { get; set; }
     public string? PrintingMethod { get; set; }
     public decimal? MaximumPrintWidthMm { get; set; }
@@ -31,6 +32,7 @@ public class NetworkPrinter
     public string? Transport { get; set; }
     public string? WindowsDriver { get; set; }
     public string? LabelProfile { get; set; }
+    public string? LabelMediaProfileId { get; set; }
     public decimal? MediaWidthMm { get; set; }
     public decimal? LabelWidthMm { get; set; }
     public decimal? LabelHeightMm { get; set; }
@@ -43,6 +45,8 @@ public class NetworkPrinter
     public LabelFinishingMode FinishingMode { get; set; } = LabelFinishingMode.TearOff;
     public int NumberOfCopies { get; set; } = 1;
     public bool IsDefaultLabelPrinter { get; set; }
+    public DateTime? LastSuccessfulPhysicalTest { get; set; }
+    public string? FirmwareVersion { get; set; }
     
     // Features
     public bool HasCashDrawer { get; set; }
@@ -84,7 +88,9 @@ public class NetworkPrinter
     {
         PrinterBrand.Epson => "Epson",
         PrinterBrand.Star => "Star",
+        PrinterBrand.Xprinter => "Xprinter",
         PrinterBrand.Toshiba => "Toshiba",
+        PrinterBrand.Brother => "Brother",
         PrinterBrand.Other => "Other",
         _ => "Unknown"
     };
@@ -97,7 +103,9 @@ public enum PrinterBrand
 {
     Epson,
     Star,
+    Xprinter,
     Toshiba,
+    Brother,
     Other
 }
 

@@ -90,6 +90,7 @@ public static class BackgroundSyncJobRegistrar
         var printingPolicyService = services.GetRequiredService<PrintingPolicyService>();
         var printerHealthService = services.GetRequiredService<PrinterHealthService>();
         var printQueueService = services.GetRequiredService<NetworkPrintQueueService>();
+        var labelQueueService = services.GetRequiredService<LabelPrintQueueService>();
 
         await printerDbService.EnsureTablesExistAsync();
         await cashDrawerService.EnsureTableExistsAsync();
@@ -146,6 +147,7 @@ public static class BackgroundSyncJobRegistrar
                 }
 
                 await printQueueService.ProcessQueueAsync();
+                await labelQueueService.ProcessQueueAsync(cancellationToken);
                 return BackgroundSyncRunResult.Completed("Print queue checked.");
             });
     }

@@ -47,6 +47,8 @@ FROM (
     SELECT 'print_groups' UNION ALL
     SELECT 'network_printers' UNION ALL
     SELECT 'network_print_queue' UNION ALL
+    SELECT 'label_media_profiles' UNION ALL
+    SELECT 'label_print_jobs' UNION ALL
     SELECT 'printer_settings' UNION ALL
     SELECT 'cash_drawer_events' UNION ALL
     SELECT 'till_expenses' UNION ALL
@@ -153,7 +155,30 @@ FROM (
     UNION ALL SELECT 'orders', 'payment_currency'
     UNION ALL SELECT 'orders', 'voucher_code'
     UNION ALL SELECT 'network_printers', 'supports_two_color'
+    UNION ALL SELECT 'network_printers', 'technology'
+    UNION ALL SELECT 'network_printers', 'manufacturer'
+    UNION ALL SELECT 'network_printers', 'model_code'
+    UNION ALL SELECT 'network_printers', 'module_identifier'
+    UNION ALL SELECT 'network_printers', 'resolution_dpi'
+    UNION ALL SELECT 'network_printers', 'is_default_label_printer'
+    UNION ALL SELECT 'network_printers', 'label_media_profile_id'
+    UNION ALL SELECT 'network_printers', 'last_successful_physical_test'
+    UNION ALL SELECT 'network_printers', 'firmware_version'
+    UNION ALL SELECT 'label_media_profiles', 'profile_name'
+    UNION ALL SELECT 'label_media_profiles', 'sensor_type'
+    UNION ALL SELECT 'label_print_jobs', 'printable_name_snapshot'
+    UNION ALL SELECT 'label_print_jobs', 'payload_snapshot'
+    UNION ALL SELECT 'label_print_jobs', 'generated_tpcl_data'
+    UNION ALL SELECT 'label_print_jobs', 'reprint_of_job_id'
+    UNION ALL SELECT 'label_print_jobs', 'network_reachable'
+    UNION ALL SELECT 'label_print_jobs', 'port_reachable'
+    UNION ALL SELECT 'label_print_jobs', 'protocol_confirmed'
+    UNION ALL SELECT 'label_print_jobs', 'data_accepted'
+    UNION ALL SELECT 'label_print_jobs', 'physical_label_confirmed'
+    UNION ALL SELECT 'label_print_jobs', 'printer_status_response'
+    UNION ALL SELECT 'label_print_jobs', 'transport_phase'
     UNION ALL SELECT 'order_items', 'print_in_red'
+    UNION ALL SELECT 'FoodMenuItems', 'also_print_main_label'
     UNION ALL SELECT 'order_items', 'course_type'
     UNION ALL SELECT 'order_items', 'fired_at'
     UNION ALL SELECT 'order_items', 'fired_by'

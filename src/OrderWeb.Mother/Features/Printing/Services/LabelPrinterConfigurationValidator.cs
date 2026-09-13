@@ -58,6 +58,9 @@ public static class LabelPrinterConfigurationValidator
         if (printer.FinishingMode == LabelFinishingMode.Cutter && !cutterInstalled)
             return "Cutter cannot be selected because this model profile has no verified cutter installed.";
 
+        if (printer.IsDefaultLabelPrinter && !printer.IsEnabled)
+            return "The default label printer must be enabled.";
+
         return null;
     }
 

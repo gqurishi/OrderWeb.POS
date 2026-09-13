@@ -266,6 +266,7 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public string ItemType { get; set; } = "Food";
         public string? LabelText { get; set; }
         public bool PrintComponentLabels { get; set; }
+        public bool AlsoPrintMainLabel { get; set; }
         public string? ComponentLabelsJson { get; set; }
         public string? PrintGroupId { get; set; }
 
