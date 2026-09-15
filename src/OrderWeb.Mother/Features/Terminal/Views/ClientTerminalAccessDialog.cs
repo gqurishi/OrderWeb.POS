@@ -28,7 +28,7 @@ public sealed class ClientTerminalAccessDialog : ContentView
             _switches[key] = toggle;
 
             var note = string.Equals(key, OrderWeb.Contracts.Features.PosFeatureKeys.Reservations, StringComparison.OrdinalIgnoreCase)
-                ? "On by default so Client matches Mother. Turn off to hide on this Client."
+                ? "Off hides Reservations on this Client only (same as the other switches)."
                 : null;
 
             var labels = new VerticalStackLayout

@@ -10,7 +10,7 @@ public sealed class CashierDayBoard
     public string Vat { get; init; } = "£0.00";
     public string Cash { get; init; } = "£0.00";
     public string Card { get; init; } = "£0.00";
-    public string Tips { get; init; } = "£0.00";
+    public string GiftCard { get; init; } = "£0.00";
     public string PosSales { get; init; } = "£0.00 (0)";
     public string OnlineSales { get; init; } = "£0.00 (0)";
     public string PettyCashOut { get; init; } = "£0.00";

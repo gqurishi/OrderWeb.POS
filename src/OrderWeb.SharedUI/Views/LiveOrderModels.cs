@@ -6,7 +6,8 @@ public enum LiveOrderFilter
     All,
     Collection,
     Delivery,
-    Table
+    Table,
+    Web
 }
 
 /// <summary>Order card vs Mother table-session card.</summary>
@@ -114,6 +115,7 @@ public static class LiveOrderSampleData
         LiveOrderFilter.Collection => "No open collection orders",
         LiveOrderFilter.Delivery => "No open delivery orders",
         LiveOrderFilter.Table => "No active table sessions",
+        LiveOrderFilter.Web => "No cash-due web orders",
         _ => "No open local orders"
     };
 
@@ -122,6 +124,7 @@ public static class LiveOrderSampleData
         LiveOrderFilter.Collection => OrderCards.Where(c => c.Title == "Collection").ToList(),
         LiveOrderFilter.Delivery => OrderCards.Where(c => c.Title == "Delivery").ToList(),
         LiveOrderFilter.Table => TableSessionCards,
+        LiveOrderFilter.Web => OrderCards.Where(c => c.Badges?.Any(b => b.Text == "CASH DUE") == true).ToList(),
         _ => OrderCards
     };
 }

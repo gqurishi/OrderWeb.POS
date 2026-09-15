@@ -64,6 +64,19 @@ namespace POS_in_NET.Views
             }
         }
 
+        /// <summary>Live Order Web cash-due: Cash + Card only (no gift card).</summary>
+        public void SetCashAndCardOnly()
+        {
+            GiftCardButton.IsVisible = false;
+            PaymentButtonsGrid.ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new ColumnDefinition { Width = GridLength.Star },
+                new ColumnDefinition { Width = GridLength.Star }
+            };
+            Grid.SetColumn(CashButton, 0);
+            Grid.SetColumn(CardButton, 1);
+        }
+
         public async Task<PaymentMethod> ShowAsync()
         {
             using var idleGuard = POS_in_NET.Services.ServiceHelper.GetService<InactivityService>()?.BeginCriticalActivity();

@@ -76,7 +76,7 @@ public partial class CashierDashboardPage : ContentPage
             Vat = snapshot.VatDisplay,
             Cash = snapshot.CashDisplay,
             Card = snapshot.CardDisplay,
-            Tips = snapshot.TipsDisplay,
+            GiftCard = snapshot.GiftCardDisplay,
             PosSales = $"{snapshot.PosDisplay} ({snapshot.PosOrderCount})",
             OnlineSales = $"{snapshot.OnlineDisplay} ({snapshot.OnlineOrderCount})",
             PettyCashOut = snapshot.TillNetOutDisplay,

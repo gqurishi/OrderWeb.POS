@@ -608,7 +608,7 @@ public class OrderService
                     service_charge_basis = CASE WHEN @serviceChargeBasis > 0 THEN @serviceChargeBasis ELSE service_charge_basis END,
                     service_charge_amount = CASE WHEN @serviceChargeAmount > 0 OR service_charge_amount = 0 THEN @serviceChargeAmount ELSE service_charge_amount END,
                     service_charge_status = CASE WHEN @serviceChargeStatus <> 'not_configured' THEN @serviceChargeStatus ELSE service_charge_status END,
-                    tax_amount = CASE WHEN @taxAmount > 0 OR tax_amount = 0 THEN @taxAmount ELSE tax_amount END,
+                    tax_amount = @taxAmount,
                     cash_tip_amount = CASE WHEN @cashTipAmount > 0 OR cash_tip_amount = 0 THEN @cashTipAmount ELSE cash_tip_amount END,
                     card_tip_amount = CASE WHEN @cardTipAmount > 0 OR card_tip_amount = 0 THEN @cardTipAmount ELSE card_tip_amount END,
                     order_type = COALESCE(NULLIF(@orderType, ''), order_type),
@@ -1196,6 +1196,59 @@ public class OrderService
         }
         
         return null;
+    }
+
+    /// <summary>
+    /// Live Order / POS till: set final cash|card tender + paid flags for History before close.
+    /// Avoids full UpdateOrderAsync concurrency checks on quick web cash-due pay.
+    /// </summary>
+    public async Task<bool> ApplyPosTenderAsync(string externalOrderId, string paymentMethod, decimal amountPaid)
+    {
+        if (string.IsNullOrWhiteSpace(externalOrderId))
+        {
+            return false;
+        }
+
+        var tender = (paymentMethod ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "card" => "card",
+            "gift_card" or "giftcard" or "voucher" => "gift_card",
+            _ => "cash"
+        };
+
+        try
+        {
+            using var connection = new MySqlConnection(TerminalConfigurationService.GetPosConnectionString());
+            await connection.OpenAsync();
+            await EnsureLifecycleSchemaAsync(connection);
+
+            const string sql = @"
+                UPDATE orders
+                SET payment_method = @paymentMethod,
+                    payment_status = 'paid',
+                    amount_paid = @amountPaid,
+                    paid_at = COALESCE(paid_at, @paidAt),
+                    updated_at = @updatedAt,
+                    updated_by_terminal_name = @terminalName,
+                    updated_by_terminal_at = @updatedAt
+                WHERE order_id = @orderId
+                  AND COALESCE(is_open, 1) = 1
+                  AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided', 'closed')";
+
+            using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@paymentMethod", tender);
+            command.Parameters.AddWithValue("@amountPaid", Math.Max(0m, amountPaid));
+            command.Parameters.AddWithValue("@paidAt", DateTime.Now);
+            command.Parameters.AddWithValue("@updatedAt", DateTime.Now);
+            command.Parameters.AddWithValue("@terminalName", GetCurrentTerminalName());
+            command.Parameters.AddWithValue("@orderId", externalOrderId.Trim());
+            return await command.ExecuteNonQueryAsync() > 0;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"ApplyPosTenderAsync failed: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<bool> UpdateOrderStatusAsync(int orderId, OrderStatus newStatus)

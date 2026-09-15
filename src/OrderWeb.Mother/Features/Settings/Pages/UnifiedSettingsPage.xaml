@@ -486,7 +486,7 @@
                                                 Padding="14,0"
                                                 Clicked="OnSaveOrderServicesClicked"/>
                                     </Grid>
-                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
                                         <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" Padding="8,6" StrokeShape="RoundRectangle 10">
                                             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="0">
                                                 <Label Text="Table Service" FontSize="13" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
@@ -506,6 +506,13 @@
                                                 <Label Text="Delivery" FontSize="13" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
                                                 <Switch x:Name="DeliveryServiceSwitch" Grid.Column="1" Grid.RowSpan="2" Toggled="OnOrderServiceSwitchToggled" OnColor="#059669" Scale="0.8" VerticalOptions="Center"/>
                                                 <Label x:Name="DeliveryServiceStateLabel" Grid.Row="1" Text="Enabled" FontSize="11" TextColor="#047857"/>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Column="3" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" Padding="8,6" StrokeShape="RoundRectangle 10">
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="0">
+                                                <Label Text="Reservation" FontSize="13" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center"/>
+                                                <Switch x:Name="ReservationServiceSwitch" Grid.Column="1" Grid.RowSpan="2" Toggled="OnOrderServiceSwitchToggled" OnColor="#059669" Scale="0.8" VerticalOptions="Center"/>
+                                                <Label x:Name="ReservationServiceStateLabel" Grid.Row="1" Text="Enabled" FontSize="11" TextColor="#047857"/>
                                             </Grid>
                                         </Border>
                                     </Grid>

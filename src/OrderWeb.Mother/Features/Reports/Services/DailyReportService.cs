@@ -3,6 +3,7 @@ using Syncfusion.Drawing;
 using Syncfusion.Pdf;
 using Syncfusion.Pdf.Graphics;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using POS_in_NET.Models;
 using PdfColor = Syncfusion.Drawing.Color;
@@ -56,7 +57,66 @@ public sealed class ReportSummary
 	public decimal TotalTips => CashTips + CardTips;
 	public decimal RefundTotal { get; set; }
 	public decimal FinalMoneyCollected { get; set; }
+	public decimal CashTotal { get; set; }
+	public decimal CardTotal { get; set; }
+	public decimal GiftCardTotal { get; set; }
 	public decimal AverageOrderValue { get; set; }
+}
+
+/// <summary>VAT tab period totals for HMRC-facing summary + export.</summary>
+public sealed class VatPeriodSnapshot
+{
+	public DateTime StartDate { get; set; }
+	public DateTime EndDate { get; set; }
+	public ReportSummary Summary { get; set; } = new();
+	public int ZeroTaxOrderCount { get; set; }
+	public List<VatRateBandRow> RateBands { get; set; } = new();
+
+	public int DayCount => Math.Max(1, (EndDate.Date - StartDate.Date).Days + 1);
+
+	public string PeriodLabel =>
+		$"{StartDate:d MMM yyyy} – {EndDate:d MMM yyyy} · {DayCount} day{(DayCount == 1 ? string.Empty : "s")}";
+
+	public decimal RateBandsVatTotal => RateBands.Sum(b => b.VatAmount);
+
+	public decimal RateBandsNetTotal => RateBands.Sum(b => b.TaxableNet);
+
+	public bool RateBandsExplainTotal =>
+		RateBands.Count > 0
+		&& Math.Abs(RateBandsVatTotal - Summary.VatAmount) <= 0.05m;
+
+	/// <summary>Soft warning when a meaningful share of paid orders have £0 tax recorded.</summary>
+	public bool ShouldWarnZeroTax
+	{
+		get
+		{
+			if (ZeroTaxOrderCount <= 0 || Summary.OrderCount <= 0)
+			{
+				return false;
+			}
+
+			if (ZeroTaxOrderCount >= 3 && ZeroTaxOrderCount * 100 >= Summary.OrderCount * 25)
+			{
+				return true;
+			}
+
+			return ZeroTaxOrderCount >= 5;
+		}
+	}
+}
+
+public sealed class VatRateBandRow
+{
+	public string BandKey { get; set; } = "other";
+	public decimal? RatePercent { get; set; }
+	public string Label { get; set; } = "Other";
+	public decimal TaxableNet { get; set; }
+	public decimal VatAmount { get; set; }
+	public int LineCount { get; set; }
+
+	public string RateDisplay => RatePercent.HasValue ? $"{RatePercent.Value:0.#}%" : "Other";
+	public string TaxableNetDisplay => $"£{TaxableNet:F2}";
+	public string VatAmountDisplay => $"£{VatAmount:F2}";
 }
 
 public sealed class ReportOrderRow
@@ -70,6 +130,7 @@ public sealed class ReportOrderRow
 	public string Status { get; set; } = string.Empty;
 	public string CustomerName { get; set; } = string.Empty;
 	public string CustomerPhone { get; set; } = string.Empty;
+	public string PaymentMethod { get; set; } = string.Empty;
 	public int ItemCount { get; set; }
 	public decimal GrossSales { get; set; }
 	public decimal NetSales { get; set; }
@@ -77,7 +138,71 @@ public sealed class ReportOrderRow
 
 	public string CreatedAtDisplay => CreatedAt.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture);
 	public string AmountDisplay => $"£{GrossSales:F2}";
-	public string OrderMeta => $"{SourceChannel} · {OrderType} · {Status}";
+	public string PaymentMethodDisplay => FormatPaymentMethods(PaymentMethod);
+	/// <summary>Matches SharedUI PaymentMethodDialog: Cash green / Card blue / Gift Card purple.</summary>
+	public Microsoft.Maui.Graphics.Color PaymentMethodColor => ResolvePaymentMethodTextColor(PaymentMethod);
+	public string OrderMeta => $"{SourceChannel} · {OrderType} · {PaymentMethodDisplay} · {Status}";
+
+	internal static string FormatPaymentMethods(string? raw)
+	{
+		if (string.IsNullOrWhiteSpace(raw))
+		{
+			return "Unknown";
+		}
+
+		var parts = raw
+			.Split(['+', ',', '|', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.Select(OnlineOrderPaymentHelper.GetDisplayMethod)
+			.Where(part => !string.IsNullOrWhiteSpace(part) && !part.Equals("Not supplied", StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		return parts.Count == 0 ? "Unknown" : string.Join(" + ", parts);
+	}
+
+	internal static Microsoft.Maui.Graphics.Color ResolvePaymentMethodTextColor(string? raw)
+	{
+		// Same paints as SharedUI PaymentMethodDialog (CASH / CARD / GIFT CARD).
+		var cash = Microsoft.Maui.Graphics.Color.FromArgb("#059669");
+		var card = Microsoft.Maui.Graphics.Color.FromArgb("#2563EB");
+		var gift = Microsoft.Maui.Graphics.Color.FromArgb("#7C3AED");
+		var fallback = Microsoft.Maui.Graphics.Color.FromArgb("#0F172A");
+
+		if (string.IsNullOrWhiteSpace(raw))
+		{
+			return fallback;
+		}
+
+		var methods = raw
+			.Split(['+', ',', '|', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.Select(OnlineOrderPaymentHelper.NormalizeMethod)
+			.Where(method => !string.IsNullOrWhiteSpace(method) && method != "unknown")
+			.Select(MapPaymentColorFamily)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		if (methods.Count != 1)
+		{
+			return fallback;
+		}
+
+		return methods[0] switch
+		{
+			"cash" => cash,
+			"card" => card,
+			"gift_card" => gift,
+			_ => fallback
+		};
+	}
+
+	private static string MapPaymentColorFamily(string normalized) =>
+		normalized switch
+		{
+			"cash" => "cash",
+			"gift_card" => "gift_card",
+			"card" or "online" or "apple_pay" or "google_pay" or "paypal" => "card",
+			_ => "other"
+		};
 }
 
 public sealed class ReportOrderAddonRow
@@ -245,6 +370,112 @@ public sealed class DailyReportService
 		_orderService = new OrderService();
 	}
 
+	/// <summary>
+	/// Soft-void a local order from Report: status cancelled + lifecycle voided.
+	/// Removes it from sales/VAT live views; shows on Void / Cancelled. Web orders refused.
+	/// </summary>
+	public async Task<bool> SoftVoidLocalOrderAsync(
+		int orderDbId,
+		int voidedByUserId,
+		string voidedByName)
+	{
+		if (orderDbId <= 0 || voidedByUserId <= 0)
+		{
+			return false;
+		}
+
+		var actor = string.IsNullOrWhiteSpace(voidedByName) ? $"user:{voidedByUserId}" : voidedByName.Trim();
+
+		await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+		await connection.OpenAsync();
+
+		var orderInfo = await LoadOrderIdentityForDeleteAsync(connection, null, orderDbId);
+		if (orderInfo == null)
+		{
+			return false;
+		}
+
+		if (!string.Equals(orderInfo.SourceChannel, "local", StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException(
+				"Only local (original till) orders can be voided from Report. OrderWeb / web orders stay as they are.");
+		}
+
+		var alreadyVoided =
+			string.Equals(orderInfo.LifecycleState, "voided", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(orderInfo.Status, "voided", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(orderInfo.Status, "cancelled", StringComparison.OrdinalIgnoreCase);
+		if (alreadyVoided)
+		{
+			return true;
+		}
+
+		// Direct update — SaveOrder blocks paid→void (terminal immutable).
+		await using (var command = new MySqlCommand(@"
+			UPDATE orders
+			SET status = 'Cancelled',
+			    local_lifecycle_state = 'voided',
+			    is_open = 0,
+			    voided_at = @voidedAt,
+			    voided_by = @voidedBy,
+			    void_reason = @voidReason,
+			    updated_at = @updatedAt,
+			    updated_by_terminal_name = @terminalName,
+			    updated_by_terminal_at = @updatedAt
+			WHERE id = @orderDbId", connection))
+		{
+			var now = DateTime.Now;
+			command.Parameters.AddWithValue("@voidedAt", now);
+			command.Parameters.AddWithValue("@voidedBy", actor);
+			command.Parameters.AddWithValue("@voidReason", "Report void");
+			command.Parameters.AddWithValue("@updatedAt", now);
+			command.Parameters.AddWithValue("@terminalName", Environment.MachineName);
+			command.Parameters.AddWithValue("@orderDbId", orderDbId);
+			var rows = await command.ExecuteNonQueryAsync();
+			if (rows <= 0)
+			{
+				return false;
+			}
+		}
+
+		if (!string.IsNullOrWhiteSpace(orderInfo.OrderId))
+		{
+			await _orderService.LogOrderEventAsync(
+				orderInfo.OrderId,
+				"voided",
+				actorType: "user",
+				actorId: voidedByUserId.ToString(CultureInfo.InvariantCulture),
+				actorName: actor,
+				payload: new
+				{
+					reason = "Report void",
+					amount = orderInfo.TotalAmount,
+					source = "report"
+				});
+		}
+
+		if (orderInfo.TableSessionId is > 0)
+		{
+			try
+			{
+				await using var transaction = await connection.BeginTransactionAsync();
+				await CleanupTableSessionAfterOrderDeleteAsync(
+					connection,
+					transaction,
+					orderInfo.TableSessionId,
+					orderInfo.OrderId);
+				await transaction.CommitAsync();
+			}
+			catch
+			{
+				// Void already saved; table cleanup is best-effort.
+			}
+		}
+
+		AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+		return true;
+	}
+
 	public async Task<bool> HardDeleteOrderAsync(
 		int orderDbId,
 		int deletedByUserId,
@@ -322,7 +553,6 @@ public sealed class DailyReportService
 			throw;
 		}
 	}
-
 	public async Task<OperationalAnalyticsSnapshot> GetOperationalAnalyticsAsync(DateTime startDate, DateTime endDate)
 	{
 		var normalizedStart = TradingDayHelper.GetBusinessDayStart(startDate);
@@ -347,7 +577,7 @@ public sealed class DailyReportService
 
 	private static async Task<OrderDeleteIdentity?> LoadOrderIdentityForDeleteAsync(
 		MySqlConnection connection,
-		MySqlTransaction transaction,
+		MySqlTransaction? transaction,
 		int orderDbId)
 	{
 		await using var command = new MySqlCommand(@"
@@ -798,6 +1028,9 @@ public sealed class DailyReportService
 		snapshot.Summary.CardTips = financialTotals.CardTips;
 		snapshot.Summary.RefundTotal = financialTotals.Refunds;
 		snapshot.Summary.FinalMoneyCollected = financialTotals.FinalMoneyCollected;
+		snapshot.Summary.CashTotal = financialTotals.CashTotal;
+		snapshot.Summary.CardTotal = financialTotals.CardTotal;
+		snapshot.Summary.GiftCardTotal = financialTotals.GiftCardTotal;
 		snapshot.Orders = await ordersTask;
 		snapshot.TopItems = await topItemsTask;
 		snapshot.ServiceChargeRemovalAudits = await removalAuditTask;
@@ -805,7 +1038,430 @@ public sealed class DailyReportService
 		return snapshot;
 	}
 
-	private async Task<List<ServiceChargeRemovalAuditRow>> LoadServiceChargeRemovalAuditsAsync(
+/// <summary>
+/// Gross / Net / VAT only — same LoadSummaryAsync path as GetReportAsync / Sales Summary.
+/// </summary>
+public async Task<ReportSummary> GetSummaryAsync(
+	DateTime startDate,
+	DateTime endDate,
+	ReportSourceFilter sourceFilter = ReportSourceFilter.All,
+	ReportOrderTypeFilter orderTypeFilter = ReportOrderTypeFilter.All)
+{
+	await EnsureLiveReportViewsAsync();
+	var queryStartDate = TradingDayHelper.GetBusinessDayStart(startDate.Date);
+	var queryEndDate = TradingDayHelper.GetBusinessDayEnd(endDate.Date);
+	return await LoadSummaryWithConnectionAsync(queryStartDate, queryEndDate, sourceFilter, orderTypeFilter);
+}
+
+/// <summary>
+/// VAT tab period snapshot: Sales Summary totals + count of paid orders with £0 tax.
+/// </summary>
+public async Task<VatPeriodSnapshot> GetVatPeriodAsync(
+	DateTime startDate,
+	DateTime endDate)
+{
+	await EnsureLiveReportViewsAsync(forceRefresh: true);
+	var queryStartDate = TradingDayHelper.GetBusinessDayStart(startDate.Date);
+	var queryEndDate = TradingDayHelper.GetBusinessDayEnd(endDate.Date);
+
+	var summary = await LoadSummaryWithConnectionAsync(
+		queryStartDate,
+		queryEndDate,
+		ReportSourceFilter.All,
+		ReportOrderTypeFilter.All);
+
+	int zeroTaxOrderCount;
+	try
+	{
+		zeroTaxOrderCount = await CountZeroTaxOrdersAsync(queryStartDate, queryEndDate);
+	}
+	catch
+	{
+		zeroTaxOrderCount = 0;
+	}
+
+	List<VatRateBandRow> rateBands;
+	try
+	{
+		rateBands = await LoadVatRateBandsAsync(queryStartDate, queryEndDate);
+	}
+	catch
+	{
+		rateBands = BuildStandardVatBands(new Dictionary<string, VatRateBandRow>(StringComparer.OrdinalIgnoreCase));
+	}
+
+	return new VatPeriodSnapshot
+	{
+		StartDate = startDate.Date,
+		EndDate = endDate.Date,
+		Summary = summary,
+		ZeroTaxOrderCount = zeroTaxOrderCount,
+		RateBands = rateBands
+	};
+}
+
+private async Task<List<VatRateBandRow>> LoadVatRateBandsAsync(DateTime startDate, DateTime endDate)
+{
+	await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+	await connection.OpenAsync();
+
+	// Inline line net/VAT (do not depend on vw_report_order_lines_live columns — older DBs may lack line_net).
+	// Prefer menu calculated_vat_rate / vat_category; table/dine-in locked to 20%.
+	const string query = """
+		SELECT
+			band_key,
+			SUM(line_net) AS taxable_net,
+			SUM(line_vat) AS vat_amount,
+			COUNT(*) AS line_count
+		FROM (
+			SELECT
+				line_net,
+				line_vat,
+				CASE
+					WHEN effective_rate IS NULL THEN 'other'
+					WHEN ABS(effective_rate - 0) <= 0.5 THEN '0'
+					WHEN ABS(effective_rate - 20) <= 0.5 THEN '20'
+					ELSE 'other'
+				END AS band_key
+			FROM (
+				SELECT
+					line_net,
+					line_vat,
+					CASE
+						WHEN LOWER(REPLACE(REPLACE(COALESCE(order_type, ''), '-', '_'), ' ', '_')) IN ('table', 'dine_in', 'dinein')
+							THEN 20.00
+						WHEN calculated_vat_rate IS NOT NULL
+							THEN calculated_vat_rate
+						WHEN LOWER(COALESCE(vat_category, '')) IN ('novat', 'coldfood', 'coldbeverage')
+							THEN 0.00
+						WHEN LOWER(COALESCE(vat_category, '')) IN ('hotfood', 'hotbeverage', 'alcohol')
+							THEN 20.00
+						WHEN line_net > 0
+							THEN ROUND((line_vat / line_net) * 100, 2)
+						ELSE NULL
+					END AS effective_rate
+				FROM (
+					SELECT
+						o.order_type,
+						f.calculated_vat_rate,
+						f.vat_category,
+						CASE
+							WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+								THEN ROUND(
+									((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+									/ COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00), 4)
+							ELSE 0.0000
+						END AS line_vat,
+						CASE
+							WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+								THEN ROUND(
+									((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+									- (((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
+									/ COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00)), 4)
+							ELSE ROUND((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0), 4)
+						END AS line_net
+					FROM orders o
+					INNER JOIN order_items oi ON oi.order_id = o.id
+					LEFT JOIN (
+						SELECT
+							order_item_id,
+							SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+						FROM order_item_addons
+						GROUP BY order_item_id
+					) addons ON addons.order_item_id = oi.id
+					LEFT JOIN FoodMenuItems f ON CAST(f.Id AS CHAR) = CAST(oi.menu_item_id AS CHAR)
+					WHERE o.created_at >= @startDate
+					  AND o.created_at < @endDate
+					  AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+					  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+					  AND (
+						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+						OR o.paid_at IS NOT NULL
+						OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+						OR (
+							LOWER(COALESCE(o.source_channel, '')) IN ('web', 'online')
+							AND LOWER(COALESCE(o.payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+							AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+						)
+						OR EXISTS (
+							SELECT 1
+							FROM order_payments op
+							WHERE op.order_id = o.id
+							  AND LOWER(COALESCE(op.status, '')) = 'approved'
+						)
+					  )
+				) lines_raw
+			) rated
+		) banded
+		GROUP BY band_key
+		""";
+
+	var totals = new Dictionary<string, VatRateBandRow>(StringComparer.OrdinalIgnoreCase);
+	await using (var command = new MySqlCommand(query, connection))
+	{
+		command.Parameters.AddWithValue("@startDate", startDate);
+		command.Parameters.AddWithValue("@endDate", endDate);
+		await using var reader = await command.ExecuteReaderAsync();
+		while (await reader.ReadAsync())
+		{
+			var key = GetString(reader, "band_key");
+			if (string.IsNullOrWhiteSpace(key))
+			{
+				key = "other";
+			}
+
+			totals[key] = new VatRateBandRow
+			{
+				BandKey = key,
+				TaxableNet = GetDecimal(reader, "taxable_net"),
+				VatAmount = GetDecimal(reader, "vat_amount"),
+				LineCount = GetInt32(reader, "line_count")
+			};
+		}
+	}
+
+	return BuildStandardVatBands(totals);
+}
+
+private static List<VatRateBandRow> BuildStandardVatBands(IReadOnlyDictionary<string, VatRateBandRow> totals)
+{
+	// Restaurant-facing bands: 0% / 20% / Other. No 5% tile (rare on normal menu; COVID hospitality cut ended).
+	var merged = new Dictionary<string, VatRateBandRow>(StringComparer.OrdinalIgnoreCase);
+	foreach (var pair in totals)
+	{
+		var key = pair.Key.Equals("5", StringComparison.OrdinalIgnoreCase) ? "other" : pair.Key;
+		if (merged.TryGetValue(key, out var existing))
+		{
+			existing.TaxableNet += pair.Value.TaxableNet;
+			existing.VatAmount += pair.Value.VatAmount;
+			existing.LineCount += pair.Value.LineCount;
+		}
+		else
+		{
+			merged[key] = new VatRateBandRow
+			{
+				BandKey = key,
+				TaxableNet = pair.Value.TaxableNet,
+				VatAmount = pair.Value.VatAmount,
+				LineCount = pair.Value.LineCount
+			};
+		}
+	}
+
+	VatRateBandRow Pick(string key, decimal? rate, string label)
+	{
+		if (merged.TryGetValue(key, out var row))
+		{
+			row.BandKey = key;
+			row.RatePercent = rate;
+			row.Label = label;
+			return row;
+		}
+
+		return new VatRateBandRow
+		{
+			BandKey = key,
+			RatePercent = rate,
+			Label = label
+		};
+	}
+
+	return
+	[
+		Pick("0", 0m, "Zero-rated (0%)"),
+		Pick("20", 20m, "Standard (20%)"),
+		Pick("other", null, "Other")
+	];
+}
+
+private async Task<int> CountZeroTaxOrdersAsync(DateTime startDate, DateTime endDate)
+{
+	await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+	await connection.OpenAsync();
+
+	const string query = """
+		SELECT COUNT(*) AS zero_tax_orders
+		FROM vw_report_orders_live o
+		WHERE o.created_at >= @startDate
+		  AND o.created_at < @endDate
+		  AND COALESCE(o.tax_amount, 0) <= 0
+		""";
+
+	await using var command = new MySqlCommand(query, connection);
+	command.Parameters.AddWithValue("@startDate", startDate);
+	command.Parameters.AddWithValue("@endDate", endDate);
+	var result = await command.ExecuteScalarAsync();
+	return Convert.ToInt32(result ?? 0, CultureInfo.InvariantCulture);
+}
+
+public async Task<string> ExportVatCsvAsync(VatPeriodSnapshot period)
+{
+	var folderPath = GetReportOutputFolder();
+	Directory.CreateDirectory(folderPath);
+
+	var fileName = $"VAT_{period.StartDate:yyyyMMdd}_{period.EndDate:yyyyMMdd}_{DateTime.Now:HHmmss}.csv";
+	var filePath = Path.Combine(folderPath, fileName);
+	var dayCount = Math.Max(1, (period.EndDate.Date - period.StartDate.Date).Days + 1);
+
+	var builder = new StringBuilder();
+	builder.AppendLine("VAT Summary");
+	builder.AppendLine($"Period,{EscapeCsv($"{period.StartDate:dd MMM yyyy} – {period.EndDate:dd MMM yyyy}")}");
+	builder.AppendLine($"Days,{dayCount}");
+	builder.AppendLine("Filters,All sources / All order types");
+	builder.AppendLine($"Generated,{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+	builder.AppendLine();
+	builder.AppendLine("Metric,Amount");
+	builder.AppendLine($"VAT collected (from paid orders),{period.Summary.VatAmount:F2}");
+	builder.AppendLine($"Gross sales,{period.Summary.GrossSales:F2}");
+	builder.AppendLine($"Net sales,{period.Summary.NetSales:F2}");
+	builder.AppendLine($"Paid order count,{period.Summary.OrderCount}");
+	builder.AppendLine($"Orders with £0 tax,{period.ZeroTaxOrderCount}");
+	builder.AppendLine();
+	builder.AppendLine("VAT by rate");
+	builder.AppendLine("Band,Rate %,Taxable net,VAT,Lines");
+	foreach (var band in period.RateBands)
+	{
+		builder.AppendLine(string.Join(',',
+			EscapeCsv(band.Label),
+			band.RatePercent?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+			band.TaxableNet.ToString("F2", CultureInfo.InvariantCulture),
+			band.VatAmount.ToString("F2", CultureInfo.InvariantCulture),
+			band.LineCount.ToString(CultureInfo.InvariantCulture)));
+	}
+
+	builder.AppendLine($"Band VAT total,,,{period.RateBandsVatTotal:F2},");
+	builder.AppendLine($"Hero VAT total,,,{period.Summary.VatAmount:F2},");
+	builder.AppendLine();
+	builder.AppendLine("Note,This is VAT collected from paid orders — not confirmation that VAT has already been paid to HMRC.");
+	if (!period.RateBandsExplainTotal)
+	{
+		builder.AppendLine("Note,Rate-band VAT sum differs slightly from hero VAT (rounding or unmapped lines).");
+	}
+
+	await File.WriteAllTextAsync(filePath, builder.ToString());
+	return filePath;
+}
+
+public async Task<string> ExportVatPdfAsync(
+	VatPeriodSnapshot period,
+	BusinessInfo? businessInfo = null,
+	string businessName = "POS-in-NET")
+{
+	var folderPath = GetReportOutputFolder();
+	Directory.CreateDirectory(folderPath);
+
+	var fileName = $"VAT_{period.StartDate:yyyyMMdd}_{period.EndDate:yyyyMMdd}_{DateTime.Now:HHmmss}.pdf";
+	var filePath = Path.Combine(folderPath, fileName);
+	var dayCount = Math.Max(1, (period.EndDate.Date - period.StartDate.Date).Days + 1);
+
+	using var document = new PdfDocument();
+	document.PageSettings.Size = PdfPageSize.A4;
+	document.PageSettings.Orientation = PdfPageOrientation.Portrait;
+
+	var page = document.Pages.Add();
+	var graphics = page.Graphics;
+	var titleFont = new PdfStandardFont(PdfFontFamily.Helvetica, 20, PdfFontStyle.Bold);
+	var headingFont = new PdfStandardFont(PdfFontFamily.Helvetica, 12, PdfFontStyle.Bold);
+	var normalFont = new PdfStandardFont(PdfFontFamily.Helvetica, 11);
+	var metaFont = new PdfStandardFont(PdfFontFamily.Helvetica, 9);
+
+	var resolvedBusinessName = string.IsNullOrWhiteSpace(businessInfo?.RestaurantName)
+		? businessName
+		: businessInfo!.RestaurantName.Trim();
+
+	var pageWidth = page.GetClientSize().Width;
+	var contentWidth = pageWidth - 40;
+	var y = 24f;
+
+	graphics.DrawString(resolvedBusinessName, titleFont, PdfBrushes.Black, new PdfPointF(20, y));
+	y += 28;
+	graphics.DrawString("VAT Summary", headingFont, PdfBrushes.Black, new PdfPointF(20, y));
+	y += 20;
+	graphics.DrawString(
+		$"Period: {period.StartDate:dd MMM yyyy} – {period.EndDate:dd MMM yyyy} · {dayCount} day{(dayCount == 1 ? string.Empty : "s")}",
+		metaFont,
+		PdfBrushes.DarkSlateGray,
+		new PdfPointF(20, y));
+	y += 14;
+	graphics.DrawString("Filters: All sources / All order types", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
+	y += 14;
+	graphics.DrawString($"Generated: {DateTime.Now:dd MMM yyyy HH:mm}", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
+	y += 24;
+
+	var businessLines = BuildBusinessInfoLines(businessInfo);
+	if (businessLines.Count > 0)
+	{
+		graphics.DrawString("Business Information", headingFont, PdfBrushes.Black, new PdfPointF(20, y));
+		y += 18;
+		foreach (var line in businessLines)
+		{
+			graphics.DrawString(line, metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
+			y += 13;
+		}
+
+		y += 10;
+	}
+
+	var metricWidth = (contentWidth - 16) / 3;
+	DrawMetricBlock(graphics, "VAT collected", $"£{period.Summary.VatAmount:F2}", 20, y, metricWidth);
+	DrawMetricBlock(graphics, "Gross", $"£{period.Summary.GrossSales:F2}", 20 + metricWidth + 8, y, metricWidth);
+	DrawMetricBlock(graphics, "Net", $"£{period.Summary.NetSales:F2}", 20 + ((metricWidth + 8) * 2), y, metricWidth);
+	y += 78;
+
+	graphics.DrawString(
+		$"Paid orders: {period.Summary.OrderCount}  |  Orders with £0 tax: {period.ZeroTaxOrderCount}",
+		normalFont,
+		PdfBrushes.Black,
+		new PdfPointF(20, y));
+	y += 22;
+
+	graphics.DrawString("VAT by rate", headingFont, PdfBrushes.Black, new PdfPointF(20, y));
+	y += 18;
+	graphics.DrawString("Band", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
+	graphics.DrawString("Taxable net", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(180, y));
+	graphics.DrawString("VAT", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(300, y));
+	graphics.DrawString("Lines", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(380, y));
+	y += 14;
+	foreach (var band in period.RateBands.Where(b => b.LineCount > 0 || b.VatAmount != 0m || b.TaxableNet != 0m))
+	{
+		graphics.DrawString(band.Label, normalFont, PdfBrushes.Black, new PdfPointF(20, y));
+		graphics.DrawString(band.TaxableNetDisplay, normalFont, PdfBrushes.Black, new PdfPointF(180, y));
+		graphics.DrawString(band.VatAmountDisplay, normalFont, PdfBrushes.Black, new PdfPointF(300, y));
+		graphics.DrawString(band.LineCount.ToString(CultureInfo.InvariantCulture), normalFont, PdfBrushes.Black, new PdfPointF(380, y));
+		y += 14;
+	}
+
+	y += 6;
+	graphics.DrawString(
+		$"Band VAT total £{period.RateBandsVatTotal:F2}  ·  Hero VAT £{period.Summary.VatAmount:F2}" +
+		(period.RateBandsExplainTotal ? "  ·  bands explain total" : "  ·  small difference — see unmapped/other lines"),
+		metaFont,
+		PdfBrushes.DarkSlateGray,
+		new PdfPointF(20, y));
+	y += 16;
+	graphics.DrawString(
+		"VAT collected (from paid orders) — not already paid to HMRC.",
+		metaFont,
+		PdfBrushes.DarkSlateGray,
+		new PdfPointF(20, y));
+	y += 16;
+
+	if (period.ShouldWarnZeroTax)
+	{
+		graphics.DrawString(
+			$"Note: {period.ZeroTaxOrderCount} of {period.Summary.OrderCount} paid orders have £0 tax recorded. Totals may understate VAT due if tax was not saved on those orders.",
+			metaFont,
+			PdfBrushes.DarkRed,
+			new PdfPointF(20, y));
+	}
+
+	await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+	document.Save(stream);
+	return filePath;
+}
+
+private async Task<List<ServiceChargeRemovalAuditRow>> LoadServiceChargeRemovalAuditsAsync(
 		DateTime startDate,
 		DateTime endDate,
 		ReportSourceFilter sourceFilter,
@@ -967,6 +1623,9 @@ public sealed class DailyReportService
 			  COALESCE(SUM(CASE WHEN op.payment_method = 'card' THEN op.tip_amount ELSE 0 END), 0)
 			    - COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(op.metadata_json, '$.cardTipReversed')), '0') AS DECIMAL(10,2)) ELSE 0 END), 0) AS card_tips,
 			  COALESCE(SUM(CASE WHEN op.payment_method = 'refund' THEN op.amount ELSE 0 END), 0) AS refunds,
+			  COALESCE(SUM(CASE WHEN LOWER(COALESCE(op.payment_method, '')) IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection') THEN op.amount ELSE 0 END), 0) AS cash_total,
+			  COALESCE(SUM(CASE WHEN LOWER(COALESCE(op.payment_method, '')) IN ('card', 'credit_card', 'debit_card', 'online', 'apple_pay', 'google_pay', 'paypal') THEN op.amount ELSE 0 END), 0) AS card_total,
+			  COALESCE(SUM(CASE WHEN LOWER(COALESCE(op.payment_method, '')) IN ('gift_card', 'giftcard', 'voucher') THEN op.amount ELSE 0 END), 0) AS gift_card_total,
 			  COALESCE(SUM(op.amount), 0) AS money_collected
 			FROM order_payments op
 			INNER JOIN orders ON orders.id = op.order_id
@@ -985,6 +1644,9 @@ public sealed class DailyReportService
 				result.CashTips = GetDecimal(reader, "cash_tips");
 				result.CardTips = GetDecimal(reader, "card_tips");
 				result.Refunds = GetDecimal(reader, "refunds");
+				result.CashTotal = GetDecimal(reader, "cash_total");
+				result.CardTotal = GetDecimal(reader, "card_total");
+				result.GiftCardTotal = GetDecimal(reader, "gift_card_total");
 				result.FinalMoneyCollected = GetDecimal(reader, "money_collected");
 			}
 		}
@@ -1023,6 +1685,9 @@ public sealed class DailyReportService
 		public decimal CashTips { get; set; }
 		public decimal CardTips { get; set; }
 		public decimal Refunds { get; set; }
+		public decimal CashTotal { get; set; }
+		public decimal CardTotal { get; set; }
+		public decimal GiftCardTotal { get; set; }
 		public decimal FinalMoneyCollected { get; set; }
 	}
 
@@ -1233,11 +1898,11 @@ public sealed class DailyReportService
 		builder.AppendLine($"Search,{EscapeCsv(report.SearchText)}");
 		builder.AppendLine();
 		builder.AppendLine("Summary");
-		builder.AppendLine("Order Count,Item Sales,Gross Sales,Net Sales,Discounts,Service Charges,Removed Service Charge Count,Potential Removed Value,Cash Tips,Card Tips,Total Tips,Delivery Fees,Refunds,VAT,Final Money Collected,Average Order Value");
-		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.ItemSales:F2},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.DiscountTotal:F2},{report.Summary.ServiceChargeTotal:F2},{report.Summary.RemovedServiceChargeCount},{report.Summary.RemovedServiceChargeValue:F2},{report.Summary.CashTips:F2},{report.Summary.CardTips:F2},{report.Summary.TotalTips:F2},{report.Summary.DeliveryChargeTotal:F2},{report.Summary.RefundTotal:F2},{report.Summary.VatAmount:F2},{report.Summary.FinalMoneyCollected:F2},{report.Summary.AverageOrderValue:F2}");
+		builder.AppendLine("Order Count,Item Sales,Gross Sales,Net Sales,Discounts,Service Charges,Removed Service Charge Count,Potential Removed Value,Cash Tips,Card Tips,Total Tips,Delivery Fees,Refunds,Cash,Card,Gift Card,VAT,Final Money Collected,Average Order Value");
+		builder.AppendLine($"{report.Summary.OrderCount},{report.Summary.ItemSales:F2},{report.Summary.GrossSales:F2},{report.Summary.NetSales:F2},{report.Summary.DiscountTotal:F2},{report.Summary.ServiceChargeTotal:F2},{report.Summary.RemovedServiceChargeCount},{report.Summary.RemovedServiceChargeValue:F2},{report.Summary.CashTips:F2},{report.Summary.CardTips:F2},{report.Summary.TotalTips:F2},{report.Summary.DeliveryChargeTotal:F2},{report.Summary.RefundTotal:F2},{report.Summary.CashTotal:F2},{report.Summary.CardTotal:F2},{report.Summary.GiftCardTotal:F2},{report.Summary.VatAmount:F2},{report.Summary.FinalMoneyCollected:F2},{report.Summary.AverageOrderValue:F2}");
 		builder.AppendLine();
 		builder.AppendLine("Orders");
-		builder.AppendLine("Created At,Order Number,Customer,Phone,Source,Type,Status,Items,Gross,Net,VAT");
+		builder.AppendLine("Created At,Order Number,Customer,Phone,Source,Type,Payment,Status,Items,Gross,Net,VAT");
 
 		foreach (var order in report.Orders)
 		{
@@ -1249,6 +1914,7 @@ public sealed class DailyReportService
 				EscapeCsv(order.CustomerPhone),
 				EscapeCsv(order.SourceChannel),
 				EscapeCsv(order.OrderType),
+				EscapeCsv(order.PaymentMethodDisplay),
 				EscapeCsv(order.Status),
 				order.ItemCount.ToString(CultureInfo.InvariantCulture),
 				order.GrossSales.ToString("F2", CultureInfo.InvariantCulture),
@@ -1394,7 +2060,7 @@ public sealed class DailyReportService
 			new PdfPointF(20, y));
 		y += 16;
 		graphics.DrawString(
-			$"Delivery fees £{report.Summary.DeliveryChargeTotal:F2}  |  Refunds £{Math.Abs(report.Summary.RefundTotal):F2}  |  Final money collected £{report.Summary.FinalMoneyCollected:F2}",
+			$"Cash £{report.Summary.CashTotal:F2}  |  Card £{report.Summary.CardTotal:F2}  |  Gift Card £{report.Summary.GiftCardTotal:F2}  |  Delivery fees £{report.Summary.DeliveryChargeTotal:F2}  |  Refunds £{Math.Abs(report.Summary.RefundTotal):F2}  |  Final money collected £{report.Summary.FinalMoneyCollected:F2}",
 			smallFont,
 			PdfBrushes.Black,
 			new PdfPointF(20, y));
@@ -1558,6 +2224,7 @@ public sealed class DailyReportService
 				o.status,
 				o.customer_name,
 				o.customer_phone,
+				COALESCE(NULLIF(payments.payment_methods, ''), NULLIF(o.payment_method, ''), '') AS payment_method,
 				COALESCE(order_lines.item_count, 0) AS item_count,
 				COALESCE(order_lines.gross_sales, 0) AS gross_sales,
 				COALESCE(order_lines.net_sales, 0) AS net_sales,
@@ -1573,6 +2240,15 @@ public sealed class DailyReportService
 				FROM vw_report_order_lines_live
 				GROUP BY order_db_id
 			) order_lines ON order_lines.order_db_id = o.order_db_id
+			LEFT JOIN (
+				SELECT
+					op.order_id AS order_db_id,
+					GROUP_CONCAT(DISTINCT LOWER(op.payment_method) ORDER BY LOWER(op.payment_method) SEPARATOR '+') AS payment_methods
+				FROM order_payments op
+				WHERE LOWER(COALESCE(op.status, '')) = 'approved'
+				  AND LOWER(COALESCE(op.payment_method, '')) NOT IN ('', 'refund')
+				GROUP BY op.order_id
+			) payments ON payments.order_db_id = o.order_db_id
 			WHERE o.created_at >= @startDate AND o.created_at < @endDate");
 
 		AppendOptionalFilters(query, sourceFilter, orderTypeFilter);
@@ -1614,6 +2290,7 @@ public sealed class DailyReportService
 				Status = GetString(reader, "status"),
 				CustomerName = GetString(reader, "customer_name"),
 				CustomerPhone = GetString(reader, "customer_phone"),
+				PaymentMethod = GetString(reader, "payment_method"),
 				ItemCount = GetInt32(reader, "item_count"),
 				GrossSales = GetDecimal(reader, "gross_sales"),
 				NetSales = GetDecimal(reader, "net_sales"),
@@ -1900,14 +2577,14 @@ public sealed class DailyReportService
 		}
 	}
 
-	private async Task EnsureLiveReportViewsAsync()
+	private async Task EnsureLiveReportViewsAsync(bool forceRefresh = false)
 	{
 		if (RuntimeSchemaPolicy.IsMigrationManaged)
 		{
 			_viewSchemaReady = true;
 			return;
 		}
-		if (_viewSchemaReady)
+		if (_viewSchemaReady && !forceRefresh)
 		{
 			return;
 		}
@@ -1915,7 +2592,7 @@ public sealed class DailyReportService
 		await _viewSchemaLock.WaitAsync();
 		try
 		{
-			if (_viewSchemaReady)
+			if (_viewSchemaReady && !forceRefresh)
 			{
 				return;
 			}

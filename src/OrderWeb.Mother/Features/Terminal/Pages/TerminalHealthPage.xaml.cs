@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using OrderWeb.Contracts.Access;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
 using POS_in_NET.Views;
@@ -483,16 +484,79 @@ public partial class TerminalHealthPage : ContentPage
                 return;
             }
 
+            var selectedSet = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
+            var showLabels = new List<string>();
+            var hideLabels = new List<string>();
+            foreach (var (key, label) in ClientAccessPolicy.EditableFeatures)
+            {
+                var willEnable = selectedSet.Contains(key);
+                var wasEnabled = granted.Contains(key);
+                if (willEnable && !wasEnabled)
+                {
+                    showLabels.Add(label);
+                }
+                else if (!willEnable && wasEnabled)
+                {
+                    hideLabels.Add(label);
+                }
+            }
+
+            var summary = BuildClientAccessConfirmMessage(terminal.TerminalName, showLabels, hideLabels, selectedSet);
+            var confirmDialog = new ModernConfirmDialog();
+            confirmDialog.SetConfirm(
+                "Save Client access?",
+                summary,
+                "Save",
+                "Cancel",
+                "!",
+                "#2563EB");
+            if (!await confirmDialog.ShowAsync())
+            {
+                return;
+            }
+
             await _clientAccessService.SaveGrantedFeaturesAsync(terminal.TerminalId, selected);
-            await _clientApiService.PublishDataChangedAsync("features.updated", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            try
+            {
+                await _clientApiService.PublishDataChangedAsync(
+                    "features.updated",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+            catch (Exception publishEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Client access notify warning: {publishEx.Message}");
+            }
+
             await AppAlertService.ShowAlertAsync(
-                "Client Access Saved",
-                $"{terminal.TerminalName} will pick this up on Update All, when opening Gift Cards/Loyalty, or at the next PIN login. Reservations stay on by default so Client matches Mother.");
+                "Access saved",
+                $"{terminal.TerminalName} will update on Update All, Gift Cards/Loyalty open, or next PIN login.");
         }
         catch (Exception ex)
         {
             await AppAlertService.ShowAlertAsync("Client Access", ex.Message);
         }
+    }
+
+    private static string BuildClientAccessConfirmMessage(
+        string terminalName,
+        IReadOnlyList<string> showLabels,
+        IReadOnlyList<string> hideLabels,
+        IReadOnlySet<string> selected)
+    {
+        var showText = showLabels.Count == 0 ? "None newly turned on" : string.Join(", ", showLabels);
+        var hideText = hideLabels.Count == 0 ? "None newly turned off" : string.Join(", ", hideLabels);
+        var enabledNow = ClientAccessPolicy.EditableFeatures
+            .Where(item => selected.Contains(item.Key))
+            .Select(item => item.Label)
+            .ToList();
+        var enabledText = enabledNow.Count == 0 ? "none" : string.Join(", ", enabledNow);
+
+        return
+            $"For Client \"{terminalName}\":\n\n" +
+            $"Show (turning on):\n{showText}\n\n" +
+            $"Hide (turning off):\n{hideText}\n\n" +
+            $"Will stay on: {enabledText}\n\n" +
+            "Only this Client is affected.";
     }
 
     private async void OnRenameTerminalClicked(object sender, EventArgs e)

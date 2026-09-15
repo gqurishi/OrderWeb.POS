@@ -109,14 +109,19 @@ namespace POS_in_NET.Views
             try
             {
                 GiftCardNumberEntry.Unfocus();
-                var keyboard = new OrderWeb.SharedUI.Controls.NumericKeyboardDialog();
-                var value = await keyboard.ShowDigitsAsync(
-                    GiftCardNumberEntry.Text,
-                    "Gift card number",
-                    maxDigits: 24);
+                var keyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
+                keyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Text);
+                keyboard.SetPrompt("Gift card number", "Done");
+                keyboard.SetPlaceholder("Enter or scan gift card number");
+                keyboard.SetMaximumLength(32);
+                keyboard.SetRequired(false);
+                keyboard.SetInitialText(GiftCardNumberEntry.Text ?? string.Empty);
+                var value = _parentGrid != null
+                    ? await keyboard.ShowOverAsync(_parentGrid)
+                    : await keyboard.ShowAsync();
                 if (value != null)
                 {
-                    GiftCardNumberEntry.Text = value;
+                    GiftCardNumberEntry.Text = value.Trim();
                 }
             }
             finally

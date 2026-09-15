@@ -360,3 +360,75 @@ public sealed class TablePaymentReceiptTemplateSettingsService
         }
     }
 }
+
+public sealed class OnlineReceiptTemplateSettingsService
+{
+    private const string SettingsKey = "printing.templates.online_receipt";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private readonly DatabaseService _databaseService;
+
+    public OnlineReceiptTemplateSettingsService(DatabaseService databaseService)
+    {
+        _databaseService = databaseService;
+    }
+
+    public async Task<CollectionReceiptTemplateSettings> GetSettingsAsync()
+    {
+        try
+        {
+            await using var connection = await _databaseService.GetConnectionAsync();
+            await using var command = new MySqlCommand(
+                "SELECT setting_value FROM settings WHERE setting_key = @key LIMIT 1",
+                connection);
+            command.Parameters.AddWithValue("@key", SettingsKey);
+
+            var value = Convert.ToString(await command.ExecuteScalarAsync());
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return CollectionReceiptTemplateSettings.Default();
+            }
+
+            return (JsonSerializer.Deserialize<CollectionReceiptTemplateSettings>(value, JsonOptions)
+                    ?? CollectionReceiptTemplateSettings.Default())
+                .Normalized();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load online receipt settings: {ex.Message}");
+            return CollectionReceiptTemplateSettings.Default();
+        }
+    }
+
+    public async Task<bool> SaveSettingsAsync(CollectionReceiptTemplateSettings settings)
+    {
+        try
+        {
+            settings = settings.Normalized();
+            var json = JsonSerializer.Serialize(settings, JsonOptions);
+
+            await using var connection = await _databaseService.GetConnectionAsync();
+            await using var command = new MySqlCommand(
+                """
+                INSERT INTO settings (setting_key, setting_value)
+                VALUES (@key, @value)
+                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """,
+                connection);
+            command.Parameters.AddWithValue("@key", SettingsKey);
+            command.Parameters.AddWithValue("@value", json);
+            await command.ExecuteNonQueryAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save online receipt settings: {ex.Message}");
+            return false;
+        }
+    }
+}

@@ -24,14 +24,15 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             ["report"] = 6,
             ["inventory"] = 7,
             ["restaurant"] = 8,
-            ["collection"] = 9,
-            ["delivery"] = 10,
-            ["weborders"] = 11,
-            ["liveorder"] = 12,
-            ["giftcards"] = 13,
-            ["loyalty"] = 14,
-            ["staffclock"] = 15,
-            ["settings"] = 16,
+            ["layout"] = 9,
+            ["collection"] = 10,
+            ["delivery"] = 11,
+            ["weborders"] = 12,
+            ["liveorder"] = 13,
+            ["giftcards"] = 14,
+            ["loyalty"] = 15,
+            ["staffclock"] = 16,
+            ["settings"] = 17,
             ["printersetup"] = 18,
             ["customerdata"] = 19,
             ["terminalhealth"] = 20
@@ -612,7 +613,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             },
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "collection", "delivery",
+                "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "layout", "collection", "delivery",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "report", "staffclock",
                 "inventory", "printersetup", "settings", "terminalhealth", "customerdata"
             }
@@ -633,9 +634,13 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             : navigationItems;
         if (_roleAccessService.TryResolveRoute(CurrentState?.Location?.OriginalString ?? string.Empty, out var currentRoute))
         {
-            SharedSidebar.SelectedRoute = currentRoute is "userdashboard" or "managerdashboard" or "cashierdashboard" or "dashboard"
-                ? "dashboard"
-                : currentRoute;
+            SharedSidebar.SelectedRoute = currentRoute switch
+            {
+                "userdashboard" or "managerdashboard" or "cashierdashboard" or "dashboard" => "dashboard",
+                "floor" or "table" => "layout",
+                "visuallayout" => role is UserRole.Admin ? "layout" : "restaurant",
+                _ => currentRoute
+            };
         }
 
         SharedSidebar.Refresh();
@@ -650,7 +655,8 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
         if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
-        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Reservation))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.GiftCards);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.CustomerPoints);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.LiveOrders);

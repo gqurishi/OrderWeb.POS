@@ -29,13 +29,12 @@
             
             <Button x:Name="AddFloorButton"
                     Text="Add New Floor"
-                    BackgroundColor="#3B82F6"
+                    BackgroundColor="#0F172A"
                     TextColor="White"
                     FontFamily="OpenSansSemibold"
-                    FontSize="16"
-                    FontAttributes="Bold"
+                    FontSize="15"
                     CornerRadius="10"
-                    HeightRequest="50"
+                    HeightRequest="46"
                     Clicked="OnAddFloorClicked"
                     HorizontalOptions="Fill" />
             

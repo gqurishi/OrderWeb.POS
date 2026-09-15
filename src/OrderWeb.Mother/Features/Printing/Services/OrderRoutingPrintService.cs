@@ -1076,7 +1076,10 @@ public sealed class OrderRoutingPrintService
             && order.KitchenTicketType.StartsWith("FIRE ", StringComparison.OrdinalIgnoreCase)
                 ? order.KitchenTicketType.ToUpperInvariant()
                 : defaultHeaderText;
-        var builder = new EscPosBuilder(PrinterBrand.Star, PaperWidth.Mm80);
+        var brand = printerConfig?.Brand is PrinterBrand.Epson or PrinterBrand.Xprinter
+            ? printerConfig.Brand
+            : PrinterBrand.Star;
+        var builder = new EscPosBuilder(brand, PaperWidth.Mm80);
         var lineWidth = 48;
 
         builder.Initialize();
@@ -1132,9 +1135,10 @@ public sealed class OrderRoutingPrintService
                .SetAlign(TextAlign.Center)
                
                .PrintLine($"{group.Name} • {headerText}")
-               .FeedLines(2);
+               .FeedLines(brand is PrinterBrand.Epson or PrinterBrand.Xprinter ? 3 : 2);
 
-        if (string.Equals(printerType, "bar", StringComparison.OrdinalIgnoreCase) || string.Equals(printerType, "kitchen", StringComparison.OrdinalIgnoreCase))
+        if ((string.Equals(printerType, "bar", StringComparison.OrdinalIgnoreCase) || string.Equals(printerType, "kitchen", StringComparison.OrdinalIgnoreCase))
+            && (brand is not (PrinterBrand.Epson or PrinterBrand.Xprinter) || printerConfig?.HasCutter != false))
         {
             builder.Cut(true);
         }

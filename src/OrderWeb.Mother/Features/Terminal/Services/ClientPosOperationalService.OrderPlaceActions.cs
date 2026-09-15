@@ -63,7 +63,7 @@ public sealed partial class ClientPosOperationalService
         }
 
         order.DiscountAmount = discountAmount;
-        ApplyClientOrderFinancials(order, NormalizeSavedOrderType(order.OrderType));
+        await ApplyClientOrderFinancialsAsync(order, NormalizeSavedOrderType(order.OrderType));
         order.UpdatedAt = DateTime.Now;
 
         var save = await _orderService.SaveOrderAsync(order);
@@ -197,7 +197,7 @@ public sealed partial class ClientPosOperationalService
             order.ServiceChargeStatus = "applied";
         }
 
-        ApplyClientOrderFinancials(order, "table");
+        await ApplyClientOrderFinancialsAsync(order, "table");
         order.UpdatedAt = DateTime.Now;
         var amount = order.ServiceChargeAmount;
 
@@ -516,7 +516,7 @@ public sealed partial class ClientPosOperationalService
         order.LoyaltyPointsRedeemed += points;
         order.LoyaltyPointsDiscount += discountAmount;
         order.DiscountAmount = previous + discountAmount;
-        ApplyClientOrderFinancials(order, NormalizeSavedOrderType(order.OrderType));
+        await ApplyClientOrderFinancialsAsync(order, NormalizeSavedOrderType(order.OrderType));
         order.UpdatedAt = DateTime.Now;
 
         var save = await _orderService.SaveOrderAsync(order);

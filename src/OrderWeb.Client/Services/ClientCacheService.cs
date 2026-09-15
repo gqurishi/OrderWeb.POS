@@ -1255,7 +1255,7 @@ public sealed class ClientCacheService
         }
 
         await InitializeAsync();
-        var orders = await _database.QueryAsync<CachedOrderRow>("SELECT id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, updated_utc FROM open_orders WHERE id = ? LIMIT 1", orderId);
+        var orders = await _database.QueryAsync<CachedOrderRow>("SELECT id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, updated_utc, source_channel, payment_method FROM open_orders WHERE id = ? LIMIT 1", orderId);
         var order = orders.FirstOrDefault();
         if (order == null)
         {
@@ -1282,13 +1282,15 @@ public sealed class ClientCacheService
             order.Total,
             order.Version,
             order.UpdatedUtc,
-            table?.ServerName);
+            table?.ServerName,
+            SourceChannel: order.SourceChannel,
+            PaymentMethod: order.PaymentMethod);
     }
 
     public async Task<IReadOnlyList<MotherOrderState>> GetOpenOrderStatesAsync()
     {
         await InitializeAsync();
-        var orders = await _database.QueryAsync<CachedOrderRow>("SELECT id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, updated_utc FROM open_orders ORDER BY updated_utc DESC");
+        var orders = await _database.QueryAsync<CachedOrderRow>("SELECT id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, updated_utc, source_channel, payment_method FROM open_orders ORDER BY updated_utc DESC");
         var states = new List<MotherOrderState>();
 
         foreach (var order in orders)
@@ -1313,7 +1315,9 @@ public sealed class ClientCacheService
                 order.Total,
                 order.Version,
                 order.UpdatedUtc,
-                table?.ServerName));
+                table?.ServerName,
+                SourceChannel: order.SourceChannel,
+                PaymentMethod: order.PaymentMethod));
         }
 
         return states;
@@ -1353,8 +1357,8 @@ public sealed class ClientCacheService
             : null;
 
         await _database.ExecuteAsync(@"
-            INSERT OR REPLACE INTO open_orders (id, mother_id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, opened_utc, updated_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT opened_utc FROM open_orders WHERE id = ?), ?), ?)",
+            INSERT OR REPLACE INTO open_orders (id, mother_id, order_number, order_type, table_id, guests, status, subtotal, tax, total, version, source_channel, payment_method, opened_utc, updated_utc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT opened_utc FROM open_orders WHERE id = ?), ?), ?)",
             state.OrderId,
             $"mother-order-{state.OrderId}",
             state.OrderNumber,
@@ -1366,6 +1370,8 @@ public sealed class ClientCacheService
             state.Tax,
             state.Total,
             state.Version,
+            state.SourceChannel,
+            state.PaymentMethod,
             state.OrderId,
             now,
             now);
@@ -2480,6 +2486,12 @@ public sealed class ClientCacheService
 
         [Column("updated_utc")]
         public string UpdatedUtc { get; set; } = string.Empty;
+
+        [Column("source_channel")]
+        public string? SourceChannel { get; set; }
+
+        [Column("payment_method")]
+        public string? PaymentMethod { get; set; }
     }
 
     private sealed class CachedOrderItemRow

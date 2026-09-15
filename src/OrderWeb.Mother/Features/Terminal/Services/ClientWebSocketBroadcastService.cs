@@ -254,19 +254,18 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         {
             await connection.OpenAsync().ConfigureAwait(false);
             await EnsureClientConnectionTablesAsync(connection).ConfigureAwait(false);
-            await using var command = new MySqlCommand(@"
-                INSERT INTO terminal_events (event_type, entity_type, entity_id, payload_json, created_at)
-                VALUES (@eventType, 'sync', @version, @payload, UTC_TIMESTAMP());
-                SELECT LAST_INSERT_ID();", connection);
-            command.Parameters.AddWithValue("@eventType", eventType.Trim());
-            command.Parameters.AddWithValue("@version", version ?? string.Empty);
-            command.Parameters.AddWithValue("@payload", JsonSerializer.Serialize(new
+            var payload = JsonSerializer.Serialize(new
             {
                 correlationId = correlation,
                 restaurantId = GetRestaurantSlug(),
                 timestamp
-            }));
-            eventId = Convert.ToInt64(await command.ExecuteScalarAsync().ConfigureAwait(false));
+            });
+            eventId = await InsertClientTerminalEventAsync(
+                connection,
+                eventType.Trim(),
+                entityType: "sync",
+                entityId: version ?? string.Empty,
+                payloadJson: payload).ConfigureAwait(false);
         }
 
         var notification = new
@@ -336,13 +335,14 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 revoke.Parameters.AddWithValue("@terminalId", terminalId);
                 await revoke.ExecuteNonQueryAsync();
             }
-            await using var audit = new MySqlCommand(@"
-                INSERT INTO terminal_events (event_type, entity_type, entity_id, payload_json, created_at)
-                VALUES ('session.revoked', 'terminal', @terminalId, @payload, UTC_TIMESTAMP());
-                SELECT LAST_INSERT_ID();", connection);
-            audit.Parameters.AddWithValue("@terminalId", terminalId);
-            audit.Parameters.AddWithValue("@payload", JsonSerializer.Serialize(new { correlationId = correlation, restaurantId = GetRestaurantSlug() }));
-            eventId = Convert.ToInt64(await audit.ExecuteScalarAsync());
+
+            var revokePayload = JsonSerializer.Serialize(new { correlationId = correlation, restaurantId = GetRestaurantSlug() });
+            eventId = await InsertClientTerminalEventAsync(
+                connection,
+                eventType: "session.revoked",
+                entityType: "terminal",
+                entityId: terminalId,
+                payloadJson: revokePayload);
         }
         if (_clients.TryGetValue(terminalId, out var client) && client.WebSocket.State == WebSocketState.Open)
         {
@@ -2096,7 +2096,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         var permissions = await _permissionService.GetRolePermissionsAsync(login.User.Role);
         var capabilities = ClientAccessPolicy.FilterCapabilities(MotherCapabilityResolver.ForRole(login.User.Role));
-        var features = await _clientAccess.GetGrantedFeaturesAsync(terminal.TerminalId, context.RequestAborted);
+        var features = await GetEffectiveClientFeaturesAsync(terminal.TerminalId, context.RequestAborted);
         var routes = ClientAccessPolicy.RoutesForFeatures(features);
         var tillLogoutMinutes = await GetTillLogoutMinutesAsync();
         await WriteJsonAsync(context, HttpStatusCode.OK, new
@@ -2280,7 +2280,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             return;
         }
 
-        var features = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
+        var features = await GetEffectiveClientFeaturesAsync(session.TerminalId, context.RequestAborted);
         var routes = ClientAccessPolicy.RoutesForFeatures(features);
         var tillLogoutMinutes = await GetTillLogoutMinutesAsync();
         await WriteJsonAsync(context, HttpStatusCode.OK, new
@@ -4670,6 +4670,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 net = snapshot.NetDisplay,
                 vat = snapshot.VatDisplay,
                 tips = snapshot.TipsDisplay,
+                giftCardDisplay = snapshot.GiftCardDisplay,
                 posSales = $"{snapshot.PosDisplay} ({snapshot.PosOrderCount})",
                 onlineSales = $"{snapshot.OnlineDisplay} ({snapshot.OnlineOrderCount})",
                 pettyCashOut = snapshot.TillNetOutDisplay,
@@ -4916,7 +4917,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
     private async Task<bool> EnsureAnyFeatureAsync(HttpContext context, ClientSessionValidation session, params string[] features)
     {
-        var granted = await _clientAccess.GetGrantedFeaturesAsync(session.TerminalId, context.RequestAborted);
+        var granted = await GetEffectiveClientFeaturesAsync(session.TerminalId, context.RequestAborted);
         if (features.Any(granted.Contains))
         {
             return true;
@@ -4930,6 +4931,28 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             message = "This Client terminal is not allowed to use that feature."
         });
         return false;
+    }
+
+    private async Task<IReadOnlySet<string>> GetEffectiveClientFeaturesAsync(
+        string? terminalId,
+        CancellationToken cancellationToken = default)
+    {
+        var granted = await _clientAccess.GetGrantedFeaturesAsync(terminalId, cancellationToken);
+        try
+        {
+            var orderServices = ServiceHelper.GetService<OrderServiceAvailabilityService>();
+            if (orderServices is null)
+            {
+                return granted;
+            }
+
+            await orderServices.GetAsync(forceRefresh: false, cancellationToken);
+            return orderServices.FilterClientFeatures(granted);
+        }
+        catch
+        {
+            return granted;
+        }
     }
 
     private static string? FeatureForOrderType(string? orderType) =>
@@ -5190,6 +5213,80 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         };
     }
 
+    /// <summary>
+    /// Inserts a Client sync row into terminal_events across old (006) and new shapes.
+    /// Older tables require event_id / change_kind; newer ones use event_type.
+    /// </summary>
+    private static async Task<long> InsertClientTerminalEventAsync(
+        MySqlConnection connection,
+        string eventType,
+        string entityType,
+        string? entityId,
+        string payloadJson)
+    {
+        var columns = await GetTerminalEventColumnNamesAsync(connection).ConfigureAwait(false);
+        var insertColumns = new List<string>();
+        var insertValues = new List<string>();
+
+        void Add(string column, string valueToken)
+        {
+            if (!columns.Contains(column))
+            {
+                return;
+            }
+
+            insertColumns.Add(column);
+            insertValues.Add(valueToken);
+        }
+
+        Add("event_id", "@eventId");
+        Add("event_type", "@eventType");
+        Add("event_kind", "@eventType");
+        Add("change_kind", "@eventType");
+        Add("entity_type", "@entityType");
+        Add("entity_name", "@entityType");
+        Add("entity_id", "@entityId");
+        Add("payload_json", "@payload");
+        Add("created_at", "UTC_TIMESTAMP()");
+
+        if (insertColumns.Count == 0)
+        {
+            throw new InvalidOperationException("terminal_events table is missing required columns.");
+        }
+
+        var sql = $@"
+            INSERT INTO terminal_events ({string.Join(", ", insertColumns)})
+            VALUES ({string.Join(", ", insertValues)});
+            SELECT LAST_INSERT_ID();";
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@eventId", Guid.NewGuid().ToString());
+        command.Parameters.AddWithValue("@eventType", eventType);
+        command.Parameters.AddWithValue("@entityType", entityType);
+        command.Parameters.AddWithValue("@entityId", string.IsNullOrWhiteSpace(entityId) ? string.Empty : entityId);
+        command.Parameters.AddWithValue("@payload", payloadJson ?? "{}");
+        return Convert.ToInt64(await command.ExecuteScalarAsync().ConfigureAwait(false));
+    }
+
+    private static async Task<HashSet<string>> GetTerminalEventColumnNamesAsync(MySqlConnection connection)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        const string sql = """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'terminal_events'
+            """;
+        await using var command = new MySqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+        {
+            columns.Add(reader.GetString(0));
+        }
+
+        return columns;
+    }
+
     private static async Task EnsureClientConnectionTablesAsync(MySqlConnection connection)
     {
         if (RuntimeSchemaPolicy.IsMigrationManaged)
@@ -5248,7 +5345,16 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_terminal_events_created (created_at),
                 INDEX idx_terminal_events_type (event_type)
-            ) ENGINE=InnoDB"
+            ) ENGINE=InnoDB",
+            // Older 006 / live-sync shapes lack event_type; CREATE IF NOT EXISTS does not upgrade.
+            "ALTER TABLE terminal_events ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NULL",
+            "ALTER TABLE terminal_events ADD COLUMN IF NOT EXISTS entity_type VARCHAR(80) NULL",
+            "ALTER TABLE terminal_events ADD COLUMN IF NOT EXISTS entity_id VARCHAR(120) NULL",
+            "ALTER TABLE terminal_events ADD COLUMN IF NOT EXISTS payload_json JSON NULL",
+            "ALTER TABLE terminal_events ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            @"UPDATE terminal_events
+                SET event_type = COALESCE(NULLIF(TRIM(event_type), ''), 'legacy')
+                WHERE event_type IS NULL OR TRIM(event_type) = ''"
             ,@"CREATE TABLE IF NOT EXISTS client_security_audit (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 terminal_id VARCHAR(64) NOT NULL,

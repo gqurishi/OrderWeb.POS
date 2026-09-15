@@ -17,6 +17,8 @@ public static class PosNavigationCatalog
         // Keep the normal order-taking flow together in every host sidebar.
         Item("liveorder", "Live Orders", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.LiveOrders], 55),
         Item("restaurant", "Restaurant", "restaurant.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.DineIn], 30),
+        // Mother Admin only — floor / table / visual layout setup hub.
+        Item("layout", "Layout", "restaurant.png", [PosCapabilityKeys.AccessAdmin], [PosFeatureKeys.DineIn], 35),
         Item("collection", "Collection", "collection.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection], 40),
         Item("delivery", "Delivery", "delivery.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Delivery], 50),
         // Mother sidebar only. ClientHostAccess strips this route from the Client menu.

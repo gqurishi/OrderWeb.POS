@@ -14,6 +14,7 @@ public partial class PrintTemplatesPage : ContentPage
     private readonly DeliveryReceiptTemplateSettingsService _deliverySettingsService;
     private readonly TableBillReceiptTemplateSettingsService _tableBillSettingsService;
     private readonly TablePaymentReceiptTemplateSettingsService _tablePaymentSettingsService;
+    private readonly OnlineReceiptTemplateSettingsService _onlineSettingsService;
     private KitchenTicketPreviewMode _previewMode = KitchenTicketPreviewMode.Table;
     private CustomerReceiptKind _receiptKind = CustomerReceiptKind.Collection;
     private KitchenTemplateSettings _kitchenSettings = KitchenTemplateSettings.Default();
@@ -21,6 +22,7 @@ public partial class PrintTemplatesPage : ContentPage
     private CollectionReceiptTemplateSettings _deliverySettings = CollectionReceiptTemplateSettings.Default();
     private CollectionReceiptTemplateSettings _tableBillSettings = CollectionReceiptTemplateSettings.Default();
     private CollectionReceiptTemplateSettings _tablePaymentSettings = CollectionReceiptTemplateSettings.Default();
+    private CollectionReceiptTemplateSettings _onlineSettings = CollectionReceiptTemplateSettings.Default();
     private bool _isApplyingKitchenSettings;
     private bool _isApplyingCollectionSettings;
     private bool _hasLoadedKitchenSettings;
@@ -28,6 +30,7 @@ public partial class PrintTemplatesPage : ContentPage
     private bool _hasLoadedDeliverySettings;
     private bool _hasLoadedTableBillSettings;
     private bool _hasLoadedTablePaymentSettings;
+    private bool _hasLoadedOnlineSettings;
 
     public PrintTemplatesPage()
     {
@@ -42,6 +45,8 @@ public partial class PrintTemplatesPage : ContentPage
             ?? new TableBillReceiptTemplateSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
         _tablePaymentSettingsService = ServiceHelper.GetService<TablePaymentReceiptTemplateSettingsService>()
             ?? new TablePaymentReceiptTemplateSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
+        _onlineSettingsService = ServiceHelper.GetService<OnlineReceiptTemplateSettingsService>()
+            ?? new OnlineReceiptTemplateSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
         ApplyKitchenSettingsToControls();
         ApplyCustomerReceiptSettingsToControls();
         SetKitchenTemplate(KitchenTicketPreviewMode.Table);
@@ -156,6 +161,11 @@ public partial class PrintTemplatesPage : ContentPage
         SetCustomerReceiptTemplate(CustomerReceiptKind.TablePayment);
     }
 
+    private void OnOnlineReceiptTemplateClicked(object? sender, EventArgs e)
+    {
+        SetCustomerReceiptTemplate(CustomerReceiptKind.Online);
+    }
+
     private void SetKitchenTemplate(KitchenTicketPreviewMode mode)
     {
         _previewMode = mode;
@@ -176,6 +186,7 @@ public partial class PrintTemplatesPage : ContentPage
         StylePreviewButton(DeliveryReceiptTemplateButton, false);
         StylePreviewButton(TableBillTemplateButton, false);
         StylePreviewButton(TablePaymentTemplateButton, false);
+        StylePreviewButton(OnlineReceiptTemplateButton, false);
         StylePreviewButton(TablePreviewButton, mode == KitchenTicketPreviewMode.Table);
         StylePreviewButton(CollectionPreviewButton, mode == KitchenTicketPreviewMode.Collection);
         StylePreviewButton(DeliveryPreviewButton, mode == KitchenTicketPreviewMode.Delivery);
@@ -189,6 +200,7 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.Delivery => "Delivery Receipt",
             CustomerReceiptKind.TableBill => "Table Bill",
             CustomerReceiptKind.TablePayment => "Table Payment Receipt",
+            CustomerReceiptKind.Online => "Online Receipt",
             _ => "Collection Receipt"
         };
         PageSubheadingLabel.Text = "80mm customer receipt preview";
@@ -217,6 +229,10 @@ public partial class PrintTemplatesPage : ContentPage
             {
                 _ = LoadTablePaymentSettingsAsync();
             }
+            else if (receiptKind == CustomerReceiptKind.Online)
+            {
+                _ = LoadOnlineSettingsAsync();
+            }
             else
             {
                 _ = LoadCollectionSettingsAsync();
@@ -235,6 +251,7 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.Delivery => "Delivery customer receipt",
             CustomerReceiptKind.TableBill => "Table bill",
             CustomerReceiptKind.TablePayment => "Final paid table receipt",
+            CustomerReceiptKind.Online => "Online customer receipt",
             _ => "Collection customer receipt"
         };
         StylePreviewButton(KitchenTemplateButton, false);
@@ -242,13 +259,15 @@ public partial class PrintTemplatesPage : ContentPage
         StylePreviewButton(DeliveryReceiptTemplateButton, receiptKind == CustomerReceiptKind.Delivery);
         StylePreviewButton(TableBillTemplateButton, receiptKind == CustomerReceiptKind.TableBill);
         StylePreviewButton(TablePaymentTemplateButton, receiptKind == CustomerReceiptKind.TablePayment);
+        StylePreviewButton(OnlineReceiptTemplateButton, receiptKind == CustomerReceiptKind.Online);
     }
 
     private bool IsEditableCustomerReceipt =>
         _receiptKind is CustomerReceiptKind.Collection
             or CustomerReceiptKind.Delivery
             or CustomerReceiptKind.TableBill
-            or CustomerReceiptKind.TablePayment;
+            or CustomerReceiptKind.TablePayment
+            or CustomerReceiptKind.Online;
 
     private CollectionReceiptTemplateSettings ActiveCustomerReceiptSettings =>
         _receiptKind switch
@@ -256,6 +275,7 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.Delivery => _deliverySettings,
             CustomerReceiptKind.TableBill => _tableBillSettings,
             CustomerReceiptKind.TablePayment => _tablePaymentSettings,
+            CustomerReceiptKind.Online => _onlineSettings,
             _ => _collectionSettings
         };
 
@@ -276,6 +296,12 @@ public partial class PrintTemplatesPage : ContentPage
         if (_receiptKind == CustomerReceiptKind.TablePayment)
         {
             _tablePaymentSettings = settings;
+            return;
+        }
+
+        if (_receiptKind == CustomerReceiptKind.Online)
+        {
+            _onlineSettings = settings;
             return;
         }
 
@@ -372,6 +398,23 @@ public partial class PrintTemplatesPage : ContentPage
         _hasLoadedTablePaymentSettings = true;
     }
 
+    private async Task LoadOnlineSettingsAsync()
+    {
+        if (_hasLoadedOnlineSettings)
+        {
+            return;
+        }
+
+        _onlineSettings = await _onlineSettingsService.GetSettingsAsync();
+        ApplyCustomerReceiptSettingsToControls();
+        if (_receiptKind == CustomerReceiptKind.Online)
+        {
+            RenderCustomerReceiptPreview();
+        }
+
+        _hasLoadedOnlineSettings = true;
+    }
+
     private void ApplyKitchenSettingsToControls()
     {
         _isApplyingKitchenSettings = true;
@@ -418,6 +461,7 @@ public partial class PrintTemplatesPage : ContentPage
         var isDelivery = _receiptKind == CustomerReceiptKind.Delivery;
         var isTableBill = _receiptKind == CustomerReceiptKind.TableBill;
         var isTablePayment = _receiptKind == CustomerReceiptKind.TablePayment;
+        var isOnline = _receiptKind == CustomerReceiptKind.Online;
         var isTableReceipt = isTableBill || isTablePayment;
 
         _isApplyingCollectionSettings = true;
@@ -426,13 +470,14 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.Delivery => "Delivery Customise",
             CustomerReceiptKind.TableBill => "Table Bill Customise",
             CustomerReceiptKind.TablePayment => "Table Payment Customise",
+            CustomerReceiptKind.Online => "Online Customise",
             _ => "Collection Customise"
         };
         CustomerNameField.IsVisible = !isTableReceipt;
         CustomerPhoneField.IsVisible = !isTableReceipt;
-        PaidStatusField.IsVisible = isTablePayment;
+        PaidStatusField.IsVisible = isTablePayment || isOnline;
         TableNumberField.IsVisible = isTableReceipt;
-        DeliveryAddressField.IsVisible = isDelivery;
+        DeliveryAddressField.IsVisible = isDelivery || isOnline;
         ServiceChargeField.IsVisible = isTableReceipt;
         PaymentField.IsVisible = !isTableBill;
         PaymentControlsLabel.Text = isTablePayment ? "Payment details" : "Payment";
@@ -602,16 +647,18 @@ public partial class PrintTemplatesPage : ContentPage
         var isDelivery = _receiptKind == CustomerReceiptKind.Delivery;
         var isTableBill = _receiptKind == CustomerReceiptKind.TableBill;
         var isTablePayment = _receiptKind == CustomerReceiptKind.TablePayment;
+        var isOnline = _receiptKind == CustomerReceiptKind.Online;
         var saved = _receiptKind switch
         {
             CustomerReceiptKind.Delivery => await _deliverySettingsService.SaveSettingsAsync(_deliverySettings),
             CustomerReceiptKind.TableBill => await _tableBillSettingsService.SaveSettingsAsync(_tableBillSettings),
             CustomerReceiptKind.TablePayment => await _tablePaymentSettingsService.SaveSettingsAsync(_tablePaymentSettings),
+            CustomerReceiptKind.Online => await _onlineSettingsService.SaveSettingsAsync(_onlineSettings),
             _ => await _collectionSettingsService.SaveSettingsAsync(_collectionSettings)
         };
         SaveCollectionSettingsButton.Text = "Save";
         SaveCollectionSettingsButton.IsEnabled = true;
-        var templateName = isDelivery ? "Delivery" : isTableBill ? "Table bill" : isTablePayment ? "Table payment" : "Collection";
+        var templateName = isDelivery ? "Delivery" : isTableBill ? "Table bill" : isTablePayment ? "Table payment" : isOnline ? "Online" : "Collection";
 
         await AppAlertService.ShowAlertAsync(
             saved ? "Saved" : "Error",
@@ -625,6 +672,7 @@ public partial class PrintTemplatesPage : ContentPage
         var isDelivery = _receiptKind == CustomerReceiptKind.Delivery;
         var isTableBill = _receiptKind == CustomerReceiptKind.TableBill;
         var isTablePayment = _receiptKind == CustomerReceiptKind.TablePayment;
+        var isOnline = _receiptKind == CustomerReceiptKind.Online;
         SetActiveCustomerReceiptSettings(CollectionReceiptTemplateSettings.Default());
         ApplyCustomerReceiptSettingsToControls();
         RenderCustomerReceiptPreview();
@@ -633,9 +681,10 @@ public partial class PrintTemplatesPage : ContentPage
             CustomerReceiptKind.Delivery => await _deliverySettingsService.SaveSettingsAsync(_deliverySettings),
             CustomerReceiptKind.TableBill => await _tableBillSettingsService.SaveSettingsAsync(_tableBillSettings),
             CustomerReceiptKind.TablePayment => await _tablePaymentSettingsService.SaveSettingsAsync(_tablePaymentSettings),
+            CustomerReceiptKind.Online => await _onlineSettingsService.SaveSettingsAsync(_onlineSettings),
             _ => await _collectionSettingsService.SaveSettingsAsync(_collectionSettings)
         };
-        var templateName = isDelivery ? "Delivery" : isTableBill ? "Table bill" : isTablePayment ? "Table payment" : "Collection";
+        var templateName = isDelivery ? "Delivery" : isTableBill ? "Table bill" : isTablePayment ? "Table payment" : isOnline ? "Online" : "Collection";
 
         await AppAlertService.ShowAlertAsync(
             saved ? "Reset" : "Error",
@@ -711,6 +760,7 @@ public partial class PrintTemplatesPage : ContentPage
         var isDelivery = _receiptKind == CustomerReceiptKind.Delivery;
         var isTableBill = _receiptKind == CustomerReceiptKind.TableBill;
         var isTablePayment = _receiptKind == CustomerReceiptKind.TablePayment;
+        var isOnline = _receiptKind == CustomerReceiptKind.Online;
         var isTableReceipt = isTableBill || isTablePayment;
 
         KitchenPreviewLines.Children.Clear();
@@ -745,10 +795,18 @@ public partial class PrintTemplatesPage : ContentPage
                 CustomerReceiptKind.Delivery => "DELIVERY",
                 CustomerReceiptKind.TableBill => "TABLE BILL",
                 CustomerReceiptKind.TablePayment => "PAYMENT RECEIPT",
+                CustomerReceiptKind.Online => "ONLINE ORDER",
                 _ => "COLLECTION"
             },
             GetPreviewFontSize(settings.HeadingSize, PreviewFontSize),
             settings.HeadingBold);
+        if (isOnline)
+        {
+            AddCollectionCenteredLine(
+                "Collection",
+                GetPreviewFontSize(settings.OrderInfoSize, PreviewFontSize),
+                settings.OrderInfoBold);
+        }
         if (isTablePayment)
         {
             AddPreviewLine(
@@ -771,6 +829,15 @@ public partial class PrintTemplatesPage : ContentPage
             AddPreviewLine("Order #: 1042", orderInfoSize, settings.OrderInfoBold, TextAlignment.Start);
             AddPreviewLine("Date: 06 Jul 2026", orderInfoSize, settings.OrderInfoBold, TextAlignment.Start);
             AddPreviewLine("Time: 14:25", orderInfoSize, settings.OrderInfoBold, TextAlignment.Start);
+        }
+
+        if (isOnline)
+        {
+            AddPreviewLine(
+                "Pickup: 06 Jul 18:30",
+                GetPreviewFontSize(settings.OrderInfoSize, PreviewFontSize),
+                true,
+                TextAlignment.Start);
         }
 
         AddBlankLine();
@@ -797,7 +864,7 @@ public partial class PrintTemplatesPage : ContentPage
                 TextAlignment.Start);
         }
 
-        if (isDelivery)
+        if (isDelivery || isOnline)
         {
             AddBlankLine();
             var addressSize = GetPreviewFontSize(settings.DeliveryAddressSize, PreviewFontSize);
@@ -822,7 +889,7 @@ public partial class PrintTemplatesPage : ContentPage
         AddNormalLine("Subtotal:                                £27.45");
         AddNormalLine("Discount:                                -£2.00");
 
-        if (isDelivery)
+        if (isDelivery || isOnline)
         {
             AddNormalLine("Delivery fee:                             £2.50");
         }
@@ -836,11 +903,15 @@ public partial class PrintTemplatesPage : ContentPage
         }
 
         AddNormalLine(new string('=', PreviewLineWidth));
-        AddNormalLine(isDelivery
+        AddNormalLine(isDelivery || isOnline
             ? "TOTAL:                                   £27.95"
             : isTablePayment
                 ? "TOTAL:                                   £28.20"
                 : "TOTAL:                                   £25.45");
+        if (isOnline)
+        {
+            AddNormalLine("(VAT included in item prices)");
+        }
         AddBlankLine();
 
         if (isTableBill)
@@ -865,6 +936,17 @@ public partial class PrintTemplatesPage : ContentPage
                 settings.PaidStatusBold,
                 TextAlignment.Start);
         }
+        else if (isOnline)
+        {
+            var paymentSize = GetPreviewFontSize(settings.PaymentSize, PreviewFontSize);
+            AddPreviewLine("Payment: Cash", paymentSize, settings.PaymentBold, TextAlignment.Start);
+            AddPreviewLine(
+                "Status: pay on collection",
+                GetPreviewFontSize(settings.PaidStatusSize, PreviewFontSize),
+                settings.PaidStatusBold,
+                TextAlignment.Start);
+            AddPreviewLine("Amount due:                              £27.95", paymentSize, settings.PaymentBold, TextAlignment.Start);
+        }
         else
         {
             AddPreviewLine(
@@ -879,6 +961,12 @@ public partial class PrintTemplatesPage : ContentPage
             AddNormalLine(new string('-', PreviewLineWidth));
             AddNormalLine("Customer Note:");
             AddNormalLine("Please call when outside.");
+        }
+        else if (isOnline)
+        {
+            AddNormalLine(new string('-', PreviewLineWidth));
+            AddNormalLine("ORDER NOTES:");
+            AddNormalLine("No onions please.");
         }
 
         AddNormalLine(new string('-', PreviewLineWidth));

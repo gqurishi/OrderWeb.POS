@@ -360,7 +360,7 @@ public sealed class ZReportService
             // Fall back below.
         }
 
-        if (breakdown.CashTotal == 0 && breakdown.CardTotal == 0)
+        if (breakdown.CashTotal == 0 && breakdown.CardTotal == 0 && breakdown.GiftCardTotal == 0)
         {
             breakdown = await LoadPaymentBreakdownFromLocalOrdersAsync(start, end);
         }
@@ -448,6 +448,12 @@ public sealed class ZReportService
                 case "debit_card":
                     breakdown.CardTotal += amount;
                     breakdown.CardCount += count;
+                    break;
+                case "gift_card":
+                case "voucher":
+                case "giftcard":
+                    breakdown.GiftCardTotal += amount;
+                    breakdown.GiftCardCount += count;
                     break;
             }
         }

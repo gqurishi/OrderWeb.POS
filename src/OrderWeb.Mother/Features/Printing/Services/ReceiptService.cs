@@ -127,7 +127,7 @@ public class ReceiptService
             || OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatusRaw);
         receipt.AppendLine($"Payment: {paymentMethod}");
         var paymentStatus = isPaid ? "paid" : order.PaymentStatusRaw;
-        receipt.AppendLine($"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, paymentStatus)}");
+        receipt.AppendLine($"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, paymentStatus, order.OrderType)}");
         if (isPaid)
         {
             receipt.AppendLine($"Amount Paid: £{(order.AmountPaid ?? order.TotalAmount):F2}");
@@ -257,7 +257,7 @@ public class ReceiptService
         var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
         var cloudPaymentPaid = OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus);
         receipt.AppendLine($"Payment: {paymentMethod}");
-        receipt.AppendLine($"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, order.PaymentStatus)}");
+        receipt.AppendLine($"Status: {OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, order.PaymentStatus, order.OrderType)}");
         var cloudAmountPaid = decimal.TryParse(order.AmountPaid, out var parsedAmountPaid) ? parsedAmountPaid : (decimal?)null;
         if (cloudPaymentPaid)
         {

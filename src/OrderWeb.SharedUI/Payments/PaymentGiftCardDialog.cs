@@ -469,16 +469,17 @@ public sealed class PaymentGiftCardDialog : ContentView
                 ?? PaymentOverlayHost.FindPage()
                 ?? overlayHost.Window?.Page as ContentPage;
 
-            var keyboard = new NumericKeyboardDialog();
-            var value = await keyboard.ShowDigitsAsync(
-                _giftCardNumberEntry.Text,
-                "Gift card number",
-                maxDigits: 24,
-                hostPage: hostPage,
-                overlayHost: overlayHost);
+            var keyboard = new VirtualKeyboardDialog();
+            keyboard.SetTextMode(VirtualKeyboardTextMode.Text);
+            keyboard.SetPrompt("Gift card number", "Done");
+            keyboard.SetPlaceholder("Enter or scan gift card number");
+            keyboard.SetMaximumLength(32);
+            keyboard.SetRequired(false);
+            keyboard.SetInitialText(_giftCardNumberEntry.Text ?? string.Empty);
+            var value = await keyboard.ShowOverAsync(overlayHost, hostPage);
             if (value != null)
             {
-                _giftCardNumberEntry.Text = value;
+                _giftCardNumberEntry.Text = value.Trim();
             }
         }
         finally

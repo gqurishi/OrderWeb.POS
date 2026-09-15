@@ -1,5 +1,4 @@
 using OrderWeb.Contracts.Access;
-using OrderWeb.Contracts.Features;
 using OrderWeb.SharedUI.Navigation;
 
 namespace OrderWeb.Client.Services;
@@ -7,6 +6,7 @@ namespace OrderWeb.Client.Services;
 /// <summary>
 /// Client presentation uses the feature/route list Mother sent at login.
 /// Sidebars mirror Mother User / Manager, except Rider. Rider stays on Mother only.
+/// Terminal Access On/Off is authoritative — including Reservations.
 /// </summary>
 public static class ClientHostAccess
 {
@@ -34,37 +34,26 @@ public static class ClientHostAccess
         {
             var userRoutes = new HashSet<string>(MotherUserHostRoutes, StringComparer.OrdinalIgnoreCase);
             userRoutes.IntersectWith(Routes);
-            return WithoutRider(WithReservationRoute(userRoutes));
+            return WithoutRider(userRoutes);
         }
 
         if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
             var managerRoutes = new HashSet<string>(MotherManagerHostRoutes, StringComparer.OrdinalIgnoreCase);
             managerRoutes.IntersectWith(Routes);
-            return WithoutRider(WithReservationRoute(managerRoutes));
+            return WithoutRider(managerRoutes);
         }
 
         return WithoutRider(Routes);
     }
 
-    /// <summary>
-    /// Features for sidebar/dashboard filtering. Mother User/Manager always
-    /// expose Reservations beside Restaurant.
-    /// </summary>
-    public static IReadOnlySet<string> FeaturesForRole(string? role)
-    {
-        if (!string.Equals(role, "User", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
-        {
-            return Features;
-        }
-
-        return WithReservationFeature(Features);
-    }
+    /// <summary>Features Mother granted this terminal — no Client-side extras.</summary>
+    public static IReadOnlySet<string> FeaturesForRole(string? role) => Features;
 
     /// <summary>
     /// Mother keeps User and Manager dashboards focused on the four primary
     /// service actions. Additional Manager tools remain in the sidebar.
+    /// Reservation tile only appears when Mother granted Reservations.
     /// </summary>
     public static IReadOnlySet<string> DashboardRoutesForRole(string? role)
     {
@@ -82,7 +71,7 @@ public static class ClientHostAccess
             "reservation"
         };
         dashboardRoutes.IntersectWith(Routes);
-        return WithReservationRoute(dashboardRoutes);
+        return dashboardRoutes;
     }
 
     public static void Apply(IEnumerable<string>? features, IEnumerable<string>? routes = null)
@@ -97,18 +86,6 @@ public static class ClientHostAccess
         if (_routes.Count == 0)
         {
             _routes = ClientAccessPolicy.RoutesForFeatures(_features);
-        }
-
-        // Mother User/Manager dashboards always include Reservations. Keep the
-        // same Client surface whenever Restaurant/tables is already granted
-        // (covers older Mother sessions that omitted the Reservations feature).
-        if (_features.Contains(PosFeatureKeys.DineIn) ||
-            _routes.Contains("restaurant") ||
-            _features.Contains(PosFeatureKeys.Reservations) ||
-            _routes.Contains("reservation"))
-        {
-            _features = WithReservationFeature(_features);
-            _routes = WithReservationRoute(_routes);
         }
 
         _routes = WithoutRider(_routes);
@@ -170,45 +147,6 @@ public static class ClientHostAccess
         "payment" or "payments" => "payments",
         _ => string.Empty
     };
-
-    private static IReadOnlySet<string> WithReservationFeature(IReadOnlySet<string> features)
-    {
-        if (features.Contains(PosFeatureKeys.Reservations))
-        {
-            return features;
-        }
-
-        var next = new HashSet<string>(features, StringComparer.OrdinalIgnoreCase)
-        {
-            PosFeatureKeys.Reservations
-        };
-        return ClientAccessPolicy.FilterFeatures(next);
-    }
-
-    private static IReadOnlySet<string> WithReservationRoute(IReadOnlySet<string> routes)
-    {
-        // Only expose Reservation when Restaurant/tables (or Reservations) is in play.
-        var restaurantSurface =
-            _features.Contains(PosFeatureKeys.DineIn) ||
-            _features.Contains(PosFeatureKeys.Reservations) ||
-            _routes.Contains("restaurant") ||
-            _routes.Contains("reservation") ||
-            routes.Contains("restaurant") ||
-            routes.Contains("reservation");
-
-        if (!restaurantSurface)
-        {
-            return routes;
-        }
-
-        if (routes.Contains("reservation"))
-        {
-            return routes;
-        }
-
-        var next = new HashSet<string>(routes, StringComparer.OrdinalIgnoreCase) { "reservation" };
-        return ClientAccessPolicy.FilterRoutes(next);
-    }
 
     private static IReadOnlySet<string> WithoutRider(IReadOnlySet<string> routes)
     {

@@ -1836,7 +1836,7 @@ public partial class AddEditItemPage : ContentPage
         {
             QuickNotesListContainer.Children.Add(new Label
             {
-                Text = "No quick notes yet. Click '+ Add Quick Note' below.",
+                Text = "No quick notes yet.",
                 FontSize = 13,
                 TextColor = Color.FromArgb("#94A3B8"),
                 HorizontalOptions = LayoutOptions.Center,

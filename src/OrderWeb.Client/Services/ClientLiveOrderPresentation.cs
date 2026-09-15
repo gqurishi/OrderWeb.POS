@@ -15,6 +15,7 @@ public static class ClientLiveOrderPresentation
             "Collection" => LiveOrderFilter.Collection,
             "Delivery" => LiveOrderFilter.Delivery,
             "Table" => LiveOrderFilter.Table,
+            "Web" => LiveOrderFilter.Web,
             _ => LiveOrderFilter.All
         };
 
@@ -23,6 +24,7 @@ public static class ClientLiveOrderPresentation
         LiveOrderFilter.Collection => "Collection",
         LiveOrderFilter.Delivery => "Delivery",
         LiveOrderFilter.Table => "Table",
+        LiveOrderFilter.Web => "Web",
         _ => "All"
     };
 
@@ -34,6 +36,7 @@ public static class ClientLiveOrderPresentation
             "all" => "All",
             "delivery" or "del" => "Delivery",
             "table" or "tbl" or "dine_in" or "dine-in" => "Table",
+            "web" or "weborder" or "web_order" => "Web",
             _ => "Collection"
         };
 
@@ -83,7 +86,21 @@ public static class ClientLiveOrderPresentation
         var selected = FromFilter(filter);
         return openOrders
             .Select(order => (order, type: NormalizeType(order.OrderType)))
-            .Where(pair => filter == LiveOrderFilter.All || pair.type == selected)
+            .Where(pair =>
+            {
+                if (filter == LiveOrderFilter.All)
+                {
+                    return true;
+                }
+
+                if (filter == LiveOrderFilter.Web)
+                {
+                    // Web cash-due list needs SourceChannel/PaymentMethod from Mother open-orders API.
+                    return IsWebCashDue(pair.order);
+                }
+
+                return pair.type == selected;
+            })
             .OrderByDescending(pair => pair.type == "Table")
             .ThenBy(pair => FormatTime(pair.order.UpdatedUtc))
             .Select(pair => MapOne(pair.order, pair.type))
@@ -92,12 +109,20 @@ public static class ClientLiveOrderPresentation
 
     public static string Fingerprint(IReadOnlyList<MotherOrderState> openOrders, string selectedFilter)
     {
-        var selected = NormalizeType(selectedFilter);
+        var filter = ToFilter(selectedFilter);
+        var selected = FromFilter(filter);
         var parts = OpenOrdersOnly(openOrders)
             .Select(order =>
             {
                 var type = NormalizeType(order.OrderType);
-                if (selected != "All" && type != selected)
+                if (filter == LiveOrderFilter.Web)
+                {
+                    if (!IsWebCashDue(order))
+                    {
+                        return null;
+                    }
+                }
+                else if (selected != "All" && type != selected)
                 {
                     return null;
                 }
@@ -107,6 +132,24 @@ public static class ClientLiveOrderPresentation
             .Where(part => part is not null)
             .OrderBy(part => part, StringComparer.Ordinal);
         return selected + "#" + string.Join("|", parts);
+    }
+
+    /// <summary>
+    /// Cash-due web orders when Mother sends channel/method on open-order state.
+    /// Until those fields exist on Client cache, Web tab stays empty (Mother Live Order is the desk).
+    /// </summary>
+    public static bool IsWebCashDue(MotherOrderState order) =>
+        string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase)
+        && IsDeferredCashMethod(order.PaymentMethod);
+
+    private static bool IsDeferredCashMethod(string? paymentMethod)
+    {
+        var key = new string((paymentMethod ?? "cash")
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
+        return key is "cash" or "cod" or "cashondelivery" or "cashoncollection" or "";
     }
 
     public static string FormatNumber(string? orderNumber, string? fallbackId)
@@ -153,7 +196,28 @@ public static class ClientLiveOrderPresentation
             TotalText: $"£{order.Total:F2}",
             TimeText: FormatTime(order.UpdatedUtc),
             AccentColorHex: "#10B981",
-            Badges: null);
+            Badges: BuildBadges(order, type));
+    }
+
+    private static IReadOnlyList<LiveOrderBadgePresentation>? BuildBadges(MotherOrderState order, string type)
+    {
+        if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var badges = new List<LiveOrderBadgePresentation>
+        {
+            new("WEB", "#DBEAFE", "#1D4ED8"),
+            new(type.ToUpperInvariant(), "#E0F2FE", "#0369A1")
+        };
+
+        if (IsWebCashDue(order))
+        {
+            badges.Add(new LiveOrderBadgePresentation("CASH DUE", "#FEF3C7", "#B45309"));
+        }
+
+        return badges;
     }
 
     private static bool HasCustomerName(string? name) =>

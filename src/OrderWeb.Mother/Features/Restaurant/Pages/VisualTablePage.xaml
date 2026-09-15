@@ -208,7 +208,7 @@
                             Stroke="#BFDBFE"
                             StrokeThickness="1"
                             Padding="12,8"
-                            MinimumHeightRequest="44"
+                            MinimumHeightRequest="36"
                             IsVisible="False">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8"/>
@@ -229,7 +229,7 @@
                             Stroke="#BBF7D0"
                             StrokeThickness="1"
                             Padding="12,8"
-                            MinimumHeightRequest="44"
+                            MinimumHeightRequest="36"
                             IsVisible="False">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8"/>

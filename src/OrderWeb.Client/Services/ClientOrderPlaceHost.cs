@@ -48,6 +48,8 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     private string? _loyaltyAddIdempotencyKey;
     private string? _loyaltyAddIdempotencyFingerprint;
     private bool _loyaltyAddBusy;
+    private string? _ownWriteOrderId;
+    private long _ignoreLiveEchoUntilTicks;
 
     public ClientOrderPlaceHost(IClientOrderPlaceUi ui)
     {
@@ -60,6 +62,63 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
     public event EventHandler? StateChanged;
 
     public MotherOrderState? CurrentOrder => _currentOrder;
+
+    /// <summary>
+    /// This till is saving, or just saved. Live echoes of that save must stay silent.
+    /// </summary>
+    public void BeginOwnWrite()
+    {
+        _ownWriteOrderId = _currentOrder?.OrderId;
+        ExtendOwnWriteQuiet();
+    }
+
+    public bool ShouldIgnoreLiveEcho(string? orderId)
+    {
+        if (_persistQueued || Session.ActionsBusy || _motherWriteGate.CurrentCount == 0)
+        {
+            return true;
+        }
+
+        if (DateTime.UtcNow.Ticks >= _ignoreLiveEchoUntilTicks)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(orderId) || string.IsNullOrWhiteSpace(_ownWriteOrderId))
+        {
+            return true;
+        }
+
+        return string.Equals(orderId.Trim(), _ownWriteOrderId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ExtendOwnWriteQuiet()
+    {
+        var until = DateTime.UtcNow.AddSeconds(8).Ticks;
+        if (until > _ignoreLiveEchoUntilTicks)
+        {
+            _ignoreLiveEchoUntilTicks = until;
+        }
+    }
+
+    private void ClearOwnEchoStatus()
+    {
+        if (_currentOrder is not null && IsOwnEchoMessage(_currentOrder.ConflictMessage))
+        {
+            _currentOrder = _currentOrder with { ConflictMessage = null };
+        }
+
+        if (IsOwnEchoMessage(Session.StatusMessage))
+        {
+            Session.StatusMessage = null;
+        }
+    }
+
+    private static bool IsOwnEchoMessage(string? message) =>
+        !string.IsNullOrWhiteSpace(message) &&
+        (message.Contains("another terminal", StringComparison.OrdinalIgnoreCase) ||
+         message.Contains("updated elsewhere", StringComparison.OrdinalIgnoreCase) ||
+         message.Contains("Changed elsewhere", StringComparison.OrdinalIgnoreCase));
 
     public void ConfigureTable(CachedTable table, int covers)
     {
@@ -739,6 +798,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
+            BeginOwnWrite();
             await FlushMotherPersistAsync();
             var result = await _orderClient.ApplyDiscountAsync(
                 _currentOrder,
@@ -814,6 +874,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
         try
         {
+            BeginOwnWrite();
             await FlushMotherPersistAsync();
             var result = await _orderClient.SetServiceChargeAsync(
                 _currentOrder,
@@ -821,13 +882,18 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                 reason,
                 pin);
             _currentOrder = MergeFinancials(_currentOrder, result.State);
+            ClearOwnEchoStatus();
+            ExtendOwnWriteQuiet();
             await _cache.SaveOrderStateAsync(_currentOrder);
             PublishSession();
             await _ui.ShowToastAsync("Service charge", result.Message, StatusKind.Success);
         }
         catch (Exception ex)
         {
-            await _ui.ShowToastAsync("Service charge failed", ex.Message, StatusKind.Error);
+            var message = IsOwnEchoMessage(ex.Message)
+                ? "Could not change the service charge. Try again."
+                : ex.Message;
+            await _ui.ShowToastAsync("Service charge failed", message, StatusKind.Error);
         }
     }
 
@@ -2219,6 +2285,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
                 try
                 {
+                    BeginOwnWrite();
                     var result = await _orderClient.ReplaceLinesAsync(snapshot, snapshot.Lines);
                     lock (_orderGate)
                     {
@@ -2260,10 +2327,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
                         await _cache.SaveOrderStateAsync(_currentOrder);
                     }
 
-                    if (result.ConflictDetected)
+                    ClearOwnEchoStatus();
+                    ExtendOwnWriteQuiet();
+                    if (result.ConflictDetected && !IsOwnEchoMessage(result.Message))
                     {
-                        Session.StatusMessage = result.Message;
-                        await _ui.ShowToastAsync("Order conflict", result.Message, StatusKind.Warning);
+                        Session.StatusMessage = "Could not save that change. Try again.";
+                        await _ui.ShowToastAsync("Not saved", "Could not save that change. Try again.", StatusKind.Warning);
                     }
 
                     PublishSession();

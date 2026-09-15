@@ -67,6 +67,77 @@ namespace POS_in_NET.Pages
             UpdateLastSyncLabel(false);
         }
 
+        /// <summary>Used when Visual Layout is hosted under Layout tabs.</summary>
+        public void PrepareForEmbed()
+        {
+            TopBar.IsVisible = false;
+        }
+
+        public Task ActivateEmbeddedAsync() => ActivateLayoutAsync(isEmbedded: true);
+
+        public void DeactivateEmbedded()
+        {
+            StopBasicUserIdleWatchdog();
+            StopAutoRefreshPolling();
+            UnsubscribeFromRefreshEvents();
+        }
+
+        private async Task ActivateLayoutAsync(bool isEmbedded)
+        {
+            var serviceSettings = await _orderServiceAvailabilityService.GetAsync(
+                forceRefresh: !PosLayoutCache.IsWarm);
+            if (!serviceSettings.TableEnabled)
+            {
+                if (!isEmbedded)
+                {
+                    await AppAlertService.ShowAlertAsync("Table Service Unavailable", "Table service is disabled by the Administrator.");
+                    await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
+                }
+
+                return;
+            }
+
+            if (_authService.CurrentUser?.Role == UserRole.User)
+            {
+                _inactivityService.Start();
+                _inactivityService.ResetActivity();
+                _inactivityService.TrackPage(this);
+                StartBasicUserIdleWatchdog();
+            }
+
+            _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
+            TablesView.LayoutEditEnabled = _isAdmin;
+            TablesView.EmptyActionText = _isAdmin ? "Go to Table Management" : string.Empty;
+
+            if (!_hasBackfilledTableSessions)
+            {
+                _hasBackfilledTableSessions = true;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var backfillResult = await _sessionService.BackfillOpenTableSessionsAsync();
+                        if (backfillResult.repairedCount > 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[VisualTable] {backfillResult.message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VisualTable] Backfill skipped: {ex.Message}");
+                    }
+                });
+            }
+
+            SubscribeToRefreshEvents();
+            StartAutoRefreshPolling();
+
+            var shouldShowLoader = !PosLayoutCache.IsWarm
+                && (!_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue);
+            await LoadFloorsAndTables(showLoading: shouldShowLoader, loadingMessage: "Loading layout...");
+            UpdateAdminToolsVisibility();
+        }
+
         private void WireSharedTablesView()
         {
             // Reparent admin buttons into SharedUI toolbar (SharedUI owns the Live sync chip).
@@ -131,60 +202,12 @@ namespace POS_in_NET.Pages
         protected override async void OnAppearing()
         {
             base.OnAppearing();
-
-            var serviceSettings = await _orderServiceAvailabilityService.GetAsync(
-                forceRefresh: !PosLayoutCache.IsWarm);
-            if (!serviceSettings.TableEnabled)
+            if (!TopBar.IsVisible)
             {
-                await AppAlertService.ShowAlertAsync("Table Service Unavailable", "Table service is disabled by the Administrator.");
-                await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
                 return;
             }
 
-            if (_authService.CurrentUser?.Role == UserRole.User)
-            {
-                _inactivityService.Start();
-                _inactivityService.ResetActivity();
-                _inactivityService.TrackPage(this);
-                StartBasicUserIdleWatchdog();
-            }
-
-            _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
-            TablesView.LayoutEditEnabled = _isAdmin;
-            TablesView.EmptyActionText = _isAdmin ? "Go to Table Management" : string.Empty;
-
-            // Do not auto-reset table/session state on page load.
-            // Active orders/sessions must persist so colors stay accurate
-            // (Green=idle, Amber=active, Red=problem).
-
-            if (!_hasBackfilledTableSessions)
-            {
-                _hasBackfilledTableSessions = true;
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var backfillResult = await _sessionService.BackfillOpenTableSessionsAsync();
-                        if (backfillResult.repairedCount > 0)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[VisualTable] {backfillResult.message}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[VisualTable] Backfill skipped: {ex.Message}");
-                    }
-                });
-            }
-
-            SubscribeToRefreshEvents();
-            StartAutoRefreshPolling();
-
-            // Phase 1: paint silently when layout was warmed after login (or page already has floors).
-            var shouldShowLoader = !PosLayoutCache.IsWarm
-                && (!_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue);
-            await LoadFloorsAndTables(showLoading: shouldShowLoader, loadingMessage: "Loading layout...");
-            UpdateAdminToolsVisibility();
+            await ActivateLayoutAsync(isEmbedded: false);
         }
 
         protected override void OnDisappearing()
@@ -532,6 +555,15 @@ namespace POS_in_NET.Pages
 
             var tableDtos = tables.Select(MapToRestaurantTableDto).ToList();
             var preferredFloorId = _currentFloor?.Id.ToString();
+
+            if (tables.Count == 0)
+            {
+                ShowNoTablesEmptyCopy();
+            }
+            else
+            {
+                _emptyNeedsFloorSetup = false;
+            }
 
             TablesView.Bind(
                 new FloorSnapshotDto(version, floorDtos),
@@ -1090,14 +1122,32 @@ namespace POS_in_NET.Pages
             }
         }
 
+        private bool _emptyNeedsFloorSetup;
+
         private void ShowNoFloorsMessage()
         {
             _currentTablesById.Clear();
+            _currentFloor = null;
+            _emptyNeedsFloorSetup = true;
+            TablesView.SetEmptyCopy(
+                "No floors yet",
+                "Create a floor first, then add tables. Use Floor Management (Admin).");
+            TablesView.EmptyActionText = _isAdmin ? "Go to Floor Management" : string.Empty;
             TablesView.Bind(
                 new FloorSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<FloorDto>()),
                 new TableSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<RestaurantTableDto>()));
             TablesView.SetSyncState(RestaurantSyncMode.NotSynced);
             TablesView.FloorBackground = null;
+            UpdateAdminToolsVisibility();
+        }
+
+        private void ShowNoTablesEmptyCopy()
+        {
+            _emptyNeedsFloorSetup = false;
+            TablesView.SetEmptyCopy(
+                "No Tables on This Floor",
+                "Add tables from Table Management, then place them on this layout.");
+            TablesView.EmptyActionText = _isAdmin ? "Go to Table Management" : string.Empty;
         }
 
         // Event Handlers
@@ -1232,6 +1282,12 @@ namespace POS_in_NET.Pages
             if (!_isAdmin)
             {
                 await ToastNotification.ShowAsync("Access Denied", "Only admin can access table management.", NotificationType.Error);
+                return;
+            }
+
+            if (_emptyNeedsFloorSetup || _floors.Count == 0)
+            {
+                await NavigationCoordinator.Shared.NavigateShellAsync("floor", source: sender as VisualElement);
                 return;
             }
 

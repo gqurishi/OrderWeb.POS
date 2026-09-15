@@ -55,7 +55,8 @@ public static class KitchenTicketTemplateService
         NetworkPrinter? printer = null)
     {
         settings = NormalizeSettings(settings);
-        var builder = new EscPosBuilder(PrinterBrand.Star, PaperWidth.Mm80).Initialize();
+        var brand = TicketBrand(printer);
+        var builder = new EscPosBuilder(brand, PaperWidth.Mm80).Initialize();
         var printedAt = DateTime.Now;
         var orderReference = GetOrderReference(order);
         var tableTitle = order.TableNumber > 0 ? $"TABLE {order.TableNumber}" : "TABLE";
@@ -80,7 +81,7 @@ public static class KitchenTicketTemplateService
 
             PrintOrderNotes(builder, order.Notes);
             PrintCheckedByFooter(builder, settings);
-            builder.FeedLines(2).Cut(true);
+            FinishKitchenTicket(builder, brand, printer);
         }
 
         return builder.Build();
@@ -280,6 +281,27 @@ public static class KitchenTicketTemplateService
     private static bool SupportsRedInk(NetworkPrinter? printer) =>
         printer is { SupportsTwoColor: true };
 
+    private static PrinterBrand TicketBrand(NetworkPrinter? printer) =>
+        printer?.Brand is PrinterBrand.Epson or PrinterBrand.Xprinter
+            ? printer.Brand
+            : PrinterBrand.Star;
+
+    private static void FinishKitchenTicket(EscPosBuilder builder, PrinterBrand brand, NetworkPrinter? printer)
+    {
+        if (brand is PrinterBrand.Epson or PrinterBrand.Xprinter)
+        {
+            builder.FeedLines(3);
+            if (printer?.HasCutter != false)
+            {
+                builder.Cut(true);
+            }
+
+            return;
+        }
+
+        builder.FeedLines(2).Cut(true);
+    }
+
     private static void PrintCloudItem(EscPosBuilder builder, CloudOrderItem item)
     {
         var name = !string.IsNullOrWhiteSpace(item.DisplayName)
@@ -305,7 +327,14 @@ public static class KitchenTicketTemplateService
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+        if (TryGetMealDealChoices(item.SpecialInstructions, out var mealDealChoices))
+        {
+            foreach (var choice in mealDealChoices)
+            {
+                PrintWrapped(builder, choice, 4);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
         {
             builder.SetBold(true);
             PrintWrapped(builder, $">> {item.SpecialInstructions}", 3);
@@ -313,6 +342,45 @@ public static class KitchenTicketTemplateService
         }
 
         builder.SetNormalSize().SetBold(false).FeedLines(1);
+    }
+
+    private static bool TryGetMealDealChoices(string? instructions, out List<string> choices)
+    {
+        choices = new List<string>();
+        if (string.IsNullOrWhiteSpace(instructions))
+        {
+            return false;
+        }
+
+        var text = instructions.Replace("\r", " ").Replace("\n", " ").Trim();
+        var marker = text.IndexOf("choose an option", StringComparison.OrdinalIgnoreCase);
+        string choicesText;
+        if (marker >= 0)
+        {
+            var afterMarker = text[(marker + "choose an option".Length)..];
+            var colon = afterMarker.IndexOf(':');
+            choicesText = colon >= 0 ? afterMarker[(colon + 1)..] : afterMarker;
+        }
+        else if (text.Contains("meal deal", StringComparison.OrdinalIgnoreCase))
+        {
+            var colon = text.LastIndexOf(':');
+            if (colon < 0 || colon >= text.Length - 1)
+            {
+                return false;
+            }
+
+            choicesText = text[(colon + 1)..];
+        }
+        else
+        {
+            return false;
+        }
+
+        choices = choicesText
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(choice => !string.IsNullOrWhiteSpace(choice))
+            .ToList();
+        return choices.Count > 0;
     }
 
     private static void PrintOrderNotes(EscPosBuilder builder, string? notes)

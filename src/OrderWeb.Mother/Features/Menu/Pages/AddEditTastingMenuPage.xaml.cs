@@ -344,28 +344,29 @@ public partial class AddEditTastingMenuPage : ContentPage
             {
                 ColumnDefinitions =
                 {
-                    new ColumnDefinition { Width = 54 },
+                    new ColumnDefinition { Width = 36 },
                     new ColumnDefinition { Width = GridLength.Star },
                     _wineColumn
                 },
-                ColumnSpacing = 14,
-                Padding = new Thickness(12, 10),
+                ColumnSpacing = 8,
+                Padding = new Thickness(0, 2),
                 BackgroundColor = Colors.White
             };
 
             Root.Add(new Border
             {
-                WidthRequest = 42,
-                HeightRequest = 42,
-                BackgroundColor = Color.FromArgb("#0EA5E9"),
+                WidthRequest = 28,
+                HeightRequest = 28,
+                BackgroundColor = Color.FromArgb("#E0F2FE"),
                 StrokeThickness = 0,
-                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 12 },
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 },
+                VerticalOptions = LayoutOptions.Center,
                 Content = new Label
                 {
                     Text = number.ToString(),
-                    TextColor = Colors.White,
+                    TextColor = Color.FromArgb("#0369A1"),
                     FontAttributes = FontAttributes.Bold,
-                    FontSize = 16,
+                    FontSize = 13,
                     HorizontalOptions = LayoutOptions.Center,
                     VerticalOptions = LayoutOptions.Center
                 }
@@ -393,14 +394,32 @@ public partial class AddEditTastingMenuPage : ContentPage
             Choices = new List<TastingMenuChoice>()
         };
 
-        private static VerticalStackLayout BuildField(string label, Entry entry) => new()
+        private static VerticalStackLayout BuildField(string label, Entry entry)
         {
-            Spacing = 5,
-            Children =
+            entry.FontSize = 14;
+            entry.TextColor = Color.FromArgb("#0F172A");
+            entry.PlaceholderColor = Color.FromArgb("#94A3B8");
+            entry.BackgroundColor = Colors.Transparent;
+            entry.Margin = new Thickness(10, 6);
+
+            return new VerticalStackLayout
             {
-                new Label { Text = label, FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#475569") },
-                entry
-            }
-        };
+                Spacing = 3,
+                VerticalOptions = LayoutOptions.Center,
+                Children =
+                {
+                    new Label { Text = label, FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#475569") },
+                    new Border
+                    {
+                        BackgroundColor = Colors.White,
+                        Stroke = Color.FromArgb("#E2E8F0"),
+                        StrokeThickness = 1,
+                        StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 },
+                        Padding = 0,
+                        Content = entry
+                    }
+                }
+            };
+        }
     }
 }

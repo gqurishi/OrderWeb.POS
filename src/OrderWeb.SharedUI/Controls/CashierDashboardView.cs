@@ -13,7 +13,7 @@ public sealed class CashierDashboardView : ContentView
     private readonly Label _vat;
     private readonly Label _cash;
     private readonly Label _card;
-    private readonly Label _tips;
+    private readonly Label _giftCard;
     private readonly Label _pos;
     private readonly Label _online;
     private readonly Label _petty;
@@ -38,7 +38,7 @@ public sealed class CashierDashboardView : ContentView
         _vat = Value("£0.00", 18, "#9A3412");
         _cash = Value("£0.00", 16, "#0F172A");
         _card = Value("£0.00", 16, "#0F172A");
-        _tips = Value("£0.00", 16, "#0F172A");
+        _giftCard = Value("£0.00", 16, "#5B21B6");
         _pos = Value("£0.00 (0)", 16, "#0F172A");
         _online = Value("£0.00 (0)", 16, "#0F172A");
         _petty = Value("£0.00", 16, "#7F1D1D");
@@ -71,9 +71,9 @@ public sealed class CashierDashboardView : ContentView
         tiles.Add(Tile("Gross", _gross, "#F0FDF4", "#BBF7D0", "#166534"));
         tiles.Add(Tile("Net", _net, "#EFF6FF", "#BFDBFE", "#1D4ED8"), 1, 0);
         tiles.Add(Tile("VAT", _vat, "#FFF7ED", "#FED7AA", "#C2410C"), 2, 0);
-        tiles.Add(Tile("Cash", _cash, "#F8FAFC", "#E2E8F0", "#475569"), 0, 1);
-        tiles.Add(Tile("Card", _card, "#F8FAFC", "#E2E8F0", "#475569"), 1, 1);
-        tiles.Add(Tile("Tips", _tips, "#F8FAFC", "#E2E8F0", "#475569"), 2, 1);
+        tiles.Add(Tile("Cash", _cash, "#ECFDF5", "#A7F3D0", "#047857"), 0, 1);
+        tiles.Add(Tile("Card", _card, "#EFF6FF", "#BFDBFE", "#1D4ED8"), 1, 1);
+        tiles.Add(Tile("Gift Card", _giftCard, "#F5F3FF", "#DDD6FE", "#6D28D9"), 2, 1);
         tiles.Add(Tile("POS Sales", _pos, "#F8FAFC", "#E2E8F0", "#475569"), 0, 2);
         tiles.Add(Tile("Online Sales", _online, "#F8FAFC", "#E2E8F0", "#475569"), 1, 2);
         tiles.Add(Tile("Petty Cash Out", _petty, "#FEF2F2", "#FECACA", "#991B1B"), 2, 2);
@@ -166,7 +166,7 @@ public sealed class CashierDashboardView : ContentView
         _vat.Text = board.Vat;
         _cash.Text = board.Cash;
         _card.Text = board.Card;
-        _tips.Text = board.Tips;
+        _giftCard.Text = board.GiftCard;
         _pos.Text = board.PosSales;
         _online.Text = board.OnlineSales;
         _petty.Text = board.PettyCashOut;

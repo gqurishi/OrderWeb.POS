@@ -12,8 +12,8 @@ public class BundledMigrationTests
         Assert.NotNull(migrationsPath);
 
         var engine = new MigrationEngine(migrationsPath!, "1.0.0");
-        Assert.Equal(42, engine.GetBundledSchemaVersion());
-        Assert.Equal(42, OrderWeb.DatabaseSetup.Models.PosDefaults.RequiredSchemaVersion);
+        Assert.Equal(44, engine.GetBundledSchemaVersion());
+        Assert.Equal(44, OrderWeb.DatabaseSetup.Models.PosDefaults.RequiredSchemaVersion);
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "030_kitchen_red_printing");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "031_course_fire_status");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "032_local_order_retention");
@@ -26,6 +26,8 @@ public class BundledMigrationTests
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "040_item_label_configuration");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "041_label_network_results");
         Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "042_durable_label_queue");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "043_order_service_reservation");
+        Assert.Contains(engine.DiscoverMigrationFiles(), f => f.Id == "044_terminal_events_event_type");
     }
 
     [Fact]
@@ -131,6 +133,38 @@ public class BundledMigrationTests
         Assert.Contains("idx_orders_local_retention", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("DELETE FROM orders", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("DROP TABLE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TerminalEventsEventTypeMigration_IsAdditive()
+    {
+        var migrationsPath = FindRepoMigrationsPath();
+        Assert.NotNull(migrationsPath);
+
+        var sql = File.ReadAllText(Path.Combine(migrationsPath!, "044_terminal_events_event_type.sql"));
+
+        Assert.Contains("event_type", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("terminal_events", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP COLUMN", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP TABLE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void OrderServiceReservationMigration_IsAdditiveAndDefaultsOn()
+    {
+        var migrationsPath = FindRepoMigrationsPath();
+        Assert.NotNull(migrationsPath);
+
+        var sql = File.ReadAllText(Path.Combine(migrationsPath!, "043_order_service_reservation.sql"));
+
+        Assert.Contains("reservation_enabled", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("previous_reservation_enabled", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("new_reservation_enabled", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DEFAULT TRUE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP COLUMN", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP TABLE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

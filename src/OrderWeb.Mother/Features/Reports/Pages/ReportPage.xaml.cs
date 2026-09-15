@@ -50,15 +50,32 @@ public partial class ReportPage : ContentPage
     private string _summaryCardTipsText = "£0.00";
     private string _summaryRefundsText = "£0.00";
     private string _summaryCollectedText = "£0.00";
+    private string _summaryCashPaidText = "£0.00";
+    private string _summaryCardPaidText = "£0.00";
+    private string _summaryGiftCardPaidText = "£0.00";
     private string _summaryAverageText = "£0.00";
     private string _summaryTotalTipsText = "£0.00";
     private bool _isCustomRangeDirty;
     private ReportViewMode _reportViewMode = ReportViewMode.Orders;
     private int _topSellRangeDays = 30;
+    private int _vatRangeDays = 30;
     private TopSellSection _selectedTopSellSection = TopSellSection.Food;
     private bool _isTopSellCustomRangeVisible;
     private bool _isTopSellCustomRangeDirty;
+    private bool _isVatCustomRangeVisible;
+    private bool _isVatCustomRangeDirty;
     private bool _isCalendarPopupVisible;
+    private string _vatHeroText = "—";
+    private string _vatGrossText = "—";
+    private string _vatNetText = "—";
+    private string _vatPeriodLabel = "Select a VAT period";
+    private string _vatStatusText = "Choose 7, 15, 30, 180, or 365 days — or Custom dates. Totals load in the next phase.";
+    private string _vatErrorText = string.Empty;
+    private bool _hasVatError;
+    private string _vatZeroTaxWarningText = string.Empty;
+    private bool _hasVatZeroTaxWarning;
+    private string _vatRateBandsInsightText = string.Empty;
+    private VatPeriodSnapshot? _lastVatPeriod;
     private string _operationalSendLatencyText = "No samples";
     private string _operationalPaymentCompletionText = "No samples";
     private string _operationalVoidAuditText = "No voids";
@@ -121,6 +138,7 @@ public partial class ReportPage : ContentPage
         DiscountAudit,
         StaffHours,
         VoidCancelled,
+        Vat,
         HistoricalReports
     }
 
@@ -161,6 +179,7 @@ public partial class ReportPage : ContentPage
     public ObservableCollection<ReportHistorySummary> HistoricalReports { get; } = new();
     public ObservableCollection<ReportDailyTrendRow> DailyTrend { get; } = new();
     public ObservableCollection<ServiceChargeRemovalAuditRow> ServiceChargeRemovalAudits { get; } = new();
+    public ObservableCollection<VatRateBandRow> VatRateBands { get; } = new();
     public ObservableCollection<string> SourceFilters { get; } = new() { "All", "Local", "Web" };
     public ObservableCollection<string> OrderTypeFilters { get; } = new() { "All", "Pickup", "Delivery", "Table" };
 
@@ -285,6 +304,9 @@ public partial class ReportPage : ContentPage
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsNotLoading));
                 OnPropertyChanged(nameof(CanSubmitCustomRange));
+                OnPropertyChanged(nameof(CanSubmitTopSellCustomRange));
+                OnPropertyChanged(nameof(CanSubmitVatCustomRange));
+                OnPropertyChanged(nameof(CanExportVatSummary));
             }
         }
     }
@@ -296,6 +318,9 @@ public partial class ReportPage : ContentPage
     public bool CanExportReports => CanUseFullReportTools;
     public bool CanUploadOrderWebReport =>
         _roleAccessService?.IsAdmin(_authService?.CurrentUser?.Role) == true && CanUseFullReportTools;
+
+    /// <summary>Admin-only permanent delete of local voided orders from Void / Cancelled audit.</summary>
+    public bool CanPermanentlyDeleteVoidOrders => CanUploadOrderWebReport;
 
     public bool IsOrderWebUploadBannerVisible
     {
@@ -332,6 +357,8 @@ public partial class ReportPage : ContentPage
     public bool IsHistoricalReportsVisible => _reportViewMode == ReportViewMode.HistoricalReports && CanUseFullReportTools;
 
     public bool IsTopSellReportVisible => _reportViewMode == ReportViewMode.TopSellItems;
+
+    public bool IsVatReportVisible => _reportViewMode == ReportViewMode.Vat && CanUseFullReportTools;
 
     public bool IsCashDrawerReportVisible => _reportViewMode == ReportViewMode.CashDrawer && CanUseAuditReports;
 
@@ -499,6 +526,199 @@ public partial class ReportPage : ContentPage
     }
 
     public bool CanSubmitTopSellCustomRange => IsTopSellCustomRangeVisible && IsTopSellCustomRangeDirty && !IsLoading;
+
+    public int VatRangeDays
+    {
+        get => _vatRangeDays;
+        set
+        {
+            if (_vatRangeDays != value)
+            {
+                _vatRangeDays = value;
+                OnPropertyChanged();
+                RefreshVatPeriodChrome();
+            }
+        }
+    }
+
+    public bool IsVatCustomRangeVisible
+    {
+        get => _isVatCustomRangeVisible;
+        set
+        {
+            if (_isVatCustomRangeVisible != value)
+            {
+                _isVatCustomRangeVisible = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanSubmitVatCustomRange));
+                RefreshVatPeriodChrome();
+            }
+        }
+    }
+
+    public bool IsVatCustomRangeDirty
+    {
+        get => _isVatCustomRangeDirty;
+        set
+        {
+            if (_isVatCustomRangeDirty != value)
+            {
+                _isVatCustomRangeDirty = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanSubmitVatCustomRange));
+                RefreshVatPeriodChrome();
+            }
+        }
+    }
+
+    public bool CanSubmitVatCustomRange => IsVatCustomRangeVisible && IsVatCustomRangeDirty && !IsLoading;
+
+    public string VatHeroText
+    {
+        get => _vatHeroText;
+        set
+        {
+            if (_vatHeroText != value)
+            {
+                _vatHeroText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatGrossText
+    {
+        get => _vatGrossText;
+        set
+        {
+            if (_vatGrossText != value)
+            {
+                _vatGrossText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatNetText
+    {
+        get => _vatNetText;
+        set
+        {
+            if (_vatNetText != value)
+            {
+                _vatNetText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatPeriodLabel
+    {
+        get => _vatPeriodLabel;
+        set
+        {
+            if (_vatPeriodLabel != value)
+            {
+                _vatPeriodLabel = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatStatusText
+    {
+        get => _vatStatusText;
+        set
+        {
+            if (_vatStatusText != value)
+            {
+                _vatStatusText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsVatStatusVisible));
+            }
+        }
+    }
+
+    public string VatErrorText
+    {
+        get => _vatErrorText;
+        set
+        {
+            if (_vatErrorText != value)
+            {
+                _vatErrorText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool HasVatError
+    {
+        get => _hasVatError;
+        set
+        {
+            if (_hasVatError != value)
+            {
+                _hasVatError = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsVatStatusVisible));
+            }
+        }
+    }
+
+    public bool HasVatZeroTaxWarning
+    {
+        get => _hasVatZeroTaxWarning;
+        set
+        {
+            if (_hasVatZeroTaxWarning != value)
+            {
+                _hasVatZeroTaxWarning = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatZeroTaxWarningText
+    {
+        get => _vatZeroTaxWarningText;
+        set
+        {
+            if (_vatZeroTaxWarningText != value)
+            {
+                _vatZeroTaxWarningText = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string VatRateBandsInsightText
+    {
+        get => _vatRateBandsInsightText;
+        set
+        {
+            if (_vatRateBandsInsightText != value)
+            {
+                _vatRateBandsInsightText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasVatRateBandsInsight));
+            }
+        }
+    }
+
+    public bool HasVatRateBandsInsight => !string.IsNullOrWhiteSpace(VatRateBandsInsightText);
+
+    public bool HasVatRateBands => VatRateBands.Count > 0;
+
+    public bool CanExportVatSummary =>
+        CanExportReports
+        && _reportViewMode == ReportViewMode.Vat
+        && _lastVatPeriod != null
+        && !IsLoading
+        && !(IsVatCustomRangeVisible && IsVatCustomRangeDirty)
+        && !HasVatError;
+
+    public bool IsVatStatusVisible => !HasVatError && !string.IsNullOrWhiteSpace(VatStatusText);
 
     public string OperationalSendLatencyText
     {
@@ -917,6 +1137,9 @@ public partial class ReportPage : ContentPage
     public string SummaryTotalTipsText => _summaryTotalTipsText;
     public string SummaryRefundsText => _summaryRefundsText;
     public string SummaryCollectedText => _summaryCollectedText;
+    public string SummaryCashPaidText => _summaryCashPaidText;
+    public string SummaryCardPaidText => _summaryCardPaidText;
+    public string SummaryGiftCardPaidText => _summaryGiftCardPaidText;
 
     public Color SummaryOrdersColor
     {
@@ -1422,6 +1645,8 @@ public partial class ReportPage : ContentPage
                 ApplyTopSellRangeDates(30);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 UpdateTopSellRangeButtonStyles();
                 UpdateTopSellSectionButtonStyles();
@@ -1440,6 +1665,8 @@ public partial class ReportPage : ContentPage
                 ApplyReportMode(ReportViewMode.CashDrawer);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadReportAsync();
                 return;
@@ -1456,6 +1683,8 @@ public partial class ReportPage : ContentPage
                 ApplyReportMode(ReportViewMode.DiscountAudit);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadReportAsync();
                 return;
@@ -1475,6 +1704,8 @@ public partial class ReportPage : ContentPage
                 IsCustomRangeDirty = false;
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadReportAsync();
                 return;
@@ -1491,6 +1722,8 @@ public partial class ReportPage : ContentPage
                 ApplyReportMode(ReportViewMode.VoidCancelled);
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadReportAsync();
                 return;
@@ -1509,12 +1742,43 @@ public partial class ReportPage : ContentPage
                 IsCustomRangeDirty = false;
                 IsTopSellCustomRangeVisible = false;
                 IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
                 UpdatePresetButtonStyles();
                 await LoadHistoricalReportsAsync();
                 return;
             }
 
+            if (button.Text == "VAT")
+            {
+                if (!CanUseFullReportTools)
+                {
+                    await ShowMotherReportOnlyAlertAsync();
+                    return;
+                }
+
+                ApplyReportMode(ReportViewMode.Vat);
+                VatRangeDays = 30;
+                ApplyVatRangeDates(30);
+                IsCustomRangeVisible = false;
+                IsCustomRangeDirty = false;
+                IsTopSellCustomRangeVisible = false;
+                IsTopSellCustomRangeDirty = false;
+                IsVatCustomRangeVisible = false;
+                IsVatCustomRangeDirty = false;
+                ClearVatError();
+                UpdatePresetButtonStyles();
+                UpdateVatRangeButtonStyles();
+                RefreshVatPeriodChrome();
+                await LoadReportAsync();
+                return;
+            }
+
             ApplyReportMode(ReportViewMode.Orders);
+            IsVatCustomRangeVisible = false;
+            IsVatCustomRangeDirty = false;
+            IsTopSellCustomRangeVisible = false;
+            IsTopSellCustomRangeDirty = false;
 
             var preset = button.Text switch
             {
@@ -1658,6 +1922,74 @@ public partial class ReportPage : ContentPage
         await LoadReportAsync();
     }
 
+    private async void OnVatRangeClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        if (!CanUseFullReportTools)
+        {
+            await ShowMotherReportOnlyAlertAsync();
+            return;
+        }
+
+        ApplyReportMode(ReportViewMode.Vat);
+        IsCustomRangeVisible = false;
+        IsCustomRangeDirty = false;
+        IsTopSellCustomRangeVisible = false;
+        IsTopSellCustomRangeDirty = false;
+
+        if (button.Text == "Custom")
+        {
+            IsVatCustomRangeVisible = true;
+            IsVatCustomRangeDirty = true;
+            ClearVatError();
+            UpdatePresetButtonStyles();
+            UpdateVatRangeButtonStyles();
+            RefreshVatPeriodChrome();
+            return;
+        }
+
+        if (!int.TryParse(button.Text?.Replace(" Days", string.Empty, StringComparison.OrdinalIgnoreCase), out var days)
+            || days <= 0)
+        {
+            SetVatError("Choose a valid VAT period.");
+            return;
+        }
+
+        VatRangeDays = days;
+        ApplyVatRangeDates(days);
+        IsVatCustomRangeVisible = false;
+        IsVatCustomRangeDirty = false;
+        ClearVatError();
+        UpdatePresetButtonStyles();
+        UpdateVatRangeButtonStyles();
+        RefreshVatPeriodChrome();
+        await LoadReportAsync();
+    }
+
+    private async void OnVatCustomSubmitClicked(object sender, EventArgs e)
+    {
+        if (!CanSubmitVatCustomRange)
+        {
+            return;
+        }
+
+        if (EndDate < StartDate)
+        {
+            SetVatError("End date must be on or after start date.");
+            await AppAlertService.ShowAlertAsync("Invalid Range", "End date must be on or after start date.");
+            return;
+        }
+
+        ClearVatError();
+        IsVatCustomRangeDirty = false;
+        RefreshVatPeriodChrome();
+        await LoadReportAsync();
+    }
+
     private async void OnCustomDateChanged(object sender, DateChangedEventArgs e)
     {
         if (IsCustomRangeVisible)
@@ -1744,6 +2076,12 @@ public partial class ReportPage : ContentPage
             IsTopSellCustomRangeDirty = true;
             OnPropertyChanged(nameof(TopSellInsightText));
         }
+        else if (IsVatCustomRangeVisible)
+        {
+            IsVatCustomRangeDirty = true;
+            ClearVatError();
+            RefreshVatPeriodChrome();
+        }
         else
         {
             await LoadReportAsync();
@@ -1761,6 +2099,7 @@ public partial class ReportPage : ContentPage
         OnPropertyChanged(nameof(IsOrdersReportVisible));
         OnPropertyChanged(nameof(IsHistoricalReportsVisible));
         OnPropertyChanged(nameof(IsTopSellReportVisible));
+        OnPropertyChanged(nameof(IsVatReportVisible));
         OnPropertyChanged(nameof(IsCashDrawerReportVisible));
         OnPropertyChanged(nameof(IsDiscountAuditReportVisible));
         OnPropertyChanged(nameof(IsStaffHoursReportVisible));
@@ -1778,12 +2117,224 @@ public partial class ReportPage : ContentPage
         OnPropertyChanged(nameof(TopSellInsightText));
     }
 
+    private void ApplyVatRangeDates(int days)
+    {
+        var today = DateTime.Today;
+        StartDate = today.AddDays(-(days - 1));
+        EndDate = today;
+        IsCustomRangeVisible = false;
+        IsCustomRangeDirty = false;
+        RefreshVatPeriodChrome();
+    }
+
+    private void RefreshVatPeriodChrome(bool resetTotals = true)
+    {
+        var dayCount = Math.Max(1, (EndDate.Date - StartDate.Date).Days + 1);
+        VatPeriodLabel = $"{StartDate:d MMM yyyy} – {EndDate:d MMM yyyy} · {dayCount} day{(dayCount == 1 ? string.Empty : "s")}";
+
+        if (IsVatCustomRangeVisible && IsVatCustomRangeDirty)
+        {
+            VatStatusText = "Pick start and end dates, then tap Submit.";
+            HasVatZeroTaxWarning = false;
+            VatZeroTaxWarningText = string.Empty;
+            VatRateBandsInsightText = string.Empty;
+            VatRateBands.Clear();
+            OnPropertyChanged(nameof(HasVatRateBands));
+            _lastVatPeriod = null;
+            OnPropertyChanged(nameof(CanExportVatSummary));
+            if (resetTotals)
+            {
+                VatHeroText = "—";
+                VatGrossText = "—";
+                VatNetText = "—";
+            }
+
+            return;
+        }
+
+        if (resetTotals)
+        {
+            VatHeroText = "—";
+            VatGrossText = "—";
+            VatNetText = "—";
+            VatStatusText = "Loading VAT collected for this period…";
+            HasVatZeroTaxWarning = false;
+            VatZeroTaxWarningText = string.Empty;
+            VatRateBandsInsightText = string.Empty;
+            VatRateBands.Clear();
+            OnPropertyChanged(nameof(HasVatRateBands));
+            _lastVatPeriod = null;
+            OnPropertyChanged(nameof(CanExportVatSummary));
+        }
+    }
+
+    private void ApplyVatSummary(VatPeriodSnapshot period)
+    {
+        _lastVatPeriod = period;
+        RefreshVatPeriodChrome(resetTotals: false);
+        VatPeriodLabel = period.PeriodLabel;
+        VatHeroText = $"£{period.Summary.VatAmount:F2}";
+        VatGrossText = $"£{period.Summary.GrossSales:F2}";
+        VatNetText = $"£{period.Summary.NetSales:F2}";
+
+        VatRateBands.Clear();
+        foreach (var band in period.RateBands)
+        {
+            VatRateBands.Add(band);
+        }
+        OnPropertyChanged(nameof(HasVatRateBands));
+
+        if (period.Summary.OrderCount <= 0 && period.Summary.VatAmount == 0m && period.Summary.GrossSales == 0m)
+        {
+            VatStatusText = "No paid-order sales in this period. VAT collected is £0.00.";
+            VatRateBandsInsightText = string.Empty;
+        }
+        else
+        {
+            VatStatusText =
+                $"VAT collected from {period.Summary.OrderCount} paid order{(period.Summary.OrderCount == 1 ? string.Empty : "s")}. " +
+                "Same Gross / Net / VAT as Sales Summary for this date range (all sources / all types).";
+
+            VatRateBandsInsightText = period.RateBandsExplainTotal
+                ? $"Rate bands total £{period.RateBandsVatTotal:F2} — matches VAT collected."
+                : $"Rate bands total £{period.RateBandsVatTotal:F2} vs VAT collected £{period.Summary.VatAmount:F2}. Small difference can come from unmapped lines or rounding.";
+        }
+
+        if (period.ShouldWarnZeroTax)
+        {
+            HasVatZeroTaxWarning = true;
+            VatZeroTaxWarningText =
+                $"{period.ZeroTaxOrderCount} of {period.Summary.OrderCount} paid orders have £0 tax recorded. " +
+                "Totals may understate VAT due if tax was not saved on those tills.";
+        }
+        else
+        {
+            HasVatZeroTaxWarning = false;
+            VatZeroTaxWarningText = string.Empty;
+        }
+
+        OnPropertyChanged(nameof(CanExportVatSummary));
+    }
+
+    private void ClearVatError()
+    {
+        HasVatError = false;
+        VatErrorText = string.Empty;
+        OnPropertyChanged(nameof(CanExportVatSummary));
+    }
+
+    private void SetVatError(string message)
+    {
+        HasVatError = true;
+        VatErrorText = message;
+        VatStatusText = string.Empty;
+        VatHeroText = "—";
+        VatGrossText = "—";
+        VatNetText = "—";
+        HasVatZeroTaxWarning = false;
+        VatZeroTaxWarningText = string.Empty;
+        VatRateBandsInsightText = string.Empty;
+        VatRateBands.Clear();
+        OnPropertyChanged(nameof(HasVatRateBands));
+        _lastVatPeriod = null;
+        OnPropertyChanged(nameof(CanExportVatSummary));
+    }
+
+    private static string FormatFriendlyReportError(Exception ex)
+    {
+        var raw = ex.Message?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "Something went wrong loading this report. Please try again.";
+        }
+
+        var lower = raw.ToLowerInvariant();
+        if (lower.Contains("unknown column")
+            || lower.Contains("sql syntax")
+            || lower.Contains("doesn't exist")
+            || lower.Contains("does not exist")
+            || (lower.Contains("table") && lower.Contains("exist")))
+        {
+            return "We couldn’t prepare the VAT figures for this date range. Tap VAT again, or restart Mother POS. If it keeps happening, contact support.";
+        }
+
+        if (lower.Contains("unable to connect")
+            || lower.Contains("timeout")
+            || lower.Contains("connection"))
+        {
+            return "Mother POS couldn’t reach the database. Check that MariaDB is running, then try again.";
+        }
+
+        // Keep short; avoid dumping long SQL to staff.
+        return raw.Length > 160 ? raw[..157] + "…" : raw;
+    }
+
+    private async void OnVatExportCsvClicked(object sender, EventArgs e)
+    {
+        if (!CanExportVatSummary)
+        {
+            if (!CanExportReports)
+            {
+                await ShowMotherReportOnlyAlertAsync();
+            }
+
+            return;
+        }
+
+        try
+        {
+            var period = _lastVatPeriod ?? await _reportService.GetVatPeriodAsync(StartDate, EndDate);
+            var filePath = await _reportService.ExportVatCsvAsync(period);
+            await OpenExportedFileAsync(filePath, "VAT CSV Exported");
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("VAT CSV Export Failed", ex.Message);
+        }
+    }
+
+    private async void OnVatExportPdfClicked(object sender, EventArgs e)
+    {
+        if (!CanExportVatSummary)
+        {
+            if (!CanExportReports)
+            {
+                await ShowMotherReportOnlyAlertAsync();
+            }
+
+            return;
+        }
+
+        try
+        {
+            var period = _lastVatPeriod ?? await _reportService.GetVatPeriodAsync(StartDate, EndDate);
+            var businessInfo = await _businessSettingsService.GetBusinessInfoAsync();
+            var filePath = await _reportService.ExportVatPdfAsync(period, businessInfo, "POS-in-NET");
+            await OpenExportedFileAsync(filePath, "VAT PDF Exported");
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("VAT PDF Export Failed", ex.Message);
+        }
+    }
+
     private void UpdateTopSellRangeButtonStyles()
     {
         ApplyPresetStyle(TopSellThirtyDaysButton, TopSellRangeDays == 30);
         ApplyPresetStyle(TopSellSixtyDaysButton, TopSellRangeDays == 60);
         ApplyPresetStyle(TopSellNinetyDaysButton, TopSellRangeDays == 90);
         ApplyPresetStyle(TopSellCustomRangeButton, IsTopSellCustomRangeVisible);
+    }
+
+    private void UpdateVatRangeButtonStyles()
+    {
+        ApplyPresetStyle(VatSevenDaysButton, !IsVatCustomRangeVisible && VatRangeDays == 7);
+        ApplyPresetStyle(VatFifteenDaysButton, !IsVatCustomRangeVisible && VatRangeDays == 15);
+        ApplyPresetStyle(VatThirtyDaysButton, !IsVatCustomRangeVisible && VatRangeDays == 30);
+        ApplyPresetStyle(VatOneEightyDaysButton, !IsVatCustomRangeVisible && VatRangeDays == 180);
+        ApplyPresetStyle(VatThreeSixtyFiveDaysButton, !IsVatCustomRangeVisible && VatRangeDays == 365);
+        ApplyPresetStyle(VatCustomRangeButton, IsVatCustomRangeVisible);
+        ApplyPresetStyle(VatReportButton, _reportViewMode == ReportViewMode.Vat);
     }
 
     private void UpdateTopSellSectionButtonStyles()
@@ -2078,7 +2629,7 @@ public partial class ReportPage : ContentPage
         var currentUser = _authService?.CurrentUser;
         if (currentUser is not { IsActive: true, Role: UserRole.Admin })
         {
-            await AppAlertService.ShowAlertAsync("Administrator Required", "Only a signed-in Administrator can remove a local test order.");
+            await AppAlertService.ShowAlertAsync("Administrator Required", "Only a signed-in Administrator can void an order from Report.");
             return;
         }
 
@@ -2086,28 +2637,90 @@ public partial class ReportPage : ContentPage
         {
             await AppAlertService.ShowAlertAsync(
                 "OrderWeb Record",
-                "Online orders remain authoritative in OrderWeb.net. Finalized local cache copies are removed automatically after seven days.");
+                "Only local (original till) orders can be voided here. Web / OrderWeb orders stay unchanged.");
             return;
         }
 
         var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
-		var reasonKeyboard = new OrderWeb.SharedUI.Controls.VirtualKeyboardDialog();
-		reasonKeyboard.SetPrompt($"Reason for deleting test order {orderLabel}", "Continue");
-		reasonKeyboard.SetTextMode(OrderWeb.SharedUI.Controls.VirtualKeyboardTextMode.Notes);
-		reasonKeyboard.SetPlaceholder("Required reason");
-		reasonKeyboard.SetMaximumLength(200);
-		reasonKeyboard.SetRequired(true);
-		var reason = await reasonKeyboard.ShowAsync(this);
-		if (string.IsNullOrWhiteSpace(reason))
-		{
-			return;
-		}
-
         var confirm = await DisplayAlert(
-            "Final Local Deletion",
-            $"Permanently remove local test order {orderLabel}?\n\nAllowed only before this day's report is uploaded. An audit tombstone will remain on this till. No deletion is sent to OrderWeb.net.",
-            "Delete Test Order",
-            "Cancel");
+            "Void order?",
+            $"Void order {orderLabel}?\n\nIt will leave sales, Detailed All Orders, and VAT, and appear under Void / Cancelled.",
+            "Yes",
+            "No");
+
+        if (!confirm)
+        {
+            return;
+        }
+
+        try
+        {
+            button.IsEnabled = false;
+            var voidedByName = !string.IsNullOrWhiteSpace(currentUser.Name) ? currentUser.Name : currentUser.Username;
+            var voided = await _reportService.SoftVoidLocalOrderAsync(
+                order.OrderDbId,
+                currentUser.Id,
+                voidedByName);
+
+            if (!voided)
+            {
+                await AppAlertService.ShowAlertAsync("Not Found", $"Order {orderLabel} was not found.");
+                return;
+            }
+
+            ApplyReportMode(ReportViewMode.VoidCancelled);
+            UpdatePresetButtonStyles();
+            await LoadReportAsync();
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Void Failed", FormatFriendlyReportError(ex));
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private async void OnPermanentDeleteVoidOrderClicked(object sender, EventArgs e)
+    {
+        if (sender is not Button button || button.CommandParameter is not ReportVoidCancelledRow order)
+        {
+            await AppAlertService.ShowAlertAsync("Order Error", "Unable to identify the selected order.");
+            return;
+        }
+
+        if (!CanPermanentlyDeleteVoidOrders)
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Administrator Required",
+                "Only a signed-in Administrator can permanently delete a voided order.");
+            return;
+        }
+
+        var currentUser = _authService?.CurrentUser;
+        if (currentUser is not { IsActive: true, Role: UserRole.Admin })
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Administrator Required",
+                "Only a signed-in Administrator can permanently delete a voided order.");
+            return;
+        }
+
+        if (!string.Equals(order.SourceChannel, "local", StringComparison.OrdinalIgnoreCase))
+        {
+            await AppAlertService.ShowAlertAsync(
+                "OrderWeb Record",
+                "Only local (original till) voided orders can be deleted here. Web / OrderWeb orders stay unchanged.");
+            return;
+        }
+
+        var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
+        var confirm = await DisplayAlert(
+            "Delete permanently?",
+            $"Permanently delete voided order {orderLabel} from this till?\n\nThis removes it from the database and cannot be undone. Allowed only before that day’s report is uploaded to OrderWeb.",
+            "Yes",
+            "No");
 
         if (!confirm)
         {
@@ -2122,7 +2735,7 @@ public partial class ReportPage : ContentPage
                 order.OrderDbId,
                 currentUser.Id,
                 deletedByName,
-                reason);
+                "Permanent delete from Void audit");
 
             if (!deleted)
             {
@@ -2130,12 +2743,12 @@ public partial class ReportPage : ContentPage
                 return;
             }
 
-            await AppAlertService.ShowAlertAsync("Order Removed", $"Order {orderLabel} has been permanently deleted.");
+            await AppAlertService.ShowAlertAsync("Order deleted", $"Voided order {orderLabel} was permanently removed from this till.");
             await LoadReportAsync();
         }
         catch (Exception ex)
         {
-            await AppAlertService.ShowAlertAsync("Void Failed", ex.Message);
+            await AppAlertService.ShowAlertAsync("Delete failed", FormatFriendlyReportError(ex));
         }
         finally
         {
@@ -2190,7 +2803,12 @@ public partial class ReportPage : ContentPage
         ApplyPresetStyle(DiscountAuditButton, _reportViewMode == ReportViewMode.DiscountAudit);
         ApplyPresetStyle(StaffHoursButton, _reportViewMode == ReportViewMode.StaffHours);
         ApplyPresetStyle(VoidCancelledButton, _reportViewMode == ReportViewMode.VoidCancelled);
+        ApplyPresetStyle(VatReportButton, _reportViewMode == ReportViewMode.Vat);
         ApplyPresetStyle(HistoricalReportsButton, _reportViewMode == ReportViewMode.HistoricalReports);
+        if (_reportViewMode == ReportViewMode.Vat)
+        {
+            UpdateVatRangeButtonStyles();
+        }
     }
 
     private static void ApplyPresetStyle(Button? button, bool isActive)
@@ -2228,6 +2846,44 @@ public partial class ReportPage : ContentPage
 
         try
         {
+            if (_reportViewMode == ReportViewMode.Vat)
+            {
+                if (EndDate < StartDate)
+                {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        SetVatError("End date must be on or after start date.");
+                        LastUpdatedText = "VAT period needs a valid date range";
+                    });
+                    PosPerformanceMonitor.MarkDataVisible(performance);
+                    return;
+                }
+
+                if (IsVatCustomRangeVisible && IsVatCustomRangeDirty)
+                {
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        ClearVatError();
+                        RefreshVatPeriodChrome(resetTotals: true);
+                        LastUpdatedText = "VAT custom range ready — tap Submit";
+                    });
+                    PosPerformanceMonitor.MarkDataVisible(performance);
+                    return;
+                }
+
+                // v1 lock: always all sources / all order types (matches unfiltered Sales Summary).
+                var vatPeriod = await _reportService.GetVatPeriodAsync(StartDate, EndDate);
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ClearVatError();
+                    ApplyVatSummary(vatPeriod);
+                    LastUpdatedText = $"VAT · {StartDate:dd MMM} – {EndDate:dd MMM} · all sources · updated {DateTime.Now:HH:mm:ss}";
+                });
+                PosPerformanceMonitor.MarkDataVisible(performance);
+                return;
+            }
+
             if (_reportViewMode == ReportViewMode.CashDrawer)
             {
                 var queryEndDate = EndDate.AddDays(1);
@@ -2325,7 +2981,16 @@ public partial class ReportPage : ContentPage
         {
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
-                await AppAlertService.ShowAlertAsync("Report Error", ex.Message);
+                if (_reportViewMode == ReportViewMode.Vat)
+                {
+                    var friendly = FormatFriendlyReportError(ex);
+                    SetVatError(friendly);
+                    LastUpdatedText = "Couldn’t load VAT";
+                    await AppAlertService.ShowAlertAsync("Couldn’t load VAT", friendly);
+                    return;
+                }
+
+                await AppAlertService.ShowAlertAsync("Report", FormatFriendlyReportError(ex));
             });
         }
         finally
@@ -2392,6 +3057,9 @@ public partial class ReportPage : ContentPage
         _summaryCardTipsText = $"£{report.Summary.CardTips:F2}";
         _summaryRefundsText = $"£{Math.Abs(report.Summary.RefundTotal):F2}";
         _summaryCollectedText = $"£{report.Summary.FinalMoneyCollected:F2}";
+        _summaryCashPaidText = $"£{report.Summary.CashTotal:F2}";
+        _summaryCardPaidText = $"£{report.Summary.CardTotal:F2}";
+        _summaryGiftCardPaidText = $"£{report.Summary.GiftCardTotal:F2}";
         _summaryTotalTipsText = $"£{report.Summary.TotalTips:F2}";
         OnPropertyChanged(nameof(SummaryServiceChargeText));
         OnPropertyChanged(nameof(SummaryRemovedChargeText));
@@ -2400,6 +3068,9 @@ public partial class ReportPage : ContentPage
         OnPropertyChanged(nameof(SummaryTotalTipsText));
         OnPropertyChanged(nameof(SummaryRefundsText));
         OnPropertyChanged(nameof(SummaryCollectedText));
+        OnPropertyChanged(nameof(SummaryCashPaidText));
+        OnPropertyChanged(nameof(SummaryCardPaidText));
+        OnPropertyChanged(nameof(SummaryGiftCardPaidText));
 
         var sendLatencySampleCount = 0;
         var sendLatencyAverageMs = 0d;
@@ -2982,6 +3653,14 @@ public partial class ReportPage : ContentPage
             SummaryVatText = report.VatDisplay;
             SummaryDeliveryText = "£0.00";
             SummaryAverageText = $"£{report.AverageOrderValue:F2}";
+            _summaryCashPaidText = $"£{report.CashTotal:F2}";
+            _summaryCardPaidText = $"£{report.CardTotal:F2}";
+            _summaryGiftCardPaidText = $"£{report.GiftCardTotal:F2}";
+            _summaryCollectedText = $"£{(report.CashTotal + report.CardTotal + report.GiftCardTotal + report.MobilePayTotal):F2}";
+            OnPropertyChanged(nameof(SummaryCashPaidText));
+            OnPropertyChanged(nameof(SummaryCardPaidText));
+            OnPropertyChanged(nameof(SummaryGiftCardPaidText));
+            OnPropertyChanged(nameof(SummaryCollectedText));
             ApplyKpiPalette(
                 report.OrderCount,
                 report.GrossSales,
@@ -3029,7 +3708,7 @@ public partial class ReportPage : ContentPage
     }
 
     /// <summary>
-    /// Display VAT breakdown by rate (0%, 5%, 20%)
+    /// Display VAT breakdown by rate (0%, 20%)
     /// </summary>
     private void DisplayVatBreakdown(List<ReportVatBreakdown> vatBreakdowns)
     {

@@ -576,23 +576,13 @@ public partial class MainPage : ContentPage
         _openOrderLiveReloadInFlight = true;
         try
         {
-            var previousVersion = _currentOrder.Version;
-            var previousUpdated = _currentOrder.UpdatedUtc;
             var opened = await _orderClient.OpenOrderForEditAsync(_currentOrder.OrderId);
-            var changedElsewhere =
-                opened.State.Version != previousVersion ||
-                !string.Equals(opened.State.UpdatedUtc, previousUpdated, StringComparison.Ordinal);
             await ApplyMotherOrderResultAsync(opened);
-            if (changedElsewhere)
-            {
-                ShowToast("Order updated from another terminal");
-            }
-
             ShowOrder();
         }
         catch
         {
-            ShowToast("Order changed on Mother — returning to Live Order");
+            ShowToast("Could not refresh this order. Returning to Live Order.");
             _currentOrder = null;
             _isViewingOrderScreen = false;
             ShowLiveOrders(_liveOrderFilter);
@@ -1842,7 +1832,7 @@ public partial class MainPage : ContentPage
             Vat = Or(summary.Vat, money(0)),
             Cash = Or(summary.CashDisplay, money(summary.CashTotal)),
             Card = Or(summary.CardDisplay, money(summary.CardTotal)),
-            Tips = Or(summary.Tips, money(0)),
+            GiftCard = Or(summary.GiftCardDisplay, money(summary.OtherPaymentTotal)),
             PosSales = Or(summary.PosSales, $"{money(summary.TotalSales)} ({summary.TotalOrders})"),
             OnlineSales = Or(summary.OnlineSales, "£0.00 (0)"),
             PettyCashOut = Or(summary.PettyCashOut, money(0)),
@@ -4074,7 +4064,7 @@ public partial class MainPage : ContentPage
         {
             _connectionStatus = "Connected";
             ShowToast(string.IsNullOrWhiteSpace(result.Message)
-                ? "Order updated elsewhere — reload"
+                ? "Could not save that change. Try again."
                 : result.Message);
         }
     }

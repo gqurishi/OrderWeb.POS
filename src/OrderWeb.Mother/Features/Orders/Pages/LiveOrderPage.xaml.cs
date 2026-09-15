@@ -1,6 +1,8 @@
 using Microsoft.Maui.Controls;
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
+using POS_in_NET.Controls;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,9 +35,11 @@ namespace POS_in_NET.Pages
         private List<Order> _allOrders = new();
         private List<Order> _collectionOrders = new();
         private List<Order> _deliveryOrders = new();
+        private List<Order> _webCashOrders = new();
         private List<TableSession> _tableSessions = new();
         private LiveOrderFilter _selectedFilter = LiveOrderFilter.All;
         private string? _boardFingerprint;
+        private bool _isTakingWebPayment;
 
         private const string LocalSourceFilter = @"
                       (
@@ -70,7 +74,8 @@ namespace POS_in_NET.Pages
                         OR
                         " + WebCashDueSourceFilter + @"
                       )";
-        // Live Order is kitchen board only: drafts/open tills stay off until Send to Kitchen.
+        // Live Order is kitchen board only for local tills (drafts stay off until Send).
+        // Web/online orders arrive already for kitchen (lifecycle=active) — include them immediately.
         private const string ActiveLifecycleFilter = @"
                       AND COALESCE(o.is_open, 1) = 1
                       AND COALESCE(o.draft_abandoned_flag, 0) = 0
@@ -78,7 +83,11 @@ namespace POS_in_NET.Pages
                             LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
                             OR o.first_sent_at IS NOT NULL
                             OR COALESCE(o.send_attempt_count, 0) > 0
-                            OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready')
+                            OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready', 'new', 'pending', 'processing', 'accepted')
+                            OR (
+                                  LOWER(COALESCE(o.source_channel, '')) = 'web'
+                                  AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) IN ('active', 'sent_partial', 'sent_full', 'payment_partial')
+                                )
                           )";
         private const string ActiveLinkedOrderLifecycleFilter = @"
                           AND COALESCE(o2.is_open, 1) = 1
@@ -87,7 +96,11 @@ namespace POS_in_NET.Pages
                                 LOWER(COALESCE(NULLIF(o2.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
                                 OR o2.first_sent_at IS NOT NULL
                                 OR COALESCE(o2.send_attempt_count, 0) > 0
-                                OR LOWER(COALESCE(o2.status, '')) IN ('kitchen', 'preparing', 'ready')
+                                OR LOWER(COALESCE(o2.status, '')) IN ('kitchen', 'preparing', 'ready', 'new', 'pending', 'processing', 'accepted')
+                                OR (
+                                      LOWER(COALESCE(o2.source_channel, '')) = 'web'
+                                      AND LOWER(COALESCE(NULLIF(o2.local_lifecycle_state, ''), 'active')) IN ('active', 'sent_partial', 'sent_full', 'payment_partial')
+                                    )
                               )";
 
         public LiveOrderPage()
@@ -228,6 +241,7 @@ namespace POS_in_NET.Pages
                     await LoadAllOpenOrdersAsync();
                     await LoadCollectionOrdersAsync();
                     await LoadDeliveryOrdersAsync();
+                    await LoadWebCashOrdersAsync();
                     await LoadTableSessionsAsync();
 
                     if (!CanRenderOrders(generation, cancellationToken))
@@ -289,10 +303,18 @@ namespace POS_in_NET.Pages
                 }
 
                 var order = FindOrderByKey(e.Card.Key);
-                if (order != null)
+                if (order == null)
                 {
-                    await NavigateToOrderAsync(order);
+                    return;
                 }
+
+                if (IsOpenWebCashDue(order))
+                {
+                    await TakeWebCashDuePaymentAsync(order);
+                    return;
+                }
+
+                await NavigateToOrderAsync(order);
             }
             catch (Exception ex)
             {
@@ -312,6 +334,9 @@ namespace POS_in_NET.Pages
                     break;
                 case LiveOrderFilter.Delivery:
                     cards = MapOrders(_deliveryOrders);
+                    break;
+                case LiveOrderFilter.Web:
+                    cards = MapOrders(_webCashOrders);
                     break;
                 case LiveOrderFilter.Table:
                     cards = MapSessions(_tableSessions);
@@ -407,7 +432,7 @@ namespace POS_in_NET.Pages
                 return null;
             }
 
-            return _allOrders.Concat(_collectionOrders).Concat(_deliveryOrders)
+            return _allOrders.Concat(_collectionOrders).Concat(_deliveryOrders).Concat(_webCashOrders)
                 .FirstOrDefault(o => string.Equals(OrderKey(o), key, StringComparison.OrdinalIgnoreCase));
         }
 
@@ -471,6 +496,228 @@ namespace POS_in_NET.Pages
             return string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsOpenWebCashDue(Order order)
+        {
+            if (!IsWebOrder(order))
+            {
+                return false;
+            }
+
+            if (order.LocalLifecycleState is LocalLifecycleState.Paid or LocalLifecycleState.Voided)
+            {
+                return false;
+            }
+
+            return OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod);
+        }
+
+        private async Task TakeWebCashDuePaymentAsync(Order summary)
+        {
+            if (_isTakingWebPayment || _isNavigatingAway)
+            {
+                return;
+            }
+
+            _isTakingWebPayment = true;
+            try
+            {
+                var orderService = ServiceHelper.GetService<OrderService>() ?? new OrderService();
+                var order = string.IsNullOrWhiteSpace(summary.OrderId)
+                    ? null
+                    : await orderService.GetOrderByExternalIdAsync(summary.OrderId.Trim());
+                if (order == null)
+                {
+                    await AppAlertService.ShowAlertAsync("Payment", "Could not load this web order.");
+                    return;
+                }
+
+                if (!IsOpenWebCashDue(order))
+                {
+                    await AppAlertService.ShowAlertAsync("Payment", "This order is not waiting for cash/card payment.");
+                    RequestOrdersReload();
+                    return;
+                }
+
+                var payments = await orderService.GetOrderPaymentsAsync(order.Id);
+                var alreadyPaid = payments
+                    .Where(p => string.Equals(p.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                    .Sum(p => p.Amount);
+                var amountDue = Math.Max(0m, Math.Round(order.TotalAmount - alreadyPaid, 2, MidpointRounding.AwayFromZero));
+                if (amountDue <= 0.009m)
+                {
+                    await AppAlertService.ShowAlertAsync("Payment", "This order is already paid.");
+                    RequestOrdersReload();
+                    return;
+                }
+
+                var methodDialog = new POS_in_NET.Views.PaymentMethodDialog();
+                methodDialog.SetCashAndCardOnly();
+                methodDialog.SetAmountDue(
+                    amountDue,
+                    title: $"PAY #{order.OrderNumber ?? order.OrderId}");
+                var method = await methodDialog.ShowAsync();
+                if (method is PaymentMethod.Cancelled or PaymentMethod.None or PaymentMethod.GiftCard)
+                {
+                    return;
+                }
+
+                decimal paidAmount = amountDue;
+                decimal amountReceived = amountDue;
+                decimal change = 0m;
+                string tender = method == PaymentMethod.Card ? "card" : "cash";
+
+                if (method == PaymentMethod.Cash)
+                {
+                    var cashDialog = new CashPaymentDialog();
+                    cashDialog.SetAmountDue(amountDue);
+                    var cashResult = await cashDialog.ShowAsync();
+                    if (!cashResult.Success)
+                    {
+                        return;
+                    }
+
+                    paidAmount = cashResult.AmountPaid;
+                    amountReceived = cashResult.AmountReceived;
+                    change = cashResult.Change;
+                    if (paidAmount + 0.009m < amountDue)
+                    {
+                        await AppAlertService.ShowAlertAsync(
+                            "Payment",
+                            "Full amount is required for web cash-due orders.");
+                        return;
+                    }
+
+                    paidAmount = amountDue;
+                }
+
+                var auth = ServiceHelper.GetService<AuthenticationService>() ?? AuthenticationService.Instance;
+                var staffName = auth.CurrentUser?.Name
+                    ?? auth.CurrentUser?.Username
+                    ?? "Staff";
+                var reference = $"live-web:{order.OrderId}:{tender}:{DateTime.UtcNow:yyyyMMddHHmmss}";
+
+                var saved = await orderService.RecordPaymentLineAsync(
+                    order.OrderId,
+                    tender,
+                    paidAmount,
+                    "approved",
+                    tipAmount: 0,
+                    reference: reference,
+                    createdBy: staffName,
+                    metadata: new
+                    {
+                        source = "live_order_web",
+                        amountDue,
+                        amountReceived,
+                        change,
+                        orderNumber = order.OrderNumber
+                    },
+                    maximumApprovedTotal: order.TotalAmount);
+
+                if (!saved)
+                {
+                    await AppAlertService.ShowAlertAsync(
+                        "Payment Failed",
+                        "Could not save the payment. Try again.");
+                    return;
+                }
+
+                order.PaymentMethod = tender;
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.PaymentStatusRaw = "paid";
+                order.AmountPaid = (order.AmountPaid ?? alreadyPaid) + paidAmount;
+                order.PaidAt = DateTime.Now;
+                order.CompletedTime = DateTime.Now;
+                order.UpdatedAt = DateTime.Now;
+
+                var tenderSaved = await orderService.ApplyPosTenderAsync(order.OrderId, tender, order.AmountPaid ?? paidAmount);
+                if (!tenderSaved)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LiveOrder] ApplyPosTenderAsync missed for {order.OrderId}; closing status still attempted.");
+                }
+
+                var closed = await orderService.UpdateOrderStatusAsync(order.Id, OrderStatus.Completed);
+                if (!closed)
+                {
+                    await AppAlertService.ShowAlertAsync(
+                        "Payment Saved",
+                        "Payment was recorded, but the order could not be closed. Check Order History.");
+                }
+
+                order.LocalLifecycleState = LocalLifecycleState.Paid;
+                order.IsOpen = false;
+                order.Status = OrderStatus.Completed;
+
+                var cloudSynced = await SendWebOrderSettlementAsync(order, tender, staffName);
+
+                try
+                {
+                    var receiptService = ServiceHelper.GetService<ReceiptService>();
+                    if (receiptService != null)
+                    {
+                        await receiptService.PrintFullCustomerReceiptAsync(order);
+                    }
+                }
+                catch (Exception printEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LiveOrder] Web pay receipt: {printEx.Message}");
+                }
+
+                AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
+                RequestOrdersReload();
+
+                var tenderLabel = method == PaymentMethod.Card ? "card" : "cash";
+                var cloudNote = cloudSynced
+                    ? "OrderWeb updated."
+                    : "OrderWeb sync queued or offline — will retry.";
+                await ToastNotification.ShowGlobalAsync(
+                    method == PaymentMethod.Card ? "Paid by card" : "Paid by cash",
+                    $"#{order.OrderNumber ?? order.OrderId} · £{paidAmount:F2} · {tenderLabel}. {cloudNote}",
+                    NotificationType.Success,
+                    2800);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LiveOrder] Web cash pay failed: {ex.Message}");
+                await AppAlertService.ShowAlertAsync("Payment Error", ex.Message);
+            }
+            finally
+            {
+                _isTakingWebPayment = false;
+            }
+        }
+
+        private static async Task<bool> SendWebOrderSettlementAsync(Order order, string tender, string staffName)
+        {
+            if (!IsWebOrder(order))
+            {
+                return true;
+            }
+
+            try
+            {
+                var cloudService = ServiceHelper.GetService<CloudOrderService>();
+                if (cloudService == null)
+                {
+                    return false;
+                }
+
+                order.PaymentMethod = tender;
+                return await cloudService.SendOrderSettlementAsync(
+                    order,
+                    status: "paid",
+                    staffId: null,
+                    staffName: staffName,
+                    notes: $"Live Order Web tender: {tender}",
+                    paymentMethodOverride: tender);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[LiveOrder] OrderWeb settlement warning: {ex.Message}");
+                return false;
+            }
+        }
+
         private async Task NavigateToOrderAsync(Order order)
         {
             if (_isNavigatingAway)
@@ -489,7 +736,34 @@ namespace POS_in_NET.Pages
             }
 
             var orderPage = new OrderPlacementPageSimple(existingOrderId: order.OrderId);
+            ApplyTakeawayContextForResume(orderPage, order);
             await PushOrderPageAsync(orderPage);
+        }
+
+        private static void ApplyTakeawayContextForResume(OrderPlacementPageSimple orderPage, Order order)
+        {
+            var orderType = (order.OrderType ?? string.Empty).Trim().ToLowerInvariant();
+            var customerName = string.IsNullOrWhiteSpace(order.CustomerName) ? "Guest" : order.CustomerName.Trim();
+            var customerPhone = order.CustomerPhone ?? string.Empty;
+
+            if (orderType is "delivery" or "del")
+            {
+                orderPage.SetDeliveryOrderInfo(
+                    customerId: 0,
+                    customerName: customerName,
+                    customerPhone: customerPhone,
+                    customerAddress: order.CustomerAddress ?? string.Empty,
+                    deliveryFee: order.DeliveryFee);
+                return;
+            }
+
+            if (orderType is "pickup" or "collection" or "col" or "takeaway")
+            {
+                orderPage.SetCollectionOrderInfo(
+                    customerId: 0,
+                    customerName: customerName,
+                    customerPhone: customerPhone);
+            }
         }
 
         private static bool IsTableOrderType(string? orderType)
@@ -733,6 +1007,47 @@ namespace POS_in_NET.Pages
             {
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                     await AppAlertService.ShowAlertAsync("Error", $"Failed to load delivery orders: {ex.Message}"));
+            }
+        }
+
+        private async Task LoadWebCashOrdersAsync()
+        {
+            try
+            {
+                var orders = new List<Order>();
+
+                using var connection = await _databaseService.GetConnectionAsync();
+                await EnsureOrderLifecycleSchemaAsync(connection);
+                var query = $@"
+                    SELECT o.id, o.order_id AS OrderId, o.order_number AS OrderNumber, o.customer_name AS CustomerName,
+                           o.order_type AS OrderType, o.table_session_id AS TableSessionId,
+                           o.source_channel AS SourceChannel, o.payment_method AS PaymentMethod,
+                           o.total_amount AS TotalAmount, o.created_at AS CreatedAt,
+                           o.updated_at AS UpdatedAt, o.local_lifecycle_state AS LocalLifecycleState,
+                           COALESCE(o.is_open, 1) AS IsOpen, COALESCE(o.draft_abandoned_flag, 0) AS DraftAbandonedFlag,
+                           COALESCE(o.send_attempt_count, 0) AS SendAttemptCount,
+                           COALESCE(o.payment_attempt_count, 0) AS PaymentAttemptCount
+                    FROM orders o
+                    WHERE {WebCashDueSourceFilter}
+                      {ActiveLifecycleFilter}
+                      AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'draft')) NOT IN ('paid', 'voided', 'closed')
+                    ORDER BY FIELD(COALESCE(LOWER(o.local_lifecycle_state), 'active'), 'draft', 'active', 'sent_partial', 'sent_full', 'payment_partial'),
+                             o.updated_at DESC, o.created_at DESC";
+
+                using var command = new MySqlCommand(query, connection);
+                using var reader = await command.ExecuteReaderAsync();
+
+                while (await reader.ReadAsync())
+                {
+                    orders.Add(ReadOrderFromReader(reader));
+                }
+
+                _webCashOrders = orders;
+            }
+            catch (Exception ex)
+            {
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                    await AppAlertService.ShowAlertAsync("Error", $"Failed to load web cash-due orders: {ex.Message}"));
             }
         }
 

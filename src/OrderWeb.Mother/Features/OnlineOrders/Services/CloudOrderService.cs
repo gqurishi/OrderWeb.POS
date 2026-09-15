@@ -1864,7 +1864,8 @@ public class CloudOrderService
         string status = "paid",
         string? staffId = null,
         string? staffName = null,
-        string? notes = null)
+        string? notes = null,
+        string? paymentMethodOverride = null)
     {
         if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
         {
@@ -1880,7 +1881,7 @@ public class CloudOrderService
 
         var normalizedStatus = NormalizeSettlementStatus(status);
         var paymentMethod = normalizedStatus == "paid"
-            ? NormalizeSettlementPaymentMethod(order.PaymentMethod)
+            ? NormalizeSettlementPaymentMethod(paymentMethodOverride ?? order.PaymentMethod)
             : null;
         var deviceId = await GetDeviceIdAsync();
         var config = await _orderWebApiClient.GetConfigAsync();
@@ -1890,7 +1891,7 @@ public class CloudOrderService
             return false;
         }
 
-        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-settlement", orderWebOrderId, normalizedStatus);
+        var idempotencyKey = OrderWebApiClient.BuildIdempotencyKey("order-settlement", orderWebOrderId, normalizedStatus, paymentMethod ?? "none");
         var paidAt = ToUtc(order.PaidAt ?? order.CompletedTime ?? DateTime.Now);
         var url = OrderWebApiClient.BuildUrl(config, "/pos/orders/ack");
 
@@ -2308,7 +2309,10 @@ public class CloudOrderService
 
         if (status == "paid")
         {
-            payload["payment_method"] = paymentMethod ?? "cash";
+            var tender = paymentMethod ?? "cash";
+            payload["payment_method"] = tender;
+            payload["pos_payment_method"] = tender;
+            payload["payment_status"] = "paid";
             payload["paid_at"] = paidAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ");
         }
 

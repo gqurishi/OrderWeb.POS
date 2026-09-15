@@ -29,11 +29,31 @@ namespace POS_in_NET.Pages
             _floorService = ServiceHelper.GetService<FloorService>() ?? new FloorService();
         }
 
+        /// <summary>Used when Floor Management is hosted under Layout tabs.</summary>
+        public void PrepareForEmbed()
+        {
+            TopBar.IsVisible = false;
+        }
+
+        public Task ActivateEmbeddedAsync()
+        {
+            SubscribeToRefreshEvents();
+            return LoadFloorsAsync();
+        }
+
+        public void DeactivateEmbedded()
+        {
+            UnsubscribeFromRefreshEvents();
+        }
+
         protected override void OnAppearing()
         {
             base.OnAppearing();
-            SubscribeToRefreshEvents();
-            _ = LoadFloorsAsync();
+            if (TopBar.IsVisible)
+            {
+                SubscribeToRefreshEvents();
+                _ = LoadFloorsAsync();
+            }
         }
 
         protected override void OnDisappearing()

@@ -20,25 +20,21 @@ public static class AppAlertService
     {
         var lowered = title.ToLowerInvariant();
 
-        const string brandIconBg = "#2563EB";
-        const string brandButtonBg = "#2563EB";
-        const string brandButtonText = "White";
-
-        if (lowered.Contains("error") || lowered.Contains("failed") || lowered.Contains("denied") || lowered.Contains("invalid"))
+        if (lowered.Contains("error") || lowered.Contains("failed") || lowered.Contains("denied") || lowered.Contains("invalid") || lowered.Contains("couldn't") || lowered.Contains("could not"))
         {
-            return ("x", brandIconBg, brandButtonBg, brandButtonText);
+            return ("x", "#DC2626", "#DC2626", "White");
         }
 
         if (lowered.Contains("success") || lowered.Contains("complete") || lowered.Contains("saved") || lowered.Contains("export") || lowered.Contains("download"))
         {
-            return ("ok", brandIconBg, brandButtonBg, brandButtonText);
+            return ("ok", "#059669", "#059669", "White");
         }
 
         if (lowered.Contains("warning") || lowered.Contains("required") || lowered.Contains("validation"))
         {
-            return ("!", brandIconBg, brandButtonBg, brandButtonText);
+            return ("!", "#D97706", "#D97706", "White");
         }
 
-        return ("i", brandIconBg, brandButtonBg, brandButtonText);
+        return ("i", "#2563EB", "#2563EB", "White");
     }
 }

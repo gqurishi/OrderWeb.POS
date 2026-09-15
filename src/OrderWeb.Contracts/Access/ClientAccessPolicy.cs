@@ -117,7 +117,10 @@ public static class ClientAccessPolicy
         "fullreports",
         "payrollreports",
         "securityreports",
-        "staffclock"
+        "staffclock",
+        "layout",
+        "floor",
+        "table"
     };
 
     /// <summary>Mother-only product features. Never send these to Client.</summary>

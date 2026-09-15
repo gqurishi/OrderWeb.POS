@@ -236,7 +236,7 @@ using System.Linq;
                 if (ZReportCardLabel != null) ZReportCardLabel.Text = snapshot.CardDisplay;
                 if (ZReportGiftTipsLabel != null)
                 {
-                    ZReportGiftTipsLabel.Text = snapshot.TipsDisplay;
+                    ZReportGiftTipsLabel.Text = snapshot.GiftCardDisplay;
                 }
                 if (ZReportPosLabel != null)
                 {

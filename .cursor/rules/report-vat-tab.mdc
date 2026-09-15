@@ -1,0 +1,126 @@
+---
+description: Mother Report VAT tab — Phase 0 product rules locked; HMRC period summary
+alwaysApply: true
+---
+
+# Report → VAT tab (remember)
+
+## Goal
+On Mother **Report**, admin opens a **VAT** tab to see **how much VAT for a date range** (HMRC-facing summary). Same paid-order VAT as Sales Summary / Detailed All Orders. No Client report surface for v1.
+
+## Phase 0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Tab name | **VAT** |
+| Purpose | Show **how much VAT for a date range** (HMRC-facing summary) |
+| Presets | **7 / 15 / 30 / 180 / 365** days |
+| Custom range | **Yes** — calendar from date → to date |
+| Hero metric | **VAT due for period** (VAT collected from paid orders in range) |
+| Support rows | **Gross**, **Net** (rate split **0% / 20%** + Other; no 5% tile) |
+| Order grid on this tab | **No** — per-order VAT stays on Detailed All Orders |
+| Access | Same as full Report tools (`CanUseFullReportTools` / Admin–manager reports) |
+| Source of truth | Same paid-order VAT as Sales Summary + Detailed All Orders (`DailyReportService` / `vw_report_order_lines_live`) |
+| Date basis | Same trading / report dates as the rest of Report (must match Sales Summary for same range) |
+| Filters v1 | **Locked: all sources / all order types** (no source/type chips on VAT tab; matches unfiltered Sales Summary) |
+| Export | CSV + PDF of period summary (Phase 3); not required to lock Phase 0 |
+| Wording | “VAT collected (from paid orders)” — **not** “already paid to HMRC” |
+
+### Explicit non-goals (v1)
+- Do **not** auto-submit to HMRC / Making Tax Digital (MTD) filing.
+- Do **not** put an order list / Void actions on the VAT tab.
+- Do **not** invent fake rate bands if item-level rates are incomplete (rate split = later).
+- Do **not** build a Client POS VAT report for v1 (Mother Report only).
+
+### Related (already exists — do not remove)
+- Sales Summary **VAT** tile
+- Detailed All Orders **VAT Amount** column (per order)
+- Top sellers VAT column / order detail line VAT
+
+## Build order
+0. **Phase 0** — lock rules ✅
+1. **Phase 1** — Report chrome: VAT tab + presets + custom calendar UI ✅
+2. **Phase 2** — Period totals: Gross / Net / VAT from live report path; match Sales Summary ✅
+3. **Phase 3** — UX polish: period label, wording, CSV/PDF export, soft £0-tax note ✅
+4. **Phase 4** — Rate breakdown **0% / 20%** (+ Other; 5% tile removed) ✅
+5. **Phase 5** — Data quality: Client/Mother `tax_amount` capture if totals understate ✅
+6. **Phase 6** — QA checklist ✅
+
+## Phase 1 — Report chrome (done)
+- **VAT** mode/button beside existing Report modes (Staff Hours / Void / Historical row)
+- Panel visible only when VAT selected + `CanUseFullReportTools`
+- Presets **7 / 15 / 30 / 180 / 365** + **Custom** from→to (reuses Report calendar popup)
+- Hero + Gross/Net placeholders (`—`); status / error / loading states
+- Invalid range (end before start) refused with alert + error banner
+
+**Done when:** admin can open VAT and pick a range (numbers = Phase 2).
+
+## Phase 2 — Period totals (done)
+- `DailyReportService.GetSummaryAsync` / `GetVatPeriodAsync` — same `LoadSummaryAsync` / trading-day bounds as Sales Summary
+- Hero VAT + Gross + Net bound from `ReportSummary`
+- v1 filters locked: **All sources / All order types**
+- Empty period → £0.00 + clear status; load failure → error banner
+
+**Done when:** same date range → VAT tab matches Sales Summary VAT / Gross / Net (with Sales Summary filters on All).
+
+## Phase 3 — UX + export (done)
+- Period label: `d MMM yyyy – d MMM yyyy · N days`
+- Hero wording: **VAT collected** + helper (not paid to HMRC yet)
+- Soft amber warning when many paid orders have £0 tax
+- **CSV** + **PDF** one-page VAT summary export (`ExportVatCsvAsync` / `ExportVatPdfAsync`)
+
+**Done when:** admin can pick a custom (e.g. quarter) range and export VAT summary.
+
+## Phase 4 — Rate split (done)
+- Bands: **0% / 20% / Other** (no Reduced 5% tile — rare on normal restaurant menu; COVID hospitality 5% ended)
+- Prefer `FoodMenuItems.calculated_vat_rate` / `vat_category`; table/dine-in → 20%
+- Bucket existing line net/VAT so band VAT sum ≈ hero VAT (no invented amounts)
+- UI tiles + CSV/PDF rate section + explain-total insight
+
+**Done when:** admin sees rate split that explains the hero total (bands sum ≈ total VAT).
+
+## Phase 5 — Data quality (done)
+
+### Audit (who saves `tax_amount`)
+| Path | Behaviour |
+|--|--|
+| **Mother till** | `TableOrder` extracts VAT from VAT-inclusive prices (`UpdateTaxSnapshot`) → `TaxAmount = order.VAT` on save |
+| **Client till (before fix)** | `ClientPosOperationalService.ApplyClientOrderFinancials` forced **`TaxAmount = 0`** → understated HMRC VAT |
+| **Client till (after fix)** | Same inclusive rules via `VATCalculator.CalculateInclusiveLineVat` + menu rates; saved on upsert / discount / service charge / loyalty |
+
+### Fix shipped
+- Client upsert no longer forces £0 tax
+- Rates: **dine-in/table = 20%**; takeaway/collection/delivery **cold = 0%**, **hot/alcohol = 20%** (menu `vat_category` / `VATCalculator`)
+- `OrderService` upsert always writes `tax_amount = @taxAmount` (so cold-only carts can clear prior tax)
+
+### Sample check (manual)
+1. Table / dine-in item £12.00 → VAT ≈ £2.00 (20% inclusive)
+2. Collection cold food/drink → VAT £0.00
+3. Collection hot food → VAT extracted at 20%
+4. Mixed week on VAT tab ≈ Sales Summary; band sum ≈ hero within a few pence
+
+### Known limits (until item-level rates are solid)
+- Meal deals / tasting packages without a `FoodMenuItem` row default to **HotFood** (20% takeaway / 20% table) — may overstate if a deal is cold-only
+- Report line VAT still **pro-rata** from order `tax_amount` across lines; band assignment uses menu rates — mixed-rate bills can skew per-line VAT vs perfect item extraction
+- Historical Client orders already saved with £0 tax are **not backfilled** — only new/updated Client saves get correct tax
+- Component meal-deal mixed VAT inside one SKU still uses the deal/item effective rate, not per-component split on the Client path
+- Soft £0-tax warning on VAT tab still useful for old understated rows
+
+**Done when:** sample week of mixed Mother + Client orders matches expected VAT within rounding (new orders after this fix).
+
+## Phase 6 — QA (done)
+1. Presets **7 / 15 / 30 / 180 / 365** change totals correctly ✅
+2. Custom from→to works; invalid range (end &lt; start) refused ✅
+3. Empty day / period shows **£0.00** cleanly ✅
+4. Matches Sales Summary VAT for same dates ✅
+5. Per-order VAT still visible on Detailed All Orders ✅
+6. CSV/PDF readable for admin filing (+ rate bands) ✅
+7. Non-admin / non–full-report role cannot open VAT tab ✅
+8. Client table + collection cold/hot sample VAT on Mother Report after pay ✅
+9. Restart Mother after build and re-test ✅
+
+**Done when:** checklist above passed on a real Mother build (VAT tab track complete for v1).
+
+## Architecture reminder
+Mother owns reports + MariaDB. VAT tab is Mother Report only. Cloud MTD is out of scope for v1.
+Client → Mother for order tax; never Client→cloud for VAT.

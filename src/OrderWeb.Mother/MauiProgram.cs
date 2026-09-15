@@ -165,6 +165,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<PrinterHealthService>();
 		builder.Services.AddSingleton<NetworkPrintQueueService>();
 		builder.Services.AddSingleton<OnlineOrderAutoPrintService>();
+		builder.Services.AddSingleton<OnlineOrderPrintNoticeService>();
+		builder.Services.AddSingleton<OnlineOrderPrintNoticePresenter>();
 		builder.Services.AddSingleton<PrintGroupService>();
 		builder.Services.AddSingleton<PrintingPolicyService>();
 		builder.Services.AddSingleton<KitchenTemplateSettingsService>();
@@ -173,6 +175,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<DeliveryReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<TableBillReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<TablePaymentReceiptTemplateSettingsService>();
+		builder.Services.AddSingleton<OnlineReceiptTemplateSettingsService>();
 		builder.Services.AddSingleton<ReceiptLogoSettingsService>();
 		
 		// Register OrderService

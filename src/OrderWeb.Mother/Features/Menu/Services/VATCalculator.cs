@@ -103,6 +103,61 @@ namespace MyFirstMauiApp.Services
         }
 
         /// <summary>
+        /// Resolve VAT % from order type + category when a full menu item is not available.
+        /// Table/dine-in always 20%. Takeaway cold = 0%, hot/alcohol = 20%.
+        /// </summary>
+        public static decimal CalculateVatRateForCategory(string? orderType, string? vatCategory)
+        {
+            string normalizedOrderType = NormalizeOrderType(orderType);
+            if (normalizedOrderType == "Table" || normalizedOrderType == "DineIn")
+            {
+                return 20m;
+            }
+
+            return (vatCategory ?? "HotFood").Trim() switch
+            {
+                "NoVAT" => 0m,
+                "ColdFood" => 0m,
+                "ColdBeverage" => 0m,
+                "Reduced" or "ReducedRate" or "Reduced_Rate" => 5m,
+                "HotFood" => 20m,
+                "HotBeverage" => 20m,
+                "Alcohol" => 20m,
+                _ => 20m
+            };
+        }
+
+        /// <summary>
+        /// Extract VAT from a VAT-inclusive gross line (Mother till / Client report tax).
+        /// </summary>
+        public static decimal ExtractVatFromInclusiveGross(decimal grossInclusive, decimal ratePercent)
+        {
+            if (grossInclusive <= 0m || ratePercent <= 0m)
+            {
+                return 0m;
+            }
+
+            var divisor = 1m + (ratePercent / 100m);
+            var net = Math.Round(grossInclusive / divisor, 2, MidpointRounding.AwayFromZero);
+            return Math.Round(grossInclusive - net, 2, MidpointRounding.AwayFromZero);
+        }
+
+        /// <summary>
+        /// Inclusive VAT for one order line using menu rates when present.
+        /// </summary>
+        public static decimal CalculateInclusiveLineVat(
+            decimal lineGrossInclusive,
+            string? orderType,
+            FoodMenuItem? menuItem,
+            string? fallbackVatCategory = "HotFood")
+        {
+            var rate = menuItem != null
+                ? CalculateVatRate(menuItem, orderType ?? "Collection")
+                : CalculateVatRateForCategory(orderType, fallbackVatCategory);
+            return ExtractVatFromInclusiveGross(lineGrossInclusive, rate);
+        }
+
+        /// <summary>
         /// Get VAT breakdown for a component-based item
         /// </summary>
         /// <param name="item">The meal deal item</param>

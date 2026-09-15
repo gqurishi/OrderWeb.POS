@@ -74,6 +74,8 @@ public class RestaurantTablesView : ContentView
     };
     private readonly AbsoluteLayout _canvas;
     private readonly VerticalStackLayout _empty;
+    private readonly Label _emptyTitle;
+    private readonly Label _emptySubtitle;
     private readonly Button _emptyAction;
     private readonly Dictionary<string, TableCardHost> _tableHosts = new(StringComparer.OrdinalIgnoreCase);
     private string? _selectedFloorId;
@@ -113,6 +115,23 @@ public class RestaurantTablesView : ContentView
     {
         _connection.TextColor = Color.FromArgb("#B45309");
 
+        _emptyTitle = new Label
+        {
+            Text = "No Tables on This Floor",
+            FontSize = 18,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb("#374151"),
+            HorizontalTextAlignment = TextAlignment.Center
+        };
+        _emptySubtitle = new Label
+        {
+            Text = "Add tables from Table Management",
+            FontSize = 14,
+            FontFamily = "OpenSansRegular",
+            TextColor = Color.FromArgb("#6B7280"),
+            HorizontalTextAlignment = TextAlignment.Center
+        };
+
         _emptyAction = new Button
         {
             Text = "Go to Table Management",
@@ -130,37 +149,24 @@ public class RestaurantTablesView : ContentView
 
         _empty = new VerticalStackLayout
         {
-            Spacing = 15,
+            Spacing = 12,
             IsVisible = false,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center,
+            Padding = new Thickness(24),
             Children =
             {
                 new Border
                 {
                     Padding = 20,
-                    BackgroundColor = Color.FromArgb("#F3F4F6"),
+                    BackgroundColor = Color.FromArgb("#E5E7EB"),
                     StrokeThickness = 0,
                     StrokeShape = new RoundRectangle { CornerRadius = 50 },
                     HorizontalOptions = LayoutOptions.Center,
-                    Content = new Image { Source = "table_1.png", WidthRequest = 60, HeightRequest = 60, Opacity = 0.4 }
+                    Content = new Image { Source = "table_1.png", WidthRequest = 60, HeightRequest = 60, Opacity = 0.55 }
                 },
-                new Label
-                {
-                    Text = "No Tables on This Floor",
-                    FontSize = 18,
-                    FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb("#9CA3AF"),
-                    HorizontalTextAlignment = TextAlignment.Center
-                },
-                new Label
-                {
-                    Text = "Add tables from Table Management",
-                    FontSize = 14,
-                    FontFamily = "OpenSansRegular",
-                    TextColor = Color.FromArgb("#D1D5DB"),
-                    HorizontalTextAlignment = TextAlignment.Center
-                },
+                _emptyTitle,
+                _emptySubtitle,
                 _emptyAction
             }
         };
@@ -170,11 +176,8 @@ public class RestaurantTablesView : ContentView
         AbsoluteLayout.SetLayoutFlags(_floorBackground, AbsoluteLayoutFlags.All);
         AbsoluteLayout.SetLayoutBounds(_floorBackgroundBlur, new Rect(0, 0, 1, 1));
         AbsoluteLayout.SetLayoutFlags(_floorBackgroundBlur, AbsoluteLayoutFlags.All);
-        AbsoluteLayout.SetLayoutBounds(_empty, new Rect(0.5, 0.5, -1, -1));
-        AbsoluteLayout.SetLayoutFlags(_empty, AbsoluteLayoutFlags.PositionProportional);
         _canvas.Children.Add(_floorBackground);
         _canvas.Children.Add(_floorBackgroundBlur);
-        _canvas.Children.Add(_empty);
 
         var floorScroll = new ScrollView
         {
@@ -182,7 +185,7 @@ public class RestaurantTablesView : ContentView
             HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
             VerticalScrollBarVisibility = ScrollBarVisibility.Never,
             VerticalOptions = LayoutOptions.Center,
-            MaximumHeightRequest = 36,
+            MaximumHeightRequest = 40,
             Content = _floorTabs
         };
 
@@ -204,7 +207,7 @@ public class RestaurantTablesView : ContentView
             VerticalScrollBarVisibility = ScrollBarVisibility.Never,
             HorizontalOptions = LayoutOptions.Fill,
             VerticalOptions = LayoutOptions.Center,
-            MaximumHeightRequest = 36,
+            MaximumHeightRequest = 48,
             Content = new HorizontalStackLayout
             {
                 Spacing = 8,
@@ -230,9 +233,8 @@ public class RestaurantTablesView : ContentView
         {
             BackgroundColor = Colors.White,
             StrokeThickness = 0,
-            Padding = new Thickness(12, 4),
-            MinimumHeightRequest = 36,
-            MaximumHeightRequest = 40,
+            Padding = new Thickness(12, 6),
+            MinimumHeightRequest = 48,
             Content = toolbarGrid
         };
 
@@ -240,9 +242,11 @@ public class RestaurantTablesView : ContentView
         var canvasHost = new Grid
         {
             BackgroundColor = Color.FromArgb("#F1F5F9"),
-            Padding = new Thickness(12, 10, 12, 12),
-            Children = { _canvas }
+            Padding = new Thickness(12, 10, 12, 12)
         };
+        canvasHost.Children.Add(_canvas);
+        // Overlay (not AbsoluteLayout auto-size) so empty state always paints on Windows.
+        canvasHost.Children.Add(_empty);
 
         var root = new Grid
         {
@@ -357,6 +361,15 @@ public class RestaurantTablesView : ContentView
         var text = EmptyActionText?.Trim() ?? string.Empty;
         _emptyAction.Text = string.IsNullOrWhiteSpace(text) ? "Go to Table Management" : text;
         _emptyAction.IsVisible = !string.IsNullOrWhiteSpace(EmptyActionText);
+    }
+
+    /// <summary>Host can explain no-floors vs no-tables without teaching SharedUI Mother routes.</summary>
+    public void SetEmptyCopy(string title, string subtitle)
+    {
+        _emptyTitle.Text = string.IsNullOrWhiteSpace(title) ? "No Tables on This Floor" : title.Trim();
+        _emptySubtitle.Text = string.IsNullOrWhiteSpace(subtitle)
+            ? "Add tables from Table Management"
+            : subtitle.Trim();
     }
 
     private void RebuildFloorTabsIfNeeded()

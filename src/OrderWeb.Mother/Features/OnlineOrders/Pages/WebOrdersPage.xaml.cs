@@ -1258,7 +1258,8 @@ namespace POS_in_NET.Pages
                     status: "paid",
                     staffId: user?.Id.ToString(),
                     staffName: user?.Name ?? user?.Username,
-                    notes: $"POS tender: {order.PaymentMethod}");
+                    notes: $"POS tender: {order.PaymentMethod}",
+                    paymentMethodOverride: order.PaymentMethod);
 
                 System.Diagnostics.Debug.WriteLine(sentOrQueued
                     ? $"OrderWeb completion ACK sent/queued for {order.OrderId}"

@@ -44,7 +44,8 @@ public partial class UserDashboardPage : ContentPage
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
         if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
-        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Reservation))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
 
         var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
         {
@@ -154,11 +155,15 @@ public partial class UserDashboardPage : ContentPage
     {
         try
         {
-            var settings = await _orderServiceAvailabilityService.GetAsync();
-            RestaurantServiceButton.IsVisible = settings.TableEnabled;
-            CollectionServiceButton.IsVisible = settings.CollectionEnabled;
-            DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
-            ArrangeDashboardTiles();
+            var settings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                HostSharedDashboard();
+                RestaurantServiceButton.IsVisible = settings.TableEnabled;
+                CollectionServiceButton.IsVisible = settings.CollectionEnabled;
+                DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
+                ArrangeDashboardTiles();
+            });
         }
         catch (Exception ex)
         {

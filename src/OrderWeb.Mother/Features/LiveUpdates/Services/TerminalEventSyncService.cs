@@ -56,6 +56,7 @@ public static class TerminalEventSyncService
 
             var columns = await GetTerminalEventColumnsAsync(connection);
             await AddColumnIfMissingAsync(connection, columns, "event_kind", "VARCHAR(40) NULL");
+            await AddColumnIfMissingAsync(connection, columns, "event_type", "VARCHAR(80) NULL");
             await AddColumnIfMissingAsync(connection, columns, "entity_type", "VARCHAR(40) NULL");
             await AddColumnIfMissingAsync(connection, columns, "entity_id", "VARCHAR(120) NULL");
             await AddColumnIfMissingAsync(connection, columns, "order_number", "VARCHAR(80) NULL");

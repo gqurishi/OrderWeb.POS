@@ -750,7 +750,9 @@ public sealed class MotherOrderClient
             order.ServiceCharge,
             order.ServiceChargeStatus,
             order.ServiceChargePercent,
-            order.LoyaltyPointsEarned);
+            order.LoyaltyPointsEarned,
+            order.SourceChannel,
+            order.PaymentMethod);
 
     public Task<MotherCommandResult> SetOrderNotesAsync(MotherOrderState state, string? notes) =>
         UpsertOrderAsync(state with { Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim() });
@@ -935,7 +937,9 @@ public sealed class MotherOrderClient
         decimal ServiceCharge = 0m,
         string? ServiceChargeStatus = null,
         decimal ServiceChargePercent = 0m,
-        int LoyaltyPointsEarned = 0);
+        int LoyaltyPointsEarned = 0,
+        string? SourceChannel = null,
+        string? PaymentMethod = null);
 
     private sealed record OrderLineDto(
         string Id,

@@ -2718,12 +2718,20 @@ namespace POS_in_NET.Pages
                 return false;
             }
 
+            // Live Order / resume by id: Collection and Delivery bills are not table sessions.
+            // Accept them even when Order Place still has the default table context.
+            if (IsTakeawayOrderType(order.OrderType))
+            {
+                return true;
+            }
+
             if (!string.Equals(GetCanonicalOrderType(), "table", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            if (!string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase)
+                && !IsTableOrderType(order.OrderType))
             {
                 return false;
             }
@@ -2738,6 +2746,10 @@ namespace POS_in_NET.Pages
                 $"Table {_currentOrder.TableNumber}",
                 StringComparison.OrdinalIgnoreCase);
         }
+
+        private static bool IsTakeawayOrderType(string? orderType) =>
+            (orderType ?? string.Empty).Trim().ToLowerInvariant() is
+                "pickup" or "collection" or "col" or "takeaway" or "delivery" or "del";
 
         private string BuildTastingCourseStatusText(TableOrderItem package)
         {
@@ -5482,7 +5494,8 @@ namespace POS_in_NET.Pages
                     status: "paid",
                     staffId: actor.ActorId,
                     staffName: actor.ActorName,
-                    notes: BuildOrderWebSettlementNotes(order));
+                    notes: BuildOrderWebSettlementNotes(order),
+                    paymentMethodOverride: order.PaymentMethod);
 
                 System.Diagnostics.Debug.WriteLine(sentOrQueued
                     ? $"OrderWeb settlement sent/queued for {order.OrderId}"
@@ -5581,7 +5594,7 @@ namespace POS_in_NET.Pages
         }
 
         private static bool IsTableOrderType(string? orderType) =>
-            string.Equals(orderType?.Trim(), "table", StringComparison.OrdinalIgnoreCase);
+            (orderType ?? string.Empty).Trim().ToLowerInvariant() is "table" or "tbl" or "dine_in" or "dine-in";
 
         private static TableServiceChargeStatus ParseServiceChargeStatus(string? value) =>
             value?.Trim().ToLowerInvariant() switch

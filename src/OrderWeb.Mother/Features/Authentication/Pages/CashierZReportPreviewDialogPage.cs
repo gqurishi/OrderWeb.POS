@@ -25,7 +25,7 @@ public sealed class CashierZReportPreviewDialogPage : ContentPage
         var payments = new Grid { ColumnSpacing = 10, ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) } };
         payments.Add(Metric("CASH", Money(report.CashTotal), "#ECFDF5", "#047857"));
         payments.Add(Metric("CARD", Money(report.CardTotal), "#EFF6FF", "#1D4ED8"), 1);
-        payments.Add(Metric("OTHER", Money(report.GiftCardTotal), "#F5F3FF", "#6D28D9"), 2);
+        payments.Add(Metric("GIFT CARD", Money(report.GiftCardTotal), "#F5F3FF", "#6D28D9"), 2);
 
         var totals = new VerticalStackLayout
         {

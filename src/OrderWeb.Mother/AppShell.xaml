@@ -75,9 +75,18 @@
 
     <FlyoutItem Title="Restaurant">
         <ShellContent
-            Title="Restaurant Overview"
-            ContentTemplate="{DataTemplate pages:RestaurantPage}"
+            Title="Restaurant"
+            ContentTemplate="{DataTemplate pages:VisualTablePage}"
             Route="restaurant"
+            Shell.NavBarIsVisible="False" />
+    </FlyoutItem>
+
+    <!-- Admin Layout hub: Floor / Table / Visual setup -->
+    <FlyoutItem Title="Layout">
+        <ShellContent
+            Title="Layout"
+            ContentTemplate="{DataTemplate pages:RestaurantPage}"
+            Route="layout"
             Shell.NavBarIsVisible="False" />
     </FlyoutItem>
     

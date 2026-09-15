@@ -3,7 +3,7 @@ using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.SharedUI.Controls;
 
-/// <summary>Mother-style All / Collection / Delivery / Table filter strip (no Refresh).</summary>
+/// <summary>Mother-style All / Collection / Delivery / Table / Web Order filter strip (no Refresh).</summary>
 public sealed class LiveOrderFilterBar : ContentView
 {
     private static readonly Color ActiveBackground = Color.FromArgb("#10B981");
@@ -33,7 +33,7 @@ public sealed class LiveOrderFilterBar : ContentView
     {
         var row = new HorizontalStackLayout
         {
-            Spacing = 12,
+            Spacing = 10,
             HorizontalOptions = LayoutOptions.Center,
             Padding = new Thickness(12, 10)
         };
@@ -42,6 +42,7 @@ public sealed class LiveOrderFilterBar : ContentView
         row.Children.Add(CreateTab(LiveOrderFilter.Collection, "Collection"));
         row.Children.Add(CreateTab(LiveOrderFilter.Delivery, "Delivery"));
         row.Children.Add(CreateTab(LiveOrderFilter.Table, "Table"));
+        row.Children.Add(CreateTab(LiveOrderFilter.Web, "Web Order"));
 
         Content = new Border
         {
@@ -61,7 +62,7 @@ public sealed class LiveOrderFilterBar : ContentView
         var label = new Label
         {
             Text = text,
-            FontSize = 15,
+            FontSize = 14,
             FontAttributes = FontAttributes.Bold,
             VerticalOptions = LayoutOptions.Center,
             HorizontalOptions = LayoutOptions.Center
@@ -71,7 +72,7 @@ public sealed class LiveOrderFilterBar : ContentView
         {
             BackgroundColor = InactiveBackground,
             StrokeThickness = 0,
-            Padding = new Thickness(32, 14),
+            Padding = new Thickness(22, 14),
             HeightRequest = 50,
             StrokeShape = new RoundRectangle { CornerRadius = 8 },
             Content = label

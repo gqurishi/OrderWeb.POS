@@ -380,11 +380,15 @@ public sealed class ReportGenerationService
             .Where(m => m.PaymentMethod.Contains("cash", StringComparison.OrdinalIgnoreCase))
             .Sum(m => m.TotalAmount);
         snapshot.CardTotal = snapshot.PaymentMethods
-            .Where(m => m.PaymentMethod.Contains("card", StringComparison.OrdinalIgnoreCase))
+            .Where(m => IsCardPaymentMethod(m.PaymentMethod))
+            .Sum(m => m.TotalAmount);
+        snapshot.GiftCardTotal = snapshot.PaymentMethods
+            .Where(m => IsGiftCardPaymentMethod(m.PaymentMethod))
             .Sum(m => m.TotalAmount);
         snapshot.MobilePayTotal = snapshot.PaymentMethods
             .Where(m => !m.PaymentMethod.Contains("cash", StringComparison.OrdinalIgnoreCase)
-                     && !m.PaymentMethod.Contains("card", StringComparison.OrdinalIgnoreCase))
+                     && !IsCardPaymentMethod(m.PaymentMethod)
+                     && !IsGiftCardPaymentMethod(m.PaymentMethod))
             .Sum(m => m.TotalAmount);
         snapshot.PaymentSuccessRate = snapshot.PaymentMethods.Count > 0
             ? snapshot.PaymentMethods.Average(m => m.SuccessRate)
@@ -686,6 +690,14 @@ public sealed class ReportGenerationService
         }
     }
 
+    private static bool IsCardPaymentMethod(string method) =>
+        method.Contains("card", StringComparison.OrdinalIgnoreCase)
+        && !IsGiftCardPaymentMethod(method);
+
+    private static bool IsGiftCardPaymentMethod(string method) =>
+        method.Contains("gift", StringComparison.OrdinalIgnoreCase)
+        || method.Contains("voucher", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsOrderType(SnapshotOrderRow order, string type)
     {
         return string.Equals(order.OrderType, type, StringComparison.OrdinalIgnoreCase);
@@ -710,8 +722,16 @@ public sealed class ReportGenerationService
         return value.ToLowerInvariant() switch
         {
             "cash" => "Cash",
+            "cod" => "Cash",
+            "cash_on_delivery" => "Cash",
+            "cash_on_collection" => "Cash",
             "card" => "Card",
+            "credit_card" => "Card",
+            "debit_card" => "Card",
+            "online" => "Card",
             "gift_card" => "Gift Card",
+            "giftcard" => "Gift Card",
+            "voucher" => "Gift Card",
             "mobile" => "Mobile Pay",
             "apple_pay" => "Mobile Pay",
             "google_pay" => "Mobile Pay",

@@ -72,7 +72,7 @@ public static class OnlineOrderPaymentHelper
         return NormalizeMethod(paymentMethod);
     }
 
-    public static string GetStatusDisplay(string? paymentMethod, string? paymentStatus)
+    public static string GetStatusDisplay(string? paymentMethod, string? paymentStatus, string? orderType = null)
     {
         if (IsPaidFromSource(paymentMethod, paymentStatus))
         {
@@ -85,9 +85,17 @@ public static class OnlineOrderPaymentHelper
             "failed" or "declined" or "cancelled" or "canceled" => "Payment failed",
             "refunded" => "Refunded",
             "partiallypaid" or "partial" => "Partially paid",
+            _ when IsDeferredPaymentMethod(paymentMethod) && IsDeliveryOrder(orderType) => "Cash on delivery",
             _ when IsDeferredPaymentMethod(paymentMethod) => "Pay on collection/delivery",
             _ => "Payment pending"
         };
+    }
+
+    private static bool IsDeliveryOrder(string? orderType)
+    {
+        var type = (orderType ?? string.Empty).Trim().Replace("-", "_").Replace(" ", "_").ToLowerInvariant();
+        return type is "del" or "home_delivery"
+            || type.Contains("delivery", StringComparison.Ordinal);
     }
 
     private static string Humanize(string value)

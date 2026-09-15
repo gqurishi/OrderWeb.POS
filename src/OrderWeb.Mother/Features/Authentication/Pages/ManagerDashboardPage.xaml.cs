@@ -31,19 +31,15 @@ public partial class ManagerDashboardPage : ContentPage
     private void HostSharedDashboard()
     {
         var capabilities = MotherCapabilityResolver.ForRole(_authService.CurrentUser?.Role);
-        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            OrderWeb.Contracts.Features.PosFeatureKeys.DineIn,
-            OrderWeb.Contracts.Features.PosFeatureKeys.Collection,
-            OrderWeb.Contracts.Features.PosFeatureKeys.Delivery
-        };
+        var features = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Table))
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.DineIn);
         if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Collection))
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
         if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Delivery))
             features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
-        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+        if (_orderServiceAvailabilityService.IsEnabled(PosOrderService.Reservation))
+            features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
 
         var vm = new OrderWeb.SharedUI.ViewModels.DashboardViewModel
         {
@@ -131,11 +127,15 @@ public partial class ManagerDashboardPage : ContentPage
     {
         try
         {
-            var settings = await _orderServiceAvailabilityService.GetAsync();
-            RestaurantServiceButton.IsVisible = settings.TableEnabled;
-            CollectionServiceButton.IsVisible = settings.CollectionEnabled;
-            DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
-            ArrangeDashboardTiles();
+            var settings = await _orderServiceAvailabilityService.GetAsync(forceRefresh: true);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                HostSharedDashboard();
+                RestaurantServiceButton.IsVisible = settings.TableEnabled;
+                CollectionServiceButton.IsVisible = settings.CollectionEnabled;
+                DeliveryServiceButton.IsVisible = settings.DeliveryEnabled;
+                ArrangeDashboardTiles();
+            });
         }
         catch (Exception ex)
         {

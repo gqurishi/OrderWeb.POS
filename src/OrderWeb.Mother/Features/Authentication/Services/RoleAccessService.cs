@@ -20,6 +20,7 @@ public class RoleAccessService
         "reservation",
         "inventory",
         "restaurant",
+        "layout",
         "collection",
         "delivery",
         "liveorder",
@@ -61,7 +62,7 @@ public class RoleAccessService
             },
             [UserRole.Admin] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "login", "dashboard", "managerdashboard", "userdashboard", "restaurant",
+                "login", "dashboard", "managerdashboard", "userdashboard", "restaurant", "layout",
                 "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
                 "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
                 "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings",
@@ -95,11 +96,7 @@ public class RoleAccessService
             return ResolveDashboardRoute(role);
         }
 
-        if (normalized.Equals("restaurant", StringComparison.OrdinalIgnoreCase))
-        {
-            return "visuallayout";
-        }
-
+        // Restaurant = live floor for all roles. Layout hub stays on route "layout".
         return normalized;
     }
 

@@ -384,27 +384,18 @@ public partial class OrderPage : ContentPage, IClientOrderPlaceUi
             return;
         }
 
-        // Dirty / active edits: warn only — never silently overwrite local basket.
-        if (_host.Session.Lines.Count > 0 ||
-            !string.IsNullOrWhiteSpace(_host.Session.StatusMessage) ||
-            _host.Session.ActionsBusy)
+        // A table bill with items is normal. This till's own save comes back as
+        // order.updated — do not call that another terminal, and do not toast.
+        if (_host.ShouldIgnoreLiveEcho(_host.CurrentOrder.OrderId))
         {
-            _host.MarkRemoteConflict();
-            await ShowToastAsync(
-                "Changed elsewhere",
-                "This order changed on another terminal. Finish or discard local edits, then reopen.",
-                StatusKind.Warning);
             return;
         }
 
         _liveReloadInFlight = true;
         try
         {
-            var refreshed = await _host.ReloadFromMotherIfIdleAsync();
-            if (refreshed)
-            {
-                await ShowToastAsync("Order refreshed", "Latest copy loaded from Mother POS.", StatusKind.Info);
-            }
+            // Adopt a newer Mother copy only when this till is idle. No banner.
+            await _host.ReloadFromMotherIfIdleAsync();
         }
         finally
         {

@@ -4,237 +4,78 @@
              xmlns:views="clr-namespace:POS_in_NET.Views"
              x:Class="POS_in_NET.Pages.RestaurantPage"
              Title=""
-             BackgroundColor="White">
+             BackgroundColor="#F8FAFC">
 
-    <Grid RowDefinitions="Auto,*">
-        
-        <!-- Top Bar -->
+    <Grid RowDefinitions="Auto,Auto,*">
+
         <views:TopBar x:Name="TopBar" Grid.Row="0"/>
-        
-        <!-- Main Content -->
-        <ScrollView Grid.Row="1">
-            <StackLayout Padding="40" Spacing="40" VerticalOptions="Center">
 
-            <Grid RowDefinitions="Auto,Auto" 
-                  ColumnDefinitions="*,*" 
-                  ColumnSpacing="20"
-                  RowSpacing="20"
-                  Margin="0,20,0,0">
-
-                <!-- Floor Management Button -->
-                <Border Grid.Row="0" Grid.Column="0"
-                        BackgroundColor="#3B82F6"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        HeightRequest="180">
+        <Border Grid.Row="1"
+                BackgroundColor="White"
+                Stroke="#E2E8F0"
+                StrokeThickness="0,0,0,1"
+                Padding="16,10">
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                <Border x:Name="FloorTab"
+                        Grid.Column="0"
+                        BackgroundColor="#F1F5F9"
+                        Stroke="#94A3B8"
+                        StrokeThickness="1"
+                        Padding="12,10"
+                        StrokeShape="RoundRectangle 10">
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnFloorManagementClicked" />
+                        <TapGestureRecognizer Tapped="OnFloorTabTapped"/>
                     </Border.GestureRecognizers>
-                    <Grid ColumnDefinitions="Auto,*,Auto" 
-                          ColumnSpacing="20"
-                          Padding="25">
-                        
-                        <Frame Grid.Column="0"
-                               BackgroundColor="#2563EB"
-                               Padding="15"
-                               CornerRadius="12"
-                               HasShadow="False"
-                               VerticalOptions="Center"
-                               WidthRequest="70"
-                               HeightRequest="70">
-                            <Image Source="floor.png"
-                                   WidthRequest="40"
-                                   HeightRequest="40"
-                                   Aspect="AspectFit"
-                                   VerticalOptions="Center"
-                                   HorizontalOptions="Center" />
-                        </Frame>
-                        
-                        <StackLayout Grid.Column="1" 
-                                   VerticalOptions="Center"
-                                   Spacing="5">
-                            <Label Text="Floor Management"
-                                   FontSize="22"
-                                   FontFamily="OpenSansSemibold"
-                                   FontAttributes="Bold"
-                                   TextColor="White" />
-                            <Label Text="Add, edit, and manage restaurant floors"
-                                   FontSize="14"
-                                   FontFamily="OpenSansRegular"
-                                   TextColor="#DBEAFE" />
-                        </StackLayout>
-                        
-                        <Label Grid.Column="2"
-                               Text="→"
-                               FontSize="32"
-                               TextColor="White"
-                               VerticalOptions="Center" />
-                    </Grid>
+                    <Label x:Name="FloorTabLabel"
+                           Text="Floor Management"
+                           FontSize="14"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#0F172A"
+                           HorizontalTextAlignment="Center"
+                           VerticalOptions="Center"/>
                 </Border>
 
-                <!-- Table Management Button -->
-                <Border Grid.Row="0" Grid.Column="1"
-                        BackgroundColor="#10B981"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        HeightRequest="180">
+                <Border x:Name="TableTab"
+                        Grid.Column="1"
+                        BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="12,10"
+                        StrokeShape="RoundRectangle 10">
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnTableManagementClicked" />
+                        <TapGestureRecognizer Tapped="OnTableTabTapped"/>
                     </Border.GestureRecognizers>
-                    <Grid ColumnDefinitions="Auto,*,Auto" 
-                          ColumnSpacing="20"
-                          Padding="25">
-                        
-                        <Frame Grid.Column="0"
-                               BackgroundColor="#059669"
-                               Padding="15"
-                               CornerRadius="12"
-                               HasShadow="False"
-                               VerticalOptions="Center"
-                               WidthRequest="70"
-                               HeightRequest="70">
-                            <Image Source="table_1.png"
-                                   Aspect="AspectFit"
-                                   VerticalOptions="Center"
-                                   HorizontalOptions="Center" />
-                        </Frame>
-                        
-                        <StackLayout Grid.Column="1" 
-                                   VerticalOptions="Center"
-                                   Spacing="5">
-                            <Label Text="Table Management"
-                                   FontSize="22"
-                                   FontFamily="OpenSansSemibold"
-                                   FontAttributes="Bold"
-                                   TextColor="White" />
-                            <Label Text="Add, edit, and organize restaurant tables"
-                                   FontSize="14"
-                                   FontFamily="OpenSansRegular"
-                                   TextColor="#D1FAE5" />
-                        </StackLayout>
-                        
-                        <Label Grid.Column="2"
-                               Text="→"
-                               FontSize="32"
-                               TextColor="White"
-                               VerticalOptions="Center" />
-                    </Grid>
+                    <Label x:Name="TableTabLabel"
+                           Text="Table Management"
+                           FontSize="14"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#64748B"
+                           HorizontalTextAlignment="Center"
+                           VerticalOptions="Center"/>
                 </Border>
 
-                <!-- Visual Layout Button -->
-                <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                        BackgroundColor="#8B5CF6"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        HeightRequest="180">
+                <Border x:Name="VisualTab"
+                        Grid.Column="2"
+                        BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        Padding="12,10"
+                        StrokeShape="RoundRectangle 10">
                     <Border.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnVisualLayoutClicked" />
+                        <TapGestureRecognizer Tapped="OnVisualTabTapped"/>
                     </Border.GestureRecognizers>
-                    <Grid ColumnDefinitions="Auto,*,Auto" 
-                          ColumnSpacing="20"
-                          Padding="25">
-                        
-                        <Frame Grid.Column="0"
-                               BackgroundColor="#7C3AED"
-                               Padding="15"
-                               CornerRadius="12"
-                               HasShadow="False"
-                               VerticalOptions="Center"
-                               WidthRequest="70"
-                               HeightRequest="70">
-                            <Image Source="layout.png"
-                                   WidthRequest="40"
-                                   HeightRequest="40"
-                                   Aspect="AspectFit"
-                                   VerticalOptions="Center"
-                                   HorizontalOptions="Center" />
-                        </Frame>
-                        
-                        <StackLayout Grid.Column="1" 
-                                   VerticalOptions="Center"
-                                   Spacing="5">
-                            <Label Text="Visual Table Layout"
-                                   FontSize="22"
-                                   FontFamily="OpenSansSemibold"
-                                   FontAttributes="Bold"
-                                   TextColor="White" />
-                            <Label Text="View and manage table positions visually"
-                                   FontSize="14"
-                                   FontFamily="OpenSansRegular"
-                                   TextColor="#EDE9FE" />
-                        </StackLayout>
-                        
-                        <Label Grid.Column="2"
-                               Text="→"
-                               FontSize="32"
-                               TextColor="White"
-                               VerticalOptions="Center" />
-                    </Grid>
+                    <Label x:Name="VisualTabLabel"
+                           Text="Visual Layout"
+                           FontSize="14"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#64748B"
+                           HorizontalTextAlignment="Center"
+                           VerticalOptions="Center"/>
                 </Border>
-
             </Grid>
-            </StackLayout>
-        </ScrollView>
+        </Border>
 
-        <!-- Bottom Controls -->
-        <Frame Grid.Row="1" 
-               VerticalOptions="End"
-               BackgroundColor="White" 
-               Padding="30,15"
-               CornerRadius="0"
-               HasShadow="True"
-               BorderColor="{StaticResource Gray200}">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="15">
-                <StackLayout Grid.Column="0" />
-                <HorizontalStackLayout Grid.Column="1" Spacing="12" VerticalOptions="Center">
-                    <Button Text="Refresh" 
-                            BackgroundColor="#10b981"
-                            TextColor="White"
-                            FontFamily="AlegreyaBold"
-                            FontSize="15"
-                            Padding="20,10"
-                            CornerRadius="8"
-                            HeightRequest="45"
-                            Clicked="OnRefreshClicked" />
-                    <Button x:Name="SyncNowButton"
-                            Text="Sync Now"
-                            BackgroundColor="{StaticResource Primary}"
-                            TextColor="White"
-                            FontFamily="AlegreyaBold"
-                            FontSize="13"
-                            Padding="16,8"
-                            CornerRadius="8"
-                            HeightRequest="40"
-                            Clicked="OnSyncNowClicked" />
-                    <Frame BackgroundColor="{StaticResource Blue50}"
-                           Padding="10,8"
-                           CornerRadius="8"
-                           HasShadow="False"
-                           BorderColor="{StaticResource Blue200}"
-                           VerticalOptions="Center">
-                        <StackLayout Spacing="2">
-                            <StackLayout Orientation="Horizontal" Spacing="6">
-                                <Ellipse x:Name="ConnectionStatusIndicator"
-                                         WidthRequest="8" 
-                                         HeightRequest="8" 
-                                         Fill="{StaticResource Green500}"
-                                         VerticalOptions="Center" />
-                                <Label x:Name="ConnectionStatusLabel"
-                                       Text="Connected" 
-                                       FontFamily="AlegreyaBold"
-                                       FontSize="12"
-                                       TextColor="{StaticResource Blue900}"
-                                       VerticalOptions="Center" />
-                            </StackLayout>
-                            <Label x:Name="LastSyncLabel" 
-                                   Text="Last sync: Just now"
-                                   FontFamily="AlegreyaRegular"
-                                   FontSize="10"
-                                   TextColor="{StaticResource Blue600}" />
-                        </StackLayout>
-                    </Frame>
-                </HorizontalStackLayout>
-            </Grid>
-        </Frame>
+        <!-- Real Floor / Table / Visual content loads here -->
+        <ContentView x:Name="TabContentHost" Grid.Row="2" />
     </Grid>
 </ContentPage>

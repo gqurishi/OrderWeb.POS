@@ -82,7 +82,8 @@
                                    <Button x:Name="DiscountAuditButton" Grid.Row="0" Grid.Column="6" Text="Discount Audit" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="StaffHoursButton" Grid.Row="1" Grid.ColumnSpan="2" Text="Staff Hours" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="VoidCancelledButton" Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Text="Void / Cancelled" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
-                                   <Button x:Name="HistoricalReportsButton" Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="2" Text="Historical Reports" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="VatReportButton" Grid.Row="1" Grid.Column="4" Text="VAT" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
+                                   <Button x:Name="HistoricalReportsButton" Grid.Row="1" Grid.Column="5" Text="Historical Reports" Clicked="OnPresetClicked" Style="{StaticResource FilterChipButtonStyle}" Padding="16,12" />
                                    <Button x:Name="ZReportPrintTodayButton"
                                            Grid.Row="1"
                                            Grid.Column="6"
@@ -266,6 +267,18 @@
                                    </Border>
                                    <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Stroke="#E2E8F0" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="12">
                                           <VerticalStackLayout Spacing="4"><Label Text="Money collected" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCollectedText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#1D4ED8"/></VerticalStackLayout>
+                                   </Border>
+                             </Grid>
+
+                             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                                   <Border Stroke="#E2E8F0" BackgroundColor="#ECFDF5" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Cash" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCashPaidText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#047857"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1" Stroke="#E2E8F0" BackgroundColor="#EFF6FF" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Card" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryCardPaidText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#1D4ED8"/></VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="2" Stroke="#E2E8F0" BackgroundColor="#F5F3FF" StrokeShape="RoundRectangle 14" Padding="12">
+                                          <VerticalStackLayout Spacing="4"><Label Text="Gift Card" FontSize="11" TextColor="#64748B"/><Label Text="{Binding SummaryGiftCardPaidText}" FontFamily="AlegreyaBold" FontSize="18" TextColor="#6D28D9"/></VerticalStackLayout>
                                    </Border>
                              </Grid>
 
@@ -563,17 +576,18 @@
                             </Grid>
 
                             <Grid Grid.Row="2"
-                                  ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.9*,0.9*,0.9*,0.7*"
-                                  ColumnSpacing="10"
+                                  ColumnDefinitions="1*,1*,0.7*,1*,0.9*,0.85*,0.85*,0.85*,0.65*"
+                                  ColumnSpacing="8"
                                   Padding="8,0,8,8">
                                    <Label Text="Order Number" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
                                    <Label Grid.Column="1" Text="Date &amp; Time" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
                                    <Label Grid.Column="2" Text="Source" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
                                    <Label Grid.Column="3" Text="Customer" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
-                                   <Label Grid.Column="4" Text="Net Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
-                                   <Label Grid.Column="5" Text="VAT Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
-                                   <Label Grid.Column="6" Text="Gross Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
-                                   <Label Grid.Column="7"
+                                   <Label Grid.Column="4" Text="Payment" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="5" Text="Net Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="6" Text="VAT Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="7" Text="Gross Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
+                                   <Label Grid.Column="8"
                                           Text="Action"
                                           FontFamily="OpenSansSemibold"
                                           FontSize="13"
@@ -604,15 +618,16 @@
                                                         StrokeShape="RoundRectangle 10"
                                                         Padding="8,10"
                                                         Margin="0,0,0,8">
-                                                        <Grid ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.9*,0.9*,0.9*,0.7*" ColumnSpacing="10">
+                                                        <Grid ColumnDefinitions="1*,1*,0.7*,1*,0.9*,0.85*,0.85*,0.85*,0.65*" ColumnSpacing="8">
                                                                <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0F172A" />
                                                                <Label Grid.Column="1" Text="{Binding CreatedAtDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
                                                                <Label Grid.Column="2" Text="{Binding SourceChannel}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
                                                                <Label Grid.Column="3" Text="{Binding CustomerName}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
-                                                               <Label Grid.Column="4" Text="{Binding NetSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
-                                                               <Label Grid.Column="5" Text="{Binding VatAmount, StringFormat='£{0:F2}'}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" HorizontalTextAlignment="End" />
-                                                               <Label Grid.Column="6" Text="{Binding GrossSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
-                                                               <Button Grid.Column="7"
+                                                               <Label Grid.Column="4" Text="{Binding PaymentMethodDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="{Binding PaymentMethodColor}" LineBreakMode="TailTruncation" />
+                                                               <Label Grid.Column="5" Text="{Binding NetSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="6" Text="{Binding VatAmount, StringFormat='£{0:F2}'}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" HorizontalTextAlignment="End" />
+                                                               <Label Grid.Column="7" Text="{Binding GrossSales, StringFormat='£{0:F2}'}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#0F172A" HorizontalTextAlignment="End" />
+                                                               <Button Grid.Column="8"
                                                                        Text="Void"
                                                                        Clicked="OnHardDeleteOrderClicked"
                                                                        CommandParameter="{Binding .}"
@@ -651,7 +666,7 @@
                                                  FontFamily="AlegreyaBold"
                                                  FontSize="32"
                                                  TextColor="#0F172A" />
-                                          <Label Text="Voided and cancelled orders are excluded from sales totals, VAT, top sellers, and sales trend. Their original amounts stay here for audit only."
+                                          <Label Text="Voided and cancelled orders are excluded from sales totals, VAT, top sellers, and sales trend. Admin can permanently delete a local voided order to clean the database."
                                                  FontFamily="OpenSansRegular"
                                                  FontSize="12"
                                                  TextColor="#64748B"
@@ -695,8 +710,8 @@
                             </Grid>
 
                             <Grid Grid.Row="2"
-                                  ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.8*,0.8*,1.4*,1.0*"
-                                  ColumnSpacing="10"
+                                  ColumnDefinitions="1.0*,1.0*,0.7*,1.0*,0.7*,0.7*,1.2*,0.9*,0.7*"
+                                  ColumnSpacing="8"
                                   Padding="8,0,8,8">
                                    <Label Text="Order Number" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
                                    <Label Grid.Column="1" Text="Event Time" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
@@ -706,9 +721,11 @@
                                    <Label Grid.Column="5" Text="Amount" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="End" />
                                    <Label Grid.Column="6" Text="Reason" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
                                    <Label Grid.Column="7" Text="Actor" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" />
+                                   <Label Grid.Column="8" Text="Action" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#64748B" HorizontalTextAlignment="Center" />
                             </Grid>
 
-                            <CollectionView Grid.Row="3"
+                            <CollectionView x:Name="VoidCancelledCollection"
+                                            Grid.Row="3"
                                             ItemsSource="{Binding VoidCancelledOrders}"
                                             HeightRequest="{DynamicResource ResponsiveLongListHeight}"
                                             SelectionMode="None">
@@ -728,7 +745,7 @@
                                                         StrokeShape="RoundRectangle 10"
                                                         Padding="8,10"
                                                         Margin="0,0,0,8">
-                                                        <Grid ColumnDefinitions="1.1*,1.1*,0.8*,1.1*,0.8*,0.8*,1.4*,1.0*" ColumnSpacing="10">
+                                                        <Grid ColumnDefinitions="1.0*,1.0*,0.7*,1.0*,0.7*,0.7*,1.2*,0.9*,0.7*" ColumnSpacing="8">
                                                                <Label Text="{Binding OrderNumber}" FontFamily="OpenSansSemibold" FontSize="13" TextColor="#0F172A" />
                                                                <Label Grid.Column="1" Text="{Binding AuditAtDisplay}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" />
                                                                <Label Grid.Column="2" Text="{Binding Status}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#B91C1C" />
@@ -737,6 +754,22 @@
                                                                <Label Grid.Column="5" Text="{Binding AmountDisplay}" FontFamily="OpenSansSemibold" FontSize="12" TextColor="#B91C1C" HorizontalTextAlignment="End" />
                                                                <Label Grid.Column="6" Text="{Binding Reason}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
                                                                <Label Grid.Column="7" Text="{Binding ActorName}" FontFamily="OpenSansRegular" FontSize="12" TextColor="#334155" LineBreakMode="TailTruncation" />
+                                                               <Button Grid.Column="8"
+                                                                       Text="Delete"
+                                                                       Clicked="OnPermanentDeleteVoidOrderClicked"
+                                                                       CommandParameter="{Binding .}"
+                                                                       IsVisible="{Binding Source={x:Reference VoidCancelledCollection}, Path=BindingContext.CanPermanentlyDeleteVoidOrders}"
+                                                                       BackgroundColor="#FEE2E2"
+                                                                       BorderColor="#FCA5A5"
+                                                                       BorderWidth="1"
+                                                                       TextColor="#B91C1C"
+                                                                       FontFamily="OpenSansSemibold"
+                                                                       FontSize="11"
+                                                                       Padding="8,4"
+                                                                       HeightRequest="32"
+                                                                       CornerRadius="8"
+                                                                       HorizontalOptions="Center"
+                                                                       VerticalOptions="Center" />
                                                         </Grid>
                                                  </Border>
                                           </DataTemplate>
@@ -1311,6 +1344,260 @@
                                           </DataTemplate>
                                    </CollectionView.ItemTemplate>
                             </CollectionView>
+                     </VerticalStackLayout>
+              </Border>
+
+              <Border IsVisible="{Binding IsVatReportVisible}"
+                            Margin="20,14,20,0"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            BackgroundColor="#FFFFFF"
+                            StrokeShape="RoundRectangle 20"
+                            Padding="16">
+                     <VerticalStackLayout Spacing="14">
+                            <VerticalStackLayout Spacing="6">
+                                   <Label Text="VAT"
+                                          FontFamily="AlegreyaBold"
+                                          FontSize="32"
+                                          TextColor="#0F172A" />
+                                   <Label Text="VAT collected from paid orders for the selected period. Export CSV or PDF for an HMRC-facing one-page summary. Per-order VAT stays on Detailed All Orders."
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#64748B"
+                                          LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+
+                            <ScrollView Orientation="Horizontal"
+                                        HorizontalScrollBarVisibility="Never">
+                                   <HorizontalStackLayout Spacing="8">
+                                          <Button x:Name="VatSevenDaysButton"
+                                                  Text="7 Days"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="VatFifteenDaysButton"
+                                                  Text="15 Days"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="VatThirtyDaysButton"
+                                                  Text="30 Days"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="VatOneEightyDaysButton"
+                                                  Text="180 Days"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="VatThreeSixtyFiveDaysButton"
+                                                  Text="365 Days"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                          <Button x:Name="VatCustomRangeButton"
+                                                  Text="Custom"
+                                                  Clicked="OnVatRangeClicked"
+                                                  Style="{StaticResource FilterChipButtonStyle}" />
+                                   </HorizontalStackLayout>
+                            </ScrollView>
+
+                            <Grid IsVisible="{Binding IsVatCustomRangeVisible}"
+                                  ColumnDefinitions="*,*,Auto"
+                                  ColumnSpacing="10">
+                                   <Button Text="{Binding StartDateDisplay}"
+                                           Clicked="OnStartDateClicked"
+                                           BackgroundColor="#FFFFFF"
+                                           TextColor="#0F172A"
+                                           BorderColor="#CBD5E1"
+                                           BorderWidth="1"
+                                           CornerRadius="10"
+                                           Padding="14,10"
+                                           FontFamily="OpenSansSemibold" />
+                                   <Button Grid.Column="1"
+                                           Text="{Binding EndDateDisplay}"
+                                           Clicked="OnEndDateClicked"
+                                           BackgroundColor="#FFFFFF"
+                                           TextColor="#0F172A"
+                                           BorderColor="#CBD5E1"
+                                           BorderWidth="1"
+                                           CornerRadius="10"
+                                           Padding="14,10"
+                                           FontFamily="OpenSansSemibold" />
+                                   <Button Grid.Column="2"
+                                           Text="Submit"
+                                           Clicked="OnVatCustomSubmitClicked"
+                                           IsEnabled="{Binding CanSubmitVatCustomRange}"
+                                           Style="{StaticResource PrimaryActionButtonStyle}" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
+                                   <Button Text="CSV"
+                                           Clicked="OnVatExportCsvClicked"
+                                           IsEnabled="{Binding CanExportVatSummary}"
+                                           Style="{StaticResource ExportGhostButtonStyle}" />
+                                   <Button Grid.Column="1"
+                                           Text="PDF"
+                                           Clicked="OnVatExportPdfClicked"
+                                           IsEnabled="{Binding CanExportVatSummary}"
+                                           Style="{StaticResource ExportGhostButtonStyle}" />
+                            </Grid>
+
+                            <Border BackgroundColor="#F8FAFC"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="12,8">
+                                   <Label Text="{Binding VatPeriodLabel}"
+                                          FontFamily="OpenSansSemibold"
+                                          FontSize="12"
+                                          TextColor="#334155" />
+                            </Border>
+
+                            <Border BackgroundColor="#FFF7ED"
+                                    Stroke="#FED7AA"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 16"
+                                    Padding="18">
+                                   <VerticalStackLayout Spacing="6">
+                                          <Label Text="VAT collected"
+                                                 FontFamily="OpenSansSemibold"
+                                                 FontSize="13"
+                                                 TextColor="#C2410C" />
+                                          <Label Text="{Binding VatHeroText}"
+                                                 FontFamily="AlegreyaBold"
+                                                 FontSize="36"
+                                                 TextColor="#9A3412" />
+                                          <Label Text="VAT collected (from paid orders) for this period — not already paid to HMRC. Use for filing estimates; per-order VAT is on Detailed All Orders."
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="11"
+                                                 TextColor="#9A3412"
+                                                 LineBreakMode="WordWrap" />
+                                   </VerticalStackLayout>
+                            </Border>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                   <Border Stroke="#E2E8F0"
+                                           BackgroundColor="#F8FAFC"
+                                           StrokeShape="RoundRectangle 14"
+                                           Padding="14">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Gross" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding VatGrossText}" FontFamily="AlegreyaBold" FontSize="22" TextColor="#0F172A" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                                   <Border Grid.Column="1"
+                                           Stroke="#E2E8F0"
+                                           BackgroundColor="#F8FAFC"
+                                           StrokeShape="RoundRectangle 14"
+                                           Padding="14">
+                                          <VerticalStackLayout Spacing="4">
+                                                 <Label Text="Net" FontSize="11" TextColor="#64748B" />
+                                                 <Label Text="{Binding VatNetText}" FontFamily="AlegreyaBold" FontSize="22" TextColor="#0F172A" />
+                                          </VerticalStackLayout>
+                                   </Border>
+                            </Grid>
+
+                            <VerticalStackLayout IsVisible="{Binding HasVatRateBands}" Spacing="8">
+                                   <Label Text="VAT by rate"
+                                          FontFamily="OpenSansSemibold"
+                                          FontSize="14"
+                                          TextColor="#0F172A" />
+                                   <Label Text="Bands: cold takeaway 0%, table/dine-in and hot takeaway 20%. Taxable net and VAT are from the same paid-order lines as the hero total."
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="11"
+                                          TextColor="#64748B"
+                                          LineBreakMode="WordWrap" />
+                                   <CollectionView ItemsSource="{Binding VatRateBands}"
+                                                   SelectionMode="None">
+                                          <CollectionView.ItemsLayout>
+                                                 <GridItemsLayout Orientation="Vertical" Span="2" HorizontalItemSpacing="8" VerticalItemSpacing="8" />
+                                          </CollectionView.ItemsLayout>
+                                          <CollectionView.ItemTemplate>
+                                                 <DataTemplate>
+                                                        <Border Stroke="#E2E8F0"
+                                                                BackgroundColor="#FFFFFF"
+                                                                StrokeShape="RoundRectangle 12"
+                                                                Padding="12">
+                                                               <VerticalStackLayout Spacing="4">
+                                                                      <Label Text="{Binding Label}"
+                                                                             FontFamily="OpenSansSemibold"
+                                                                             FontSize="12"
+                                                                             TextColor="#334155" />
+                                                                      <Label Text="{Binding VatAmountDisplay}"
+                                                                             FontFamily="AlegreyaBold"
+                                                                             FontSize="18"
+                                                                             TextColor="#9A3412" />
+                                                                      <Label FontFamily="OpenSansRegular" FontSize="11" TextColor="#64748B">
+                                                                             <Label.FormattedText>
+                                                                                    <FormattedString>
+                                                                                           <Span Text="Net " />
+                                                                                           <Span Text="{Binding TaxableNetDisplay}" />
+                                                                                           <Span Text=" · " />
+                                                                                           <Span Text="{Binding LineCount}" />
+                                                                                           <Span Text=" lines" />
+                                                                                    </FormattedString>
+                                                                             </Label.FormattedText>
+                                                                      </Label>
+                                                               </VerticalStackLayout>
+                                                        </Border>
+                                                 </DataTemplate>
+                                          </CollectionView.ItemTemplate>
+                                   </CollectionView>
+                                   <Border IsVisible="{Binding HasVatRateBandsInsight}"
+                                           BackgroundColor="#F8FAFC"
+                                           Stroke="#E2E8F0"
+                                           StrokeThickness="1"
+                                           StrokeShape="RoundRectangle 10"
+                                           Padding="10,8">
+                                          <Label Text="{Binding VatRateBandsInsightText}"
+                                                 FontFamily="OpenSansRegular"
+                                                 FontSize="11"
+                                                 TextColor="#475569"
+                                                 LineBreakMode="WordWrap" />
+                                   </Border>
+                            </VerticalStackLayout>
+
+                            <Border IsVisible="{Binding HasVatZeroTaxWarning}"
+                                    BackgroundColor="#FFFBEB"
+                                    Stroke="#FCD34D"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="12,8">
+                                   <Label Text="{Binding VatZeroTaxWarningText}"
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#92400E"
+                                          LineBreakMode="WordWrap" />
+                            </Border>
+
+                            <Border IsVisible="{Binding HasVatError}"
+                                    BackgroundColor="#FEF2F2"
+                                    Stroke="#FECACA"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="12,8">
+                                   <Label Text="{Binding VatErrorText}"
+                                          FontFamily="OpenSansSemibold"
+                                          FontSize="12"
+                                          TextColor="#B91C1C"
+                                          LineBreakMode="WordWrap" />
+                            </Border>
+
+                            <Border IsVisible="{Binding IsVatStatusVisible}"
+                                    BackgroundColor="#EFF6FF"
+                                    Stroke="#BFDBFE"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="12,8">
+                                   <Label Text="{Binding VatStatusText}"
+                                          FontFamily="OpenSansRegular"
+                                          FontSize="12"
+                                          TextColor="#1E3A8A"
+                                          LineBreakMode="WordWrap" />
+                            </Border>
+
+                            <ActivityIndicator IsRunning="{Binding IsLoading}"
+                                               IsVisible="{Binding IsLoading}"
+                                               Color="#0284C7"
+                                               HeightRequest="36"
+                                               WidthRequest="36"
+                                               HorizontalOptions="Center" />
                      </VerticalStackLayout>
               </Border>
 

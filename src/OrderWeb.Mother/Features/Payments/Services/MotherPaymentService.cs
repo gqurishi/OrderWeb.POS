@@ -249,6 +249,7 @@ public sealed class MotherPaymentService : IPaymentService
         }
 
         await TryCompleteTableOrderAfterPaymentAsync(order);
+        await TrySendWebSettlementIfPaidAsync(order, method, request.TerminalId);
 
         return OperationResult<PaymentResultDto>.Success(
             new PaymentResultDto(
@@ -392,6 +393,53 @@ public sealed class MotherPaymentService : IPaymentService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[MotherPayment] Table session release after pay failed: {ex.Message}");
+        }
+    }
+
+    private async Task TrySendWebSettlementIfPaidAsync(Order order, string tenderMethod, string? terminalId)
+    {
+        if (!string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            var payments = await _orders.GetOrderPaymentsAsync(order.Id);
+            var approved = payments
+                .Where(payment => string.Equals(payment.Status, "approved", StringComparison.OrdinalIgnoreCase))
+                .Sum(payment => payment.Amount);
+            if (approved + 0.009m < order.TotalAmount)
+            {
+                return;
+            }
+
+            var cloudService = ServiceHelper.GetService<CloudOrderService>();
+            if (cloudService == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[MotherPayment] OrderWeb settlement skipped: CloudOrderService unavailable");
+                return;
+            }
+
+            var latest = await _orders.GetOrderByExternalIdAsync(order.OrderId) ?? order;
+            var notes = string.IsNullOrWhiteSpace(terminalId)
+                ? $"POS tender: {tenderMethod}"
+                : $"Client POS tender: {tenderMethod} ({terminalId})";
+            var sentOrQueued = await cloudService.SendOrderSettlementAsync(
+                latest,
+                status: "paid",
+                staffId: terminalId,
+                staffName: terminalId,
+                notes: notes,
+                paymentMethodOverride: tenderMethod);
+
+            System.Diagnostics.Debug.WriteLine(sentOrQueued
+                ? $"[MotherPayment] OrderWeb settlement sent/queued for {order.OrderId}"
+                : $"[MotherPayment] OrderWeb settlement not sent for {order.OrderId}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MotherPayment] OrderWeb settlement warning: {ex.Message}");
         }
     }
 

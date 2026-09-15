@@ -342,6 +342,8 @@ public static class ClientCacheSchema
             tax NUMERIC NOT NULL DEFAULT 0,
             total NUMERIC NOT NULL DEFAULT 0,
             version INTEGER NOT NULL DEFAULT 1,
+            source_channel TEXT,
+            payment_method TEXT,
             opened_utc TEXT NOT NULL,
             updated_utc TEXT NOT NULL,
             FOREIGN KEY (table_id) REFERENCES tables(id),
@@ -523,7 +525,9 @@ public static class ClientCacheSchema
         "ALTER TABLE order_items ADD COLUMN meal_deal_id TEXT",
         "ALTER TABLE order_items ADD COLUMN meal_deal_choices_json TEXT",
         "ALTER TABLE order_items ADD COLUMN tasting_menu_id TEXT",
-        "ALTER TABLE categories ADD COLUMN parent_id INTEGER"
+        "ALTER TABLE categories ADD COLUMN parent_id INTEGER",
+        "ALTER TABLE open_orders ADD COLUMN source_channel TEXT",
+        "ALTER TABLE open_orders ADD COLUMN payment_method TEXT"
     };
 
     public static readonly string[] ResetTables =

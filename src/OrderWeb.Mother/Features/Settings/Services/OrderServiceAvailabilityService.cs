@@ -42,7 +42,7 @@ public sealed class OrderServiceAvailabilityService
 
             await using var connection = await _databaseService.GetConnectionAsync();
             const string sql = """
-                SELECT table_enabled, collection_enabled, delivery_enabled,
+                SELECT table_enabled, collection_enabled, delivery_enabled, reservation_enabled,
                        updated_by_user_id, updated_by_name, updated_at
                 FROM order_service_availability_settings
                 WHERE id = 1
@@ -69,6 +69,7 @@ public sealed class OrderServiceAvailabilityService
         PosOrderService.Table => _cached.TableEnabled,
         PosOrderService.Collection => _cached.CollectionEnabled,
         PosOrderService.Delivery => _cached.DeliveryEnabled,
+        PosOrderService.Reservation => _cached.ReservationEnabled,
         _ => false
     };
 
@@ -77,17 +78,48 @@ public sealed class OrderServiceAvailabilityService
         var normalized = route?.Trim().Trim('/').ToLowerInvariant() ?? string.Empty;
         return normalized switch
         {
-            "restaurant" or "visuallayout" or "floor" or "table" or "reservation" => _cached.TableEnabled,
+            "restaurant" or "visuallayout" or "layout" or "floor" or "table" => _cached.TableEnabled,
+            "reservation" => _cached.ReservationEnabled,
             "collection" => _cached.CollectionEnabled,
             "delivery" or "weborders" => _cached.DeliveryEnabled,
             _ => true
         };
     }
 
+    /// <summary>
+    /// Client menus need Terminal Access AND the matching Order Service switch on.
+    /// </summary>
+    public IReadOnlySet<string> FilterClientFeatures(IReadOnlySet<string> granted)
+    {
+        var filtered = new HashSet<string>(granted, StringComparer.OrdinalIgnoreCase);
+        if (!_cached.TableEnabled)
+        {
+            filtered.Remove(OrderWeb.Contracts.Features.PosFeatureKeys.DineIn);
+        }
+
+        if (!_cached.CollectionEnabled)
+        {
+            filtered.Remove(OrderWeb.Contracts.Features.PosFeatureKeys.Collection);
+        }
+
+        if (!_cached.DeliveryEnabled)
+        {
+            filtered.Remove(OrderWeb.Contracts.Features.PosFeatureKeys.Delivery);
+        }
+
+        if (!_cached.ReservationEnabled)
+        {
+            filtered.Remove(OrderWeb.Contracts.Features.PosFeatureKeys.Reservations);
+        }
+
+        return filtered;
+    }
+
     public async Task<OrderServiceAvailabilitySettings> SaveAsync(
         bool tableEnabled,
         bool collectionEnabled,
         bool deliveryEnabled,
+        bool reservationEnabled,
         CancellationToken cancellationToken = default)
     {
         var actor = _authenticationService.CurrentUser;
@@ -113,6 +145,7 @@ public sealed class OrderServiceAvailabilityService
                 SET table_enabled = @tableEnabled,
                     collection_enabled = @collectionEnabled,
                     delivery_enabled = @deliveryEnabled,
+                    reservation_enabled = @reservationEnabled,
                     updated_by_user_id = @userId,
                     updated_by_name = @userName,
                     updated_at = CURRENT_TIMESTAMP
@@ -123,6 +156,7 @@ public sealed class OrderServiceAvailabilityService
                 update.Parameters.AddWithValue("@tableEnabled", tableEnabled);
                 update.Parameters.AddWithValue("@collectionEnabled", collectionEnabled);
                 update.Parameters.AddWithValue("@deliveryEnabled", deliveryEnabled);
+                update.Parameters.AddWithValue("@reservationEnabled", reservationEnabled);
                 update.Parameters.AddWithValue("@userId", actor.Id > 0 ? actor.Id : DBNull.Value);
                 update.Parameters.AddWithValue("@userName", actorName);
                 await update.ExecuteNonQueryAsync(cancellationToken);
@@ -133,11 +167,13 @@ public sealed class OrderServiceAvailabilityService
                     (previous_table_enabled, new_table_enabled,
                      previous_collection_enabled, new_collection_enabled,
                      previous_delivery_enabled, new_delivery_enabled,
+                     previous_reservation_enabled, new_reservation_enabled,
                      changed_by_user_id, changed_by_name)
                 VALUES
                     (@previousTable, @newTable,
                      @previousCollection, @newCollection,
                      @previousDelivery, @newDelivery,
+                     @previousReservation, @newReservation,
                      @userId, @userName)
                 """;
             await using (var audit = new MySqlCommand(auditSql, connection, transaction))
@@ -148,6 +184,8 @@ public sealed class OrderServiceAvailabilityService
                 audit.Parameters.AddWithValue("@newCollection", collectionEnabled);
                 audit.Parameters.AddWithValue("@previousDelivery", previous.DeliveryEnabled);
                 audit.Parameters.AddWithValue("@newDelivery", deliveryEnabled);
+                audit.Parameters.AddWithValue("@previousReservation", previous.ReservationEnabled);
+                audit.Parameters.AddWithValue("@newReservation", reservationEnabled);
                 audit.Parameters.AddWithValue("@userId", actor.Id > 0 ? actor.Id : DBNull.Value);
                 audit.Parameters.AddWithValue("@userName", actorName);
                 await audit.ExecuteNonQueryAsync(cancellationToken);
@@ -159,6 +197,7 @@ public sealed class OrderServiceAvailabilityService
                 TableEnabled = tableEnabled,
                 CollectionEnabled = collectionEnabled,
                 DeliveryEnabled = deliveryEnabled,
+                ReservationEnabled = reservationEnabled,
                 UpdatedByUserId = actor.Id > 0 ? actor.Id : null,
                 UpdatedByName = actorName,
                 UpdatedAt = DateTime.Now
@@ -180,7 +219,7 @@ public sealed class OrderServiceAvailabilityService
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT table_enabled, collection_enabled, delivery_enabled,
+            SELECT table_enabled, collection_enabled, delivery_enabled, reservation_enabled,
                    updated_by_user_id, updated_by_name, updated_at
             FROM order_service_availability_settings
             WHERE id = 1
@@ -196,13 +235,32 @@ public sealed class OrderServiceAvailabilityService
         return Read(reader);
     }
 
-    private static OrderServiceAvailabilitySettings Read(MySqlDataReader reader) => new()
+    private static OrderServiceAvailabilitySettings Read(MySqlDataReader reader)
     {
-        TableEnabled = reader.GetBoolean("table_enabled"),
-        CollectionEnabled = reader.GetBoolean("collection_enabled"),
-        DeliveryEnabled = reader.GetBoolean("delivery_enabled"),
-        UpdatedByUserId = reader["updated_by_user_id"] == DBNull.Value ? null : reader.GetInt32("updated_by_user_id"),
-        UpdatedByName = reader["updated_by_name"] == DBNull.Value ? null : reader.GetString("updated_by_name"),
-        UpdatedAt = reader.GetDateTime("updated_at")
-    };
+        var reservationEnabled = true;
+        try
+        {
+            var ordinal = reader.GetOrdinal("reservation_enabled");
+            if (!reader.IsDBNull(ordinal))
+            {
+                reservationEnabled = reader.GetBoolean(ordinal);
+            }
+        }
+        catch (IndexOutOfRangeException)
+        {
+            // Pre-migration 043 databases keep Reservation on until the column exists.
+            reservationEnabled = true;
+        }
+
+        return new OrderServiceAvailabilitySettings
+        {
+            TableEnabled = reader.GetBoolean("table_enabled"),
+            CollectionEnabled = reader.GetBoolean("collection_enabled"),
+            DeliveryEnabled = reader.GetBoolean("delivery_enabled"),
+            ReservationEnabled = reservationEnabled,
+            UpdatedByUserId = reader["updated_by_user_id"] == DBNull.Value ? null : reader.GetInt32("updated_by_user_id"),
+            UpdatedByName = reader["updated_by_name"] == DBNull.Value ? null : reader.GetString("updated_by_name"),
+            UpdatedAt = reader.GetDateTime("updated_at")
+        };
+    }
 }

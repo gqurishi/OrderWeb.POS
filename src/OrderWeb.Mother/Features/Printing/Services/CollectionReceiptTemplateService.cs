@@ -1,5 +1,6 @@
 using System.Text;
 using POS_in_NET.Models;
+using POS_in_NET.Models.Api;
 #if WINDOWS
 using Windows.Graphics.Imaging;
 using Windows.Storage;
@@ -358,6 +359,259 @@ public static class CollectionReceiptTemplateService
         }
 
         return await new TablePaymentReceiptTemplateSettingsService(new DatabaseService()).GetSettingsAsync();
+    }
+
+    private static async Task<CollectionReceiptTemplateSettings> LoadOnlineSettingsAsync()
+    {
+        var service = ServiceHelper.GetService<OnlineReceiptTemplateSettingsService>();
+        if (service != null)
+        {
+            return await service.GetSettingsAsync();
+        }
+
+        return await new OnlineReceiptTemplateSettingsService(new DatabaseService()).GetSettingsAsync();
+    }
+
+    public static async Task<byte[]> BuildOnlineReceiptAsync(CloudOrderResponse order, NetworkPrinter printer)
+    {
+        var settings = await LoadOnlineSettingsAsync();
+        var businessInfo = await new BusinessSettingsService().GetBusinessInfoAsync();
+        var builder = new EscPosBuilder(printer.Brand, printer.PaperWidth).Initialize();
+        var logoSettingsService = ServiceHelper.GetService<ReceiptLogoSettingsService>()
+            ?? new ReceiptLogoSettingsService(ServiceHelper.GetService<DatabaseService>() ?? new DatabaseService());
+        var logoSize = await logoSettingsService.GetLogoSizeAsync();
+        await TryPrintLogoAsync(builder, businessInfo, printer.PaperWidth, logoSize);
+        PrintHeader(builder, businessInfo, settings);
+        PrintOnlineBody(builder, order, settings);
+        PrintFooter(builder, settings);
+
+        if (printer.HasCutter)
+        {
+            builder.Cut(true);
+        }
+
+        return builder.Build();
+    }
+
+    private static void PrintOnlineBody(
+        EscPosBuilder builder,
+        CloudOrderResponse order,
+        CollectionReceiptTemplateSettings settings)
+    {
+        var orderType = string.IsNullOrWhiteSpace(order.OrderType) ? "COLLECTION" : order.OrderType.Trim().ToUpperInvariant();
+        var isDelivery = orderType.Contains("DELIVERY", StringComparison.Ordinal);
+        var typeLabel = isDelivery ? "Delivery" : "Collection";
+        var orderReference = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.Id : order.OrderNumber.Trim();
+
+        builder.SetAlign(TextAlign.Left)
+               .PrintLine(new string('=', LineWidth))
+               .SetAlign(TextAlign.Center);
+        PrintStyledCentered(builder, "ONLINE ORDER", settings.HeadingSize, settings.HeadingBold);
+        PrintStyledCentered(builder, typeLabel, settings.OrderInfoSize, settings.OrderInfoBold);
+        builder.SetAlign(TextAlign.Left)
+               .PrintLine(new string('=', LineWidth));
+
+        PrintOrderInfo(builder, orderReference, DateTime.Now, settings);
+        if (order.ScheduledTime.HasValue)
+        {
+            PrintStyledWrapped(
+                builder,
+                $"Pickup: {order.ScheduledTime.Value:dd MMM HH:mm}",
+                settings.OrderInfoSize,
+                true);
+        }
+
+        builder.FeedLines(1);
+        if (!string.IsNullOrWhiteSpace(order.CustomerName))
+        {
+            PrintStyledWrapped(builder, $"Customer: {order.CustomerName.Trim()}", settings.CustomerNameSize, settings.CustomerNameBold);
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.CustomerPhone))
+        {
+            PrintStyledWrapped(builder, $"Phone: {order.CustomerPhone.Trim()}", settings.CustomerPhoneSize, settings.CustomerPhoneBold);
+        }
+
+        if (isDelivery && !string.IsNullOrWhiteSpace(order.Address))
+        {
+            builder.FeedLines(1);
+            PrintStyledWrapped(builder, "Delivery Address:", settings.DeliveryAddressSize, settings.DeliveryAddressBold);
+            foreach (var line in SplitAddressLines(order.Address))
+            {
+                PrintStyledWrapped(builder, line, settings.DeliveryAddressSize, settings.DeliveryAddressBold);
+            }
+        }
+
+        builder.PrintLine(new string('-', LineWidth));
+        builder.SetBold(true).PrintLine("ITEMS").SetBold(false);
+        builder.PrintLine(new string('-', LineWidth));
+
+        if (order.Items != null)
+        {
+            foreach (var item in order.Items)
+            {
+                var name = string.IsNullOrWhiteSpace(item.DisplayName) ? item.Name : item.DisplayName;
+                var quantity = Math.Max(1, item.Quantity);
+                PrintAmountLine(builder, $"{quantity}x {name?.Trim()}", (item.Price ?? 0m) * quantity);
+
+                if (item.SelectedAddons != null)
+                {
+                    foreach (var addon in item.SelectedAddons)
+                    {
+                        var addonName = string.IsNullOrWhiteSpace(addon.Name) ? "Extra" : addon.Name.Trim();
+                        if ((addon.Price ?? 0m) > 0)
+                        {
+                            PrintAmountLine(builder, $"   + {addonName}", (addon.Price ?? 0m) * quantity);
+                        }
+                        else
+                        {
+                            PrintWrapped(builder, $"+ {addonName}", 3);
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+                {
+                    PrintWrapped(builder, item.SpecialInstructions.Trim(), 3);
+                }
+
+                builder.FeedLines(1);
+            }
+        }
+
+        decimal.TryParse(order.Subtotal, out var subtotal);
+        decimal.TryParse(order.DiscountAmount, out var discountAmount);
+        decimal.TryParse(order.DeliveryFee, out var deliveryFee);
+        decimal.TryParse(order.ServiceChargeAmount, out var serviceChargeAmount);
+        decimal.TryParse(order.Tax, out var taxAmount);
+        decimal.TryParse(order.CashTips, out var cashTip);
+        decimal.TryParse(order.CardTips, out var cardTip);
+        decimal.TryParse(order.Total, out var total);
+        decimal? amountPaid = decimal.TryParse(order.AmountPaid, out var paidValue) ? paidValue : null;
+
+        builder.PrintLine(new string('-', LineWidth));
+        PrintAmountLine(builder, "Subtotal:", subtotal);
+        if (discountAmount > 0)
+        {
+            PrintAmountLine(builder, "Discount:", -discountAmount);
+        }
+
+        if (deliveryFee > 0)
+        {
+            PrintAmountLine(builder, "Delivery:", deliveryFee);
+        }
+
+        if (serviceChargeAmount > 0)
+        {
+            PrintAmountLine(builder, "Service charge:", serviceChargeAmount);
+        }
+
+        if (cashTip > 0)
+        {
+            PrintAmountLine(builder, "Cash tip:", cashTip);
+        }
+
+        if (cardTip > 0)
+        {
+            PrintAmountLine(builder, "Card tip:", cardTip);
+        }
+
+        if (taxAmount > 0)
+        {
+            PrintAmountLine(builder, "VAT:", taxAmount);
+        }
+
+        builder.PrintLine(new string('=', LineWidth))
+               .SetBold(true)
+               .SetFontSize(2, 1);
+        PrintAmountLine(builder, "TOTAL:", total);
+        builder.SetNormalSize()
+               .SetBold(false)
+               .PrintLine("(VAT included in item prices)")
+               .FeedLines(1);
+
+        var paymentMethod = OnlineOrderPaymentHelper.GetDisplayMethod(order.PaymentMethod);
+        var isPaid = OnlineOrderPaymentHelper.IsPaidFromSource(order.PaymentMethod, order.PaymentStatus);
+        var statusText = !isDelivery && OnlineOrderPaymentHelper.IsDeferredPaymentMethod(order.PaymentMethod)
+            ? "pay on collection"
+            : OnlineOrderPaymentHelper.GetStatusDisplay(order.PaymentMethod, order.PaymentStatus, order.OrderType);
+        builder.PrintLine(new string('-', LineWidth));
+        PrintStyledWrapped(builder, $"Payment: {paymentMethod}", settings.PaymentSize, settings.PaymentBold);
+        PrintStyledWrapped(builder, $"Status: {statusText}", settings.PaidStatusSize, settings.PaidStatusBold);
+
+        if (isPaid)
+        {
+            PrintStyledAmountLine(builder, "Amount paid:", amountPaid ?? total, settings.PaymentSize, settings.PaymentBold);
+        }
+        else
+        {
+            var amountDue = Math.Max(0m, total - (amountPaid ?? 0m));
+            PrintStyledAmountLine(builder, "Amount due:", amountDue, settings.PaymentSize, settings.PaymentBold);
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.PaymentProvider))
+        {
+            PrintWrapped(builder, $"Provider: {order.PaymentProvider.Trim()}");
+        }
+
+        var paymentReference = OnlineOrderPaymentHelper.FormatReceiptReference(order.PaymentReference);
+        if (paymentReference != null)
+        {
+            PrintWrapped(builder, $"Reference: {paymentReference}");
+        }
+
+        var isGiftCardPayment = OnlineOrderPaymentHelper.NormalizeMethod(order.PaymentMethod) == "gift_card";
+        var voucherReference = isGiftCardPayment
+            ? OnlineOrderPaymentHelper.MaskVoucherCode(order.VoucherCode)
+            : null;
+        if (voucherReference != null)
+        {
+            PrintWrapped(builder, $"Gift card: {voucherReference}");
+        }
+
+        var promoCode = order.PromoCode ?? (!isGiftCardPayment ? order.VoucherCode : null);
+        if (!string.IsNullOrWhiteSpace(promoCode))
+        {
+            PrintWrapped(builder, $"Promo code: {promoCode.Trim()}");
+        }
+
+        var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(order.GiftCard?.CardNumberMasked);
+        if (safeGiftCardNumber != null)
+        {
+            PrintWrapped(builder, $"Gift card: {safeGiftCardNumber}");
+        }
+
+        if (decimal.TryParse(order.GiftCard?.RemainingBalance, out var giftCardBalance))
+        {
+            PrintAmountLine(builder, "Gift card balance:", giftCardBalance);
+        }
+
+        if ((order.Loyalty?.PointsEarned ?? 0) > 0)
+        {
+            PrintWrapped(builder, $"Loyalty earned: {order.Loyalty!.PointsEarned} points");
+        }
+
+        if ((order.Loyalty?.PointsRedeemed ?? 0) > 0)
+        {
+            PrintWrapped(builder, $"Loyalty redeemed: {order.Loyalty!.PointsRedeemed} points");
+        }
+
+        if (order.Loyalty?.BalanceAfter is int loyaltyBalance)
+        {
+            PrintWrapped(builder, $"Loyalty balance: {loyaltyBalance} points");
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.SpecialInstructions))
+        {
+            builder.FeedLines(1)
+                   .PrintLine(new string('-', LineWidth))
+                   .SetBold(true)
+                   .PrintLine("ORDER NOTES:")
+                   .SetBold(false);
+            PrintWrapped(builder, order.SpecialInstructions.Trim());
+        }
+
+        builder.FeedLines(1);
     }
 
     private static void PrintHeader(
@@ -809,6 +1063,7 @@ public static class CollectionReceiptTemplateService
             CustomerReceiptKind.Delivery => "DELIVERY",
             CustomerReceiptKind.TableBill => "TABLE BILL",
             CustomerReceiptKind.TablePayment => "PAYMENT RECEIPT",
+            CustomerReceiptKind.Online => "ONLINE ORDER",
             _ => "COLLECTION"
         };
     }
@@ -1058,5 +1313,6 @@ public enum CustomerReceiptKind
     Collection,
     Delivery,
     TableBill,
-    TablePayment
+    TablePayment,
+    Online
 }

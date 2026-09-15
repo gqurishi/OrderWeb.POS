@@ -1341,6 +1341,7 @@ namespace POS_in_NET.Pages
                 TableServiceSwitch.IsToggled = _orderServices.TableEnabled;
                 CollectionServiceSwitch.IsToggled = _orderServices.CollectionEnabled;
                 DeliveryServiceSwitch.IsToggled = _orderServices.DeliveryEnabled;
+                ReservationServiceSwitch.IsToggled = _orderServices.ReservationEnabled;
                 _loadingOrderServiceSwitches = false;
                 UpdateOrderServicesUi();
             }
@@ -1366,6 +1367,7 @@ namespace POS_in_NET.Pages
             SetOrderServiceState(TableServiceStateLabel, TableServiceSwitch.IsToggled);
             SetOrderServiceState(CollectionServiceStateLabel, CollectionServiceSwitch.IsToggled);
             SetOrderServiceState(DeliveryServiceStateLabel, DeliveryServiceSwitch.IsToggled);
+            SetOrderServiceState(ReservationServiceStateLabel, ReservationServiceSwitch.IsToggled);
             SaveOrderServicesButton.IsEnabled = _authService.CurrentUser?.Role == UserRole.Admin;
         }
 
@@ -1386,6 +1388,7 @@ namespace POS_in_NET.Pages
             var tableEnabled = TableServiceSwitch.IsToggled;
             var collectionEnabled = CollectionServiceSwitch.IsToggled;
             var deliveryEnabled = DeliveryServiceSwitch.IsToggled;
+            var reservationEnabled = ReservationServiceSwitch.IsToggled;
             if (!tableEnabled && !collectionEnabled && !deliveryEnabled)
             {
                 await AppAlertService.ShowAlertAsync("Order Services", "Keep at least one order service enabled.");
@@ -1396,11 +1399,12 @@ namespace POS_in_NET.Pages
             if (tableEnabled) enabledNames.Add("Table");
             if (collectionEnabled) enabledNames.Add("Collection");
             if (deliveryEnabled) enabledNames.Add("Delivery");
+            if (reservationEnabled) enabledNames.Add("Reservation");
 
             var confirmation = new ModernConfirmDialog();
             confirmation.SetConfirm(
                 "Save Order Services",
-                $"Enable: {string.Join(", ", enabledNames)}?\n\nDisabled services will stop accepting new orders. Existing orders and history remain available.",
+                $"Enable: {(enabledNames.Count == 0 ? "none" : string.Join(", ", enabledNames))}?\n\nDisabled services hide from Mother and Client menus. Existing orders and reservations stay available.",
                 "Save",
                 "Cancel",
                 string.Empty);
@@ -1417,10 +1421,20 @@ namespace POS_in_NET.Pages
                 _orderServices = await _orderServiceAvailabilityService.SaveAsync(
                     tableEnabled,
                     collectionEnabled,
-                    deliveryEnabled);
+                    deliveryEnabled,
+                    reservationEnabled);
 
                 TableServiceChargeCard.IsVisible = tableEnabled;
                 DeliveryZoneTabBorder.IsVisible = deliveryEnabled;
+
+                var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
+                if (broadcast != null)
+                {
+                    _ = broadcast.PublishDataChangedAsync(
+                        "features.updated",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+                }
+
                 _ = ToastNotification.ShowAsync(
                     "Order services updated",
                     "New order options now match the selected services.",

@@ -127,6 +127,7 @@
                                         Style="{x:Null}"
                                         Clicked="OnTableBillTemplateClicked"/>
                                 <Button x:Name="TablePaymentTemplateButton"
+                                        Margin="0,0,8,0"
                                         Text="Table Payment"
                                         BackgroundColor="White"
                                         TextColor="#334155"
@@ -140,6 +141,20 @@
                                         FontAttributes="Bold"
                                         Style="{x:Null}"
                                         Clicked="OnTablePaymentTemplateClicked"/>
+                                <Button x:Name="OnlineReceiptTemplateButton"
+                                        Text="Online Receipt"
+                                        BackgroundColor="White"
+                                        TextColor="#334155"
+                                        BorderColor="#E2E8F0"
+                                        BorderWidth="1"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        MinimumHeightRequest="36"
+                                        Padding="14,0"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        Style="{x:Null}"
+                                        Clicked="OnOnlineReceiptTemplateClicked"/>
                             </FlexLayout>
 
                             <FlexLayout x:Name="KitchenPreviewModes" Direction="Row" Wrap="Wrap"

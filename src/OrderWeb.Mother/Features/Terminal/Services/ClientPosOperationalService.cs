@@ -15,7 +15,15 @@ namespace POS_in_NET.Services;
 public sealed partial class ClientPosOperationalService
 {
     private const string LiveOrderSourceFilter = @"
-        LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'";
+        (
+          LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'
+          OR (
+            LOWER(COALESCE(o.source_channel, '')) = 'web'
+            AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
+            AND REPLACE(REPLACE(REPLACE(LOWER(COALESCE(o.payment_method, 'cash')), ' ', ''), '_', ''), '-', '')
+                IN ('cash', 'cod', 'cashondelivery', 'cashoncollection')
+          )
+        )";
 
     private const string ActiveLifecycleFilter = @"
         AND COALESCE(o.is_open, 1) = 1
@@ -24,7 +32,11 @@ public sealed partial class ClientPosOperationalService
               LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'draft')) IN ('sent_partial', 'sent_full', 'payment_partial')
               OR o.first_sent_at IS NOT NULL
               OR COALESCE(o.send_attempt_count, 0) > 0
-              OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready')
+              OR LOWER(COALESCE(o.status, '')) IN ('kitchen', 'preparing', 'ready', 'new', 'pending', 'processing', 'accepted')
+              OR (
+                    LOWER(COALESCE(o.source_channel, '')) = 'web'
+                    AND LOWER(COALESCE(NULLIF(o.local_lifecycle_state, ''), 'active')) IN ('active', 'sent_partial', 'sent_full', 'payment_partial')
+                  )
             )";
 
     private readonly DatabaseService _databaseService;
@@ -544,7 +556,6 @@ public sealed partial class ClientPosOperationalService
 
         var foodSubtotal = order.Items.Sum(item => item.TotalPrice);
         order.SubtotalAmount = foodSubtotal;
-        order.TaxAmount = 0m;
 
         if (existing != null)
         {
@@ -573,7 +584,7 @@ public sealed partial class ClientPosOperationalService
             order.DiscountAmount = request.Discount.Value;
         }
 
-        ApplyClientOrderFinancials(order, orderType);
+        ApplyClientOrderFinancials(order, orderType, menuById);
 
         // Match Mother till: open the table (session / Occupied) and let Client show the order
         // create screen with an empty basket. Persist the Mother ledger row only once items exist.
@@ -1215,7 +1226,9 @@ public sealed partial class ClientPosOperationalService
             order.ServiceChargeAmount,
             order.ServiceChargeStatus,
             order.ServiceChargePercentage,
-            order.LoyaltyPointsEarned);
+            order.LoyaltyPointsEarned,
+            order.SourceChannel,
+            order.PaymentMethod);
     }
 
     private static string? ResolveTastingMenuId(string menuItemId)
@@ -1277,11 +1290,30 @@ public sealed partial class ClientPosOperationalService
         }
     }
 
-    private static void ApplyClientOrderFinancials(Order order, string orderType)
+    private async Task ApplyClientOrderFinancialsAsync(Order order, string orderType)
+    {
+        IReadOnlyDictionary<string, FoodMenuItem>? menuById = null;
+        try
+        {
+            var menuItems = await _menuItemService.GetAllItemsAsync();
+            menuById = menuItems.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Fall back to category defaults when menu cannot be loaded.
+        }
+
+        ApplyClientOrderFinancials(order, orderType, menuById);
+    }
+
+    private static void ApplyClientOrderFinancials(
+        Order order,
+        string orderType,
+        IReadOnlyDictionary<string, FoodMenuItem>? menuById = null)
     {
         var foodSubtotal = order.Items.Sum(item => item.TotalPrice);
         order.SubtotalAmount = foodSubtotal;
-        order.TaxAmount = 0m;
+        order.TaxAmount = CalculateClientOrderInclusiveTax(order, orderType, menuById);
         order.DiscountAmount = Math.Max(0m, order.DiscountAmount);
 
         var isTable = string.Equals(orderType, "table", StringComparison.OrdinalIgnoreCase);
@@ -1298,6 +1330,44 @@ public sealed partial class ClientPosOperationalService
         order.ServiceChargeAmount = calc.ServiceCharge;
         order.TotalAmount = calc.OrderTotal + Math.Max(0m, order.DeliveryFee);
     }
+
+    /// <summary>
+    /// VAT-inclusive extraction matching Mother till (dine-in 20%; takeaway cold 0% / hot 20%).
+    /// Used so Client till orders do not understate HMRC VAT on reports.
+    /// </summary>
+    private static decimal CalculateClientOrderInclusiveTax(
+        Order order,
+        string orderType,
+        IReadOnlyDictionary<string, FoodMenuItem>? menuById)
+    {
+        var vatOrderType = MapClientOrderTypeForVat(orderType);
+        decimal tax = 0m;
+
+        foreach (var item in order.Items)
+        {
+            FoodMenuItem? menuItem = null;
+            if (menuById != null
+                && !string.IsNullOrWhiteSpace(item.MenuItemId)
+                && menuById.TryGetValue(item.MenuItemId, out var found))
+            {
+                menuItem = found;
+            }
+
+            // Meal deals / tasting packages are not FoodMenuItems — default HotFood (20% takeaway, 20% table).
+            tax += VATCalculator.CalculateInclusiveLineVat(item.TotalPrice, vatOrderType, menuItem, "HotFood");
+        }
+
+        return Math.Round(tax, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string MapClientOrderTypeForVat(string? orderType) =>
+        (orderType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "table" or "tbl" or "dine_in" or "dine-in" or "dinein" => "Table",
+            "delivery" or "del" => "Delivery",
+            "pickup" or "collection" or "takeaway" => "Collection",
+            _ => "Collection"
+        };
 
     private static bool IsDeliveryFeeLine(ClientOrderLineRequest line) =>
         string.Equals(line.Id, "delivery-fee", StringComparison.OrdinalIgnoreCase) ||
@@ -1702,7 +1772,9 @@ public sealed record ClientOperationalOrder(
     decimal ServiceCharge = 0m,
     string? ServiceChargeStatus = null,
     decimal ServiceChargePercent = 0m,
-    int LoyaltyPointsEarned = 0);
+    int LoyaltyPointsEarned = 0,
+    string? SourceChannel = null,
+    string? PaymentMethod = null);
 
 public sealed record ClientOperationalOrderLine(
     string Id,

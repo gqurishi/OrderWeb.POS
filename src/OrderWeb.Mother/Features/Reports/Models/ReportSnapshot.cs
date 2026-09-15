@@ -45,6 +45,7 @@ public sealed class ReportSnapshot
     // Payment Methods
     public decimal CashTotal { get; set; }
     public decimal CardTotal { get; set; }
+    public decimal GiftCardTotal { get; set; }
     public decimal MobilePayTotal { get; set; }
     
     // Discounts & Adjustments
