@@ -10,7 +10,7 @@ namespace POS_in_NET.Services;
 /// <summary>
 /// Uploads in-restaurant end-of-day totals and labour to OrderWeb.net POS API.
 /// An Administrator normally sends the financial report from Reports. The
-/// mother terminal provides a 2 AM safety upload and startup catch-up.
+/// mother terminal provides a 3 AM safety upload and startup catch-up.
 /// POST https://orderweb.net/api/pos/reports/daily
 /// </summary>
 public sealed class OrderWebDailyReportSyncService
@@ -138,7 +138,7 @@ public sealed class OrderWebDailyReportSyncService
             return deferred;
         }
 
-        var result = await UploadAsync(reportDate.Date, trigger: "automatic_2am");
+        var result = await UploadAsync(reportDate.Date, trigger: "automatic_3am");
         if (syncNotes.Count > 0)
         {
             result.Message = $"{result.Message} {string.Join(" ", syncNotes)}".Trim();
@@ -152,13 +152,13 @@ public sealed class OrderWebDailyReportSyncService
     /// <summary>
     /// Returns local-POS business dates that contain orders, have ended, and do not
     /// yet have a confirmed successful OrderWeb daily report. This also provides the
-    /// startup catch-up when the mother terminal was switched off at 2 AM.
+    /// startup catch-up when the mother terminal was switched off at 3 AM.
     /// </summary>
     public async Task<IReadOnlyList<DateTime>> GetMissingCompletedReportDatesAsync(DateTime localNow)
     {
         await EnsureSchemaAsync();
 
-        var latestEligibleBusinessDate = localNow.TimeOfDay >= TimeSpan.FromHours(2)
+        var latestEligibleBusinessDate = localNow.TimeOfDay >= TimeSpan.FromHours(3)
             ? localNow.Date.AddDays(-1)
             : localNow.Date.AddDays(-2);
         var earliestBusinessDate = latestEligibleBusinessDate.AddDays(-(StartupCatchUpDays - 1));

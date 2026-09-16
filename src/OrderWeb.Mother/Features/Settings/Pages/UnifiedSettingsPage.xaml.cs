@@ -2149,7 +2149,7 @@ namespace POS_in_NET.Pages
                 {
                     // Otherwise update create user form
                     _selectedRole = selectedRole;
-                    SelectedRoleLabel.Text = selectedRole.ToString();
+                    SelectedRoleLabel.Text = UserRoleDisplay.ToDisplayName(selectedRole);
                 }
                 
                 System.Diagnostics.Debug.WriteLine($"Role selection completed: {selectedRole}");

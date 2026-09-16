@@ -33,6 +33,12 @@ namespace POS_in_NET.Pages
         public void PrepareForEmbed()
         {
             TopBar.IsVisible = false;
+            if (Content is Grid root && root.RowDefinitions.Count > 0)
+            {
+                root.RowDefinitions[0].Height = new GridLength(0);
+                root.VerticalOptions = LayoutOptions.Fill;
+                root.HorizontalOptions = LayoutOptions.Fill;
+            }
         }
 
         public Task ActivateEmbeddedAsync()

@@ -1,7 +1,7 @@
 namespace OrderWeb.SharedUI.Views;
 
 /// <summary>Host-neutral result returned when a Collection (or generic) customer entry form is confirmed.</summary>
-public sealed record CustomerEntryResult(string Name, string Phone, string? MotherId = null);
+public sealed record CustomerEntryResult(string Name, string Phone, string? MotherId = null, DateTime? ScheduledTime = null);
 
 /// <summary>
 /// Host-neutral search-result row shown in the customer picker. <see cref="Tag"/> is opaque to SharedUI;
@@ -19,7 +19,8 @@ public sealed record DeliveryCustomerEntryResult(
     string Road,
     string City,
     string Postcode,
-    string FormattedAddress);
+    string FormattedAddress,
+    DateTime? ScheduledTime = null);
 
 /// <summary>
 /// Host-neutral address lookup suggestion row. <see cref="Tag"/> should be a <see cref="DeliveryAddressFields"/>

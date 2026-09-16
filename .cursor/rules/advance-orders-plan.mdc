@@ -1,0 +1,120 @@
+---
+description: Advance Orders — Phases 0–6 done; Phase 7 QA ← NEXT
+alwaysApply: true
+---
+
+# Advance Orders (remember)
+
+## Goal
+Advance Collection/Delivery (`ScheduledTime`) get a **3h** kitchen auto-print (+ popup), and Manager **Advance Orders** list (SharedUI) on Mother + Client.
+
+## Phase 0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Lead time | **3 hours** before `ScheduledTime` (v1 fixed) |
+| Inside window on create/send | `ScheduledTime − now ≤ 3h` → kitchen print now (once) |
+| Outside window | Wait until **T−3h** → kitchen print (once) (+ popup) |
+| ASAP (no date/time) | No advance reminder / no advance auto-print |
+| Print label | Collection → `Collection time:` · Delivery → `Delivery time:` |
+| Print once | `advance_kitchen_printed_at` — never double-print on restart |
+| Popup | Till card: type · time · customer · # · Open / Dismiss / Print now |
+| Who sees popup | Mother + online Client (Mother owns clock) |
+| Manager list | SharedUI Advance Orders — Admin/Manager Mother + Manager Client |
+| List filters v1 | Today / Tomorrow / Next 7 days |
+| Architecture | Mother timer + DB + print · Client → Mother · SharedUI chrome |
+| Source of truth | Local POS orders with `ScheduledTime` (Collection/Delivery) |
+
+### Explicit non-goals (v1)
+- No SMS · no lead-time settings UI · no Client→cloud · no offline Client scheduler
+- No auto-print at create when `ScheduledTime` is **> 3h** away
+- No rider dispatch from this screen
+- No quiet hours
+
+## Build order
+0. **Phase 0** — lock rules ✅
+1. **Phase 1** — Data + Mother scheduler core ✅
+2. **Phase 2** — Contracts + Client API + WS `advance.reminder` ✅
+3. **Phase 3** — SharedUI AdvanceOrdersView + reminder dialog ✅
+4. **Phase 4** — Mother Manager host + till popup ✅
+5. **Phase 5** — Client Manager host + WS popup ✅
+6. **Phase 6** — Edge cases (void/edit/paid) ✅
+7. Phase 7 — QA checklist ← NEXT
+
+## Phase 1 — Data + Mother scheduler (done)
+- Columns: `advance_kitchen_printed_at`, `advance_reminded_at`
+- `AdvanceOrderService`: ListUpcoming / GetDue / MarkPrinted / ProcessDue (print once)
+- Background job `advance-order-kitchen-scheduler` ~45s, MotherOnly
+- Due when `ScheduledTime ≤ now + 3h`, not void/paid, has items, not yet printed
+- Kitchen via `PrintTakeawayOrderAsync` (items as NotSent for ticket)
+
+**Done when:** +4h order waits until T−3h; +1h prints next tick; restart no reprint.
+
+## Phase 2 — Contracts + Client API (done)
+
+### HTTP
+- `GET /api/client/advance-orders?range=today|tomorrow|7d` → `AdvanceOrderListResponseDto`
+- `POST /api/client/advance-orders/{orderId}/print-kitchen` → `AdvanceOrderPrintResponseDto`
+- Gate: Client **Manager** session + Collection|Delivery|LiveOrders feature
+- DTOs: `OrderWeb.Contracts/Dtos/AdvanceOrderContracts.cs`
+- Client HTTP: `MotherAdvanceOrderClient` (`ListAsync` / `PrintKitchenAsync`), online-only `ClientOperation.AdvanceOrders`
+
+### WS `advance.reminder`
+Mother fan-out + `terminal_events` payload (`AdvanceOrderReminderDto`):
+`orderId`, `orderNumber`, `orderType`, `scheduledTimeUtc`, `scheduledDisplay`, `customerName`, `customerPhone`, `totalAmount`, `kitchenPrinted`
+Fired from `AdvanceOrderService` after successful once-print (`PublishAdvanceReminderAsync`).
+
+**Done when:** test tool can hit list API; WS payload documented on DTO.
+
+## Phase 3 — SharedUI chrome (done)
+- `AdvanceOrdersView` — title, Today/Tomorrow/Next 7 days chips, rows, empty “No advance orders”, Print kitchen + row tap events, `ShowSampleData()`
+- `AdvanceOrderReminderDialog` — Open order / Dismiss / Print kitchen now; busy guard
+- No HTTP inside SharedUI
+
+**Done when:** `ShowSampleData()` + dialog stub work without host HTTP.
+
+## Phase 4 — Mother hosts (done)
+- Sidebar/route `advanceorders` → `AdvanceOrdersPage` hosts SharedUI; loads `AdvanceOrderService` locally
+- `AdvanceOrderReminderPresenter` shows SharedUI dialog on MainThread after scheduler print
+- Open → Order Place; Print → manual kitchen; Dismiss; print fail keeps dialog / list status
+
+## Phase 5 — Client hosts (done)
+- Manager menu Advance Orders → SharedUI + `MotherAdvanceOrderClient`
+- WS `advance.reminder` → SharedUI dialog on MainPage
+- Open order online; Print → Mother print endpoint
+- Offline refuse (“Mother offline”)
+
+## Phase 6 — Edge cases (done)
+- Void/paid excluded from due set (GetDue filter) — no false print
+- `ScheduledTime` change on `UpdateOrderAsync` clears `advance_kitchen_printed_at` / `advance_reminded_at`
+- One Mother print; many till popups OK
+- Soft note when ≥5 pending today on list
+
+## Phase 7 — QA checklist
+Code-path review (manual till still required):
+
+| # | Check | Code |
+|--|--|--|
+| 1 | Collection tomorrow 10pm @ noon → wait until T−3h → one print + popup | ✅ due = `scheduled ≤ now+3h`; stamp once; ReminderRaised + WS |
+| 2 | Delivery in 1h → print + popup next ~45s tick | ✅ same due query; job interval 45s |
+| 3 | ASAP → no advance print/popup | ✅ `scheduled_time IS NOT NULL` required |
+| 4 | Restart after print → no second print | ✅ `advance_kitchen_printed_at` gate + MarkPrinted CAS |
+| 5 | Manager Today / Tomorrow / 7d | ✅ `ResolveRangeAsync` |
+| 6 | Manual Print; already-printed stays once | ✅ reprint OK; flag not cleared |
+| 7 | Client list matches Mother | ✅ same service/API bounds |
+| 8 | Client WS popup; offline refuse | ✅ `advance.reminder` + `ClientOperation.AdvanceOrders` |
+| 9 | Kitchen ticket Collection/Delivery time | ✅ `KitchenTicketTemplateService` |
+| 10 | Non-manager gated | ✅ Mother Manager/Admin; Client Manager + route |
+
+**Manual till still required** for real printer + popup timing.
+
+1. Collection tomorrow 10pm created at noon → no print until 7pm → one print + popup
+2. Delivery in 1 hour → print (+ popup) on next scheduler tick
+3. ASAP order → no advance print/popup
+4. Restart Mother after print → no second print
+5. Manager Today / Tomorrow / 7d correct
+6. Manual Print from list works; already-printed stays once
+7. Client Manager list matches Mother
+8. Client popup on WS; offline refuse
+9. Kitchen ticket shows Collection/Delivery time line
+10. Non-manager cannot open Advance Orders (if gated)

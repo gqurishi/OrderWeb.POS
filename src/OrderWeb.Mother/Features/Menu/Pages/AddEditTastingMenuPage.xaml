@@ -3,125 +3,312 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="POS_in_NET.Pages.AddEditTastingMenuPage"
              Title="Tasting Menu"
-             BackgroundColor="#F8FAFC">
+             BackgroundColor="#F1F5F9">
 
-    <Grid RowDefinitions="Auto,*">
-        <Border Grid.Row="0" BackgroundColor="White" StrokeThickness="0" Padding="16,10">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                <Button Text="Back" BackgroundColor="#F1F5F9" TextColor="#64748B"
-                        FontSize="13" FontAttributes="Bold" CornerRadius="8" HeightRequest="36"
-                        Padding="14,0" Clicked="OnBackClicked" />
-                <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
-                    <Label x:Name="PageTitle" Text="Create Tasting Menu" FontSize="18"
-                           FontAttributes="Bold" TextColor="#1E293B" />
-                    <Label Text="Create one priced tasting-menu package and its serving order"
-                           FontSize="12" TextColor="#64748B" />
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Header -->
+        <Border Grid.Row="0"
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="0">
+            <Grid Padding="16,10" ColumnDefinitions="Auto,*">
+                <Button Grid.Column="0"
+                        Text="← Back"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        TextColor="#0284C7"
+                        BackgroundColor="#F0F9FF"
+                        BorderColor="#BAE6FD"
+                        BorderWidth="1"
+                        CornerRadius="8"
+                        Padding="12,6"
+                        Clicked="OnBackClicked"
+                        VerticalOptions="Center" />
+                <VerticalStackLayout Grid.Column="1" Spacing="0" Margin="12,0,0,0" VerticalOptions="Center">
+                    <Label x:Name="PageTitle"
+                           Text="Create tasting menu"
+                           FontSize="17"
+                           FontAttributes="Bold"
+                           TextColor="#0F172A" />
+                    <Label x:Name="PageSubtitle"
+                           Text="One package price · courses in serve order"
+                           FontSize="12"
+                           TextColor="#64748B" />
                 </VerticalStackLayout>
-                <Button Grid.Column="2" x:Name="SaveButton" Text="Save"
-                        BackgroundColor="#0EA5E9" TextColor="White" FontSize="13" FontAttributes="Bold"
-                        CornerRadius="8" HeightRequest="36" Padding="18,0" Clicked="OnSaveClicked" />
             </Grid>
         </Border>
 
-        <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="16,10" Spacing="10">
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
-                        StrokeShape="RoundRectangle 12" Padding="14">
-                    <VerticalStackLayout Spacing="10">
-                        <VerticalStackLayout Spacing="1">
-                            <Label Text="Tasting Menu Package" FontSize="15" FontAttributes="Bold" TextColor="#1E293B" />
-                            <Label Text="The package carries the full price; individual courses have no extra price."
-                                   FontSize="12" TextColor="#64748B" />
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Padding="16,12,16,24"
+                                 Spacing="12"
+                                 MaximumWidthRequest="780"
+                                 HorizontalOptions="Center">
+
+                <!-- Package -->
+                <Border BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                <Label Text="Package"
+                                       FontSize="13"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B" />
+                                <Label Text="Full price on the package — courses have no extra charge"
+                                       FontSize="11"
+                                       TextColor="#94A3B8" />
+                            </VerticalStackLayout>
+                            <HorizontalStackLayout Grid.Column="1" Spacing="14" VerticalOptions="Center">
+                                <HorizontalStackLayout Spacing="6">
+                                    <Label Text="Wine"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569"
+                                           VerticalOptions="Center" />
+                                    <Switch x:Name="IncludesWineSwitch"
+                                            IsToggled="False"
+                                            Toggled="OnWineToggled"
+                                            OnColor="#0EA5E9"
+                                            ThumbColor="White"
+                                            Scale="0.85"
+                                            VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                                <HorizontalStackLayout Spacing="6">
+                                    <Label Text="Active"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569"
+                                           VerticalOptions="Center" />
+                                    <Switch x:Name="ActiveSwitch"
+                                            IsToggled="True"
+                                            OnColor="#0EA5E9"
+                                            ThumbColor="White"
+                                            Scale="0.85"
+                                            VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </HorizontalStackLayout>
+                        </Grid>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Name *"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC"
+                                    StrokeThickness="1"
+                                    Stroke="#E2E8F0"
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="0"
+                                    HeightRequest="42">
+                                <Entry x:Name="NameEntry"
+                                       Placeholder="e.g. Non-Veg 4 Course"
+                                       FontSize="14"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="Transparent"
+                                       Margin="12,0"
+                                       VerticalOptions="Center" />
+                            </Border>
                         </VerticalStackLayout>
 
-                        <Grid ColumnDefinitions="2*,*,*,*" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
                             <VerticalStackLayout Grid.Column="0" Spacing="4">
-                                <Label Text="Menu name" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="0" BackgroundColor="White">
-                                    <Entry x:Name="NameEntry" Placeholder="e.g. Non-Veg 4 Course" FontSize="14"
-                                           TextColor="#0F172A" BackgroundColor="Transparent" Margin="10,6" />
+                                <Label Text="Price *"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F0F9FF"
+                                        StrokeThickness="1"
+                                        Stroke="#BAE6FD"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="10,0"
+                                        HeightRequest="42">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
+                                        <Label Grid.Column="0"
+                                               Text="£"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#0284C7"
+                                               VerticalOptions="Center" />
+                                        <Entry x:Name="PriceEntry"
+                                               Grid.Column="1"
+                                               Placeholder="30.00"
+                                               Keyboard="Numeric"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#0F172A"
+                                               PlaceholderColor="#CBD5E1"
+                                               BackgroundColor="Transparent"
+                                               VerticalOptions="Center" />
+                                    </Grid>
                                 </Border>
                             </VerticalStackLayout>
+
                             <VerticalStackLayout Grid.Column="1" Spacing="4">
-                                <Label Text="Package price" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="0" BackgroundColor="White">
-                                    <Entry x:Name="PriceEntry" Placeholder="30.00" Keyboard="Numeric" FontSize="14"
-                                           TextColor="#0F172A" BackgroundColor="Transparent" Margin="10,6" />
-                                </Border>
-                            </VerticalStackLayout>
-                            <VerticalStackLayout Grid.Column="2" Spacing="4">
-                                <Label Text="Number of courses" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="0" BackgroundColor="White">
-                                    <Entry x:Name="CourseCountEntry" Placeholder="e.g. 2, 5 or 10"
-                                           Keyboard="Numeric" FontSize="14" TextColor="#0F172A"
-                                           BackgroundColor="Transparent" Margin="10,6"
+                                <Label Text="Courses *"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="0"
+                                        HeightRequest="42">
+                                    <Entry x:Name="CourseCountEntry"
+                                           Placeholder="e.g. 4"
+                                           Keyboard="Numeric"
+                                           FontSize="15"
+                                           FontAttributes="Bold"
+                                           TextColor="#0F172A"
+                                           BackgroundColor="Transparent"
+                                           Margin="12,0"
+                                           VerticalOptions="Center"
                                            TextChanged="OnCourseCountChanged" />
                                 </Border>
                             </VerticalStackLayout>
-                            <VerticalStackLayout Grid.Column="3" Spacing="4">
-                                <Label Text="VAT rate" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="8,2" BackgroundColor="White">
-                                    <Picker x:Name="VatCategoryPicker" Title="Select VAT" FontSize="14" TextColor="#0F172A" />
+
+                            <VerticalStackLayout Grid.Column="2" Spacing="4">
+                                <Label Text="VAT"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="8,0"
+                                        HeightRequest="42">
+                                    <Picker x:Name="VatCategoryPicker"
+                                            Title="Select VAT"
+                                            FontSize="13"
+                                            TextColor="#0F172A"
+                                            VerticalOptions="Center" />
                                 </Border>
                             </VerticalStackLayout>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                            <Switch x:Name="IncludesWineSwitch" IsToggled="False" Toggled="OnWineToggled" Scale="0.85" />
-                            <Label Grid.Column="1" Text="With Wine" FontSize="13" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center" />
-                            <Switch Grid.Column="2" x:Name="ActiveSwitch" IsToggled="True" Margin="16,0,0,0" Scale="0.85" />
-                            <Label Grid.Column="3" Text="Active" FontSize="13" FontAttributes="Bold" TextColor="#334155" VerticalOptions="Center" />
                         </Grid>
                     </VerticalStackLayout>
                 </Border>
 
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
-                        StrokeShape="RoundRectangle 12" Padding="14">
-                    <VerticalStackLayout Spacing="8">
-                        <VerticalStackLayout Spacing="1">
-                            <Label Text="Printer Routing" FontSize="15" FontAttributes="Bold" TextColor="#1E293B" />
-                            <Label Text="Choose print groups for this menu, or leave Automatic to use the restaurant defaults."
-                                   FontSize="12" TextColor="#64748B" />
+                <!-- Print -->
+                <Border BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Kitchen print"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B" />
+                            <Label Text="Leave Automatic to use restaurant defaults"
+                                   FontSize="11"
+                                   TextColor="#94A3B8" />
                         </VerticalStackLayout>
+
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                            <VerticalStackLayout Spacing="4">
-                                <Label Text="Food destination" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="8,2" BackgroundColor="White">
-                                    <Picker x:Name="FoodPrintGroupPicker" Title="Automatic Kitchen" FontSize="14" TextColor="#0F172A"
-                                            ItemDisplayBinding="{Binding DisplayName}" />
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="Food destination"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="8,0"
+                                        HeightRequest="40">
+                                    <Picker x:Name="FoodPrintGroupPicker"
+                                            Title="Automatic Kitchen"
+                                            FontSize="13"
+                                            TextColor="#0F172A"
+                                            ItemDisplayBinding="{Binding DisplayName}"
+                                            VerticalOptions="Center" />
                                 </Border>
-                                <Label Text="Course food prints here. Automatic selects the active Kitchen group."
-                                       FontSize="11" TextColor="#94A3B8" />
                             </VerticalStackLayout>
-                            <VerticalStackLayout x:Name="WineRoutingField" Grid.Column="1" Spacing="4" IsVisible="False">
-                                <Label Text="Wine destination" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="8,2" BackgroundColor="White">
-                                    <Picker x:Name="WinePrintGroupPicker" Title="Automatic Bar" FontSize="14" TextColor="#0F172A"
-                                            ItemDisplayBinding="{Binding DisplayName}" />
+
+                            <VerticalStackLayout x:Name="WineRoutingField"
+                                                 Grid.Column="1"
+                                                 Spacing="4"
+                                                 IsVisible="False">
+                                <Label Text="Wine destination"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="8,0"
+                                        HeightRequest="40">
+                                    <Picker x:Name="WinePrintGroupPicker"
+                                            Title="Automatic Bar"
+                                            FontSize="13"
+                                            TextColor="#0F172A"
+                                            ItemDisplayBinding="{Binding DisplayName}"
+                                            VerticalOptions="Center" />
                                 </Border>
-                                <Label Text="Wine prints here. If unavailable, it is combined with the food ticket."
-                                       FontSize="11" TextColor="#94A3B8" />
                             </VerticalStackLayout>
                         </Grid>
-                        <Border BackgroundColor="#FFF7ED" Stroke="#FED7AA" StrokeThickness="1"
-                                StrokeShape="RoundRectangle 8" Padding="10,8">
-                            <Label Text="One-printer mode automatically produces one combined food-and-wine ticket."
-                                   FontSize="12" TextColor="#9A3412" />
+
+                        <Border BackgroundColor="#FFFBEB"
+                                Stroke="#FDE68A"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 8"
+                                Padding="10,8">
+                            <Label Text="One-printer mode prints food and wine on one ticket."
+                                   FontSize="12"
+                                   TextColor="#92400E" />
                         </Border>
                     </VerticalStackLayout>
                 </Border>
 
-                <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1"
-                        StrokeShape="RoundRectangle 12" Padding="14">
-                    <VerticalStackLayout Spacing="8">
-                        <VerticalStackLayout Spacing="1">
-                            <Label Text="Courses and Wine Pairings" FontSize="15" FontAttributes="Bold" TextColor="#1E293B" />
-                            <Label x:Name="CoursesHelpLabel" FontSize="12" TextColor="#64748B" />
+                <!-- Courses -->
+                <Border BackgroundColor="White"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Courses"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B" />
+                            <Label x:Name="CoursesHelpLabel"
+                                   FontSize="11"
+                                   TextColor="#94A3B8" />
                         </VerticalStackLayout>
-                        <VerticalStackLayout x:Name="CoursesContainer" Spacing="6" />
+                        <VerticalStackLayout x:Name="CoursesContainer" Spacing="8" />
                     </VerticalStackLayout>
                 </Border>
+
             </VerticalStackLayout>
         </ScrollView>
+
+        <!-- Footer -->
+        <Border Grid.Row="2"
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="16,10">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Button Grid.Column="1"
+                        x:Name="SaveButton"
+                        Text="Save menu"
+                        BackgroundColor="#0EA5E9"
+                        TextColor="White"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        CornerRadius="8"
+                        WidthRequest="140"
+                        HeightRequest="40"
+                        Padding="0"
+                        Clicked="OnSaveClicked" />
+            </Grid>
+        </Border>
     </Grid>
 </ContentPage>

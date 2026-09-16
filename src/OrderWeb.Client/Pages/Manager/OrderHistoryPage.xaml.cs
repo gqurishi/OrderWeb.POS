@@ -449,6 +449,7 @@ public partial class OrderHistoryPage : ContentPage
             StatusDisplay: string.IsNullOrWhiteSpace(dto.StatusDisplay) ? "—" : dto.StatusDisplay!,
             TotalDisplay: $"£{dto.TotalAmount:F2}",
             IsVoided: string.Equals(dto.HistoryGroup, "voided", StringComparison.OrdinalIgnoreCase),
+            IsWebOrder: dto.IsWebOrder,
             Tag: new HistoryRowTag(dto.Id, dto.OrderId ?? string.Empty));
 
     private void ShowErrorState(string message)

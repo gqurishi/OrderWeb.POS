@@ -14,6 +14,7 @@ public class RoleAccessService
         "visuallayout",
         "reportdetails",
         "orderhistory",
+        "advanceorders",
         "printersetup",
         "weborders",
         "giftcards",
@@ -54,7 +55,7 @@ public class RoleAccessService
             [UserRole.Manager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "login", "managerdashboard", "restaurant", "collection", "delivery", "visuallayout",
-                "liveorder", "reservation", "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
+                "liveorder", "reservation", "weborders", "orderhistory", "advanceorders", "giftcards", "loyalty", "customerdata"
             },
             [UserRole.Cashier] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -64,9 +65,14 @@ public class RoleAccessService
             {
                 "login", "dashboard", "managerdashboard", "userdashboard", "restaurant", "layout",
                 "collection", "delivery", "liveorder", "visuallayout", "floor", "table",
-                "weborders", "giftcards", "loyalty", "reservation", "orderhistory",
+                "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "advanceorders",
                 "report", "reportdetails", "inventory", "foodmenu", "printersetup", "settings",
                 "terminalhealth", "customerdata", "staffclock"
+            },
+            // Bar Manager: Bar Inventory workspace only (Mother + Client).
+            [UserRole.BarManager] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "login", "inventory"
             }
         };
 
@@ -78,6 +84,7 @@ public class RoleAccessService
             UserRole.Manager => "managerdashboard",
             UserRole.Cashier => "cashierdashboard",
             UserRole.Admin => "dashboard",
+            UserRole.BarManager => "inventory",
             UserRole.Staff => "login",
             _ => "login"
         };

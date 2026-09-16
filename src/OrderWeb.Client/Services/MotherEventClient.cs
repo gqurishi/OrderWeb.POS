@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using OrderWeb.SharedUI.Views;
 
 namespace OrderWeb.Client.Services;
 
@@ -42,6 +43,16 @@ public sealed class MotherDataChangedEventArgs : EventArgs
     public string CorrelationId { get; }
 }
 
+public sealed class MotherAdvanceReminderEventArgs : EventArgs
+{
+    public MotherAdvanceReminderEventArgs(AdvanceOrderReminderPresentation reminder)
+    {
+        Reminder = reminder;
+    }
+
+    public AdvanceOrderReminderPresentation Reminder { get; }
+}
+
 public sealed class MotherEventClient : IAsyncDisposable
 {
     private static readonly TimeSpan[] ReconnectDelays =
@@ -67,7 +78,9 @@ public sealed class MotherEventClient : IAsyncDisposable
     public event EventHandler<MotherTerminalControlEventArgs>? TerminalControlReceived;
     public event EventHandler<MotherConnectionChangedEventArgs>? ConnectionChanged;
     public event EventHandler<MotherDataChangedEventArgs>? AuthoritativeDataChanged;
+    public event EventHandler<MotherAdvanceReminderEventArgs>? AdvanceReminderReceived;
     public static event EventHandler<MotherDataChangedEventArgs>? SharedAuthoritativeDataChanged;
+    public static event EventHandler<MotherAdvanceReminderEventArgs>? SharedAdvanceReminderReceived;
     public bool IsRunning => _connectionTask is { IsCompleted: false };
 
     public async Task StartAsync()
@@ -265,9 +278,43 @@ public sealed class MotherEventClient : IAsyncDisposable
         {
             return;
         }
+
+        if (string.Equals(eventType, "advance.reminder", StringComparison.OrdinalIgnoreCase))
+        {
+            var reminder = ParseAdvanceReminder(document.RootElement, version);
+            var advanceArgs = new MotherAdvanceReminderEventArgs(reminder);
+            AdvanceReminderReceived?.Invoke(this, advanceArgs);
+            SharedAdvanceReminderReceived?.Invoke(this, advanceArgs);
+            return;
+        }
+
         var args = new MotherDataChangedEventArgs(eventId, eventType, restaurantId, version, timestamp, correlationId);
         AuthoritativeDataChanged?.Invoke(this, args);
         SharedAuthoritativeDataChanged?.Invoke(this, args);
+    }
+
+    private static AdvanceOrderReminderPresentation ParseAdvanceReminder(JsonElement root, string version)
+    {
+        static string? Str(JsonElement el, string name) =>
+            el.TryGetProperty(name, out var p) ? p.GetString() : null;
+
+        var orderId = Str(root, "orderId") ?? version;
+        var orderNumber = Str(root, "orderNumber");
+        var orderType = Str(root, "orderType") ?? "Collection";
+        var scheduledDisplay = Str(root, "scheduledDisplay") ?? "—";
+        var customerName = Str(root, "customerName") ?? "Customer";
+        var customerPhone = Str(root, "customerPhone");
+        var kitchenPrinted = root.TryGetProperty("kitchenPrinted", out var printed) &&
+                             printed.ValueKind == JsonValueKind.True;
+
+        return new AdvanceOrderReminderPresentation(
+            orderId,
+            orderNumber,
+            orderType,
+            scheduledDisplay,
+            customerName,
+            customerPhone,
+            kitchenPrinted);
     }
 
     private static Uri BuildWebSocketUri(MotherConnectionSettings settings)

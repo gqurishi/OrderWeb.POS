@@ -213,7 +213,13 @@ public partial class DeliveryCustomerModal : ContentPage
             }
 
             // Pass customer info to order placement page
-            orderPlacementPage.SetDeliveryOrderInfo(customer.Id, customer.Name, customer.PhoneNumber, customer.Address, deliveryFee);
+            orderPlacementPage.SetDeliveryOrderInfo(
+                customer.Id,
+                customer.Name,
+                customer.PhoneNumber,
+                customer.Address,
+                deliveryFee,
+                e.ScheduledTime);
 
             await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage, source: Entry);
         }

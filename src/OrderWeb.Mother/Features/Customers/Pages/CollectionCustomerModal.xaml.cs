@@ -95,7 +95,7 @@ public partial class CollectionCustomerModal : ContentPage
 
             // Navigate to order placement page with customer info
             var orderPlacementPage = new OrderPlacementPageSimple("COL", 1, "Staff", 1);
-            orderPlacementPage.SetCollectionOrderInfo(customer.Id, customer.Name, customer.PhoneNumber);
+            orderPlacementPage.SetCollectionOrderInfo(customer.Id, customer.Name, customer.PhoneNumber, e.ScheduledTime);
 
             await _navigationCoordinator.PushTemporaryPageAsync(orderPlacementPage, source: Entry);
         }

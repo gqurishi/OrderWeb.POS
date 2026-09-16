@@ -43,8 +43,9 @@ public partial class AddEditTastingMenuPage : ContentPage
     public AddEditTastingMenuPage(TastingMenu menu) : this()
     {
         _editingMenu = menu;
-        PageTitle.Text = "Edit Tasting Menu";
-        SaveButton.Text = "Update";
+        PageTitle.Text = "Edit tasting menu";
+        PageSubtitle.Text = "Update package price, courses, and print";
+        SaveButton.Text = "Update menu";
         NameEntry.Text = menu.Name;
         ActiveSwitch.IsToggled = menu.Active;
         _menuColor = string.IsNullOrWhiteSpace(menu.Color) ? "#0EA5E9" : menu.Color;
@@ -276,7 +277,7 @@ public partial class AddEditTastingMenuPage : ContentPage
         finally
         {
             SaveButton.IsEnabled = true;
-            SaveButton.Text = _editingMenu == null ? "Save" : "Update";
+            SaveButton.Text = _editingMenu == null ? "Save menu" : "Update menu";
         }
     }
 
@@ -338,27 +339,27 @@ public partial class AddEditTastingMenuPage : ContentPage
             _id = string.IsNullOrWhiteSpace(course.Id) ? Guid.NewGuid().ToString() : course.Id;
             _courseName.Text = course.Name;
             _wineName.Text = course.WineName;
-            _wineField = BuildField("Wine pairing", _wineName);
+            _wineField = BuildField("Wine", _wineName);
 
-            Root = new Grid
+            var inner = new Grid
             {
                 ColumnDefinitions =
                 {
-                    new ColumnDefinition { Width = 36 },
+                    new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Star },
                     _wineColumn
                 },
-                ColumnSpacing = 8,
-                Padding = new Thickness(0, 2),
-                BackgroundColor = Colors.White
+                ColumnSpacing = 10,
+                VerticalOptions = LayoutOptions.Center
             };
 
-            Root.Add(new Border
+            inner.Add(new Border
             {
-                WidthRequest = 28,
-                HeightRequest = 28,
+                WidthRequest = 32,
+                HeightRequest = 32,
                 BackgroundColor = Color.FromArgb("#E0F2FE"),
-                StrokeThickness = 0,
+                Stroke = Color.FromArgb("#BAE6FD"),
+                StrokeThickness = 1,
                 StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 },
                 VerticalOptions = LayoutOptions.Center,
                 Content = new Label
@@ -366,16 +367,27 @@ public partial class AddEditTastingMenuPage : ContentPage
                     Text = number.ToString(),
                     TextColor = Color.FromArgb("#0369A1"),
                     FontAttributes = FontAttributes.Bold,
-                    FontSize = 13,
+                    FontSize = 12,
                     HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center
+                    VerticalOptions = LayoutOptions.Center,
+                    HorizontalTextAlignment = TextAlignment.Center
                 }
             }, 0);
-            Root.Add(BuildField("Course name", _courseName), 1);
-            Root.Add(_wineField, 2);
+            inner.Add(BuildField("Course", _courseName), 1);
+            inner.Add(_wineField, 2);
+
+            Root = new Border
+            {
+                BackgroundColor = Color.FromArgb("#FAFAFA"),
+                Stroke = Color.FromArgb("#E2E8F0"),
+                StrokeThickness = 1,
+                StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 10 },
+                Padding = new Thickness(10, 8),
+                Content = inner
+            };
         }
 
-        public Grid Root { get; }
+        public Border Root { get; }
 
         public void SetWineEnabled(bool enabled)
         {
@@ -400,15 +412,22 @@ public partial class AddEditTastingMenuPage : ContentPage
             entry.TextColor = Color.FromArgb("#0F172A");
             entry.PlaceholderColor = Color.FromArgb("#94A3B8");
             entry.BackgroundColor = Colors.Transparent;
-            entry.Margin = new Thickness(10, 6);
+            entry.Margin = new Thickness(12, 0);
+            entry.VerticalOptions = LayoutOptions.Center;
 
             return new VerticalStackLayout
             {
-                Spacing = 3,
+                Spacing = 4,
                 VerticalOptions = LayoutOptions.Center,
                 Children =
                 {
-                    new Label { Text = label, FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#475569") },
+                    new Label
+                    {
+                        Text = label,
+                        FontSize = 11,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Color.FromArgb("#64748B")
+                    },
                     new Border
                     {
                         BackgroundColor = Colors.White,
@@ -416,6 +435,7 @@ public partial class AddEditTastingMenuPage : ContentPage
                         StrokeThickness = 1,
                         StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 },
                         Padding = 0,
+                        HeightRequest = 40,
                         Content = entry
                     }
                 }

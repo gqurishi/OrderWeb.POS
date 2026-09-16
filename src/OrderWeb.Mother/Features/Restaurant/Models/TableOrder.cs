@@ -45,6 +45,7 @@ namespace POS_in_NET.Models
         private int _loyaltyPointsEarned;
         private int _loyaltyPointsRedeemed;
         private string? _notes;
+        private DateTime? _scheduledTime;
         private string _orderMode = "dine_in";
         private DateTime _createdAt;
         private DateTime _updatedAt;
@@ -247,6 +248,12 @@ namespace POS_in_NET.Models
         {
             get => _notes;
             set { _notes = value; OnPropertyChanged(); }
+        }
+
+        public DateTime? ScheduledTime
+        {
+            get => _scheduledTime;
+            set { _scheduledTime = value; OnPropertyChanged(); }
         }
 
         public string OrderMode

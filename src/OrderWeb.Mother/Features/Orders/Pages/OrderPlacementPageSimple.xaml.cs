@@ -611,21 +611,38 @@ namespace POS_in_NET.Pages
 
         public void SetCollectionOrderInfo(int customerId, string customerName, string customerPhone)
         {
+            SetCollectionOrderInfo(customerId, customerName, customerPhone, null);
+        }
+
+        public void SetCollectionOrderInfo(int customerId, string customerName, string customerPhone, DateTime? scheduledTime)
+        {
             _isCollectionOrder = true;
             _isDeliveryOrder = false;
             _collectionCustomerId = customerId;
             _collectionCustomerName = customerName;
             _collectionCustomerPhone = customerPhone;
+            _currentOrder.ScheduledTime = scheduledTime;
             _draftDirty = true;
             UpdateDisplay();
         }
 
         public void SetDeliveryOrderInfo(int customerId, string customerName, string customerPhone, string customerAddress)
         {
-            SetDeliveryOrderInfo(customerId, customerName, customerPhone, customerAddress, 0m);
+            SetDeliveryOrderInfo(customerId, customerName, customerPhone, customerAddress, 0m, null);
         }
 
         public void SetDeliveryOrderInfo(int customerId, string customerName, string customerPhone, string customerAddress, decimal deliveryFee)
+        {
+            SetDeliveryOrderInfo(customerId, customerName, customerPhone, customerAddress, deliveryFee, null);
+        }
+
+        public void SetDeliveryOrderInfo(
+            int customerId,
+            string customerName,
+            string customerPhone,
+            string customerAddress,
+            decimal deliveryFee,
+            DateTime? scheduledTime)
         {
             _isDeliveryOrder = true;
             _isCollectionOrder = false;
@@ -634,6 +651,7 @@ namespace POS_in_NET.Pages
             _deliveryCustomerPhone = customerPhone;
             _deliveryCustomerAddress = customerAddress;
             _currentOrder.DeliveryFee = Math.Max(0, deliveryFee);
+            _currentOrder.ScheduledTime = scheduledTime;
             _draftDirty = true;
             UpdateDisplay();
         }
@@ -1609,16 +1627,12 @@ namespace POS_in_NET.Pages
                 await ApplyLoadedOrderAsync(loadedOrder);
                 _hasLoadedPersistentOrder = true;
 
-                // Phase 6: Smart Prompts - Partial payment on return
+                // Sticky Paid/Left banner on Order Place covers this — keep toast short.
                 if (_currentOrder.Status == TableOrderStatus.Partial || loadedOrder.LocalLifecycleState == LocalLifecycleState.PaymentPartial)
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        _ = ToastNotification.ShowAsync(
-                            "Partial payment",
-                            "This order has a partial payment recorded.",
-                            NotificationType.Info,
-                            1600);
+                        PublishOrderPlaceSession();
                     });
                 }
             }
@@ -1656,6 +1670,7 @@ namespace POS_in_NET.Pages
             _currentOrder.StaffName = string.IsNullOrWhiteSpace(_currentOrder.StaffName) ? "Staff" : _currentOrder.StaffName;
             _currentOrder.StaffId = _currentOrder.StaffId == 0 ? 1 : _currentOrder.StaffId;
             _currentOrder.Notes = loadedOrder.SpecialInstructions;
+            _currentOrder.ScheduledTime = loadedOrder.ScheduledTime;
             _currentOrder.Status = loadedOrder.LocalLifecycleState switch
             {
                 LocalLifecycleState.Paid => TableOrderStatus.Paid,
@@ -2259,6 +2274,7 @@ namespace POS_in_NET.Pages
                 CashTipAmount = _currentOrder.Payments.Where(payment => payment.Method == PaymentMethodType.Cash).Sum(payment => payment.TipAmount),
                 CardTipAmount = _currentOrder.Payments.Where(payment => payment.Method == PaymentMethodType.Card).Sum(payment => payment.TipAmount),
                 TaxAmount = _currentOrder.VAT,
+                AmountPaid = Math.Max(0m, _currentOrder.TotalPaid),
                 OrderType = orderType,
                 SourceChannel = _orderSourceChannel,
                 TableSessionId = _tableSessionId,
@@ -2268,6 +2284,7 @@ namespace POS_in_NET.Pages
                 LoyaltyPointsDiscount = _currentOrder.DeclaredLoyaltyPointsDiscount,
                 LoyaltyBalanceAfter = _currentOrder.DeclaredLoyaltyBalanceAfter,
                 SpecialInstructions = _currentOrder.Notes,
+                ScheduledTime = (_isDeliveryOrder || _isCollectionOrder) ? _currentOrder.ScheduledTime : null,
                 LocalLifecycleState = lifecycleState,
                 IsOpen = lifecycleState != LocalLifecycleState.Paid && lifecycleState != LocalLifecycleState.Voided,
                 VoidReason = voidReason,
@@ -2927,13 +2944,17 @@ namespace POS_in_NET.Pages
             {
                 session.HeaderTitle = $"{orderPart} · COLLECTION";
                 session.HeaderDetail = FormatOrderHeaderDetail(_collectionCustomerName, _collectionCustomerPhone, "Collection order");
-                session.HeaderTable = null;
+                session.HeaderTable = _currentOrder.ScheduledTime.HasValue
+                    ? $"Advance order · {_currentOrder.ScheduledTime.Value:dd MMM HH:mm}"
+                    : null;
             }
             else if (_isDeliveryOrder)
             {
                 session.HeaderTitle = $"{orderPart} · DELIVERY";
                 session.HeaderDetail = FormatOrderHeaderDetail(_deliveryCustomerName, _deliveryCustomerPhone, "Delivery order");
-                session.HeaderTable = null;
+                session.HeaderTable = _currentOrder.ScheduledTime.HasValue
+                    ? $"Advance order · {_currentOrder.ScheduledTime.Value:dd MMM HH:mm}"
+                    : null;
             }
             else
             {
@@ -3007,10 +3028,13 @@ namespace POS_in_NET.Pages
             session.ServiceCharge = _currentOrder.ServiceCharge;
             session.DeliveryFee = _currentOrder.DeliveryFee;
             session.Total = _currentOrder.Total;
+            session.AmountPaid = Math.Max(0m, _currentOrder.TotalPaid);
             session.ShowServiceCharge = !takeaway;
             session.ShowDeliveryFee = _isDeliveryOrder;
             session.PrintActionLabel = takeaway ? "PRINT RECEIPT" : "PRINT BILL";
-            session.PaymentActionLabel = $"PAYMENT £{_currentOrder.Total:F2}";
+            session.PaymentActionLabel = session.HasPartialPayment
+                ? $"PAYMENT £{session.AmountRemaining:F2} LEFT"
+                : $"PAYMENT £{_currentOrder.Total:F2}";
 
             OrderPlaceStateChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -3575,6 +3599,7 @@ namespace POS_in_NET.Pages
                 CreatedAt = source.CreatedAt,
                 UpdatedAt = source.UpdatedAt,
                 Notes = source.Notes,
+                ScheduledTime = source.ScheduledTime,
                 OrderMode = source.OrderMode,
                 ServiceChargePercent = source.ServiceChargePercent,
                 ServiceChargeStatus = source.ServiceChargeStatus,
@@ -4601,11 +4626,7 @@ namespace POS_in_NET.Pages
 
             if (totalPaid > 0)
             {
-                _ = ToastNotification.ShowAsync(
-                    "Partial payment",
-                    $"£{totalPaid:F2} paid. £{remainingBalance:F2} remaining.",
-                    NotificationType.Info,
-                    1500);
+                PublishOrderPlaceSession();
             }
 
             // Collection and delivery are single-bill takeaway orders. Send
@@ -4657,10 +4678,11 @@ namespace POS_in_NET.Pages
 
                 // Step 2: Show payment method selection
                 var methodDialog = new POS_in_NET.Views.PaymentMethodDialog();
+                var leftAfter = Math.Max(0, remainingBalance - paymentAmount);
                 methodDialog.SetAmountDue(
                     paymentAmount,
-                    Math.Max(0, remainingBalance - paymentAmount),
-                    splitPlan.GetPaymentTitle());
+                    leftAfter,
+                    splitPlan.GetPaymentTitle(paymentAmount, leftAfter));
                 var paymentMethod = await methodDialog.ShowAsync();
                 
                 if (paymentMethod == PaymentMethod.Cancelled)
@@ -4668,11 +4690,12 @@ namespace POS_in_NET.Pages
                     if (totalPaid > 0)
                     {
                         await SavePartialPaymentOrderAsync(totalDue, tip, totalPaid, remainingBalance, splitPlan);
+                        PublishOrderPlaceSession();
                         _ = ToastNotification.ShowAsync(
                             "Partial payment saved",
-                            $"£{totalPaid:F2} paid. £{remainingBalance:F2} remaining.",
+                            $"£{remainingBalance:F2} left on bill.",
                             NotificationType.Warning,
-                            1600);
+                            1200);
                     }
                     return;
                 }
@@ -4871,14 +4894,16 @@ namespace POS_in_NET.Pages
                     if (remainingBalance > 0)
                     {
                         await SavePartialPaymentOrderAsync(totalDue, tip, totalPaid, remainingBalance, splitPlan);
+                        PublishOrderPlaceSession();
 
                         if (splitPlan.StopsAfterOnePartialPayment)
                         {
+                            // Sticky banner shows Paid/Left — keep toast brief.
                             _ = ToastNotification.ShowAsync(
                                 splitPlan.IsPayByItems ? "Item payment saved" : "Partial payment saved",
-                                $"£{remainingBalance:F2} remaining.",
+                                $"£{remainingBalance:F2} left on bill.",
                                 NotificationType.Info,
-                                1500
+                                1200
                             );
                             return;
                         }
@@ -4984,6 +5009,7 @@ namespace POS_in_NET.Pages
                 }
 
                 order.TotalAmount = totalAmount;
+                order.AmountPaid = totalPaid;
                 order.PaymentMethod = splitPlan.IsSplit ? "split" : "partial";
                 var saveResult = await _orderService.SaveOrderAsync(order);
                 if (!saveResult.Success)
@@ -5901,6 +5927,10 @@ namespace POS_in_NET.Pages
         {
             if (_isDeliveryOrder)
             {
+                if (_currentOrder.ScheduledTime.HasValue)
+                {
+                    builder.PrintLine($"Delivery time: {_currentOrder.ScheduledTime.Value:dd MMM HH:mm}");
+                }
                 if (!string.IsNullOrWhiteSpace(_deliveryCustomerName))
                 {
                     builder.PrintLine($"Customer: {_deliveryCustomerName}");
@@ -5918,6 +5948,10 @@ namespace POS_in_NET.Pages
 
             if (_isCollectionOrder)
             {
+                if (_currentOrder.ScheduledTime.HasValue)
+                {
+                    builder.PrintLine($"Collection time: {_currentOrder.ScheduledTime.Value:dd MMM HH:mm}");
+                }
                 if (!string.IsNullOrWhiteSpace(_collectionCustomerName))
                 {
                     builder.PrintLine($"Customer: {_collectionCustomerName}");

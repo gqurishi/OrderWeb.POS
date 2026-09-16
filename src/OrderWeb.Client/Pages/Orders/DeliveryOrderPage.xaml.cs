@@ -165,7 +165,7 @@ public partial class DeliveryOrderPage : ContentPage
                 "Delivery",
                 customer,
                 null,
-                "ASAP",
+                e.ScheduledTime?.ToString("O"),
                 string.Empty,
                 e.FormattedAddress,
                 e.Postcode,

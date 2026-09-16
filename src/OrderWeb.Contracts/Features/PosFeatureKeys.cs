@@ -17,6 +17,8 @@ public static class PosFeatureKeys
     public const string CustomerPoints = "pos.customer_points";
     /// <summary>Website food orders. Mother only. Never grant to Client POS.</summary>
     public const string WebOrders = "pos.web_orders";
+    /// <summary>Bar Inventory on Client tills. Terminal Access label: Bar Inventory.</summary>
+    public const string BarInventory = "pos.bar_inventory";
     public const string SplitBill = "pos.split_bill";
     public const string TableTransfer = "pos.table_transfer";
     public const string KitchenStatus = "pos.kitchen_status";

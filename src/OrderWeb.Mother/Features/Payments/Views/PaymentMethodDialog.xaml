@@ -57,7 +57,7 @@
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
                     <Grid ColumnDefinitions="*,Auto">
-                        <Label Text="AMOUNT DUE:"
+                        <Label Text="THIS PAYMENT:"
                                FontSize="24"
                                TextColor="#92400E"
                                FontAttributes="Bold"
@@ -121,7 +121,7 @@
                         <RoundRectangle CornerRadius="10"/>
                     </Border.StrokeShape>
                     <Grid ColumnDefinitions="*,Auto">
-                        <Label Text="REMAINING BALANCE:"
+                        <Label Text="LEFT ON BILL AFTER THIS:"
                                FontSize="18"
                                TextColor="#DC2626"
                                FontAttributes="Bold"

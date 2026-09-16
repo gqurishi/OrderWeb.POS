@@ -27,6 +27,7 @@ namespace POS_in_NET.Pages
         private Floor? _currentFloor;
         private Dictionary<int, RestaurantTable> _currentTablesById = new();
         private bool _isAdmin;
+        private bool _isEmbedded;
         private bool _hasUnsavedChanges = false;
         private bool _isSubscribedToRefreshEvents;
         private bool _isTableSelectionInProgress;
@@ -71,9 +72,31 @@ namespace POS_in_NET.Pages
         public void PrepareForEmbed()
         {
             TopBar.IsVisible = false;
+            if (Content is Grid root)
+            {
+                root.VerticalOptions = LayoutOptions.Fill;
+                root.HorizontalOptions = LayoutOptions.Fill;
+                if (root.RowDefinitions.Count > 0)
+                {
+                    root.RowDefinitions[0].Height = new GridLength(0);
+                }
+            }
+
+            if (Content is View rootView)
+            {
+                rootView.VerticalOptions = LayoutOptions.Fill;
+                rootView.HorizontalOptions = LayoutOptions.Fill;
+            }
         }
 
-        public Task ActivateEmbeddedAsync() => ActivateLayoutAsync(isEmbedded: true);
+        public async Task ActivateEmbeddedAsync()
+        {
+            // Embedded Layout tab is Admin-only; force admin tools so background/save show.
+            _isAdmin = true;
+            _isEmbedded = true;
+            TablesView.LayoutEditEnabled = true;
+            await ActivateLayoutAsync(isEmbedded: true);
+        }
 
         public void DeactivateEmbedded()
         {
@@ -84,6 +107,7 @@ namespace POS_in_NET.Pages
 
         private async Task ActivateLayoutAsync(bool isEmbedded)
         {
+            _isEmbedded = isEmbedded;
             var serviceSettings = await _orderServiceAvailabilityService.GetAsync(
                 forceRefresh: !PosLayoutCache.IsWarm);
             if (!serviceSettings.TableEnabled)
@@ -93,11 +117,22 @@ namespace POS_in_NET.Pages
                     await AppAlertService.ShowAlertAsync("Table Service Unavailable", "Table service is disabled by the Administrator.");
                     await NavigationCoordinator.Shared.NavigateShellAsync(_roleAccessService.ResolveDashboardRoute(_authService.CurrentUser?.Role));
                 }
+                else
+                {
+                    TablesView.SetEmptyCopy(
+                        "Table service is off",
+                        "Turn on Table Service in Settings → Order Services.");
+                    TablesView.EmptyActionText = string.Empty;
+                    TablesView.Bind(
+                        new FloorSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<FloorDto>()),
+                        new TableSnapshotDto(DateTime.UtcNow.Ticks.ToString(), Array.Empty<RestaurantTableDto>()));
+                    TablesView.SetSyncState(RestaurantSyncMode.NotSynced);
+                }
 
                 return;
             }
 
-            if (_authService.CurrentUser?.Role == UserRole.User)
+            if (!isEmbedded && _authService.CurrentUser?.Role == UserRole.User)
             {
                 _inactivityService.Start();
                 _inactivityService.ResetActivity();
@@ -105,9 +140,15 @@ namespace POS_in_NET.Pages
                 StartBasicUserIdleWatchdog();
             }
 
-            _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
+            if (!isEmbedded)
+            {
+                _isAdmin = _roleAccessService.IsAdmin(_authService.CurrentUser?.Role);
+            }
+
             TablesView.LayoutEditEnabled = _isAdmin;
-            TablesView.EmptyActionText = _isAdmin ? "Go to Table Management" : string.Empty;
+            TablesView.EmptyActionText = _isAdmin
+                ? (_floors.Count == 0 ? "Go to Floor Management" : "Go to Table Management")
+                : string.Empty;
 
             if (!_hasBackfilledTableSessions)
             {
@@ -130,12 +171,32 @@ namespace POS_in_NET.Pages
             }
 
             SubscribeToRefreshEvents();
-            StartAutoRefreshPolling();
+            if (!isEmbedded)
+            {
+                StartAutoRefreshPolling();
+            }
 
-            var shouldShowLoader = !PosLayoutCache.IsWarm
-                && (!_floors.Any() || _lastSuccessfulLayoutLoadAt == DateTime.MinValue);
-            await LoadFloorsAndTables(showLoading: shouldShowLoader, loadingMessage: "Loading layout...");
+            // Always refresh when embedded so the canvas paints after the tab host sizes.
+            await LoadFloorsAndTables(showLoading: true, loadingMessage: "Loading layout...");
             UpdateAdminToolsVisibility();
+
+            if (isEmbedded)
+            {
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await Task.Delay(30);
+                    if (_currentFloor != null)
+                    {
+                        await SelectFloor(_currentFloor, showLoading: false, showWarnings: false);
+                    }
+                    else if (_floors.Count > 0)
+                    {
+                        await SelectFloor(_floors[0], showLoading: false, showWarnings: false);
+                    }
+
+                    UpdateAdminToolsVisibility();
+                });
+            }
         }
 
         private void WireSharedTablesView()
@@ -384,8 +445,9 @@ namespace POS_in_NET.Pages
                 UnsavedChangesBar.IsVisible = false;
             }
 
-            FloorManagementButton.IsVisible = _isAdmin;
-            TableManagementButton.IsVisible = _isAdmin;
+            // Layout hub already has Floor / Table tabs — hide duplicate jump buttons when embedded.
+            FloorManagementButton.IsVisible = _isAdmin && !_isEmbedded;
+            TableManagementButton.IsVisible = _isAdmin && !_isEmbedded;
             SetBackgroundButton.IsVisible = _isAdmin;
             SaveLayoutButton.IsVisible = _isAdmin;
             // Show remove button only if there's a background image

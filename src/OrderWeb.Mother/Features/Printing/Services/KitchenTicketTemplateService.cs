@@ -107,6 +107,7 @@ public static class KitchenTicketTemplateService
         }
 
         PrintHeader(builder, ticketTitle, orderReference, printedAt, settings);
+        PrintScheduledTimeIfNeeded(builder, order, orderType);
         foreach (var section in GroupTakeawayItems(items, printGroupNames))
         {
             PrintSectionTitle(builder, section.Title, settings);
@@ -144,6 +145,16 @@ public static class KitchenTicketTemplateService
         }
 
         PrintHeader(builder, ticketTitle, orderReference, printedAt, settings);
+        if (order.ScheduledTime.HasValue)
+        {
+            var isDelivery = (order.OrderType ?? string.Empty).Contains("delivery", StringComparison.OrdinalIgnoreCase);
+            var label = isDelivery ? "Delivery time" : "Collection time";
+            builder.SetBold(true)
+                   .PrintLine($"{label}: {order.ScheduledTime.Value:dd MMM HH:mm}")
+                   .SetBold(false)
+                   .FeedLines(1);
+        }
+
         PrintSectionTitle(builder, "ITEMS", settings);
 
         foreach (var item in order.Items)
@@ -381,6 +392,35 @@ public static class KitchenTicketTemplateService
             .Where(choice => !string.IsNullOrWhiteSpace(choice))
             .ToList();
         return choices.Count > 0;
+    }
+
+    private static void PrintScheduledTimeIfNeeded(
+        EscPosBuilder builder,
+        TableOrder order,
+        string orderType)
+    {
+        if (!order.ScheduledTime.HasValue)
+        {
+            return;
+        }
+
+        var normalized = (orderType ?? string.Empty).Trim().ToLowerInvariant();
+        var isDelivery = normalized.Contains("delivery") || normalized is "del";
+        var isCollection = normalized.Contains("collection")
+            || normalized.Contains("pickup")
+            || normalized.Contains("takeaway")
+            || normalized is "col";
+
+        if (!isDelivery && !isCollection)
+        {
+            return;
+        }
+
+        var label = isDelivery ? "Delivery time" : "Collection time";
+        builder.SetBold(true)
+               .PrintLine($"{label}: {order.ScheduledTime.Value:dd MMM HH:mm}")
+               .SetBold(false)
+               .FeedLines(1);
     }
 
     private static void PrintOrderNotes(EscPosBuilder builder, string? notes)

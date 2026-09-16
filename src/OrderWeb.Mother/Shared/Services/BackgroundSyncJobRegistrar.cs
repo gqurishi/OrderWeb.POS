@@ -22,8 +22,41 @@ public static class BackgroundSyncJobRegistrar
             await RegisterPrinterJobsAsync(manager, services);
             RegisterLiveUpdateJob(manager);
             RegisterClientTipSafetyNetJob(manager, services);
+            RegisterAdvanceOrderJob(manager, services);
             RegisterCloudJobs(manager, services);
         }
+    }
+
+    private static void RegisterAdvanceOrderJob(
+        BackgroundSyncManager manager,
+        IServiceProvider services)
+    {
+        if (!TerminalConfigurationService.IsMotherTerminal)
+        {
+            return;
+        }
+
+        var advanceOrders = services.GetRequiredService<AdvanceOrderService>();
+        manager.RegisterJob(
+            new BackgroundSyncJobDefinition
+            {
+                Name = "advance-order-kitchen-scheduler",
+                Priority = BackgroundSyncPriority.Important,
+                NormalInterval = TimeSpan.FromSeconds(45),
+                IdleInterval = TimeSpan.FromSeconds(45),
+                FailureBackoff = TimeSpan.FromSeconds(60),
+                InitialDelay = TimeSpan.FromSeconds(25),
+                RequiredResources = BackgroundSyncResources.Database |
+                                    BackgroundSyncResources.Printer,
+                TerminalScope = BackgroundSyncTerminalScope.MotherOnly,
+                CanRunDuringPaymentOrOrderEntry = true,
+                CanRunWhileUserActive = true
+            },
+            async cancellationToken =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return await advanceOrders.ProcessDueAsync(cancellationToken);
+            });
     }
 
     private static void RegisterTerminalHealthJob(

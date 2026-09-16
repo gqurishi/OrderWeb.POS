@@ -113,6 +113,8 @@ public partial class MainPage : ContentPage
     private MotherCashierClient? _cashierClient;
     private readonly IDispatcherTimer _cashierRefreshTimer;
     private readonly ClientInactivityService _inactivity = new();
+    private readonly Queue<AdvanceOrderReminderPresentation> _advanceReminderQueue = new();
+    private bool _advanceReminderShowing;
 
     public MainPage()
     {
@@ -132,6 +134,7 @@ public partial class MainPage : ContentPage
         _imageCache = new MotherImageCacheService(_cache);
         _motherEvents.TerminalControlReceived += OnMotherTerminalControlReceived;
         _motherEvents.AuthoritativeDataChanged += OnMotherAuthoritativeDataChanged;
+        _motherEvents.AdvanceReminderReceived += OnMotherAdvanceReminderReceived;
         _motherEvents.ConnectionChanged += OnMotherConnectionChanged;
         _clockTimer = Dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(30);
@@ -530,6 +533,95 @@ public partial class MainPage : ContentPage
 
             RefreshCurrentPosPage();
         });
+    }
+
+    private void OnMotherAdvanceReminderReceived(object? sender, MotherAdvanceReminderEventArgs e)
+    {
+        if (_currentSession == null || e.Reminder == null)
+        {
+            return;
+        }
+
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            _advanceReminderQueue.Enqueue(e.Reminder);
+            _ = DrainAdvanceRemindersAsync();
+        });
+    }
+
+    private async Task DrainAdvanceRemindersAsync()
+    {
+        if (_advanceReminderShowing)
+        {
+            return;
+        }
+
+        _advanceReminderShowing = true;
+        try
+        {
+            while (_advanceReminderQueue.Count > 0)
+            {
+                if (_currentSession == null)
+                {
+                    _advanceReminderQueue.Clear();
+                    break;
+                }
+
+                var page = Navigation.NavigationStack.LastOrDefault() as ContentPage ?? this;
+                var data = _advanceReminderQueue.Dequeue();
+                var dialog = new AdvanceOrderReminderDialog();
+                var advanceClient = new MotherAdvanceOrderClient(_cache, _offlinePolicy);
+                var action = await dialog.ShowAsync(
+                    page,
+                    data,
+                    async reminder =>
+                    {
+                        var online = await _offlinePolicy.IsMotherOnlineAsync();
+                        var gate = _offlinePolicy.Evaluate(ClientOperation.AdvanceOrders, online);
+                        if (!gate.Allowed)
+                        {
+                            return (false, gate.Message ?? "Mother offline");
+                        }
+
+                        var result = await advanceClient.PrintKitchenAsync(reminder.OrderId);
+                        return result.Success
+                            ? (true, (string?)null)
+                            : (false, result.Message ?? "Print failed");
+                    });
+
+                if (action == AdvanceOrderReminderAction.OpenOrder)
+                {
+                    try
+                    {
+                        var online = await _offlinePolicy.IsMotherOnlineAsync();
+                        var gate = _offlinePolicy.Evaluate(ClientOperation.OpenCollectionOrder, online);
+                        if (!gate.Allowed)
+                        {
+                            ShowToast(gate.Message ?? "Mother offline");
+                            continue;
+                        }
+
+                        var opened = await _orderClient.OpenOrderForEditAsync(data.OrderId);
+                        await _cache.SaveOrderStateAsync(opened.State);
+                        var orderPage = new OrderPage(opened.State, opened.State.CustomerName, opened.State.CustomerPhone);
+                        ClientPageChrome.HideSystemBackChrome(orderPage);
+                        await Navigation.PushAsync(orderPage, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowToast(ex.Message);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _advanceReminderShowing = false;
+            if (_advanceReminderQueue.Count > 0)
+            {
+                _ = DrainAdvanceRemindersAsync();
+            }
+        }
     }
 
     private CancellationTokenSource? _restaurantLayoutRefreshCts;
@@ -1435,6 +1527,12 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        if (string.Equals(login.Role, "BarManager", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowBarInventoryWorkspace();
+            return;
+        }
+
         if (await IsOperationalCacheReadyAsync(null, login.Role))
         {
             ShowDashboard();
@@ -1801,6 +1899,51 @@ public partial class MainPage : ContentPage
         if (!_cashierRefreshTimer.IsRunning) _cashierRefreshTimer.Start();
     }
 
+    private void ShowBarInventoryWorkspace()
+    {
+        if (_currentSession is null ||
+            !string.Equals(_currentSession.Role, "BarManager", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowLogin();
+            return;
+        }
+
+        _posSelectedMenu = "Bar Inventory";
+        _isViewingOrderScreen = false;
+        Root.Children.Clear();
+        Root.BackgroundColor = Color.FromArgb(PageBackground);
+
+        var inventory = new BarInventoryView();
+        inventory.SetStatus("Bar Manager · online via Mother · shared stock workspace");
+        inventory.SetStockSummary(
+            "No stock lines yet",
+            [
+                ("Receive Stock", "Log bottles and cases when deliveries arrive."),
+                ("Stock Count", "Count before service so low-stock alerts stay accurate."),
+                ("Waste / Breakage", "Record spills and breakage against the correct item.")
+            ]);
+        inventory.ActionRequested += async (_, action) =>
+        {
+            var title = action switch
+            {
+                BarInventoryActionKind.Receive => "Receive Stock",
+                BarInventoryActionKind.Count => "Stock Count",
+                BarInventoryActionKind.Waste => "Waste / Breakage",
+                BarInventoryActionKind.CurrentStock => "Current Stock",
+                BarInventoryActionKind.SuggestedOrder => "Suggested Order",
+                BarInventoryActionKind.WeeklyReport => "Weekly Report",
+                _ => "Bar Inventory"
+            };
+            await DisplayAlertAsync(
+                title,
+                "This stock tool is ready in SharedUI. Next step: Mother stock APIs for live data.",
+                "OK");
+        };
+
+        var frame = SharedAppFrame("Bar Inventory", inventory, "inventory");
+        Root.Children.Add(frame);
+    }
+
     private async Task RefreshCashierDashboardAsync()
     {
         if (_cashierClient is null || !string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase)) return;
@@ -1923,6 +2066,12 @@ public partial class MainPage : ContentPage
         if (string.Equals(_currentSession?.Role, "Cashier", StringComparison.OrdinalIgnoreCase))
         {
             ShowCashierDashboard();
+            return;
+        }
+
+        if (string.Equals(_currentSession?.Role, "BarManager", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowBarInventoryWorkspace();
             return;
         }
 
@@ -2173,7 +2322,8 @@ public partial class MainPage : ContentPage
         AddManagerTool(grid, "Loyalty Points", "loyalty.png", 0, 2, () => OpenManagerToolPage(new LoyaltyPage()));
         AddManagerTool(grid, "Reservation", "reservation.png", 1, 0, () => OpenManagerToolPage(new ReservationPage()));
         AddManagerTool(grid, "Order History", "orderhistory.png", 1, 1, () => OpenManagerToolPage(new OrderHistoryPage()));
-        AddManagerTool(grid, "Cash Drawer", "giftcard.png", 1, 2, () => _ = OpenSharedCashDrawerAsync());
+        AddManagerTool(grid, "Advance Orders", "liveorder.png", 1, 2, () => OpenManagerToolPage(new AdvanceOrdersPage()));
+        AddManagerTool(grid, "Cash Drawer", "giftcard.png", 2, 0, () => _ = OpenSharedCashDrawerAsync());
         AddManagerTool(grid, "Recent Customers", "customers.png", 2, 1, () => OpenManagerToolPage(new RecentCustomersPage()));
         return grid;
     }
@@ -2563,6 +2713,7 @@ public partial class MainPage : ContentPage
             case "loyalty":
             case "reservation":
             case "orderhistory":
+            case "advanceorders":
             case "customerdata":
             case "customers":
                 // Pushed tool / customer-form pages must stay put on Mother sync.
@@ -2607,7 +2758,8 @@ public partial class MainPage : ContentPage
                 Role = _currentSession?.Role ?? "User",
                 SelectedMenu = _posSelectedMenu,
                 ShowFooter = string.Equals(_currentSession?.Role, "Manager", StringComparison.OrdinalIgnoreCase)
-                             || string.Equals(_currentSession?.Role, "User", StringComparison.OrdinalIgnoreCase),
+                             || string.Equals(_currentSession?.Role, "User", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(_currentSession?.Role, "BarManager", StringComparison.OrdinalIgnoreCase),
                 HorizontalOptions = LayoutOptions.Start,
             };
         sidebar.MenuItemSelected += OnClientSidebarMenuSelected;
@@ -2662,6 +2814,12 @@ public partial class MainPage : ContentPage
                 break;
             case "orderhistory":
                 RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new OrderHistoryPage()));
+                break;
+            case "advanceorders":
+                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new AdvanceOrdersPage()));
+                break;
+            case "inventory":
+                RunFromPosSidebar(selectedMenu, () => OpenManagerToolPage(new BarInventoryPage()));
                 break;
         }
     }
@@ -2847,6 +3005,7 @@ public partial class MainPage : ContentPage
                 new PosSidebarMenuItem("Loyalty Points", "loyalty.png", () => RunFromPosSidebar("Loyalty Points", () => OpenManagerToolPage(new LoyaltyPage()))),
                 new PosSidebarMenuItem("Reservation", "reservation.png", () => RunFromPosSidebar("Reservation", () => OpenManagerToolPage(new ReservationPage()))),
                 new PosSidebarMenuItem("Order History", "orderhistory.png", () => RunFromPosSidebar("Order History", () => OpenManagerToolPage(new OrderHistoryPage()))),
+                new PosSidebarMenuItem("Advance Orders", "liveorder.png", () => RunFromPosSidebar("Advance Orders", () => OpenManagerToolPage(new AdvanceOrdersPage()))),
                 new PosSidebarMenuItem("Recent Customers", "customers.png", () => RunFromPosSidebar("Recent Customers", () => OpenManagerToolPage(new RecentCustomersPage())))
             }.Where(item => ClientHostAccess.CanOpenMenu(item.Label));
         }
@@ -5737,7 +5896,12 @@ public partial class MainPage : ContentPage
         }
 
         var totalDue = billTotal + tip;
-        var remainingBalance = totalDue;
+        var remainingBalance = Math.Max(0m, totalDue - Math.Max(0m, _currentOrder.AmountPaid));
+        if (remainingBalance <= 0.009m)
+        {
+            ShowToast("This bill is already fully paid.");
+            return;
+        }
         PaymentSplitPlan plan;
         if (isTakeaway)
         {
@@ -5777,7 +5941,7 @@ public partial class MainPage : ContentPage
         var method = await PaymentWizard.ShowMethodAsync(
             paymentAmount,
             remainingAfter,
-            plan.GetPaymentTitle(),
+            plan.GetPaymentTitle(paymentAmount, remainingAfter),
             showLoyalty: OrderPlaceLoyaltyEarnRules.OrderPlacePaymentLoyaltyEnabled,
             hostPage: this);
         if (method == PaymentMethodChoice.Cancelled)
@@ -6382,7 +6546,8 @@ public partial class MainPage : ContentPage
             AvailableFeatures = features,
             MenuItems = OrderWeb.SharedUI.Navigation.PosNavigationCatalog.Filter(capabilities, features, routes),
             ShowUpdateButton = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(role, "User", StringComparison.OrdinalIgnoreCase),
+                               || string.Equals(role, "User", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(role, "BarManager", StringComparison.OrdinalIgnoreCase),
             ShowWelcomeBrand = isDashboard,
             ShowIdentity = false,
             ShowConnection = true,
@@ -6430,6 +6595,7 @@ public partial class MainPage : ContentPage
         new("loyalty", "Loyalty Points", "loyalty.png", "Manager"),
         new("reservation", "Reservations", "reservation.png", "User", "Manager"),
         new("orderhistory", "Order History", "orderhistory.png", "Manager"),
+        new("advanceorders", "Advance Orders", "liveorder.png", "Manager"),
         new("customerdata", "Recent Customers", "customers.png", "Manager")
     ];
 

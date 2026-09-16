@@ -554,7 +554,15 @@ public sealed class MotherOrderClient
         string? notes = null,
         string? scheduledTime = null,
         CachedCustomer? customer = null)
-        => await UpsertOrderCoreAsync(state, deliveryFee, notes, scheduledTime, customer, false, false, null);
+        => await UpsertOrderCoreAsync(
+            state,
+            deliveryFee,
+            notes,
+            scheduledTime ?? state.ScheduledTime,
+            customer,
+            false,
+            false,
+            null);
 
     private async Task<MotherCommandResult> UpsertOrderCoreAsync(
         MotherOrderState state,
@@ -679,7 +687,9 @@ public sealed class MotherOrderClient
             session?.UserName ?? "Client User",
             null,
             draft.Customer.Name,
-            draft.Customer.Phone);
+            draft.Customer.Phone,
+            draft.Notes,
+            ScheduledTime: draft.PickupTime ?? draft.ScheduledTime);
     }
 
     private async Task<MotherClientAuth?> GetAuthAsync()
@@ -752,7 +762,9 @@ public sealed class MotherOrderClient
             order.ServiceChargePercent,
             order.LoyaltyPointsEarned,
             order.SourceChannel,
-            order.PaymentMethod);
+            order.PaymentMethod,
+            order.ScheduledTime,
+            order.AmountPaid);
 
     public Task<MotherCommandResult> SetOrderNotesAsync(MotherOrderState state, string? notes) =>
         UpsertOrderAsync(state with { Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim() });
@@ -939,7 +951,9 @@ public sealed class MotherOrderClient
         decimal ServiceChargePercent = 0m,
         int LoyaltyPointsEarned = 0,
         string? SourceChannel = null,
-        string? PaymentMethod = null);
+        string? PaymentMethod = null,
+        string? ScheduledTime = null,
+        decimal AmountPaid = 0m);
 
     private sealed record OrderLineDto(
         string Id,

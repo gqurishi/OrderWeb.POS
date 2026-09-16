@@ -32,8 +32,10 @@ public static class ClientSidebarNavigation
             "loyalty" => new LoyaltyPage(),
             "reservation" => new ReservationPage(),
             "orderhistory" => new OrderHistoryPage(),
+            "advanceorders" => new AdvanceOrdersPage(),
             "customerdata" => new RecentCustomersPage(),
             "customers" => new RecentCustomersPage(),
+            "inventory" => new BarInventoryPage(),
             _ => null
         };
     }

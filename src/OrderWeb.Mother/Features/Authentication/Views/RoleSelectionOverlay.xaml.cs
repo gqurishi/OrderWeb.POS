@@ -46,6 +46,13 @@ namespace POS_in_NET.Views
             RoleSelected?.Invoke(this, UserRole.Cashier);
             HideOverlay();
         }
+
+        private void OnBarManagerSelected(object sender, EventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine("Bar Manager role selected");
+            RoleSelected?.Invoke(this, UserRole.BarManager);
+            HideOverlay();
+        }
         
         private void OnManagerSelected(object sender, EventArgs e)
         {

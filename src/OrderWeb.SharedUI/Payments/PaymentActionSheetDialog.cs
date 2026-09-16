@@ -8,6 +8,7 @@ public sealed class PaymentActionSheetDialog : ContentView
     private readonly Border _iconBorder;
     private readonly Label _iconLabel;
     private readonly Label _titleLabel;
+    private readonly Label _subtitleLabel;
     private readonly VerticalStackLayout _listOptions;
     private readonly Grid _gridOptions;
     private readonly Button _cancelButton;
@@ -50,6 +51,16 @@ public sealed class PaymentActionSheetDialog : ContentView
             HorizontalTextAlignment = TextAlignment.Center
         };
 
+        _subtitleLabel = new Label
+        {
+            Text = string.Empty,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#475569"),
+            HorizontalTextAlignment = TextAlignment.Center,
+            IsVisible = false
+        };
+
         _listOptions = new VerticalStackLayout { Spacing = 10, IsVisible = false };
         _gridOptions = new Grid
         {
@@ -85,17 +96,25 @@ public sealed class PaymentActionSheetDialog : ContentView
             Content = new VerticalStackLayout
             {
                 Spacing = 18,
-                Children = { _iconBorder, _titleLabel, _listOptions, _gridOptions, _cancelButton }
+                Children = { _iconBorder, _titleLabel, _subtitleLabel, _listOptions, _gridOptions, _cancelButton }
             }
         };
 
         Content = new Grid { Padding = 24, Children = { _dialogBorder } };
     }
 
+    public void SetSubtitle(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        _subtitleLabel.Text = value;
+        _subtitleLabel.IsVisible = !string.IsNullOrEmpty(value);
+    }
+
     public void SetActionSheet(string title, IReadOnlyList<string> options, string icon = "i", string iconBg = "#2563EB")
     {
         _dialogBorder.WidthRequest = 450;
         ConfigureHeader(title, icon, iconBg);
+        SetSubtitle(null);
         _listOptions.Children.Clear();
         _listOptions.IsVisible = true;
         _gridOptions.IsVisible = false;
@@ -104,11 +123,22 @@ public sealed class PaymentActionSheetDialog : ContentView
 
         foreach (var option in options)
         {
-            _listOptions.Children.Add(MakeOptionButton(option, 50, 14));
+            _listOptions.Children.Add(MakeOptionButton(option, option, null, 50, 14));
         }
     }
 
     public void SetActionSheetGrid(string title, IReadOnlyList<string> options, string icon = "£", string iconBg = "#059669")
+    {
+        var mapped = options.Select(option => (Key: option, Title: option, Detail: (string?)null)).ToList();
+        SetActionSheetGrid(title, mapped, icon, iconBg);
+    }
+
+    /// <summary>Grid options with optional detail line (e.g. "£12.50 each").</summary>
+    public void SetActionSheetGrid(
+        string title,
+        IReadOnlyList<(string Key, string Title, string? Detail)> options,
+        string icon = "£",
+        string iconBg = "#059669")
     {
         _dialogBorder.WidthRequest = 520;
         ConfigureHeader(title, icon, iconBg);
@@ -126,7 +156,12 @@ public sealed class PaymentActionSheetDialog : ContentView
 
         for (var i = 0; i < options.Count; i++)
         {
-            _gridOptions.Add(MakeOptionButton(options[i], 72, 16), i % 2, i / 2);
+            var option = options[i];
+            var height = string.IsNullOrWhiteSpace(option.Detail) ? 72d : 84d;
+            _gridOptions.Add(
+                MakeOptionButton(option.Key, option.Title, option.Detail, height, 16),
+                i % 2,
+                i / 2);
         }
     }
 
@@ -136,8 +171,24 @@ public sealed class PaymentActionSheetDialog : ContentView
     {
         foreach (var child in _gridOptions.Children)
         {
-            if (child is Button button &&
-                string.Equals(button.Text, optionText, StringComparison.OrdinalIgnoreCase))
+            if (child is Border card &&
+                string.Equals(card.StyleId, optionText, StringComparison.OrdinalIgnoreCase))
+            {
+                card.BackgroundColor = Color.FromArgb(background);
+                card.Stroke = Color.FromArgb(border);
+                if (card.Content is VerticalStackLayout stack)
+                {
+                    foreach (var line in stack.Children)
+                    {
+                        if (line is Label label)
+                        {
+                            label.TextColor = Color.FromArgb(text);
+                        }
+                    }
+                }
+            }
+            else if (child is Button button &&
+                     string.Equals(button.Text, optionText, StringComparison.OrdinalIgnoreCase))
             {
                 button.BackgroundColor = Color.FromArgb(background);
                 button.TextColor = Color.FromArgb(text);
@@ -165,22 +216,65 @@ public sealed class PaymentActionSheetDialog : ContentView
         _iconBorder.BackgroundColor = Color.FromArgb(iconBg);
     }
 
-    private Button MakeOptionButton(string option, double height, double fontSize)
+    private View MakeOptionButton(string key, string title, string? detail, double height, double fontSize)
     {
-        var button = new Button
+        if (string.IsNullOrWhiteSpace(detail))
         {
-            Text = option,
-            BackgroundColor = Color.FromArgb("#F8FAFC"),
-            TextColor = Color.FromArgb("#1E293B"),
+            var button = new Button
+            {
+                Text = title,
+                StyleId = key,
+                BackgroundColor = Color.FromArgb("#F8FAFC"),
+                TextColor = Color.FromArgb("#1E293B"),
+                FontSize = fontSize,
+                FontAttributes = FontAttributes.Bold,
+                CornerRadius = 16,
+                HeightRequest = height,
+                BorderColor = Color.FromArgb("#D8E1ED"),
+                BorderWidth = 1
+            };
+            button.Clicked += (_, _) => Complete(key);
+            return button;
+        }
+
+        var titleLabel = new Label
+        {
+            Text = title,
             FontSize = fontSize,
             FontAttributes = FontAttributes.Bold,
-            CornerRadius = 16,
-            HeightRequest = height,
-            BorderColor = Color.FromArgb("#D8E1ED"),
-            BorderWidth = 1
+            TextColor = Color.FromArgb("#0F172A"),
+            HorizontalTextAlignment = TextAlignment.Center
         };
-        button.Clicked += (_, _) => Complete(option);
-        return button;
+        var detailLabel = new Label
+        {
+            Text = detail,
+            FontSize = 13,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#2563EB"),
+            HorizontalTextAlignment = TextAlignment.Center
+        };
+
+        var card = new Border
+        {
+            StyleId = key,
+            BackgroundColor = Color.FromArgb("#F8FAFC"),
+            Stroke = Color.FromArgb("#D8E1ED"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Padding = new Thickness(10, 12),
+            HeightRequest = height,
+            Content = new VerticalStackLayout
+            {
+                Spacing = 4,
+                VerticalOptions = LayoutOptions.Center,
+                Children = { titleLabel, detailLabel }
+            }
+        };
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) => Complete(key);
+        card.GestureRecognizers.Add(tap);
+        return card;
     }
 
     private void Complete(string? result)

@@ -32,6 +32,7 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
     private decimal _serviceCharge;
     private decimal _deliveryFee;
     private decimal _total;
+    private decimal _amountPaid;
     private bool _showServiceCharge;
     private bool _showDeliveryFee;
     private bool _isBusy;
@@ -112,6 +113,19 @@ public sealed class OrderPlaceSessionState : INotifyPropertyChanged
         get => _total;
         set => Set(ref _total, value);
     }
+
+    /// <summary>Approved payments already taken on this bill (split / partial).</summary>
+    public decimal AmountPaid
+    {
+        get => _amountPaid;
+        set => Set(ref _amountPaid, value);
+    }
+
+    /// <summary>True while something has been paid but the bill is not closed.</summary>
+    public bool HasPartialPayment =>
+        AmountPaid > 0.009m && Math.Max(0m, Total - AmountPaid) > 0.009m;
+
+    public decimal AmountRemaining => Math.Max(0m, Total - AmountPaid);
 
     public bool ShowServiceCharge
     {

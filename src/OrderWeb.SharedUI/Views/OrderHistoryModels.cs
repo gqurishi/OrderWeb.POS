@@ -20,6 +20,7 @@ public sealed record OrderHistoryRowPresentation(
     string StatusDisplay,
     string TotalDisplay,
     bool IsVoided = false,
+    bool IsWebOrder = false,
     object? Tag = null);
 
 public sealed class OrderHistoryFilterChangedEventArgs(OrderHistoryFilter filter) : EventArgs

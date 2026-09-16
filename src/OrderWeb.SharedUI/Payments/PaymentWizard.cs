@@ -132,12 +132,22 @@ public static class PaymentWizard
         decimal remainingBalance,
         ContentPage? hostPage = null)
     {
+        var billLeft = Math.Max(0m, remainingBalance);
         var splitDialog = new PaymentActionSheetDialog();
         splitDialog.SetActionSheetGrid(
             "Split Evenly",
-            new[] { "Split by 2", "Split by 3", "Split by 4", "Split by 5", "Split by 6", "Custom Split" },
+            new (string Key, string Title, string? Detail)[]
+            {
+                ("Split by 2", "Split by 2", FormatEachShare(billLeft, 2)),
+                ("Split by 3", "Split by 3", FormatEachShare(billLeft, 3)),
+                ("Split by 4", "Split by 4", FormatEachShare(billLeft, 4)),
+                ("Split by 5", "Split by 5", FormatEachShare(billLeft, 5)),
+                ("Split by 6", "Split by 6", FormatEachShare(billLeft, 6)),
+                ("Custom Split", "Custom Split", "Choose how many people")
+            },
             "÷",
             "#2563EB");
+        splitDialog.SetSubtitle($"Bill left: £{billLeft:F2}  ·  each person pays the share below");
         splitDialog.SetCancelText("Back");
 
         var selected = await splitDialog.ShowAsync(hostPage);
@@ -153,6 +163,12 @@ public static class PaymentWizard
             {
                 return null;
             }
+
+            var each = Math.Round(billLeft / parts.Value, 2, MidpointRounding.AwayFromZero);
+            await ShowSimpleAlertAsync(
+                $"Split by {parts.Value}",
+                $"Bill left: £{billLeft:F2}\nEach person pays: £{each:F2}\n\nTake payments one person at a time until the bill is closed.",
+                hostPage);
 
             return PaymentSplitPlan.Equal(remainingBalance, parts.Value);
         }
@@ -170,6 +186,12 @@ public static class PaymentWizard
         return splitCount <= 1
             ? PaymentSplitPlan.Full(remainingBalance)
             : PaymentSplitPlan.Equal(remainingBalance, splitCount);
+    }
+
+    private static string FormatEachShare(decimal billLeft, int parts)
+    {
+        var each = Math.Round(billLeft / Math.Max(1, parts), 2, MidpointRounding.AwayFromZero);
+        return $"£{each:F2} each";
     }
 
     public static async Task<PaymentSplitPlan?> ShowCustomAmountAsync(

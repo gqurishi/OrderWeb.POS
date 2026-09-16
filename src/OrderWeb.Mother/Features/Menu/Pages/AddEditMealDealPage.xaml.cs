@@ -22,9 +22,9 @@ public partial class AddEditMealDealPage : ContentPage
     {
         _isEditMode = true;
         _editingDeal = deal;
-        PageTitle.Text = "Edit Meal Deal";
-        PageSubtitle.Text = "Update deal price, choices, and pick rules";
-        SaveButton.Text = "Update Deal";
+        PageTitle.Text = "Edit meal deal";
+        PageSubtitle.Text = "Update price, choices, and pick count";
+        SaveButton.Text = "Update deal";
     }
 
     protected override void OnAppearing()
@@ -89,44 +89,76 @@ public partial class AddEditMealDealPage : ContentPage
             {
                 ColumnDefinitions =
                 {
-                    new ColumnDefinition { Width = new GridLength(32) },
+                    new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                     new ColumnDefinition { Width = GridLength.Auto }
                 },
-                ColumnSpacing = 10
+                ColumnSpacing = 10,
+                VerticalOptions = LayoutOptions.Center
             };
 
-            row.Add(new Label
+            var indexBadge = new Border
             {
-                Text = $"{i + 1}.",
-                FontSize = 14,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#64748B"),
+                BackgroundColor = Color.FromArgb("#FFF7ED"),
+                Stroke = Color.FromArgb("#FED7AA"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                WidthRequest = 32,
+                HeightRequest = 32,
+                VerticalOptions = LayoutOptions.Center,
+                Content = new Label
+                {
+                    Text = $"{i + 1}",
+                    FontSize = 12,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb("#C2410C"),
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                    HorizontalTextAlignment = TextAlignment.Center
+                }
+            };
+            row.Add(indexBadge, 0);
+
+            var field = new Border
+            {
+                BackgroundColor = Colors.White,
+                Stroke = Color.FromArgb("#E2E8F0"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                Padding = new Thickness(0),
+                HeightRequest = 40,
                 VerticalOptions = LayoutOptions.Center
-            }, 0);
+            };
 
             var entry = new Entry
             {
                 Placeholder = "Choice name (e.g. Rice)",
                 Text = choice.Name,
-                FontSize = 15,
-                MaxLength = 60
+                FontSize = 14,
+                TextColor = Color.FromArgb("#0F172A"),
+                PlaceholderColor = Color.FromArgb("#94A3B8"),
+                BackgroundColor = Colors.Transparent,
+                MaxLength = 60,
+                Margin = new Thickness(12, 0),
+                VerticalOptions = LayoutOptions.Center
             };
             var index = i;
             entry.TextChanged += (_, e) => _choices[index].Name = e.NewTextValue?.Trim() ?? string.Empty;
-            row.Add(entry, 1);
+            field.Content = entry;
+            row.Add(field, 1);
 
             var removeBtn = new Button
             {
-                Text = "X",
-                BackgroundColor = Color.FromArgb("#EF4444"),
-                TextColor = Colors.White,
+                Text = "×",
+                BackgroundColor = Color.FromArgb("#FEF2F2"),
+                TextColor = Color.FromArgb("#DC2626"),
                 FontSize = 18,
                 FontAttributes = FontAttributes.Bold,
-                WidthRequest = 52,
-                HeightRequest = 44,
+                WidthRequest = 40,
+                HeightRequest = 40,
                 CornerRadius = 8,
-                Padding = 0
+                Padding = 0,
+                VerticalOptions = LayoutOptions.Center
             };
             removeBtn.Clicked += (_, _) =>
             {
@@ -143,11 +175,11 @@ public partial class AddEditMealDealPage : ContentPage
 
             ChoicesContainer.Children.Add(new Border
             {
-                BackgroundColor = Color.FromArgb("#F8FAFC"),
+                BackgroundColor = Color.FromArgb("#FAFAFA"),
                 Stroke = Color.FromArgb("#E2E8F0"),
                 StrokeThickness = 1,
                 StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Padding = new Thickness(12, 8),
+                Padding = new Thickness(10, 8),
                 Content = row
             });
         }

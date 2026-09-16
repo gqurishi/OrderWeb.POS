@@ -316,6 +316,18 @@ public class OrderService
                 order.OrderNumber = existingOrder.OrderNumber;
             }
 
+            // Phase 6: any ScheduledTime change clears once-print flags so the new schedule can fire.
+            if (existingOrder != null && HasScheduledTimeChanged(existingOrder.ScheduledTime, order.ScheduledTime))
+            {
+                order.AdvanceKitchenPrintedAt = null;
+                order.AdvanceRemindedAt = null;
+            }
+            else if (existingOrder != null)
+            {
+                order.AdvanceKitchenPrintedAt ??= existingOrder.AdvanceKitchenPrintedAt;
+                order.AdvanceRemindedAt ??= existingOrder.AdvanceRemindedAt;
+            }
+
             var expectedUpdatedAt = order.ExpectedUpdatedAt;
             if (!expectedUpdatedAt.HasValue && existingOrder != null && order.UpdatedAt != default)
             {
@@ -371,7 +383,9 @@ public class OrderService
                     loyalty_points_discount = @loyaltyPointsDiscount,
                     loyalty_balance_after = @loyaltyBalanceAfter,
                     special_instructions = @specialInstructions,
-                    scheduled_time = @scheduledTime,
+					scheduled_time = @scheduledTime,
+                    advance_kitchen_printed_at = @advanceKitchenPrintedAt,
+                    advance_reminded_at = @advanceRemindedAt,
                     local_lifecycle_state = @localLifecycleState,
                     is_open = @isOpen,
                     void_reason = @voidReason,
@@ -418,6 +432,8 @@ public class OrderService
             AddCloudPaymentParameters(command, order);
             command.Parameters.AddWithValue("@specialInstructions", order.SpecialInstructions ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@scheduledTime", order.ScheduledTime ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@advanceKitchenPrintedAt", order.AdvanceKitchenPrintedAt ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@advanceRemindedAt", order.AdvanceRemindedAt ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@localLifecycleState", ToDbLifecycleState(order.LocalLifecycleState));
             command.Parameters.AddWithValue("@isOpen", order.IsOpen);
             command.Parameters.AddWithValue("@voidReason", order.VoidReason ?? (object)DBNull.Value);
@@ -1199,12 +1215,16 @@ public class OrderService
     }
 
     /// <summary>
-    /// Live Order / POS till: set final cash|card tender + paid flags for History before close.
-    /// Avoids full UpdateOrderAsync concurrency checks on quick web cash-due pay.
+    /// Live Order web cash-due: persist final POS tender + close the order for History/report.
+    /// Matches by numeric id (preferred) so cloud order_id variants cannot skip the update.
     /// </summary>
-    public async Task<bool> ApplyPosTenderAsync(string externalOrderId, string paymentMethod, decimal amountPaid)
+    public async Task<bool> CloseOrderWithPosTenderAsync(
+        int orderDbId,
+        string? externalOrderId,
+        string paymentMethod,
+        decimal amountPaid)
     {
-        if (string.IsNullOrWhiteSpace(externalOrderId))
+        if (orderDbId <= 0 && string.IsNullOrWhiteSpace(externalOrderId))
         {
             return false;
         }
@@ -1227,29 +1247,44 @@ public class OrderService
                 SET payment_method = @paymentMethod,
                     payment_status = 'paid',
                     amount_paid = @amountPaid,
-                    paid_at = COALESCE(paid_at, @paidAt),
-                    updated_at = @updatedAt,
+                    paid_at = COALESCE(paid_at, @now),
+                    completed_time = COALESCE(completed_time, @now),
+                    status = 'Completed',
+                    local_lifecycle_state = 'paid',
+                    is_open = 0,
+                    updated_at = @now,
                     updated_by_terminal_name = @terminalName,
-                    updated_by_terminal_at = @updatedAt
-                WHERE order_id = @orderId
-                  AND COALESCE(is_open, 1) = 1
-                  AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('paid', 'voided', 'closed')";
+                    updated_by_terminal_at = @now
+                WHERE (
+                        (@orderDbId > 0 AND id = @orderDbId)
+                        OR (@orderId <> '' AND order_id = @orderId)
+                        OR (@orderId <> '' AND cloud_order_id = @orderId)
+                      )
+                  AND LOWER(COALESCE(local_lifecycle_state, 'active')) NOT IN ('voided')";
 
             using var command = new MySqlCommand(sql, connection);
             command.Parameters.AddWithValue("@paymentMethod", tender);
             command.Parameters.AddWithValue("@amountPaid", Math.Max(0m, amountPaid));
-            command.Parameters.AddWithValue("@paidAt", DateTime.Now);
-            command.Parameters.AddWithValue("@updatedAt", DateTime.Now);
+            command.Parameters.AddWithValue("@now", DateTime.Now);
             command.Parameters.AddWithValue("@terminalName", GetCurrentTerminalName());
-            command.Parameters.AddWithValue("@orderId", externalOrderId.Trim());
-            return await command.ExecuteNonQueryAsync() > 0;
+            command.Parameters.AddWithValue("@orderDbId", orderDbId);
+            command.Parameters.AddWithValue("@orderId", (externalOrderId ?? string.Empty).Trim());
+            var rows = await command.ExecuteNonQueryAsync();
+            return rows > 0;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"ApplyPosTenderAsync failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"CloseOrderWithPosTenderAsync failed: {ex.Message}");
             return false;
         }
     }
+
+    /// <summary>
+    /// Live Order / POS till: set final cash|card tender + paid flags for History before close.
+    /// Avoids full UpdateOrderAsync concurrency checks on quick web cash-due pay.
+    /// </summary>
+    public Task<bool> ApplyPosTenderAsync(string externalOrderId, string paymentMethod, decimal amountPaid) =>
+        CloseOrderWithPosTenderAsync(0, externalOrderId, paymentMethod, amountPaid);
 
     public async Task<bool> UpdateOrderStatusAsync(int orderId, OrderStatus newStatus)
     {
@@ -1904,6 +1939,17 @@ public class OrderService
             "dine-in" => "table",
             _ => "pickup"
         };
+    }
+
+    /// <summary>True when advance schedule changed (including cleared/set). Compare to the minute.</summary>
+    private static bool HasScheduledTimeChanged(DateTime? previous, DateTime? next)
+    {
+        static DateTime? TruncateToMinute(DateTime? value) =>
+            value.HasValue
+                ? new DateTime(value.Value.Year, value.Value.Month, value.Value.Day, value.Value.Hour, value.Value.Minute, 0, DateTimeKind.Unspecified)
+                : null;
+
+        return TruncateToMinute(previous) != TruncateToMinute(next);
     }
 
     private static string NormalizeSourceChannel(string? sourceChannel)
@@ -3581,6 +3627,12 @@ public class OrderService
                 HasColumn(reader, "payment_status") ? reader["payment_status"]?.ToString() : null),
             SpecialInstructions = reader["special_instructions"]?.ToString(),
             ScheduledTime = reader["scheduled_time"] as DateTime?,
+            AdvanceKitchenPrintedAt = HasColumn(reader, "advance_kitchen_printed_at")
+                ? reader["advance_kitchen_printed_at"] as DateTime?
+                : null,
+            AdvanceRemindedAt = HasColumn(reader, "advance_reminded_at")
+                ? reader["advance_reminded_at"] as DateTime?
+                : null,
             
             // Status and timing
             Status = Enum.Parse<OrderStatus>(reader["status"].ToString() ?? "New", true),

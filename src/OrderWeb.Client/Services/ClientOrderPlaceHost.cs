@@ -1516,7 +1516,12 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             }
 
             var totalDue = billTotal + tip;
-            var remainingBalance = totalDue;
+            var remainingBalance = Math.Max(0m, totalDue - Math.Max(0m, _currentOrder.AmountPaid));
+            if (remainingBalance <= 0.009m)
+            {
+                await _ui.ShowAlertAsync("Payment", "This bill is already fully paid.");
+                return;
+            }
 
             OrderWeb.SharedUI.Payments.PaymentSplitPlan plan;
             if (isTakeaway)
@@ -1555,7 +1560,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             var method = await _ui.ShowPaymentMethodAsync(
                 paymentAmount,
                 remainingAfter,
-                plan.GetPaymentTitle());
+                plan.GetPaymentTitle(paymentAmount, remainingAfter));
             if (method == OrderWeb.SharedUI.Payments.PaymentMethodChoice.Cancelled)
             {
                 return;
@@ -2208,6 +2213,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             Session.Total = _currentOrder.Total;
             Session.Discount = _currentOrder.Discount;
             Session.ServiceCharge = _currentOrder.ServiceCharge;
+            Session.AmountPaid = Math.Max(0m, _currentOrder.AmountPaid);
         }
         else
         {
@@ -2215,6 +2221,7 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
             Session.Total = 0m;
             Session.Discount = 0m;
             Session.ServiceCharge = 0m;
+            Session.AmountPaid = 0m;
         }
 
         Session.DeliveryFee = deliveryFee;
@@ -2224,11 +2231,15 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
         if (!Session.ActionsBusy)
         {
             Session.SendActionLabel = "SEND TO KITCHEN";
-            Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
+            Session.PaymentActionLabel = Session.HasPartialPayment
+                ? $"PAYMENT £{Session.AmountRemaining:F2} LEFT"
+                : $"PAYMENT £{Session.Total:F2}";
         }
         else if (!string.Equals(Session.PaymentActionLabel, "OPENING…", StringComparison.Ordinal))
         {
-            Session.PaymentActionLabel = $"PAYMENT £{Session.Total:F2}";
+            Session.PaymentActionLabel = Session.HasPartialPayment
+                ? $"PAYMENT £{Session.AmountRemaining:F2} LEFT"
+                : $"PAYMENT £{Session.Total:F2}";
         }
 
         // Real conflicts only. Never promote a "Table N" label into StatusMessage —
@@ -2456,6 +2467,13 @@ public sealed class ClientOrderPlaceHost : IOrderPlaceHost
 
     private string? BuildHeaderTable()
     {
+        if ((IsDeliveryOrder() || IsCollectionOrder()) &&
+            !string.IsNullOrWhiteSpace(_currentOrder?.ScheduledTime) &&
+            DateTime.TryParse(_currentOrder.ScheduledTime, out var scheduled))
+        {
+            return $"Advance order · {scheduled:dd MMM HH:mm}";
+        }
+
         if (!IsTableOrder())
         {
             return null;

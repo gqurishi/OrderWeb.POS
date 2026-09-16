@@ -1665,31 +1665,26 @@ namespace POS_in_NET.Pages
         private void BuildColorPicker()
         {
             ColorPickerContainer.Children.Clear();
-            
+
             foreach (var color in _presetColors)
             {
+                var selected = color == _selectedColor;
                 var colorBorder = new Border
                 {
                     BackgroundColor = Color.FromArgb(color),
-                    WidthRequest = 36,
-                    HeightRequest = 36,
-                    StrokeShape = new RoundRectangle { CornerRadius = 8 },
-                    StrokeThickness = color == _selectedColor ? 3 : 0,
-                    Stroke = Colors.White,
+                    WidthRequest = 28,
+                    HeightRequest = 28,
+                    StrokeShape = new RoundRectangle { CornerRadius = 14 },
+                    StrokeThickness = selected ? 2.5 : 2,
+                    Stroke = selected ? Color.FromArgb("#0F172A") : Colors.White,
                     Margin = new Thickness(0, 0, 8, 8)
                 };
-                
-                // Add shadow/border for selected
-                if (color == _selectedColor)
-                {
-                    colorBorder.Shadow = new Shadow { Brush = Colors.Black, Offset = new Point(0, 2), Radius = 4, Opacity = 0.3f };
-                }
-                
+
                 var tap = new TapGestureRecognizer();
                 var capturedColor = color;
                 tap.Tapped += (s, e) => SelectColor(capturedColor);
                 colorBorder.GestureRecognizers.Add(tap);
-                
+
                 ColorPickerContainer.Children.Add(colorBorder);
             }
         }
@@ -1706,7 +1701,7 @@ namespace POS_in_NET.Pages
         private void OnAddCategoryClicked(object sender, EventArgs e)
         {
             _editingCategory = null;
-            CategoryDialogTitle.Text = "Add New Category";
+            CategoryDialogTitle.Text = "Add category";
             CategoryNameEntry.Text = "";
             CategoryActiveSwitch.IsToggled = true;
             _selectedColor = "#3B82F6";
@@ -1720,7 +1715,7 @@ namespace POS_in_NET.Pages
         private void OnEditCategoryClicked(MenuCategory category)
         {
             _editingCategory = category;
-            CategoryDialogTitle.Text = "Edit Category";
+            CategoryDialogTitle.Text = "Edit category";
             CategoryNameEntry.Text = category.Name;
             CategoryActiveSwitch.IsToggled = category.Active;
             _selectedColor = category.Color;
@@ -1888,14 +1883,14 @@ namespace POS_in_NET.Pages
             
             _editingCategory = null;
             _selectedParentCategory = null;
-            SubCategoryDialogTitle.Text = "Add New Sub-Category";
+            SubCategoryDialogTitle.Text = "Add sub-category";
             SubCategoryNameEntry.Text = "";
             SubCategoryActiveSwitch.IsToggled = true;
             _selectedColor = "#8B5CF6";
             SubCategoryCustomColorEntry.Text = "";
             SubCategoryCustomColorPreview.BackgroundColor = Microsoft.Maui.Graphics.Colors.LightGray;
             SubCategoryCustomColorPreview.StrokeThickness = 2;
-            ParentCategoryLabel.Text = "Select parent category";
+            ParentCategoryLabel.Text = "Select parent…";
             ParentCategoryLabel.TextColor = Color.FromArgb("#94A3B8");
             
             BuildSubCategoryColorPicker();
@@ -1905,7 +1900,7 @@ namespace POS_in_NET.Pages
         private void OnEditSubCategoryClicked(MenuCategory subCategory)
         {
             _editingCategory = subCategory;
-            SubCategoryDialogTitle.Text = "Edit Sub-Category";
+            SubCategoryDialogTitle.Text = "Edit sub-category";
             SubCategoryNameEntry.Text = subCategory.Name;
             SubCategoryActiveSwitch.IsToggled = subCategory.Active;
             _selectedColor = subCategory.Color;
@@ -1919,7 +1914,7 @@ namespace POS_in_NET.Pages
             }
             else
             {
-                ParentCategoryLabel.Text = "Select parent category";
+                ParentCategoryLabel.Text = "Select parent…";
                 ParentCategoryLabel.TextColor = Color.FromArgb("#94A3B8");
             }
             
@@ -1979,85 +1974,77 @@ namespace POS_in_NET.Pages
 
         private View CreateParentCategorySelectionRow(MenuCategory category)
         {
-            var grid = new Grid
+            var selected = _selectedParentCategory?.Id == category.Id;
+            var row = new Grid
             {
-                Padding = new Thickness(32, 20),
+                Padding = new Thickness(12, 10),
                 ColumnDefinitions = new ColumnDefinitionCollection
                 {
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Star },
                     new ColumnDefinition { Width = GridLength.Auto }
                 },
-                BackgroundColor = Colors.White
+                ColumnSpacing = 10
             };
-            
-            // Color indicator
-            var colorBox = new Border
+
+            row.Add(new Border
             {
                 BackgroundColor = Color.FromArgb(category.Color ?? "#3B82F6"),
-                WidthRequest = 36,
-                HeightRequest = 36,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                StrokeThickness = 0,
-                VerticalOptions = LayoutOptions.Center,
-                Margin = new Thickness(0, 0, 16, 0)
-            };
-            grid.Add(colorBox, 0);
-            
-            // Category name
+                WidthRequest = 28,
+                HeightRequest = 28,
+                StrokeShape = new RoundRectangle { CornerRadius = 14 },
+                StrokeThickness = 2,
+                Stroke = Colors.White,
+                VerticalOptions = LayoutOptions.Center
+            }, 0);
+
             var nameStack = new VerticalStackLayout
             {
-                Spacing = 4,
+                Spacing = 1,
                 VerticalOptions = LayoutOptions.Center
             };
-            
-            var nameLabel = new Label
+            nameStack.Add(new Label
             {
                 Text = category.Name,
-                FontSize = 18,
+                FontSize = 14,
                 FontAttributes = FontAttributes.Bold,
-                TextColor = Color.FromArgb("#1E293B")
-            };
-            nameStack.Add(nameLabel);
-            
+                TextColor = Color.FromArgb("#0F172A")
+            });
             if (!category.Active)
             {
-                var inactiveLabel = new Label
+                nameStack.Add(new Label
                 {
                     Text = "Inactive",
-                    FontSize = 14,
-                    TextColor = Color.FromArgb("#EF4444")
-                };
-                nameStack.Add(inactiveLabel);
+                    FontSize = 11,
+                    TextColor = Color.FromArgb("#DC2626")
+                });
             }
-            
-            grid.Add(nameStack, 1);
-            
-            // Selection indicator (checkmark if selected)
-            if (_selectedParentCategory?.Id == category.Id)
+            row.Add(nameStack, 1);
+
+            if (selected)
             {
-                var checkmark = new Label
+                row.Add(new Label
                 {
-                    Text = "",
-                    FontSize = 28,
-                    TextColor = Color.FromArgb("#10B981"),
+                    Text = "✓",
+                    FontSize = 16,
                     FontAttributes = FontAttributes.Bold,
+                    TextColor = Color.FromArgb("#7C3AED"),
                     VerticalOptions = LayoutOptions.Center
-                };
-                grid.Add(checkmark, 2);
+                }, 2);
             }
-            
-            // Tap gesture to select this category
+
             var tapGesture = new TapGestureRecognizer();
             tapGesture.Tapped += (s, e) => OnParentCategorySelected(category);
-            grid.GestureRecognizers.Add(tapGesture);
-            
-            // Container with border
-            var container = new VerticalStackLayout { Spacing = 0 };
-            container.Add(grid);
-            container.Add(new BoxView { HeightRequest = 1, Color = Color.FromArgb("#E2E8F0") });
-            
-            return container;
+            row.GestureRecognizers.Add(tapGesture);
+
+            return new Border
+            {
+                BackgroundColor = selected ? Color.FromArgb("#F5F3FF") : Color.FromArgb("#FAFAFA"),
+                Stroke = selected ? Color.FromArgb("#C4B5FD") : Color.FromArgb("#E2E8F0"),
+                StrokeThickness = 1,
+                StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                Content = row
+            };
         }
 
         private void OnParentCategorySelected(MenuCategory category)
@@ -2115,30 +2102,26 @@ namespace POS_in_NET.Pages
         private void BuildSubCategoryColorPicker()
         {
             SubCategoryColorPickerContainer.Children.Clear();
-            
+
             foreach (var color in _presetColors)
             {
+                var selected = color == _selectedColor;
                 var colorBorder = new Border
                 {
                     BackgroundColor = Color.FromArgb(color),
-                    WidthRequest = 36,
-                    HeightRequest = 36,
-                    StrokeShape = new RoundRectangle { CornerRadius = 8 },
-                    StrokeThickness = color == _selectedColor ? 3 : 0,
-                    Stroke = Colors.White,
+                    WidthRequest = 28,
+                    HeightRequest = 28,
+                    StrokeShape = new RoundRectangle { CornerRadius = 14 },
+                    StrokeThickness = selected ? 2.5 : 2,
+                    Stroke = selected ? Color.FromArgb("#0F172A") : Colors.White,
                     Margin = new Thickness(0, 0, 8, 8)
                 };
-                
-                if (color == _selectedColor)
-                {
-                    colorBorder.Shadow = new Shadow { Brush = Colors.Black, Offset = new Point(0, 2), Radius = 4, Opacity = 0.3f };
-                }
-                
+
                 var tap = new TapGestureRecognizer();
                 var capturedColor = color;
                 tap.Tapped += (s, e) => SelectSubCategoryColor(capturedColor);
                 colorBorder.GestureRecognizers.Add(tap);
-                
+
                 SubCategoryColorPickerContainer.Children.Add(colorBorder);
             }
         }
@@ -2249,7 +2232,7 @@ namespace POS_in_NET.Pages
             {
                 _isSavingSubCategory = false;
                 SaveSubCategoryButton.IsEnabled = true;
-                SaveSubCategoryButton.Text = "Save Sub-Category";
+                SaveSubCategoryButton.Text = "Save sub-category";
             }
         }
 

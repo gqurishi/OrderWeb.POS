@@ -20,6 +20,9 @@ public static class ClientHostAccess
     /// <summary>SharedUI Manager sidebar — same list Mother flyout uses.</summary>
     private static readonly HashSet<string> MotherManagerHostRoutes = new(PosRoleMenus.Manager, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>SharedUI Bar Manager sidebar — inventory only.</summary>
+    private static readonly HashSet<string> MotherBarManagerHostRoutes = new(PosRoleMenus.BarManager, StringComparer.OrdinalIgnoreCase);
+
     public static IReadOnlySet<string> Features => _features;
     public static IReadOnlySet<string> Routes => _routes;
     public static string? SessionRole => _sessionRole;
@@ -44,6 +47,14 @@ public static class ClientHostAccess
             return WithoutRider(managerRoutes);
         }
 
+        if (string.Equals(role, "BarManager", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Bar Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            var barRoutes = new HashSet<string>(MotherBarManagerHostRoutes, StringComparer.OrdinalIgnoreCase);
+            barRoutes.IntersectWith(Routes);
+            return WithoutRider(barRoutes);
+        }
+
         return WithoutRider(Routes);
     }
 
@@ -57,6 +68,12 @@ public static class ClientHostAccess
     /// </summary>
     public static IReadOnlySet<string> DashboardRoutesForRole(string? role)
     {
+        if (string.Equals(role, "BarManager", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Bar Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return RoutesForRole(role);
+        }
+
         if (!string.Equals(role, "User", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
@@ -142,9 +159,11 @@ public static class ClientHostAccess
         "loyalty points" or "loyalty" => "loyalty",
         "reservation" or "reservations" => "reservation",
         "order history" => "orderhistory",
+        "advance orders" => "advanceorders",
         "recent customers" => "customerdata",
         "customers" => "customers",
         "payment" or "payments" => "payments",
+        "bar inventory" or "inventory" => "inventory",
         _ => string.Empty
     };
 

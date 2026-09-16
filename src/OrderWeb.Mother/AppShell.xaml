@@ -150,6 +150,12 @@
         Shell.FlyoutItemIsVisible="False" />
 
     <ShellContent
+        ContentTemplate="{DataTemplate pages:AdvanceOrdersPage}"
+        Route="advanceorders"
+        Shell.NavBarIsVisible="False"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
         ContentTemplate="{DataTemplate pages:ReservationPage}"
         Route="reservation"
         Shell.NavBarIsVisible="False"

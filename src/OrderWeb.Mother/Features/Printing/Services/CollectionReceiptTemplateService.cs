@@ -414,9 +414,10 @@ public static class CollectionReceiptTemplateService
         PrintOrderInfo(builder, orderReference, DateTime.Now, settings);
         if (order.ScheduledTime.HasValue)
         {
+            var scheduleLabel = isDelivery ? "Delivery time" : "Collection time";
             PrintStyledWrapped(
                 builder,
-                $"Pickup: {order.ScheduledTime.Value:dd MMM HH:mm}",
+                $"{scheduleLabel}: {order.ScheduledTime.Value:dd MMM HH:mm}",
                 settings.OrderInfoSize,
                 true);
         }
@@ -712,6 +713,17 @@ public static class CollectionReceiptTemplateService
         }
 
         PrintOrderInfo(builder, orderReference, printedAt, settings);
+        if (order.ScheduledTime.HasValue &&
+            receiptKind is CustomerReceiptKind.Delivery or CustomerReceiptKind.Collection)
+        {
+            var label = receiptKind == CustomerReceiptKind.Delivery ? "Delivery time" : "Collection time";
+            PrintStyledWrapped(
+                builder,
+                $"{label}: {order.ScheduledTime.Value:dd MMM HH:mm}",
+                settings.OrderInfoSize,
+                true);
+        }
+
         builder.FeedLines(1);
 
         if (receiptKind is CustomerReceiptKind.TableBill or CustomerReceiptKind.TablePayment)

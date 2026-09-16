@@ -136,6 +136,7 @@ public class SharedClientDashboardPage : ContentPage
             "orderhistory" => new OrderHistoryPage(),
             "customerdata" => new RecentCustomersPage(),
             "customers" => new RecentCustomersPage(),
+            "inventory" => new BarInventoryPage(),
             _ => null
         };
 

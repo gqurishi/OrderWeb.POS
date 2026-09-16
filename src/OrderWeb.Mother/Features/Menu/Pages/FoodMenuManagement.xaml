@@ -428,86 +428,93 @@
         </Grid>
         
         <!-- Add Category Dialog Overlay -->
-        <Grid x:Name="AddCategoryDialog" 
-              Grid.RowSpan="3" 
-              IsVisible="False" 
+        <Grid x:Name="AddCategoryDialog"
+              Grid.RowSpan="3"
+              IsVisible="False"
               BackgroundColor="#80000000"
               ZIndex="1000">
             <Border BackgroundColor="White"
-                    WidthRequest="500"
+                    WidthRequest="400"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 16"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 14"
                     Padding="0">
                 <Border.Shadow>
-                    <Shadow Brush="#40000000" Offset="0,10" Radius="30" Opacity="0.3"/>
+                    <Shadow Brush="#0F172A" Offset="0,6" Radius="16" Opacity="0.12"/>
                 </Border.Shadow>
-                
+
                 <Grid RowDefinitions="Auto,*,Auto">
-                    <!-- Dialog Header -->
-                    <Grid Grid.Row="0" 
-                          BackgroundColor="#10B981"
-                          Padding="24,18">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Label Grid.Column="0"
-                                   x:Name="CategoryDialogTitle"
-                                   Text="Add New Category"
+                    <!-- Header -->
+                    <Grid Grid.Row="0" Padding="16,14" ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                            <Label x:Name="CategoryDialogTitle"
+                                   Text="Add category"
+                                   FontSize="17"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A" />
+                            <Label Text="Name, colour, then save"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Border Grid.Column="1"
+                                BackgroundColor="#F1F5F9"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 16"
+                                WidthRequest="32"
+                                HeightRequest="32"
+                                VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCategoryDialogClose"/>
+                            </Border.GestureRecognizers>
+                            <Label Text="×"
                                    FontSize="18"
                                    FontAttributes="Bold"
-                                   TextColor="White"
-                                   VerticalOptions="Center"/>
-                            <Button Grid.Column="1"
-                                    Text="X"
-                                    FontSize="16"
-                                    TextColor="White"
-                                    BackgroundColor="#EF4444"
-                                    WidthRequest="36"
-                                    HeightRequest="36"
-                                    CornerRadius="18"
-                                    Padding="0"
-                                    Clicked="OnCategoryDialogClose"/>
-                        </Grid>
+                                   TextColor="#64748B"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
                     </Grid>
-                    
-                    <!-- Dialog Content -->
-                    <VerticalStackLayout Grid.Row="1" Padding="24" Spacing="20">
-                        <!-- Name Field -->
-                        <VerticalStackLayout Spacing="8">
+
+                    <VerticalStackLayout Grid.Row="1" Padding="16,0,16,8" Spacing="12">
+                        <VerticalStackLayout Spacing="4">
                             <Label Text="Name *"
-                                   FontSize="14"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"/>
+                                   TextColor="#475569"/>
                             <Border BackgroundColor="#F8FAFC"
                                     Stroke="#E2E8F0"
                                     StrokeThickness="1"
                                     StrokeShape="RoundRectangle 8"
-                                    Padding="12,0">
+                                    Padding="12,0"
+                                    HeightRequest="42">
                                 <Entry x:Name="CategoryNameEntry"
-                                       Placeholder="Category name"
+                                       Placeholder="e.g. Starters"
                                        PlaceholderColor="#94A3B8"
-                                       FontSize="15"
-                                       TextColor="#1E293B"
-                                       HeightRequest="48"/>
+                                       FontSize="14"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="Transparent"
+                                       VerticalOptions="Center"/>
                             </Border>
                         </VerticalStackLayout>
-                        
-                        <!-- Color Selection -->
-                        <VerticalStackLayout Spacing="8">
-                            <Label Text="Color"
-                                   FontSize="14"
+
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Colour"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"/>
-                            <FlexLayout x:Name="ColorPickerContainer" 
-                                        Wrap="Wrap" 
+                                   TextColor="#475569"/>
+                            <FlexLayout x:Name="ColorPickerContainer"
+                                        Wrap="Wrap"
                                         JustifyContent="Start"
                                         AlignItems="Center"/>
-                            
-                            <!-- Custom Color Option -->
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                                 <Label Grid.Column="0"
-                                       Text="Custom:"
-                                       FontSize="13"
+                                       Text="Custom"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
                                        TextColor="#64748B"
                                        VerticalOptions="Center"/>
                                 <Border Grid.Column="1"
@@ -515,158 +522,168 @@
                                         Stroke="#E2E8F0"
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 8"
-                                        Padding="12,0"
-                                        HeightRequest="40">
+                                        Padding="10,0"
+                                        HeightRequest="36">
                                     <Entry x:Name="CustomColorEntry"
-                                           Placeholder="#HEX (e.g. #FF5733)"
+                                           Placeholder="#HEX"
                                            PlaceholderColor="#94A3B8"
                                            FontSize="13"
-                                           TextColor="#1E293B"
+                                           TextColor="#0F172A"
+                                           BackgroundColor="Transparent"
                                            VerticalOptions="Center"
                                            TextChanged="OnCustomColorTextChanged"/>
                                 </Border>
                                 <Border x:Name="CustomColorPreview"
                                         Grid.Column="2"
-                                        BackgroundColor="#CCCCCC"
-                                        WidthRequest="40"
-                                        HeightRequest="40"
-                                        StrokeShape="RoundRectangle 8"
+                                        BackgroundColor="#E2E8F0"
+                                        WidthRequest="28"
+                                        HeightRequest="28"
+                                        StrokeShape="RoundRectangle 14"
                                         StrokeThickness="2"
-                                        Stroke="#E2E8F0"/>
+                                        Stroke="#FFFFFF"
+                                        VerticalOptions="Center"/>
                             </Grid>
                         </VerticalStackLayout>
-                        
-                        <!-- Active Toggle -->
-                        <Grid ColumnDefinitions="*,Auto" Padding="0,10">
-                            <Label Grid.Column="0"
-                                   Text="Active"
-                                   FontSize="14"
+
+                        <HorizontalStackLayout Spacing="8">
+                            <Label Text="Active"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"
+                                   TextColor="#475569"
                                    VerticalOptions="Center"/>
                             <Switch x:Name="CategoryActiveSwitch"
-                                    Grid.Column="1"
                                     IsToggled="True"
-                                    OnColor="#10B981"/>
-                        </Grid>
+                                    OnColor="#059669"
+                                    ThumbColor="White"
+                                    Scale="0.85"
+                                    VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
                     </VerticalStackLayout>
-                    
-                    <!-- Dialog Buttons -->
-                    <Grid Grid.Row="2" 
-                          ColumnDefinitions="*,*" 
-                          ColumnSpacing="12"
-                          Padding="24,16"
-                          BackgroundColor="#F8FAFC">
+
+                    <Grid Grid.Row="2"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="8"
+                          Padding="16,10">
                         <Button Grid.Column="0"
                                 Text="Cancel"
-                                BackgroundColor="#E2E8F0"
-                                TextColor="#64748B"
-                                FontSize="15"
+                                BackgroundColor="#F8FAFC"
+                                TextColor="#475569"
+                                BorderColor="#E2E8F0"
+                                BorderWidth="1"
+                                FontSize="13"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
-                                HeightRequest="48"
+                                CornerRadius="8"
+                                HeightRequest="40"
                                 Clicked="OnCategoryDialogClose"/>
                         <Button Grid.Column="1"
                                 x:Name="SaveCategoryButton"
-                                Text="Save Category"
-                                BackgroundColor="#10B981"
+                                Text="Save category"
+                                BackgroundColor="#059669"
                                 TextColor="White"
-                                FontSize="15"
+                                FontSize="13"
                                 FontAttributes="Bold"
-                                CornerRadius="10"
-                                HeightRequest="48"
+                                CornerRadius="8"
+                                HeightRequest="40"
                                 Clicked="OnSaveCategoryClicked"/>
                     </Grid>
                 </Grid>
             </Border>
         </Grid>
-        
+
         <!-- Add Sub-Category Dialog Overlay -->
-        <Grid x:Name="AddSubCategoryDialog" 
-              Grid.RowSpan="3" 
-              IsVisible="False" 
+        <Grid x:Name="AddSubCategoryDialog"
+              Grid.RowSpan="3"
+              IsVisible="False"
               BackgroundColor="#80000000"
               ZIndex="1000">
             <Border BackgroundColor="White"
-                    WidthRequest="700"
+                    WidthRequest="420"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 20"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 14"
                     Padding="0">
                 <Border.Shadow>
-                    <Shadow Brush="#40000000" Offset="0,10" Radius="30" Opacity="0.3"/>
+                    <Shadow Brush="#0F172A" Offset="0,6" Radius="16" Opacity="0.12"/>
                 </Border.Shadow>
-                
+
                 <Grid RowDefinitions="Auto,*,Auto">
-                    <!-- Dialog Header -->
-                    <Grid Grid.Row="0" 
-                          BackgroundColor="#8B5CF6"
-                          Padding="32,22">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Label Grid.Column="0"
-                                   x:Name="SubCategoryDialogTitle"
-                                   Text="Add New Sub-Category"
-                                   FontSize="22"
+                    <Grid Grid.Row="0" Padding="16,14" ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                            <Label x:Name="SubCategoryDialogTitle"
+                                   Text="Add sub-category"
+                                   FontSize="17"
                                    FontAttributes="Bold"
-                                   TextColor="White"
-                                   VerticalOptions="Center"/>
-                            <Button Grid.Column="1"
-                                    Text="X"
-                                    FontSize="18"
-                                    TextColor="White"
-                                    BackgroundColor="#EF4444"
-                                    WidthRequest="42"
-                                    HeightRequest="42"
-                                    CornerRadius="21"
-                                    Padding="0"
-                                    Clicked="OnSubCategoryDialogClose"/>
-                        </Grid>
+                                   TextColor="#0F172A" />
+                            <Label Text="Pick a parent, then name it"
+                                   FontSize="12"
+                                   TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Border Grid.Column="1"
+                                BackgroundColor="#F1F5F9"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 16"
+                                WidthRequest="32"
+                                HeightRequest="32"
+                                VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnSubCategoryDialogClose"/>
+                            </Border.GestureRecognizers>
+                            <Label Text="×"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
                     </Grid>
-                    
-                    <!-- Dialog Content -->
-                    <VerticalStackLayout Grid.Row="1" Padding="32,28" Spacing="24">
-                        <!-- Name Field -->
-                        <VerticalStackLayout Spacing="10">
+
+                    <VerticalStackLayout Grid.Row="1" Padding="16,0,16,8" Spacing="12">
+                        <VerticalStackLayout Spacing="4">
                             <Label Text="Name *"
-                                   FontSize="16"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"/>
+                                   TextColor="#475569"/>
                             <Border BackgroundColor="#F8FAFC"
                                     Stroke="#E2E8F0"
                                     StrokeThickness="1"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="16,0">
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="12,0"
+                                    HeightRequest="42">
                                 <Entry x:Name="SubCategoryNameEntry"
-                                       Placeholder="Sub-category name"
+                                       Placeholder="e.g. Vegetarian"
                                        PlaceholderColor="#94A3B8"
-                                       FontSize="17"
-                                       TextColor="#1E293B"
-                                       HeightRequest="54"/>
+                                       FontSize="14"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="Transparent"
+                                       VerticalOptions="Center"/>
                             </Border>
                         </VerticalStackLayout>
-                        
-                        <!-- Parent Category Selection -->
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Parent Category *"
-                                   FontSize="16"
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Parent category *"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"/>
+                                   TextColor="#475569"/>
                             <Border BackgroundColor="#F8FAFC"
                                     Stroke="#E2E8F0"
                                     StrokeThickness="1"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="20,18">
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="12,0"
+                                    HeightRequest="42">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <Label x:Name="ParentCategoryLabel"
                                            Grid.Column="0"
-                                           Text="Select parent category"
-                                           FontSize="17"
+                                           Text="Select parent…"
+                                           FontSize="14"
                                            TextColor="#94A3B8"
                                            VerticalOptions="Center"/>
                                     <Label Grid.Column="1"
                                            Text="▼"
-                                           FontSize="16"
+                                           FontSize="11"
                                            TextColor="#64748B"
                                            VerticalOptions="Center"/>
                                     <Grid.GestureRecognizers>
@@ -675,23 +692,21 @@
                                 </Grid>
                             </Border>
                         </VerticalStackLayout>
-                        
-                        <!-- Color Selection -->
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Color"
-                                   FontSize="16"
+
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Colour"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"/>
-                            <FlexLayout x:Name="SubCategoryColorPickerContainer" 
-                                        Wrap="Wrap" 
+                                   TextColor="#475569"/>
+                            <FlexLayout x:Name="SubCategoryColorPickerContainer"
+                                        Wrap="Wrap"
                                         JustifyContent="Start"
                                         AlignItems="Center"/>
-                            
-                            <!-- Custom Color Option -->
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                                 <Label Grid.Column="0"
-                                       Text="Custom:"
-                                       FontSize="13"
+                                       Text="Custom"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
                                        TextColor="#64748B"
                                        VerticalOptions="Center"/>
                                 <Border Grid.Column="1"
@@ -699,73 +714,74 @@
                                         Stroke="#E2E8F0"
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 8"
-                                        Padding="12,0"
-                                        HeightRequest="40">
+                                        Padding="10,0"
+                                        HeightRequest="36">
                                     <Entry x:Name="SubCategoryCustomColorEntry"
-                                           Placeholder="#HEX (e.g. #FF5733)"
+                                           Placeholder="#HEX"
                                            PlaceholderColor="#94A3B8"
                                            FontSize="13"
-                                           TextColor="#1E293B"
+                                           TextColor="#0F172A"
+                                           BackgroundColor="Transparent"
                                            VerticalOptions="Center"
                                            TextChanged="OnSubCategoryCustomColorTextChanged"/>
                                 </Border>
                                 <Border x:Name="SubCategoryCustomColorPreview"
                                         Grid.Column="2"
-                                        BackgroundColor="#CCCCCC"
-                                        WidthRequest="40"
-                                        HeightRequest="40"
-                                        StrokeShape="RoundRectangle 8"
+                                        BackgroundColor="#E2E8F0"
+                                        WidthRequest="28"
+                                        HeightRequest="28"
+                                        StrokeShape="RoundRectangle 14"
                                         StrokeThickness="2"
-                                        Stroke="#E2E8F0"/>
+                                        Stroke="#FFFFFF"
+                                        VerticalOptions="Center"/>
                             </Grid>
                         </VerticalStackLayout>
-                        
-                        <!-- Active Toggle -->
-                        <Grid ColumnDefinitions="*,Auto" Padding="0,12">
-                            <Label Grid.Column="0"
-                                   Text="Active"
-                                   FontSize="16"
+
+                        <HorizontalStackLayout Spacing="8">
+                            <Label Text="Active"
+                                   FontSize="12"
                                    FontAttributes="Bold"
-                                   TextColor="#334155"
+                                   TextColor="#475569"
                                    VerticalOptions="Center"/>
                             <Switch x:Name="SubCategoryActiveSwitch"
-                                    Grid.Column="1"
                                     IsToggled="True"
-                                    Scale="1.2"
-                                    OnColor="#8B5CF6"/>
-                        </Grid>
+                                    OnColor="#7C3AED"
+                                    ThumbColor="White"
+                                    Scale="0.85"
+                                    VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
                     </VerticalStackLayout>
-                    
-                    <!-- Dialog Buttons -->
-                    <Grid Grid.Row="2" 
-                          ColumnDefinitions="*,*" 
-                          ColumnSpacing="16"
-                          Padding="32,20"
-                          BackgroundColor="#F8FAFC">
+
+                    <Grid Grid.Row="2"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="8"
+                          Padding="16,10">
                         <Button Grid.Column="0"
                                 Text="Cancel"
-                                BackgroundColor="#E2E8F0"
-                                TextColor="#64748B"
-                                FontSize="16"
+                                BackgroundColor="#F8FAFC"
+                                TextColor="#475569"
+                                BorderColor="#E2E8F0"
+                                BorderWidth="1"
+                                FontSize="13"
                                 FontAttributes="Bold"
-                                CornerRadius="12"
-                                HeightRequest="54"
+                                CornerRadius="8"
+                                HeightRequest="40"
                                 Clicked="OnSubCategoryDialogClose"/>
                         <Button Grid.Column="1"
                                 x:Name="SaveSubCategoryButton"
-                                Text="Save Sub-Category"
-                                BackgroundColor="#8B5CF6"
+                                Text="Save sub-category"
+                                BackgroundColor="#7C3AED"
                                 TextColor="White"
-                                FontSize="16"
+                                FontSize="13"
                                 FontAttributes="Bold"
-                                CornerRadius="12"
-                                HeightRequest="54"
+                                CornerRadius="8"
+                                HeightRequest="40"
                                 Clicked="OnSaveSubCategoryClicked"/>
                     </Grid>
                 </Grid>
             </Border>
         </Grid>
-        
+
         <!-- Parent Category Selection Dialog -->
         <Grid x:Name="ParentCategorySelectionDialog"
               Grid.RowSpan="3"
@@ -774,50 +790,54 @@
               ZIndex="2000"
               Padding="40">
             <Border BackgroundColor="White"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 20"
-                    WidthRequest="600"
-                    MaximumHeightRequest="680"
+                    Stroke="#E2E8F0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 14"
+                    WidthRequest="420"
+                    MaximumHeightRequest="520"
                     VerticalOptions="Center"
                     HorizontalOptions="Center">
                 <Border.Shadow>
-                    <Shadow Brush="Black" Offset="0,8" Radius="24" Opacity="0.15"/>
+                    <Shadow Brush="#0F172A" Offset="0,6" Radius="16" Opacity="0.12"/>
                 </Border.Shadow>
                 <Grid RowDefinitions="Auto,*" Padding="0">
-                    <!-- Header -->
-                    <Grid Grid.Row="0" 
-                          BackgroundColor="#8B5CF6" 
-                          Padding="36,26"
+                    <Grid Grid.Row="0"
+                          Padding="16,14"
                           ColumnDefinitions="*,Auto">
-                        <Label Grid.Column="0"
-                               Text="Select Parent Category"
-                               FontSize="24"
-                               FontAttributes="Bold"
-                               TextColor="White"
-                               VerticalOptions="Center"/>
-                        <Border Grid.Column="1"
-                                BackgroundColor="#EF4444"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 24"
-                                WidthRequest="48"
-                                HeightRequest="48"
-                                VerticalOptions="Center">
-                            <Label Text="X"
-                                   FontSize="22"
+                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                            <Label Text="Parent category"
+                                   FontSize="17"
                                    FontAttributes="Bold"
-                                   TextColor="White"
-                                   HorizontalOptions="Center"
+                                   TextColor="#0F172A"
                                    VerticalOptions="Center"/>
+                            <Label Text="Choose where this sub-category belongs"
+                                   FontSize="12"
+                                   TextColor="#64748B"/>
+                        </VerticalStackLayout>
+                        <Border Grid.Column="1"
+                                BackgroundColor="#F1F5F9"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 16"
+                                WidthRequest="32"
+                                HeightRequest="32"
+                                VerticalOptions="Center">
+                            <Label Text="×"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center"
+                                   HorizontalTextAlignment="Center"/>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnCloseParentCategoryDialog"/>
                             </Border.GestureRecognizers>
                         </Border>
                     </Grid>
-                    
-                    <!-- Category List -->
-                    <ScrollView Grid.Row="1" Padding="0" MaximumHeightRequest="550">
-                        <VerticalStackLayout x:Name="ParentCategoryListContainer" 
-                                           Spacing="0"
+
+                    <ScrollView Grid.Row="1" Padding="12,0,12,14" MaximumHeightRequest="420">
+                        <VerticalStackLayout x:Name="ParentCategoryListContainer"
+                                           Spacing="8"
                                            Padding="0"/>
                     </ScrollView>
                 </Grid>

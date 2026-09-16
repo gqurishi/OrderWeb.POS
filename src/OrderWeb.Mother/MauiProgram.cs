@@ -180,6 +180,8 @@ public static class MauiProgram
 		
 		// Register OrderService
 		builder.Services.AddSingleton<OrderService>();
+		builder.Services.AddSingleton<AdvanceOrderService>();
+		builder.Services.AddSingleton<AdvanceOrderReminderPresenter>();
 		
 		// Register OrderWeb UK address lookup service
 		builder.Services.AddSingleton<PostcodeLookupService>();

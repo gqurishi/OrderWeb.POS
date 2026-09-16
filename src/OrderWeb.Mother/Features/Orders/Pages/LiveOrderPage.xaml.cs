@@ -629,24 +629,26 @@ namespace POS_in_NET.Pages
                 order.PaidAt = DateTime.Now;
                 order.CompletedTime = DateTime.Now;
                 order.UpdatedAt = DateTime.Now;
-
-                var tenderSaved = await orderService.ApplyPosTenderAsync(order.OrderId, tender, order.AmountPaid ?? paidAmount);
-                if (!tenderSaved)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[LiveOrder] ApplyPosTenderAsync missed for {order.OrderId}; closing status still attempted.");
-                }
-
-                var closed = await orderService.UpdateOrderStatusAsync(order.Id, OrderStatus.Completed);
-                if (!closed)
-                {
-                    await AppAlertService.ShowAlertAsync(
-                        "Payment Saved",
-                        "Payment was recorded, but the order could not be closed. Check Order History.");
-                }
-
                 order.LocalLifecycleState = LocalLifecycleState.Paid;
                 order.IsOpen = false;
                 order.Status = OrderStatus.Completed;
+
+                var closed = await orderService.CloseOrderWithPosTenderAsync(
+                    order.Id,
+                    order.OrderId,
+                    tender,
+                    order.AmountPaid ?? paidAmount);
+                if (!closed)
+                {
+                    // Fallback: status-only close if the combined update missed.
+                    closed = await orderService.UpdateOrderStatusAsync(order.Id, OrderStatus.Completed);
+                    if (!closed)
+                    {
+                        await AppAlertService.ShowAlertAsync(
+                            "Payment Saved",
+                            "Payment was recorded, but the order could not be closed. Check Order History.");
+                    }
+                }
 
                 var cloudSynced = await SendWebOrderSettlementAsync(order, tender, staffName);
 

@@ -570,6 +570,12 @@ public sealed partial class ClientPosOperationalService
                 // Keep Mother order notes when Client omits Notes on a line-edit upsert.
                 order.SpecialInstructions = existing.SpecialInstructions;
             }
+
+            if (!order.ScheduledTime.HasValue && existing.ScheduledTime.HasValue)
+            {
+                // Keep advance delivery time when Client line edits omit ScheduledTime.
+                order.ScheduledTime = existing.ScheduledTime;
+            }
         }
         else if (orderType == "table")
         {
@@ -1228,7 +1234,9 @@ public sealed partial class ClientPosOperationalService
             order.ServiceChargePercentage,
             order.LoyaltyPointsEarned,
             order.SourceChannel,
-            order.PaymentMethod);
+            order.PaymentMethod,
+            order.ScheduledTime.HasValue ? order.ScheduledTime.Value.ToString("O") : null,
+            Math.Max(0m, order.AmountPaid ?? 0m));
     }
 
     private static string? ResolveTastingMenuId(string menuItemId)
@@ -1774,7 +1782,9 @@ public sealed record ClientOperationalOrder(
     decimal ServiceChargePercent = 0m,
     int LoyaltyPointsEarned = 0,
     string? SourceChannel = null,
-    string? PaymentMethod = null);
+    string? PaymentMethod = null,
+    string? ScheduledTime = null,
+    decimal AmountPaid = 0m);
 
 public sealed record ClientOperationalOrderLine(
     string Id,

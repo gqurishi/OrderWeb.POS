@@ -86,7 +86,7 @@ public sealed class PaymentMethodDialog : ContentView
                 {
                     new Label
                     {
-                        Text = "AMOUNT DUE:",
+                        Text = "THIS PAYMENT:",
                         FontSize = 24,
                         FontAttributes = FontAttributes.Bold,
                         TextColor = Color.FromArgb("#92400E"),
@@ -161,7 +161,7 @@ public sealed class PaymentMethodDialog : ContentView
                 {
                     new Label
                     {
-                        Text = "REMAINING BALANCE:",
+                        Text = "LEFT ON BILL AFTER THIS:",
                         FontSize = 18,
                         FontAttributes = FontAttributes.Bold,
                         TextColor = Color.FromArgb("#DC2626"),

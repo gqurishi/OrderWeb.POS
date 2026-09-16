@@ -169,6 +169,7 @@ public partial class App : Application
 
 			_cloudOrderService = serviceProvider.GetService<CloudOrderService>();
 			serviceProvider.GetService<OnlineOrderPrintNoticePresenter>()?.Start();
+			serviceProvider.GetService<AdvanceOrderReminderPresenter>()?.Start();
 
 			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
 			if (reservationSyncService != null)

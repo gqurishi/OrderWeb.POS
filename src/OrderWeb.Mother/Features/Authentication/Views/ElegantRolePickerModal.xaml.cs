@@ -20,7 +20,7 @@ namespace POS_in_NET.Views
                 if (sender is Button button)
                 {
                     string role = button.Text;
-                    if (Enum.TryParse<UserRole>(role, true, out UserRole userRole))
+                    if (UserRoleDisplay.TryParse(role, out UserRole userRole))
                     {
                         RoleSelected?.Invoke(this, userRole);
                         await Navigation.PopModalAsync();

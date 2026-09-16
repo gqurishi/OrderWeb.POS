@@ -120,6 +120,32 @@
                             </StackLayout>
                         </Grid>
                     </Border>
+
+                    <!-- Bar Manager Role -->
+                    <Border Padding="20">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="16"/>
+                        </Border.StrokeShape>
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#F0FDFA" Offset="0.0"/>
+                                <GradientStop Color="#CCFBF1" Offset="1.0"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnRoleSelected"/>
+                        </Border.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#0F766E" WidthRequest="48" HeightRequest="48" Grid.Column="0" VerticalOptions="Center">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="12"/></Border.StrokeShape>
+                                <Label Text="B" FontFamily="InterBold" FontSize="18" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center"/>
+                            </Border>
+                            <StackLayout Grid.Column="1" Margin="16,0,0,0" VerticalOptions="Center" Spacing="4">
+                                <Button Text="Bar Manager" FontFamily="InterBold" FontSize="18" TextColor="#0F172A" BackgroundColor="Transparent" HorizontalOptions="Start" Clicked="OnRoleSelected"/>
+                                <Label Text="Bar Inventory stock workspace only" FontFamily="InterRegular" FontSize="14" TextColor="#64748B"/>
+                            </StackLayout>
+                        </Grid>
+                    </Border>
                     
                     <!-- Manager Role -->
                     <Border Padding="20">

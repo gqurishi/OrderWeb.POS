@@ -21,6 +21,9 @@ public sealed class OrderPlaceShellView : ContentView
     private readonly Label _detail;
     private readonly Label _tableLabel;
     private readonly Label _status;
+    private readonly Border _partialPaymentBanner;
+    private readonly Label _partialPaymentTitle;
+    private readonly Label _partialPaymentDetail;
     private readonly OrderTotalsBlock _totals;
     private readonly Label _discountLabel;
     private readonly Grid _discountRow;
@@ -119,6 +122,35 @@ public sealed class OrderPlaceShellView : ContentView
         _status = new Label { FontSize = 12, IsVisible = false, LineBreakMode = LineBreakMode.WordWrap };
         _status.Use(Label.TextColorProperty, "OwWarningText");
 
+        _partialPaymentTitle = new Label
+        {
+            Text = "Partial payment",
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 13,
+            TextColor = Color.FromArgb("#9A3412")
+        };
+        _partialPaymentDetail = new Label
+        {
+            FontSize = 12,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#C2410C"),
+            LineBreakMode = LineBreakMode.TailTruncation
+        };
+        _partialPaymentBanner = new Border
+        {
+            IsVisible = false,
+            StrokeThickness = 1,
+            Stroke = Color.FromArgb("#FDBA74"),
+            BackgroundColor = Color.FromArgb("#FFF7ED"),
+            Padding = new Thickness(12, 8),
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 8 },
+            Content = new VerticalStackLayout
+            {
+                Spacing = 2,
+                Children = { _partialPaymentTitle, _partialPaymentDetail }
+            }
+        };
+
         _notes = new PosActionButton { Text = "NOTES", Role = PosActionRole.Secondary };
         _void = new PosActionButton { Text = "VOID", Role = PosActionRole.Destructive };
         _more = new PosActionButton { Text = "MORE ▼", Role = PosActionRole.Utility };
@@ -215,6 +247,7 @@ public sealed class OrderPlaceShellView : ContentView
             RowDefinitions =
             {
                 new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Star),
                 new RowDefinition(GridLength.Auto)
             },
@@ -222,8 +255,9 @@ public sealed class OrderPlaceShellView : ContentView
             Padding = new Thickness(12)
         };
         right.Add(header);
-        right.Add(new ScrollView { Content = _lines }, 0, 1);
-        right.Add(bottom, 0, 2);
+        right.Add(_partialPaymentBanner, 0, 1);
+        right.Add(new ScrollView { Content = _lines }, 0, 2);
+        right.Add(bottom, 0, 3);
         right.Use(Grid.BackgroundColorProperty, "OwSurface");
 
         var rightBorder = WrapPanel(right);
@@ -291,6 +325,18 @@ public sealed class OrderPlaceShellView : ContentView
         _totals.Total = session.Total;
         _totals.ShowServiceCharge = session.ShowServiceCharge;
         _totals.ShowDeliveryFee = session.ShowDeliveryFee;
+
+        if (session.HasPartialPayment)
+        {
+            _partialPaymentBanner.IsVisible = true;
+            _partialPaymentTitle.Text = "Partial payment on this bill";
+            _partialPaymentDetail.Text =
+                $"Paid £{session.AmountPaid:F2}  ·  Left £{session.AmountRemaining:F2}";
+        }
+        else
+        {
+            _partialPaymentBanner.IsVisible = false;
+        }
 
         _discountRow.IsVisible = session.Discount > 0;
         _discountLabel.Text = $"-£{session.Discount:F2}";

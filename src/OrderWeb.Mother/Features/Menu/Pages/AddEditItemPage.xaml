@@ -5,805 +5,867 @@
              xmlns:inputs="clr-namespace:Syncfusion.Maui.Inputs;assembly=Syncfusion.Maui.Inputs"
              x:Class="POS_in_NET.Pages.AddEditItemPage"
              Title="Menu Item"
-             BackgroundColor="{StaticResource Background}">
+             BackgroundColor="#F1F5F9">
 
     <Grid>
         <Grid RowDefinitions="Auto,*,Auto"
               x:Name="MainContentGrid">
-        
-        <!-- Modern Header -->
-        <Border Grid.Row="0" 
-                BackgroundColor="White"
-                StrokeThickness="0"
-                Padding="0">
-            <Border.Shadow>
-                <Shadow Brush="Black" Offset="0,2" Radius="10" Opacity="0.05" />
-            </Border.Shadow>
-            
-            <Grid Padding="16,10" ColumnDefinitions="Auto,*,Auto">
-                <!-- Back/Close Button -->
-                <Button Grid.Column="0"
-                        Text="← Back"
-                        FontSize="13"
-                        FontAttributes="Bold"
-                        TextColor="#64748B"
-                        BackgroundColor="#F1F5F9"
-                        CornerRadius="8"
-                        Padding="12,6"
-                        Clicked="OnBackClicked"
-                        HorizontalOptions="Start"
-                        VerticalOptions="Center" />
-                
-                <VerticalStackLayout Grid.Column="1" Spacing="1" Margin="12,0,0,0">
-                    <Label x:Name="PageTitle"
-                           Text="Add New Item"
-                           FontSize="18"
-                           FontAttributes="Bold"
-                           TextColor="#1E293B" />
-                    <Label Text="Fill in the details below to create a new menu item"
-                           FontSize="12"
-                           TextColor="#64748B" />
-                </VerticalStackLayout>
-            </Grid>
-        </Border>
 
-        <!-- Scrollable Content with Syncfusion Components -->
-        <ScrollView Grid.Row="1"
-                    x:Name="FormScroll"
-                    VerticalOptions="Fill"
-                    HorizontalOptions="Fill"
-                    VerticalScrollBarVisibility="Always">
-            <VerticalStackLayout Padding="16,10,16,28" Spacing="10">
+            <!-- Header -->
+            <Border Grid.Row="0"
+                    BackgroundColor="White"
+                    StrokeThickness="0"
+                    Padding="0">
+                <Grid Padding="16,10" ColumnDefinitions="Auto,*,Auto">
+                    <Button Grid.Column="0"
+                            Text="← Back"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            TextColor="#059669"
+                            BackgroundColor="#ECFDF5"
+                            BorderColor="#A7F3D0"
+                            BorderWidth="1"
+                            CornerRadius="8"
+                            Padding="12,6"
+                            Clicked="OnBackClicked"
+                            VerticalOptions="Center" />
 
-                <!-- BASIC INFORMATION - Using Syncfusion TextInputLayout -->
-                <Border BackgroundColor="White"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="14">
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
-                    </Border.Shadow>
-                    
-                    <VerticalStackLayout Spacing="10">
-                        <!-- Section Title -->
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                            <BoxView Grid.Column="0"
-                                     WidthRequest="4"
-                                     HeightRequest="14"
-                                     CornerRadius="2"
-                                     BackgroundColor="#10B981"
-                                     VerticalOptions="Center" />
-                            <Label Grid.Column="1"
-                                   Text="Basic Information"
-                                   FontSize="15"
+                    <VerticalStackLayout Grid.Column="1" Spacing="0" Margin="12,0,0,0" VerticalOptions="Center">
+                        <Label x:Name="PageTitle"
+                               Text="Add item"
+                               FontSize="17"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A" />
+                        <Label x:Name="PageSubtitle"
+                               Text="Name, price, then options if you need them"
+                               FontSize="12"
+                               TextColor="#64748B" />
+                    </VerticalStackLayout>
+                </Grid>
+            </Border>
+
+            <ScrollView Grid.Row="1"
+                        x:Name="FormScroll"
+                        VerticalOptions="Fill"
+                        HorizontalOptions="Fill"
+                        VerticalScrollBarVisibility="Never">
+                <VerticalStackLayout Padding="16,12,16,24" Spacing="12">
+
+                    <!-- 1. Details -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
+                            Padding="16,14">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="Details"
+                                   FontSize="13"
                                    FontAttributes="Bold"
-                                   TextColor="#1E293B"
-                                   VerticalOptions="Center" />
-                        </Grid>
+                                   TextColor="#64748B" />
 
-                        <Grid ColumnDefinitions="1.3*,*,*" ColumnSpacing="10">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4">
-                                <Label Text="Item Name *"
-                                       FontSize="13"
+                            <!-- Name -->
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Name *"
+                                       FontSize="12"
                                        FontAttributes="Bold"
                                        TextColor="#475569" />
-                                <Border BackgroundColor="White"
+                                <Border BackgroundColor="#F8FAFC"
                                         StrokeThickness="1"
                                         Stroke="#E2E8F0"
                                         StrokeShape="RoundRectangle 8"
-                                        Padding="0">
+                                        Padding="0"
+                                        HeightRequest="42">
                                     <Entry x:Name="ItemNameEntry"
-                                           Placeholder="e.g., Grilled Chicken"
+                                           Placeholder="e.g. Grilled Chicken"
                                            FontSize="14"
                                            TextColor="#0F172A"
                                            BackgroundColor="Transparent"
                                            MaxLength="50"
-                                           Margin="12,8"
+                                           Margin="12,0"
+                                           VerticalOptions="Center"
                                            TextChanged="OnItemNameChanged" />
                                 </Border>
                             </VerticalStackLayout>
 
-                            <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End">
-                                <Label Text="Category *"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <inputs:SfComboBox x:Name="CategoryComboBox"
-                                                  Placeholder="Select a category"
-                                                  HeightRequest="42"
-                                                  TextColor="#0F172A"
-                                                  PlaceholderColor="#94A3B8"
-                                                  Stroke="#E2E8F0"
-                                                  SelectionChanged="OnCategoryChanged" />
-                            </VerticalStackLayout>
+                            <!-- Category row -->
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label Text="Category *"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <inputs:SfComboBox x:Name="CategoryComboBox"
+                                                      Placeholder="Select category"
+                                                      HeightRequest="40"
+                                                      TextColor="#0F172A"
+                                                      PlaceholderColor="#94A3B8"
+                                                      Stroke="#E2E8F0"
+                                                      SelectionChanged="OnCategoryChanged" />
+                                </VerticalStackLayout>
 
-                            <VerticalStackLayout Grid.Column="2"
-                                                 Spacing="4"
-                                                 VerticalOptions="End"
-                                                 x:Name="SubCategorySection"
-                                                 IsVisible="True">
-                                <Label Text="Sub-Category"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <inputs:SfComboBox x:Name="SubCategoryComboBox"
-                                                  Placeholder="Optional"
-                                                  HeightRequest="42"
-                                                  TextColor="#0F172A"
-                                                  PlaceholderColor="#94A3B8"
-                                                  Stroke="#E2E8F0"
-                                                  SelectionChanged="OnSubCategoryChanged" />
-                            </VerticalStackLayout>
-                        </Grid>
+                                <VerticalStackLayout Grid.Column="1"
+                                                     Spacing="4"
+                                                     x:Name="SubCategorySection"
+                                                     IsVisible="True">
+                                    <Label Text="Sub-category"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <inputs:SfComboBox x:Name="SubCategoryComboBox"
+                                                      Placeholder="Optional"
+                                                      HeightRequest="40"
+                                                      TextColor="#0F172A"
+                                                      PlaceholderColor="#94A3B8"
+                                                      Stroke="#E2E8F0"
+                                                      SelectionChanged="OnSubCategoryChanged" />
+                                </VerticalStackLayout>
+                            </Grid>
 
-                        <Grid ColumnDefinitions="*,1.5*" ColumnSpacing="16">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
-                                <Label Text="Report Type *"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-                                    <Button x:Name="FoodTypeButton"
-                                            Grid.Column="0"
-                                            Text="Food"
-                                            StyleId="Food"
-                                            FontSize="13"
-                                            FontAttributes="Bold"
-                                            CornerRadius="8"
-                                            HeightRequest="36"
-                                            Clicked="OnItemTypeClicked" />
-                                    <Button x:Name="DrinkTypeButton"
-                                            Grid.Column="1"
-                                            Text="Drink"
-                                            StyleId="Drink"
-                                            FontSize="13"
-                                            FontAttributes="Bold"
-                                            CornerRadius="8"
-                                            HeightRequest="36"
-                                            Clicked="OnItemTypeClicked" />
-                                    <Button x:Name="OtherTypeButton"
-                                            Grid.Column="2"
-                                            Text="Other"
-                                            StyleId="Other"
-                                            FontSize="13"
-                                            FontAttributes="Bold"
-                                            CornerRadius="8"
-                                            HeightRequest="36"
-                                            Clicked="OnItemTypeClicked" />
-                                </Grid>
-                            </VerticalStackLayout>
+                            <!-- Type + colour -->
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label Text="Type *"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <HorizontalStackLayout Spacing="6">
+                                        <Button x:Name="FoodTypeButton"
+                                                Text="Food"
+                                                StyleId="Food"
+                                                FontSize="12"
+                                                FontAttributes="Bold"
+                                                CornerRadius="8"
+                                                HeightRequest="34"
+                                                Padding="14,0"
+                                                Clicked="OnItemTypeClicked" />
+                                        <Button x:Name="DrinkTypeButton"
+                                                Text="Drink"
+                                                StyleId="Drink"
+                                                FontSize="12"
+                                                FontAttributes="Bold"
+                                                CornerRadius="8"
+                                                HeightRequest="34"
+                                                Padding="14,0"
+                                                Clicked="OnItemTypeClicked" />
+                                        <Button x:Name="OtherTypeButton"
+                                                Text="Other"
+                                                StyleId="Other"
+                                                FontSize="12"
+                                                FontAttributes="Bold"
+                                                CornerRadius="8"
+                                                HeightRequest="34"
+                                                Padding="14,0"
+                                                Clicked="OnItemTypeClicked" />
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
 
-                            <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
-                                <Label Text="Color Theme"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                    <Border x:Name="ColorChip1"
-                                            StyleId="ColorChip1"
-                                            BackgroundColor="#FEE2E2"
-                                            StrokeThickness="2"
-                                            Stroke="#FEE2E2"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Red"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#DC2626" />
-                                    </Border>
-                                    
-                                    <Border x:Name="ColorChip2"
-                                            StyleId="ColorChip2"
-                                            BackgroundColor="#FED7AA"
-                                            StrokeThickness="2"
-                                            Stroke="#FED7AA"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Orange"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#EA580C" />
-                                    </Border>
-                                    
-                                    <Border x:Name="ColorChip3"
-                                            StyleId="ColorChip3"
-                                            BackgroundColor="#D1FAE5"
-                                            StrokeThickness="3"
-                                            Stroke="#10B981"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Green"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#059669" />
-                                    </Border>
-                                    
-                                    <Border x:Name="ColorChip4"
-                                            StyleId="ColorChip4"
-                                            BackgroundColor="#DBEAFE"
-                                            StrokeThickness="2"
-                                            Stroke="#DBEAFE"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Blue"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#2563EB" />
-                                    </Border>
-                                    
-                                    <Border x:Name="ColorChip5"
-                                            StyleId="ColorChip5"
-                                            BackgroundColor="#EDE9FE"
-                                            StrokeThickness="2"
-                                            Stroke="#EDE9FE"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Purple"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#7C3AED" />
-                                    </Border>
-                                    
-                                    <Border x:Name="ColorChip6"
-                                            StyleId="ColorChip6"
-                                            BackgroundColor="#FCE7F3"
-                                            StrokeThickness="2"
-                                            Stroke="#FCE7F3"
-                                            StrokeShape="RoundRectangle 22"
-                                            Padding="10,4">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnColorChipTapped" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="Pink"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               TextColor="#DB2777" />
-                                    </Border>
-                                    <Border BackgroundColor="White"
-                                            StrokeThickness="1"
-                                            Stroke="#E2E8F0"
-                                            StrokeShape="RoundRectangle 8"
-                                            Padding="0"
-                                            WidthRequest="128"
-                                            VerticalOptions="Center">
-                                        <Entry x:Name="CustomColorEntry"
-                                               Placeholder="#3B82F6"
-                                               FontSize="12"
-                                               TextColor="#0F172A"
-                                               BackgroundColor="Transparent"
-                                               MaxLength="7"
-                                               Margin="8,4"
-                                               TextChanged="OnCustomColorChanged" />
-                                    </Border>
-                                </HorizontalStackLayout>
-                            </VerticalStackLayout>
-                        </Grid>
-                    </VerticalStackLayout>
-                </Border>
+                                <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End">
+                                    <Label Text="Colour"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                        <Border x:Name="ColorChip1"
+                                                StyleId="ColorChip1"
+                                                BackgroundColor="#EF4444"
+                                                StrokeThickness="2"
+                                                Stroke="#FFFFFF"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border x:Name="ColorChip2"
+                                                StyleId="ColorChip2"
+                                                BackgroundColor="#F59E0B"
+                                                StrokeThickness="2"
+                                                Stroke="#FFFFFF"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border x:Name="ColorChip3"
+                                                StyleId="ColorChip3"
+                                                BackgroundColor="#10B981"
+                                                StrokeThickness="2"
+                                                Stroke="#FFFFFF"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border x:Name="ColorChip4"
+                                                StyleId="ColorChip4"
+                                                BackgroundColor="#3B82F6"
+                                                StrokeThickness="2.5"
+                                                Stroke="#0F172A"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border x:Name="ColorChip5"
+                                                StyleId="ColorChip5"
+                                                BackgroundColor="#8B5CF6"
+                                                StrokeThickness="2"
+                                                Stroke="#FFFFFF"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border x:Name="ColorChip6"
+                                                StyleId="ColorChip6"
+                                                BackgroundColor="#EC4899"
+                                                StrokeThickness="2"
+                                                Stroke="#FFFFFF"
+                                                WidthRequest="28"
+                                                HeightRequest="28"
+                                                StrokeShape="RoundRectangle 14"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnColorChipTapped" />
+                                            </Border.GestureRecognizers>
+                                        </Border>
+                                        <Border BackgroundColor="#F8FAFC"
+                                                StrokeThickness="1"
+                                                Stroke="#E2E8F0"
+                                                StrokeShape="RoundRectangle 8"
+                                                Padding="0"
+                                                WidthRequest="88"
+                                                HeightRequest="32"
+                                                VerticalOptions="Center">
+                                            <Entry x:Name="CustomColorEntry"
+                                                   Placeholder="#hex"
+                                                   FontSize="12"
+                                                   TextColor="#0F172A"
+                                                   BackgroundColor="Transparent"
+                                                   MaxLength="7"
+                                                   Margin="8,0"
+                                                   VerticalOptions="Center"
+                                                   TextChanged="OnCustomColorChanged" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
 
-                <!-- PRICING SECTION -->
-                <Border BackgroundColor="White"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="14">
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
-                    </Border.Shadow>
-                    
-                    <VerticalStackLayout Spacing="10">
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                            <BoxView Grid.Column="0"
-                                     WidthRequest="4"
-                                     HeightRequest="14"
-                                     CornerRadius="2"
-                                     BackgroundColor="#3B82F6"
-                                     VerticalOptions="Center" />
-                            <Label Grid.Column="1"
-                                   Text="Pricing and VAT"
-                                   FontSize="15"
+                    <!-- 2. Price & VAT -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
+                            Padding="16,14">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="Price &amp; VAT"
+                                   FontSize="13"
                                    FontAttributes="Bold"
-                                   TextColor="#1E293B"
-                                   VerticalOptions="Center" />
-                        </Grid>
+                                   TextColor="#64748B" />
 
-                        <Grid ColumnDefinitions="*,*,1.35*" ColumnSpacing="10">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="End">
-                                <Label Text="Dine-in/Table Price *"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <Border BackgroundColor="#F8FAFC"
-                                        StrokeThickness="1"
-                                        Stroke="#E2E8F0"
-                                        StrokeShape="RoundRectangle 8"
-                                        Padding="10,4">
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
-                                        <Label Grid.Column="0"
-                                               Text="£"
-                                               FontSize="16"
-                                               FontAttributes="Bold"
-                                               TextColor="#10B981"
-                                               VerticalOptions="Center" />
-                                        <Entry Grid.Column="1"
-                                               x:Name="DineInPriceEntry"
-                                               Placeholder="0.00"
-                                               Keyboard="Numeric"
-                                               FontSize="16"
-                                               FontAttributes="Bold"
-                                               TextColor="#0F172A"
-                                               PlaceholderColor="#CBD5E1"
-                                               BackgroundColor="Transparent"
-                                               TextChanged="OnMixedItemPriceChanged" />
-                                    </Grid>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="End">
-                                <Label Text="Takeaway/Collection Price *"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <Border BackgroundColor="#F8FAFC"
-                                        StrokeThickness="1"
-                                        Stroke="#E2E8F0"
-                                        StrokeShape="RoundRectangle 8"
-                                        Padding="10,4">
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
-                                        <Label Grid.Column="0"
-                                               Text="£"
-                                               FontSize="16"
-                                               FontAttributes="Bold"
-                                               TextColor="#0EA5E9"
-                                               VerticalOptions="Center" />
-                                        <Entry Grid.Column="1"
-                                               x:Name="TakeawayPriceEntry"
-                                               Placeholder="0.00"
-                                               Keyboard="Numeric"
-                                               FontSize="16"
-                                               FontAttributes="Bold"
-                                               TextColor="#0F172A"
-                                               PlaceholderColor="#CBD5E1"
-                                               BackgroundColor="Transparent"
-                                               TextChanged="OnMixedItemPriceChanged" />
-                                    </Grid>
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <VerticalStackLayout Grid.Column="2"
-                                                 Spacing="4"
-                                                 VerticalOptions="End"
-                                                 x:Name="StandardItemSection">
-                                <Label Text="VAT"
-                                       FontSize="13"
-                                       FontAttributes="Bold"
-                                       TextColor="#475569" />
-                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
-                                    <Border x:Name="ZeroVatCard"
-                                            BackgroundColor="White"
+                            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="10">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                    <Label Text="Table £ *"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Border BackgroundColor="#F8FAFC"
                                             StrokeThickness="1"
                                             Stroke="#E2E8F0"
                                             StrokeShape="RoundRectangle 8"
-                                            Padding="4,8">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="0" />
-                                        </Border.GestureRecognizers>
-                                        <VerticalStackLayout Spacing="0" HorizontalOptions="Center">
+                                            Padding="10,0"
+                                            HeightRequest="42">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
+                                            <Label Grid.Column="0"
+                                                   Text="£"
+                                                   FontSize="15"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#059669"
+                                                   VerticalOptions="Center" />
+                                            <Entry Grid.Column="1"
+                                                   x:Name="DineInPriceEntry"
+                                                   Placeholder="0.00"
+                                                   Keyboard="Numeric"
+                                                   FontSize="15"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#0F172A"
+                                                   PlaceholderColor="#CBD5E1"
+                                                   BackgroundColor="Transparent"
+                                                   VerticalOptions="Center"
+                                                   TextChanged="OnMixedItemPriceChanged" />
+                                        </Grid>
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                    <Label Text="Takeaway £ *"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Border BackgroundColor="#F8FAFC"
+                                            StrokeThickness="1"
+                                            Stroke="#E2E8F0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="10,0"
+                                            HeightRequest="42">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
+                                            <Label Grid.Column="0"
+                                                   Text="£"
+                                                   FontSize="15"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#0284C7"
+                                                   VerticalOptions="Center" />
+                                            <Entry Grid.Column="1"
+                                                   x:Name="TakeawayPriceEntry"
+                                                   Placeholder="0.00"
+                                                   Keyboard="Numeric"
+                                                   FontSize="15"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#0F172A"
+                                                   PlaceholderColor="#CBD5E1"
+                                                   BackgroundColor="Transparent"
+                                                   VerticalOptions="Center"
+                                                   TextChanged="OnMixedItemPriceChanged" />
+                                        </Grid>
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Column="2"
+                                                     Spacing="4"
+                                                     x:Name="StandardItemSection"
+                                                     WidthRequest="200">
+                                    <Label Text="VAT"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6" HeightRequest="42">
+                                        <Border x:Name="ZeroVatCard"
+                                                BackgroundColor="White"
+                                                StrokeThickness="1"
+                                                Stroke="#E2E8F0"
+                                                StrokeShape="RoundRectangle 8"
+                                                Padding="4">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="0" />
+                                            </Border.GestureRecognizers>
                                             <Label Text="0%"
-                                                   FontSize="14"
-                                                   FontAttributes="Bold"
-                                                   TextColor="#475569"
-                                                   HorizontalTextAlignment="Center" />
-                                        </VerticalStackLayout>
-                                    </Border>
-
-                                    <Border x:Name="StandardVatCard"
-                                            Grid.Column="1"
-                                            BackgroundColor="White"
-                                            StrokeThickness="1"
-                                            Stroke="#E2E8F0"
-                                            StrokeShape="RoundRectangle 8"
-                                            Padding="4,8">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="20" />
-                                        </Border.GestureRecognizers>
-                                        <VerticalStackLayout Spacing="0" HorizontalOptions="Center">
-                                            <Label Text="20%"
-                                                   FontSize="14"
-                                                   FontAttributes="Bold"
-                                                   TextColor="#475569"
-                                                   HorizontalTextAlignment="Center" />
-                                        </VerticalStackLayout>
-                                    </Border>
-
-                                    <Border x:Name="MixedVatCard"
-                                            Grid.Column="2"
-                                            BackgroundColor="White"
-                                            StrokeThickness="1"
-                                            Stroke="#E2E8F0"
-                                            StrokeShape="RoundRectangle 8"
-                                            Padding="4,8">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="mix" />
-                                        </Border.GestureRecognizers>
-                                        <VerticalStackLayout Spacing="0" HorizontalOptions="Center">
-                                            <Label Text="Mix VAT"
                                                    FontSize="13"
                                                    FontAttributes="Bold"
                                                    TextColor="#475569"
+                                                   HorizontalOptions="Center"
+                                                   VerticalOptions="Center"
                                                    HorizontalTextAlignment="Center" />
-                                        </VerticalStackLayout>
-                                    </Border>
-                                </Grid>
-                            </VerticalStackLayout>
-                        </Grid>
-                    </VerticalStackLayout>
-                </Border>
+                                        </Border>
 
-                <!-- MEAL DEAL SECTION -->
-                <Border BackgroundColor="White"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="14"
-                        x:Name="MealDealSection"
-                        IsVisible="False">
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
-                    </Border.Shadow>
-                    
-                    <VerticalStackLayout Spacing="10">
-                        <!-- Section Title -->
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                            <BoxView Grid.Column="0"
-                                     WidthRequest="4"
-                                     HeightRequest="14"
-                                     CornerRadius="2"
-                                     BackgroundColor="#F59E0B"
-                                     VerticalOptions="Center" />
-                            <Label Grid.Column="1"
-                                Text="Mixed Item VAT Configuration"
-                                   FontSize="15"
+                                        <Border x:Name="StandardVatCard"
+                                                Grid.Column="1"
+                                                BackgroundColor="White"
+                                                StrokeThickness="1"
+                                                Stroke="#E2E8F0"
+                                                StrokeShape="RoundRectangle 8"
+                                                Padding="4">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="20" />
+                                            </Border.GestureRecognizers>
+                                            <Label Text="20%"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#475569"
+                                                   HorizontalOptions="Center"
+                                                   VerticalOptions="Center"
+                                                   HorizontalTextAlignment="Center" />
+                                        </Border>
+
+                                        <Border x:Name="MixedVatCard"
+                                                Grid.Column="2"
+                                                BackgroundColor="White"
+                                                StrokeThickness="1"
+                                                Stroke="#E2E8F0"
+                                                StrokeShape="RoundRectangle 8"
+                                                Padding="4">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnVatRateCardTapped" CommandParameter="mix" />
+                                            </Border.GestureRecognizers>
+                                            <Label Text="Mix"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#475569"
+                                                   HorizontalOptions="Center"
+                                                   VerticalOptions="Center"
+                                                   HorizontalTextAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Mixed VAT (hidden until Mix) -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
+                            Padding="16,14"
+                            x:Name="MealDealSection"
+                            IsVisible="False">
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Mixed VAT components"
+                                   FontSize="13"
                                    FontAttributes="Bold"
-                                   TextColor="#1E293B"
-                                   VerticalOptions="Center" />
-                        </Grid>
+                                   TextColor="#64748B" />
 
-                        <!-- Meal Deal Content -->
-                        <VerticalStackLayout Spacing="12">
-                            <Label Text="Components (Hot + Cold Mix) *"
-                                   FontSize="14"
+                            <Label Text="Hot + cold parts *"
+                                   FontSize="12"
                                    FontAttributes="Bold"
                                    TextColor="#475569" />
-                            
-                            <!-- Components Container -->
-                            <VerticalStackLayout x:Name="ComponentsContainer" Spacing="12">
-                                <!-- Dynamic component cards will be added here -->
-                            </VerticalStackLayout>
-                            
-                            <!-- Add Component Button -->
+
+                            <VerticalStackLayout x:Name="ComponentsContainer" Spacing="8" />
+
                             <Button x:Name="AddComponentButton"
-                                    Text="+ Add Component"
+                                    Text="+ Add component"
                                     BackgroundColor="#F59E0B"
                                     TextColor="White"
-                                    FontSize="14"
+                                    FontSize="13"
                                     FontAttributes="Bold"
-                                    CornerRadius="10"
+                                    CornerRadius="8"
                                     HeightRequest="36"
                                     Clicked="OnAddComponentClicked" />
-                            
-                            <!-- VAT Breakdown Display -->
+
                             <Border x:Name="VatBreakdownBorder"
                                     BackgroundColor="#F8FAFC"
                                     StrokeThickness="1"
                                     Stroke="#E2E8F0"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="16"
-                                    IsVisible="False"
-                                    Margin="0,12,0,0">
-                                <VerticalStackLayout Spacing="8">
-                                    <Label Text="VAT Breakdown (Takeaway):"
-                                           FontSize="13"
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="12"
+                                    IsVisible="False">
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="VAT breakdown (takeaway)"
+                                           FontSize="12"
                                            FontAttributes="Bold"
                                            TextColor="#475569" />
-                                    <VerticalStackLayout x:Name="VatBreakdownStack" Spacing="4">
-                                        <!-- Dynamic VAT breakdown items -->
-                                    </VerticalStackLayout>
-                                    <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" Margin="0,4" />
-                                     <Label x:Name="VatMismatchWarningLabel"
-                                         Text="Warning: mixed item total does not match the item price. Please fix the prices."
-                                         FontSize="12"
-                                         FontAttributes="Bold"
-                                         TextColor="#DC2626"
-                                         IsVisible="False" />
+                                    <VerticalStackLayout x:Name="VatBreakdownStack" Spacing="4" />
+                                    <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" Margin="0,2" />
+                                    <Label x:Name="VatMismatchWarningLabel"
+                                           Text="Warning: mixed total does not match the item price."
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#DC2626"
+                                           IsVisible="False" />
                                     <HorizontalStackLayout Spacing="8">
-                                         <Label Text="Total VAT Amount:"
+                                        <Label Text="Total VAT"
                                                FontSize="12"
                                                FontAttributes="Bold"
                                                TextColor="#1E293B" />
                                         <Label x:Name="EffectiveVatLabel"
-                                             Text="£0.00"
+                                               Text="£0.00"
                                                FontSize="12"
                                                FontAttributes="Bold"
-                                               TextColor="#10B981" />
+                                               TextColor="#059669" />
                                     </HorizontalStackLayout>
                                 </VerticalStackLayout>
                             </Border>
                         </VerticalStackLayout>
-                    </VerticalStackLayout>
-                </Border>
+                    </Border>
 
-                <Border BackgroundColor="White"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="14">
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
-                    </Border.Shadow>
-                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
-                        <VerticalStackLayout Grid.Column="0" Spacing="8">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                                <BoxView WidthRequest="4" HeightRequest="14" CornerRadius="2" BackgroundColor="#0EA5E9" VerticalOptions="Center" />
-                                <Label Grid.Column="1" Text="Price Variants" FontSize="14" FontAttributes="Bold" TextColor="#1E293B" VerticalOptions="Center" />
-                                <Border Grid.Column="2" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,2" VerticalOptions="Center">
-                                    <Label x:Name="VariantCountLabel" Text="0 variants" FontSize="11" FontAttributes="Bold" TextColor="#0284C7" />
-                                </Border>
-                            </Grid>
-                            <Button Text="+ Add Variant"
-                                    BackgroundColor="White"
-                                    TextColor="#1E293B"
-                                    FontSize="12"
-                                    FontAttributes="Bold"
-                                    CornerRadius="8"
-                                    BorderColor="#CBD5E1"
-                                    BorderWidth="1"
-                                    HeightRequest="32"
-                                    Clicked="OnAddVariantClicked" />
-                            <VerticalStackLayout x:Name="VariantsContainer" Spacing="8" />
-                            <Border x:Name="VariantsEmptyState"
-                                    BackgroundColor="#F9FAFB"
-                                    StrokeThickness="1"
-                                    Stroke="#E5E7EB"
-                                    StrokeDashArray="4,4"
-                                    StrokeShape="RoundRectangle 8"
-                                    Padding="8,10">
-                                <Label Text="No variants yet"
-                                       FontSize="12"
-                                       TextColor="#94A3B8"
-                                       HorizontalOptions="Center"
-                                       HorizontalTextAlignment="Center" />
+                    <!-- 3. Options (one panel at a time) -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
+                            Padding="16,14">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="Options"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B" />
+
+                            <!-- Segment tabs -->
+                            <Border BackgroundColor="#F1F5F9"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="4">
+                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                                    <Border x:Name="ExtrasTabVariants"
+                                            StyleId="variants"
+                                            BackgroundColor="White"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="8,8">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnExtrasTabTapped" />
+                                        </Border.GestureRecognizers>
+                                        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center">
+                                            <Label Text="Variants"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#0F172A"
+                                                   VerticalOptions="Center" />
+                                            <Border BackgroundColor="#E0F2FE"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 8"
+                                                    Padding="6,1"
+                                                    VerticalOptions="Center">
+                                                <Label x:Name="VariantCountLabel"
+                                                       Text="0"
+                                                       FontSize="11"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#0284C7" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                    </Border>
+
+                                    <Border x:Name="ExtrasTabAddons"
+                                            StyleId="addons"
+                                            Grid.Column="1"
+                                            BackgroundColor="Transparent"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="8,8">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnExtrasTabTapped" />
+                                        </Border.GestureRecognizers>
+                                        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center">
+                                            <Label Text="Add-ons"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#64748B"
+                                                   VerticalOptions="Center" />
+                                            <Border BackgroundColor="#FEF3C7"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 8"
+                                                    Padding="6,1"
+                                                    VerticalOptions="Center">
+                                                <Label x:Name="AddonCountLabel"
+                                                       Text="0"
+                                                       FontSize="11"
+                                                       FontAttributes="Bold"
+                                                       TextColor="#D97706" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                    </Border>
+
+                                    <Border x:Name="ExtrasTabNotes"
+                                            StyleId="notes"
+                                            Grid.Column="2"
+                                            BackgroundColor="Transparent"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="8,8">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnExtrasTabTapped" />
+                                        </Border.GestureRecognizers>
+                                        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center">
+                                            <Label Text="Notes"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#64748B"
+                                                   VerticalOptions="Center" />
+                                            <Label x:Name="QuickNotesCountLabel"
+                                                   Text="0/6"
+                                                   FontSize="11"
+                                                   FontAttributes="Bold"
+                                                   TextColor="#94A3B8"
+                                                   VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+                                    </Border>
+                                </Grid>
                             </Border>
-                        </VerticalStackLayout>
 
-                        <VerticalStackLayout Grid.Column="1" Spacing="8">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                                <BoxView WidthRequest="4" HeightRequest="14" CornerRadius="2" BackgroundColor="#F59E0B" VerticalOptions="Center" />
-                                <Label Grid.Column="1" Text="Add-ons" FontSize="14" FontAttributes="Bold" TextColor="#1E293B" VerticalOptions="Center" />
-                                <Border Grid.Column="2" BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,2" VerticalOptions="Center">
-                                    <Label x:Name="AddonCountLabel" Text="0 addons" FontSize="11" FontAttributes="Bold" TextColor="#D97706" />
+                            <!-- Variants panel -->
+                            <VerticalStackLayout x:Name="VariantsPanel" Spacing="8">
+                                <Button Text="+ Add variant"
+                                        BackgroundColor="White"
+                                        TextColor="#0F172A"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        CornerRadius="8"
+                                        BorderColor="#CBD5E1"
+                                        BorderWidth="1"
+                                        HeightRequest="36"
+                                        HorizontalOptions="Start"
+                                        Padding="14,0"
+                                        Clicked="OnAddVariantClicked" />
+                                <VerticalStackLayout x:Name="VariantsContainer" Spacing="8" />
+                                <Border x:Name="VariantsEmptyState"
+                                        BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="12,14">
+                                    <Label Text="No variants — optional sizes or options"
+                                           FontSize="12"
+                                           TextColor="#94A3B8"
+                                           HorizontalOptions="Center"
+                                           HorizontalTextAlignment="Center" />
                                 </Border>
-                            </Grid>
-                            <Button Text="+ Add Add-on"
-                                    BackgroundColor="White"
-                                    TextColor="#1E293B"
-                                    FontSize="12"
-                                    FontAttributes="Bold"
-                                    CornerRadius="8"
-                                    BorderColor="#CBD5E1"
-                                    BorderWidth="1"
-                                    HeightRequest="32"
-                                    Clicked="OnAddAddonClicked" />
-                            <VerticalStackLayout x:Name="AddonsContainer" Spacing="8" />
-                            <Border x:Name="AddonsEmptyState"
-                                    BackgroundColor="#F9FAFB"
-                                    StrokeThickness="1"
-                                    Stroke="#E5E7EB"
-                                    StrokeDashArray="4,4"
-                                    StrokeShape="RoundRectangle 8"
-                                    Padding="8,10">
-                                <Label Text="No add-ons yet"
-                                       FontSize="12"
-                                       TextColor="#94A3B8"
-                                       HorizontalOptions="Center"
-                                       HorizontalTextAlignment="Center" />
-                            </Border>
-                        </VerticalStackLayout>
+                            </VerticalStackLayout>
 
-                        <VerticalStackLayout Grid.Column="2" Spacing="8">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                                <BoxView WidthRequest="4" HeightRequest="14" CornerRadius="2" BackgroundColor="#6366F1" VerticalOptions="Center" />
-                                <Label Grid.Column="1" Text="Quick Notes" FontSize="14" FontAttributes="Bold" TextColor="#1E293B" VerticalOptions="Center" />
-                                <Label Grid.Column="2"
-                                       x:Name="QuickNotesCountLabel"
-                                       Text="0/6"
+                            <!-- Add-ons panel -->
+                            <VerticalStackLayout x:Name="AddonsPanel" Spacing="8" IsVisible="False">
+                                <Button Text="+ Add add-on"
+                                        BackgroundColor="White"
+                                        TextColor="#0F172A"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        CornerRadius="8"
+                                        BorderColor="#CBD5E1"
+                                        BorderWidth="1"
+                                        HeightRequest="36"
+                                        HorizontalOptions="Start"
+                                        Padding="14,0"
+                                        Clicked="OnAddAddonClicked" />
+                                <VerticalStackLayout x:Name="AddonsContainer" Spacing="8" />
+                                <Border x:Name="AddonsEmptyState"
+                                        BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="12,14">
+                                    <Label Text="No add-ons — extras staff can attach"
+                                           FontSize="12"
+                                           TextColor="#94A3B8"
+                                           HorizontalOptions="Center"
+                                           HorizontalTextAlignment="Center" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Notes panel -->
+                            <VerticalStackLayout x:Name="NotesPanel" Spacing="8" IsVisible="False">
+                                <Button x:Name="AddQuickNoteButton"
+                                        Text="+ Add quick note"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        BackgroundColor="#4F46E5"
+                                        TextColor="White"
+                                        CornerRadius="8"
+                                        HeightRequest="36"
+                                        HorizontalOptions="Start"
+                                        Padding="14,0"
+                                        Clicked="OnAddQuickNoteClicked" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="10"
+                                        MinimumHeightRequest="48">
+                                    <VerticalStackLayout x:Name="QuickNotesListContainer" Spacing="6" />
+                                </Border>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- 4. Print (secondary) -->
+                    <Border BackgroundColor="White"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 14"
+                            Padding="16,14">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="Kitchen print"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B" />
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="10">
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4">
+                                    <Label Text="Label text"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Border BackgroundColor="#F8FAFC"
+                                            StrokeThickness="1"
+                                            Stroke="#E2E8F0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="0"
+                                            HeightRequest="40">
+                                        <Entry x:Name="LabelTextEntry"
+                                               Placeholder="Optional"
+                                               FontSize="13"
+                                               TextColor="#0F172A"
+                                               BackgroundColor="Transparent"
+                                               MaxLength="100"
+                                               Margin="10,0"
+                                               VerticalOptions="Center" />
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4">
+                                    <Label Text="Print group"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Border BackgroundColor="#F8FAFC"
+                                            StrokeThickness="1"
+                                            Stroke="#E2E8F0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="0"
+                                            HeightRequest="40">
+                                        <Button x:Name="PrintGroupButton"
+                                                Text="Select…"
+                                                FontSize="13"
+                                                TextColor="#0F172A"
+                                                BackgroundColor="Transparent"
+                                                HorizontalOptions="Fill"
+                                                Padding="10,0"
+                                                Clicked="OnSelectPrintGroupClicked" />
+                                    </Border>
+                                </VerticalStackLayout>
+
+                                <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <VerticalStackLayout Spacing="1" VerticalOptions="Center">
+                                        <Label Text="Component labels"
+                                               FontSize="12"
+                                               FontAttributes="Bold"
+                                               TextColor="#475569" />
+                                        <Label Text="One label each"
+                                               FontSize="11"
+                                               TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                    <Switch x:Name="PrintComponentLabelsSwitch"
+                                            Grid.Column="1"
+                                            OnColor="#6366F1"
+                                            ThumbColor="White"
+                                            VerticalOptions="Center"
+                                            Scale="0.85"
+                                            Toggled="OnPrintComponentLabelsToggled" />
+                                </Grid>
+
+                                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <VerticalStackLayout Spacing="1" VerticalOptions="Center">
+                                        <Label Text="Kitchen in red"
+                                               FontSize="12"
+                                               FontAttributes="Bold"
+                                               TextColor="#475569" />
+                                        <Label Text="Two-colour printer"
+                                               FontSize="11"
+                                               TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                    <Switch x:Name="PrintInRedSwitch"
+                                            Grid.Column="1"
+                                            OnColor="#EF4444"
+                                            ThumbColor="White"
+                                            VerticalOptions="Center"
+                                            Scale="0.85" />
+                                </Grid>
+                            </Grid>
+
+                            <Grid x:Name="AlsoPrintMainLabelContainer" ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="False">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                    <Label Text="Also print main item label"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           TextColor="#475569" />
+                                    <Label Text="Off: components only. On: components plus main label."
+                                           FontSize="11"
+                                           TextColor="#94A3B8"
+                                           LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                                <Switch x:Name="AlsoPrintMainLabelSwitch"
+                                        Grid.Column="1"
+                                        OnColor="#6366F1"
+                                        ThumbColor="White"
+                                        VerticalOptions="Center" />
+                            </Grid>
+
+                            <VerticalStackLayout x:Name="ComponentsListContainer" Spacing="8" IsVisible="False">
+                                <Label Text="Component labels"
                                        FontSize="12"
                                        FontAttributes="Bold"
+                                       TextColor="#64748B" />
+                                <Label Text="e.g. Roti, Curry — each prints as its own label"
+                                       FontSize="11"
                                        TextColor="#94A3B8"
-                                       VerticalOptions="Center" />
-                            </Grid>
-                            <Button x:Name="AddQuickNoteButton"
-                                    Text="+ Add Quick Note"
-                                    FontSize="12"
-                                    FontAttributes="Bold"
-                                    BackgroundColor="#6366F1"
-                                    TextColor="White"
-                                    CornerRadius="8"
-                                    HeightRequest="32"
-                                    Clicked="OnAddQuickNoteClicked" />
-                            <Border BackgroundColor="#F8FAFC"
-                                    StrokeThickness="1"
-                                    Stroke="#E2E8F0"
-                                    StrokeShape="RoundRectangle 8"
-                                    Padding="8"
-                                    MinimumHeightRequest="40">
-                                <VerticalStackLayout x:Name="QuickNotesListContainer" Spacing="6" />
-                            </Border>
+                                       LineBreakMode="WordWrap" />
+                                <CollectionView x:Name="ComponentLabelsCollectionView" SelectionMode="None">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Padding="0,4">
+                                                <Label Text="{Binding Name}" FontSize="14" TextColor="#0F172A" VerticalOptions="Center" />
+                                                <Entry Grid.Column="1"
+                                                       Text="{Binding Quantity, Mode=TwoWay}"
+                                                       Keyboard="Numeric"
+                                                       WidthRequest="58"
+                                                       MaxLength="2"
+                                                       HorizontalTextAlignment="Center" />
+                                                <Button Text=""
+                                                        BackgroundColor="#EF4444"
+                                                        TextColor="White"
+                                                        FontSize="12"
+                                                        WidthRequest="30"
+                                                        HeightRequest="30"
+                                                        CornerRadius="15"
+                                                        Padding="0"
+                                                        Clicked="OnRemoveComponentLabel"
+                                                        CommandParameter="{Binding .}"
+                                                        Grid.Column="2" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                                <Button Text="+ Add component label"
+                                        BackgroundColor="#6366F1"
+                                        TextColor="White"
+                                        FontSize="13"
+                                        CornerRadius="8"
+                                        Padding="0,8"
+                                        Clicked="OnAddComponentLabelClicked" />
+                            </VerticalStackLayout>
                         </VerticalStackLayout>
-                    </Grid>
-                </Border>
+                    </Border>
 
-                <Border BackgroundColor="White"
-                        StrokeThickness="0"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="14">
-                    <Border.Shadow>
-                        <Shadow Brush="Black" Offset="0,1" Radius="12" Opacity="0.06" />
-                    </Border.Shadow>
-                    <VerticalStackLayout Spacing="10">
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <BoxView WidthRequest="4" HeightRequest="14" CornerRadius="2" BackgroundColor="#8B5CF6" VerticalOptions="Center" />
-                            <Label Grid.Column="1" Text="Print Settings" FontSize="15" FontAttributes="Bold" TextColor="#1E293B" VerticalOptions="Center" />
-                        </Grid>
+                </VerticalStackLayout>
+            </ScrollView>
 
-                        <Grid ColumnDefinitions="1.4*,*,*,*" ColumnSpacing="10">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="End">
-                                <Label Text="Label Text" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border BackgroundColor="White" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 8" Padding="0">
-                                    <Entry x:Name="LabelTextEntry" Placeholder="Optional label text" FontSize="13"
-                                           TextColor="#0F172A" BackgroundColor="Transparent" MaxLength="100" Margin="8,6" />
-                                </Border>
-                            </VerticalStackLayout>
+            <!-- Footer -->
+            <Border Grid.Row="2"
+                    BackgroundColor="White"
+                    StrokeThickness="0"
+                    Padding="16,10">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <Button Grid.Column="1"
+                            Text="Cancel"
+                            BackgroundColor="#F8FAFC"
+                            TextColor="#475569"
+                            BorderColor="#E2E8F0"
+                            BorderWidth="1"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            WidthRequest="110"
+                            HeightRequest="40"
+                            Padding="0"
+                            Clicked="OnCancelClicked" />
 
-                            <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="End">
-                                <VerticalStackLayout Spacing="1" VerticalOptions="Center">
-                                    <Label Text="Component labels" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                    <Label Text="One label each" FontSize="11" TextColor="#94A3B8" />
-                                </VerticalStackLayout>
-                                <Switch x:Name="PrintComponentLabelsSwitch"
-                                        Grid.Column="1"
-                                        OnColor="#8B5CF6"
-                                        ThumbColor="White"
-                                        VerticalOptions="Center"
-                                        Scale="0.85"
-                                        Toggled="OnPrintComponentLabelsToggled" />
-                            </Grid>
-
-                            <VerticalStackLayout Grid.Column="2" Spacing="4" VerticalOptions="End">
-                                <Label Text="Print Group" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                <Border BackgroundColor="White" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 8" Padding="0">
-                                    <Button x:Name="PrintGroupButton"
-                                            Text="Select Print Group..."
-                                            FontSize="12"
-                                            TextColor="#0F172A"
-                                            BackgroundColor="Transparent"
-                                            HorizontalOptions="Fill"
-                                            Padding="8,6"
-                                            Clicked="OnSelectPrintGroupClicked" />
-                                </Border>
-                            </VerticalStackLayout>
-
-                            <Grid Grid.Column="3" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="End">
-                                <VerticalStackLayout Spacing="1" VerticalOptions="Center">
-                                    <Label Text="Kitchen in red" FontSize="12" FontAttributes="Bold" TextColor="#475569" />
-                                    <Label Text="Two-colour printer" FontSize="11" TextColor="#94A3B8" />
-                                </VerticalStackLayout>
-                                <Switch x:Name="PrintInRedSwitch"
-                                        Grid.Column="1"
-                                        OnColor="#EF4444"
-                                        ThumbColor="White"
-                                        VerticalOptions="Center"
-                                        Scale="0.85" />
-                            </Grid>
-                        </Grid>
-
-                        <Grid x:Name="AlsoPrintMainLabelContainer" ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="False">
-                            <VerticalStackLayout Grid.Column="0" Spacing="2">
-                                <Label Text="Also Print Main Item Label" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
-                                <Label Text="Off: component labels replace the main label. On: print both component labels and the main item label."
-                                       FontSize="11" TextColor="#94A3B8" LineBreakMode="WordWrap" />
-                            </VerticalStackLayout>
-                            <Switch x:Name="AlsoPrintMainLabelSwitch" Grid.Column="1" OnColor="#8B5CF6" ThumbColor="White" VerticalOptions="Center" />
-                        </Grid>
-
-                        <VerticalStackLayout x:Name="ComponentsListContainer" Spacing="8" IsVisible="False">
-                            <Label Text="Component Labels to Print" FontSize="13" FontAttributes="Bold" TextColor="#64748B" />
-                            <Label Text="Add component names (e.g., Roti, Curry, Rice). Each will print as a separate label."
-                                   FontSize="11" TextColor="#94A3B8" LineBreakMode="WordWrap" />
-                            <CollectionView x:Name="ComponentLabelsCollectionView" SelectionMode="None">
-                                <CollectionView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Padding="0,4">
-                                            <Label Text="{Binding Name}" FontSize="14" TextColor="#0F172A" VerticalOptions="Center" />
-                                            <Entry Grid.Column="1" Text="{Binding Quantity, Mode=TwoWay}" Keyboard="Numeric"
-                                                   WidthRequest="58" MaxLength="2" HorizontalTextAlignment="Center" />
-                                            <Button Text=""
-                                                    BackgroundColor="#EF4444"
-                                                    TextColor="White"
-                                                    FontSize="12"
-                                                    WidthRequest="30"
-                                                    HeightRequest="30"
-                                                    CornerRadius="15"
-                                                    Padding="0"
-                                                    Clicked="OnRemoveComponentLabel"
-                                                    CommandParameter="{Binding .}"
-                                                    Grid.Column="2" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </CollectionView.ItemTemplate>
-                            </CollectionView>
-                            <Button Text="+ Add Component Label"
-                                    BackgroundColor="#8B5CF6"
-                                    TextColor="White"
-                                    FontSize="13"
-                                    CornerRadius="8"
-                                    Padding="0,8"
-                                    Clicked="OnAddComponentLabelClicked" />
-                        </VerticalStackLayout>
-                    </VerticalStackLayout>
-                </Border>
-
-            </VerticalStackLayout>
-        </ScrollView>
-
-        <Border Grid.Row="2"
-                BackgroundColor="White"
-                StrokeThickness="0"
-                Padding="20,12">
-            <Border.Shadow>
-                <Shadow Brush="Black" Offset="0,-1" Radius="10" Opacity="0.06" />
-            </Border.Shadow>
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                <Button Grid.Column="1"
-                        Text="Cancel"
-                        BackgroundColor="#F8FAFC"
-                        TextColor="#475569"
-                        BorderColor="#E2E8F0"
-                        BorderWidth="1"
-                        FontSize="14"
-                        FontAttributes="Bold"
-                        CornerRadius="10"
-                        WidthRequest="132"
-                        HeightRequest="42"
-                        Padding="0"
-                        Clicked="OnCancelClicked" />
-
-                <Button Grid.Column="2"
-                        x:Name="SaveButton"
-                        Text="Save Item"
-                        BackgroundColor="#10B981"
-                        TextColor="White"
-                        FontSize="14"
-                        FontAttributes="Bold"
-                        CornerRadius="10"
-                        WidthRequest="156"
-                        HeightRequest="42"
-                        Padding="0"
-                        Clicked="OnSaveClicked" />
-            </Grid>
-        </Border>
+                    <Button Grid.Column="2"
+                            x:Name="SaveButton"
+                            Text="Save item"
+                            BackgroundColor="#059669"
+                            TextColor="White"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            WidthRequest="128"
+                            HeightRequest="40"
+                            Padding="0"
+                            Clicked="OnSaveClicked" />
+                </Grid>
+            </Border>
         </Grid>
 
         <ContentView x:Name="DialogOverlay"

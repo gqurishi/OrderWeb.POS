@@ -75,7 +75,10 @@
             </Grid>
         </Border>
 
-        <!-- Real Floor / Table / Visual content loads here -->
-        <ContentView x:Name="TabContentHost" Grid.Row="2" />
+        <!-- Must Fill so Visual Layout AbsoluteLayout canvas gets height -->
+        <Grid x:Name="TabContentHost"
+              Grid.Row="2"
+              VerticalOptions="Fill"
+              HorizontalOptions="Fill" />
     </Grid>
 </ContentPage>

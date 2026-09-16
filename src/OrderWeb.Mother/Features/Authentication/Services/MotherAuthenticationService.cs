@@ -99,6 +99,15 @@ public static class MotherCapabilityResolver
             return set;
         }
 
+        // Bar Manager: stock workspace only — no order taking or admin.
+        if (role is UserRole.BarManager)
+        {
+            set.Clear();
+            set.Add(PosCapabilityKeys.ViewDashboard);
+            set.Add(PosCapabilityKeys.ViewBarInventory);
+            return set;
+        }
+
         if (role is UserRole.Manager or UserRole.Admin)
         {
             set.Add(PosCapabilityKeys.TakePayments);
@@ -122,6 +131,7 @@ public static class MotherCapabilityResolver
             set.Add(PosCapabilityKeys.AccessAdmin);
             set.Add(PosCapabilityKeys.EditTables);
             set.Add(PosCapabilityKeys.AccessSettings);
+            set.Add(PosCapabilityKeys.ViewBarInventory);
         }
 
         return set;

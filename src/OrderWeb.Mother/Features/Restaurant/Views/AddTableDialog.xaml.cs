@@ -37,98 +37,78 @@ namespace POS_in_NET.Views
             _selectedFloorId = 0;
             _selectedFloorName = string.Empty;
             
-            // Create elegant floor selection cards
+            // Slim single-line floor rows
             for (int i = 0; i < floors.Count; i++)
             {
                 var floor = floors[i];
                 var index = i;
-                
-                // Create floor card
+                var selected = i == 0;
+
                 var border = new Border
                 {
-                    BackgroundColor = i == 0 ? Color.FromArgb("#EEF2FF") : Colors.White,
-                    Stroke = i == 0 ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB"),
-                    StrokeThickness = i == 0 ? 2 : 1,
-                    Padding = new Thickness(15, 12),
-                    StrokeShape = new RoundRectangle { CornerRadius = 10 }
+                    BackgroundColor = selected ? Color.FromArgb("#EFF6FF") : Color.FromArgb("#FAFAFA"),
+                    Stroke = selected ? Color.FromArgb("#3B82F6") : Color.FromArgb("#E5E7EB"),
+                    StrokeThickness = 1,
+                    Padding = new Thickness(12, 8),
+                    HeightRequest = 40,
+                    StrokeShape = new RoundRectangle { CornerRadius = 8 }
                 };
-                
+
                 var grid = new Grid
                 {
                     ColumnDefinitions = new ColumnDefinitionCollection
                     {
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                        new ColumnDefinition { Width = GridLength.Auto },
                         new ColumnDefinition { Width = GridLength.Auto }
                     },
-                    ColumnSpacing = 10
-                };
-                
-                // Floor info
-                var floorStack = new VerticalStackLayout
-                {
-                    Spacing = 2,
+                    ColumnSpacing = 8,
                     VerticalOptions = LayoutOptions.Center
                 };
-                
+
                 var floorNameLabel = new Label
                 {
                     Text = floor.Name,
-                    FontSize = 15,
+                    FontSize = 13,
                     FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb("#1F2937"),
-                    FontAttributes = FontAttributes.Bold
+                    TextColor = Color.FromArgb("#111827"),
+                    VerticalOptions = LayoutOptions.Center,
+                    LineBreakMode = LineBreakMode.TailTruncation
                 };
-                
+
                 var tableCountLabel = new Label
                 {
-                    Text = $"{floor.TableCount} table(s)",
+                    Text = $"{floor.TableCount}",
                     FontSize = 12,
                     FontFamily = "OpenSansRegular",
-                    TextColor = Color.FromArgb("#6B7280")
-                };
-                
-                floorStack.Children.Add(floorNameLabel);
-                floorStack.Children.Add(tableCountLabel);
-                
-                // Radio button indicator
-                var radioCircle = new Border
-                {
-                    WidthRequest = 20,
-                    HeightRequest = 20,
-                    BackgroundColor = i == 0 ? Color.FromArgb("#6366F1") : Colors.Transparent,
-                    Stroke = i == 0 ? Color.FromArgb("#6366F1") : Color.FromArgb("#D1D5DB"),
-                    StrokeThickness = 2,
-                    StrokeShape = new RoundRectangle { CornerRadius = 10 },
+                    TextColor = Color.FromArgb("#6B7280"),
                     VerticalOptions = LayoutOptions.Center
                 };
-                
-                if (i == 0)
+
+                var radioCircle = new Border
                 {
-                    var checkmark = new Label
-                    {
-                        Text = "",
-                        FontSize = 12,
-                        TextColor = Colors.White,
-                        HorizontalOptions = LayoutOptions.Center,
-                        VerticalOptions = LayoutOptions.Center,
-                        FontAttributes = FontAttributes.Bold
-                    };
-                    radioCircle.Content = checkmark;
-                }
-                
-                grid.Children.Add(floorStack);
-                Grid.SetColumn(floorStack, 0);
-                
+                    WidthRequest = 14,
+                    HeightRequest = 14,
+                    BackgroundColor = selected ? Color.FromArgb("#2563EB") : Colors.Transparent,
+                    Stroke = selected ? Color.FromArgb("#2563EB") : Color.FromArgb("#D1D5DB"),
+                    StrokeThickness = 1.5,
+                    StrokeShape = new RoundRectangle { CornerRadius = 7 },
+                    VerticalOptions = LayoutOptions.Center
+                };
+
+                grid.Children.Add(floorNameLabel);
+                Grid.SetColumn(floorNameLabel, 0);
+                grid.Children.Add(tableCountLabel);
+                Grid.SetColumn(tableCountLabel, 1);
                 grid.Children.Add(radioCircle);
-                Grid.SetColumn(radioCircle, 1);
-                
+                Grid.SetColumn(radioCircle, 2);
+
                 border.Content = grid;
-                
-                // Add tap gesture
+
                 var tapGesture = new TapGestureRecognizer();
                 tapGesture.Tapped += (s, e) => OnFloorSelected(index);
                 border.GestureRecognizers.Add(tapGesture);
-                
+
                 _floorBorders.Add(border);
                 FloorSelectionStack.Children.Add(border);
             }
@@ -148,39 +128,20 @@ namespace POS_in_NET.Views
             _selectedFloorId = _floors[index].Id;
             _selectedFloorName = _floors[index].Name;
             
-            // Update all floor cards
             for (int i = 0; i < _floorBorders.Count; i++)
             {
                 var border = _floorBorders[i];
                 var isSelected = i == index;
-                
-                // Update border styling
-                border.BackgroundColor = isSelected ? Color.FromArgb("#EEF2FF") : Colors.White;
-                border.Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#E5E7EB");
-                border.StrokeThickness = isSelected ? 2 : 1;
-                
-                // Update radio circle
-                if (border.Content is Grid grid && grid.Children.Count > 1 && grid.Children[1] is Border radioCircle)
+
+                border.BackgroundColor = isSelected ? Color.FromArgb("#EFF6FF") : Color.FromArgb("#FAFAFA");
+                border.Stroke = isSelected ? Color.FromArgb("#3B82F6") : Color.FromArgb("#E5E7EB");
+                border.StrokeThickness = 1;
+
+                if (border.Content is Grid grid && grid.Children.Count > 2 && grid.Children[2] is Border radioCircle)
                 {
-                    radioCircle.BackgroundColor = isSelected ? Color.FromArgb("#6366F1") : Colors.Transparent;
-                    radioCircle.Stroke = isSelected ? Color.FromArgb("#6366F1") : Color.FromArgb("#D1D5DB");
-                    
-                    if (isSelected && radioCircle.Content == null)
-                    {
-                        radioCircle.Content = new Label
-                        {
-                            Text = "",
-                            FontSize = 12,
-                            TextColor = Colors.White,
-                            HorizontalOptions = LayoutOptions.Center,
-                            VerticalOptions = LayoutOptions.Center,
-                            FontAttributes = FontAttributes.Bold
-                        };
-                    }
-                    else if (!isSelected)
-                    {
-                        radioCircle.Content = null;
-                    }
+                    radioCircle.BackgroundColor = isSelected ? Color.FromArgb("#2563EB") : Colors.Transparent;
+                    radioCircle.Stroke = isSelected ? Color.FromArgb("#2563EB") : Color.FromArgb("#D1D5DB");
+                    radioCircle.Content = null;
                 }
             }
         }
@@ -287,38 +248,36 @@ namespace POS_in_NET.Views
 
         private void SelectDesign(int designNumber)
         {
-            // Reset all borders
             Design1Border.BackgroundColor = Colors.White;
             Design1Border.Stroke = Color.FromArgb("#E5E7EB");
-            Design1Border.StrokeThickness = 2;
+            Design1Border.StrokeThickness = 1;
 
             Design2Border.BackgroundColor = Colors.White;
             Design2Border.Stroke = Color.FromArgb("#E5E7EB");
-            Design2Border.StrokeThickness = 2;
+            Design2Border.StrokeThickness = 1;
 
             Design3Border.BackgroundColor = Colors.White;
             Design3Border.Stroke = Color.FromArgb("#E5E7EB");
-            Design3Border.StrokeThickness = 2;
+            Design3Border.StrokeThickness = 1;
 
-            // Highlight selected design
             switch (designNumber)
             {
                 case 1:
-                    Design1Border.BackgroundColor = Color.FromArgb("#F0F9FF");
+                    Design1Border.BackgroundColor = Color.FromArgb("#EFF6FF");
                     Design1Border.Stroke = Color.FromArgb("#3B82F6");
-                    Design1Border.StrokeThickness = 3;
+                    Design1Border.StrokeThickness = 1.5;
                     _selectedDesignIcon = "table_1.png";
                     break;
                 case 2:
-                    Design2Border.BackgroundColor = Color.FromArgb("#F0F9FF");
+                    Design2Border.BackgroundColor = Color.FromArgb("#EFF6FF");
                     Design2Border.Stroke = Color.FromArgb("#3B82F6");
-                    Design2Border.StrokeThickness = 3;
+                    Design2Border.StrokeThickness = 1.5;
                     _selectedDesignIcon = "table_2.png";
                     break;
                 case 3:
-                    Design3Border.BackgroundColor = Color.FromArgb("#F0F9FF");
+                    Design3Border.BackgroundColor = Color.FromArgb("#EFF6FF");
                     Design3Border.Stroke = Color.FromArgb("#3B82F6");
-                    Design3Border.StrokeThickness = 3;
+                    Design3Border.StrokeThickness = 1.5;
                     _selectedDesignIcon = "table_3.png";
                     break;
             }

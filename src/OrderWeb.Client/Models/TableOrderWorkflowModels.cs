@@ -84,7 +84,9 @@ public sealed record MotherOrderState(
     decimal ServiceChargePercent = 0m,
     int LoyaltyPointsEarned = 0,
     string? SourceChannel = null,
-    string? PaymentMethod = null);
+    string? PaymentMethod = null,
+    string? ScheduledTime = null,
+    decimal AmountPaid = 0m);
 
 public sealed record MotherOrderLine(
     string Id,

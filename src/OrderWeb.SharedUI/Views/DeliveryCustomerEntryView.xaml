@@ -4,6 +4,7 @@
              x:Class="OrderWeb.SharedUI.Views.DeliveryCustomerEntryView">
 
     <!-- Exact Mother DeliveryCustomerModal / Client DeliveryOrderPage layout (px, spacing, colors). -->
+    <Grid>
     <Grid Padding="16" RowDefinitions="Auto,*,Auto">
 
         <!-- Header -->
@@ -293,6 +294,95 @@
                     </VerticalStackLayout>
                 </VerticalStackLayout>
 
+                <!-- Optional advance delivery date / time -->
+                <VerticalStackLayout Spacing="10" Margin="0,8,0,0">
+                    <Label Text="Delivery date / time (optional)"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           TextColor="#4A5568" />
+                    <Label Text="Leave blank for ASAP. If you set one, you will be asked for the other."
+                           FontSize="13"
+                           TextColor="#718096"
+                           LineBreakMode="WordWrap" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Date"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="16,0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnDateFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="*,Auto" HeightRequest="56">
+                                    <Label x:Name="DateDisplayLabel"
+                                           Text="ASAP"
+                                           FontSize="16"
+                                           TextColor="#A0AEC0"
+                                           VerticalOptions="Center" />
+                                    <Label Grid.Column="1"
+                                           Text="Set"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="13"
+                                           FontAttributes="Bold"
+                                           TextColor="#3B82F6"
+                                           VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="8">
+                            <Label Text="Time"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="#1A202C" />
+                            <Border BackgroundColor="White"
+                                    StrokeThickness="2"
+                                    Stroke="#E2E8F0"
+                                    Padding="16,0">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnTimeFieldTapped" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="*,Auto" HeightRequest="56">
+                                    <Label x:Name="TimeDisplayLabel"
+                                           Text="ASAP"
+                                           FontSize="16"
+                                           TextColor="#A0AEC0"
+                                           VerticalOptions="Center" />
+                                    <Label Grid.Column="1"
+                                           Text="Set"
+                                           FontFamily="OpenSansSemibold"
+                                           FontSize="13"
+                                           FontAttributes="Bold"
+                                           TextColor="#3B82F6"
+                                           VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+                    </Grid>
+                    <Button x:Name="ClearScheduleButton"
+                            Text="Clear date &amp; time (ASAP)"
+                            IsVisible="False"
+                            BackgroundColor="Transparent"
+                            TextColor="#64748B"
+                            FontSize="14"
+                            HeightRequest="40"
+                            Padding="0"
+                            HorizontalOptions="Start"
+                            Clicked="OnClearScheduleClicked" />
+                </VerticalStackLayout>
+
                 <Button x:Name="SearchCustomerButton"
                         Text="Search Existing Customer"
                         BackgroundColor="#3B82F6"
@@ -415,6 +505,177 @@
                     <Shadow Brush="#3B82F6" Radius="10" Opacity="0.35" Offset="0,4" />
                 </Button.Shadow>
             </Button>
+        </Grid>
+    </Grid>
+
+        <!-- Date / time picker overlay (same pattern as reservation booking) -->
+        <Grid x:Name="PickerOverlay"
+              IsVisible="False"
+              InputTransparent="True"
+              BackgroundColor="#660F172A"
+              ZIndex="20">
+            <Border BackgroundColor="White"
+                    Stroke="#CBD5E1"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 18"
+                    WidthRequest="430"
+                    Padding="18"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Opacity="0.18" Radius="18" Offset="0,8" />
+                </Border.Shadow>
+
+                <Grid>
+                    <Grid x:Name="DatePickerPanel"
+                          RowDefinitions="Auto,Auto,Auto"
+                          RowSpacing="14"
+                          IsVisible="False">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                            <Button Text="‹"
+                                    Style="{x:Null}"
+                                    WidthRequest="42"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="42"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="12"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#0F172A"
+                                    FontSize="18"
+                                    Padding="0"
+                                    Clicked="OnPreviousMonthClicked" />
+                            <Label x:Name="PickerMonthLabel"
+                                   Grid.Column="1"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A"
+                                   HorizontalTextAlignment="Center"
+                                   VerticalOptions="Center" />
+                            <Button Grid.Column="2"
+                                    Text="›"
+                                    Style="{x:Null}"
+                                    WidthRequest="42"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="42"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="12"
+                                    BackgroundColor="#ECFDF5"
+                                    TextColor="#065F46"
+                                    FontSize="18"
+                                    Padding="0"
+                                    Clicked="OnNextMonthClicked" />
+                            <Button Grid.Column="3"
+                                    Text="X"
+                                    Style="{x:Null}"
+                                    WidthRequest="38"
+                                    HeightRequest="38"
+                                    MinimumWidthRequest="38"
+                                    MinimumHeightRequest="38"
+                                    CornerRadius="19"
+                                    BackgroundColor="#FEE2E2"
+                                    TextColor="#DC2626"
+                                    FontSize="16"
+                                    Padding="0"
+                                    Clicked="OnPickerCancelClicked" />
+                        </Grid>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,*,*,*">
+                            <Label Text="Mon" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="1" Text="Tue" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="2" Text="Wed" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="3" Text="Thu" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="4" Text="Fri" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="5" Text="Sat" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="6" Text="Sun" FontSize="12" FontAttributes="Bold" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        </Grid>
+
+                        <Grid x:Name="CalendarDaysGrid"
+                              Grid.Row="2"
+                              ColumnDefinitions="*,*,*,*,*,*,*"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                              ColumnSpacing="6"
+                              RowSpacing="6" />
+                    </Grid>
+
+                    <Grid x:Name="TimePickerPanel"
+                          RowDefinitions="Auto,Auto,Auto,Auto"
+                          RowSpacing="14"
+                          IsVisible="False">
+                        <Label Text="Choose delivery time"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               TextColor="#0F172A"
+                               HorizontalTextAlignment="Center" />
+                        <Border Grid.Row="1"
+                                BackgroundColor="#EFF6FF"
+                                Stroke="#BFDBFE"
+                                StrokeShape="RoundRectangle 16"
+                                Padding="16,12">
+                            <Label x:Name="PickerTimePreviewLabel"
+                                   FontSize="30"
+                                   FontAttributes="Bold"
+                                   TextColor="#0F172A"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Hour"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B"
+                                       HorizontalTextAlignment="Center" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 14"
+                                        Padding="6">
+                                    <ScrollView HeightRequest="180">
+                                        <VerticalStackLayout x:Name="HourOptionsStack" Spacing="6" />
+                                    </ScrollView>
+                                </Border>
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                <Label Text="Minute"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#64748B"
+                                       HorizontalTextAlignment="Center" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 14"
+                                        Padding="6">
+                                    <ScrollView HeightRequest="180">
+                                        <VerticalStackLayout x:Name="MinuteOptionsStack" Spacing="6" />
+                                    </ScrollView>
+                                </Border>
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <Button Text="Cancel"
+                                    Style="{x:Null}"
+                                    HeightRequest="46"
+                                    MinimumHeightRequest="46"
+                                    CornerRadius="12"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#64748B"
+                                    FontSize="15"
+                                    Padding="0"
+                                    Clicked="OnPickerCancelClicked" />
+                            <Button Grid.Column="1"
+                                    Text="Use Time"
+                                    Style="{x:Null}"
+                                    HeightRequest="46"
+                                    MinimumHeightRequest="46"
+                                    CornerRadius="12"
+                                    FontAttributes="Bold"
+                                    FontSize="15"
+                                    BackgroundColor="#2563EB"
+                                    TextColor="White"
+                                    Padding="0"
+                                    Clicked="OnPickerDoneClicked" />
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </ContentView>

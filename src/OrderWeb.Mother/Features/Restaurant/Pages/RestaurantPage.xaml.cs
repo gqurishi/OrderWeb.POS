@@ -42,7 +42,7 @@ public partial class RestaurantPage : ContentPage
             return;
         }
 
-        await ShowTabAsync(LayoutTab.Floor);
+        await ShowTabAsync(_selectedTab == default ? LayoutTab.Floor : _selectedTab);
     }
 
     protected override void OnDisappearing()
@@ -73,34 +73,60 @@ public partial class RestaurantPage : ContentPage
             DeactivateAll();
             _selectedTab = tab;
             StyleTabs();
-            DetachHostContent();
+            TabContentHost.Children.Clear();
 
             switch (tab)
             {
                 case LayoutTab.Tables:
                     TopBar.SetPageTitle("Table Management");
                     EnsureTableHost();
-                    TabContentHost.Content = _tableBody;
+                    AttachBody(_tableBody);
                     await _tablePage!.ActivateEmbeddedAsync();
                     break;
                 case LayoutTab.Visual:
                     TopBar.SetPageTitle("Visual Layout");
                     EnsureVisualHost();
-                    TabContentHost.Content = _visualBody;
+                    AttachBody(_visualBody);
                     await _visualPage!.ActivateEmbeddedAsync();
                     break;
                 default:
                     TopBar.SetPageTitle("Floor Management");
                     EnsureFloorHost();
-                    TabContentHost.Content = _floorBody;
+                    AttachBody(_floorBody);
                     await _floorPage!.ActivateEmbeddedAsync();
                     break;
             }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Layout] ShowTab failed: {ex}");
+            await AppAlertService.ShowAlertAsync("Layout", $"Could not open this tab: {ex.Message}");
         }
         finally
         {
             _isSwitchingTab = false;
         }
+    }
+
+    private void AttachBody(View? body)
+    {
+        if (body is null)
+        {
+            return;
+        }
+
+        if (body.Parent is Layout parentLayout)
+        {
+            parentLayout.Children.Remove(body);
+        }
+        else if (body.Parent is ContentView parentContent)
+        {
+            parentContent.Content = null;
+        }
+
+        body.VerticalOptions = LayoutOptions.Fill;
+        body.HorizontalOptions = LayoutOptions.Fill;
+        TabContentHost.Children.Add(body);
     }
 
     private void EnsureFloorHost()
@@ -113,6 +139,7 @@ public partial class RestaurantPage : ContentPage
         _floorPage = new FloorPage();
         _floorPage.PrepareForEmbed();
         _floorBody = _floorPage.Content;
+        _floorPage.Content = null;
     }
 
     private void EnsureTableHost()
@@ -125,6 +152,7 @@ public partial class RestaurantPage : ContentPage
         _tablePage = new TablePage();
         _tablePage.PrepareForEmbed();
         _tableBody = _tablePage.Content;
+        _tablePage.Content = null;
     }
 
     private void EnsureVisualHost()
@@ -137,11 +165,12 @@ public partial class RestaurantPage : ContentPage
         _visualPage = new VisualTablePage();
         _visualPage.PrepareForEmbed();
         _visualBody = _visualPage.Content;
-    }
-
-    private void DetachHostContent()
-    {
-        TabContentHost.Content = null;
+        _visualPage.Content = null;
+        if (_visualBody is not null)
+        {
+            _visualBody.VerticalOptions = LayoutOptions.Fill;
+            _visualBody.HorizontalOptions = LayoutOptions.Fill;
+        }
     }
 
     private void DeactivateAll()

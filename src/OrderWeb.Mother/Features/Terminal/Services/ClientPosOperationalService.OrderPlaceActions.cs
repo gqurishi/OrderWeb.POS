@@ -1021,6 +1021,7 @@ public sealed partial class ClientPosOperationalService
             CustomerName = order.CustomerName,
             CustomerPhone = order.CustomerPhone,
             Notes = order.SpecialInstructions,
+            ScheduledTime = order.ScheduledTime,
             OrderMode = string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase) ? "dine_in" : "takeaway",
             StartTime = order.CreatedAt,
             CreatedAt = order.CreatedAt,

@@ -17,7 +17,7 @@ public class ReportSchedulerService
     private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
     private Timer? _reportTimer;
     private const int CHECK_INTERVAL_HOURS = 1; // Check every hour
-    private const int REPORT_HOUR = 2; // 2 AM
+    private const int REPORT_HOUR = 3; // 3 AM safety upload / daily report generation
     private const int REPORT_MINUTE = 0;
 
     public bool IsRunning { get; private set; }

@@ -2644,7 +2644,7 @@ public partial class ReportPage : ContentPage
         var orderLabel = string.IsNullOrWhiteSpace(order.OrderNumber) ? order.OrderId : order.OrderNumber;
         var confirm = await DisplayAlert(
             "Void order?",
-            $"Void order {orderLabel}?\n\nIt will leave sales, Detailed All Orders, and VAT, and appear under Void / Cancelled.",
+            $"Void order {orderLabel}?",
             "Yes",
             "No");
 

@@ -54,8 +54,9 @@ public partial class AddEditItemPage : ContentPage
         _isEditMode = true;
         _editingItem = item;
         
-        PageTitle.Text = "Edit Item";
-        SaveButton.Text = "Update Item";
+        PageTitle.Text = "Edit item";
+        PageSubtitle.Text = "Update details, then save";
+        SaveButton.Text = "Update item";
         
         _ = LoadItemDataAsync();
     }
@@ -144,6 +145,7 @@ public partial class AddEditItemPage : ContentPage
             UpdateItemTypeSelection();
             _selectedColor = _editingItem.Color ?? "#3B82F6";
             CustomColorEntry.Text = _selectedColor;
+            ResetColorChipStrokes(FindColorChipByHex(_selectedColor));
             
             // Set category - find by ID first
             var category = _allCategories.FirstOrDefault(c => CategoryIdsEqual(c.Id, _editingItem.CategoryId));
@@ -406,6 +408,7 @@ public partial class AddEditItemPage : ContentPage
         {
             _selectedColor = category.Color ?? "#3B82F6";
             CustomColorEntry.Text = _selectedColor;
+            ResetColorChipStrokes(FindColorChipByHex(_selectedColor));
         }
 
         _currentSubCategories = _allCategories
@@ -439,74 +442,104 @@ public partial class AddEditItemPage : ContentPage
 
     private void OnColorChipTapped(object sender, EventArgs e)
     {
-        if (sender is Border chip)
+        if (sender is not Border chip)
         {
-            // Color mapping for chips
-            var colorMap = new Dictionary<string, string>
-            {
-                { "ColorChip1", "#EF4444" },  // Red
-                { "ColorChip2", "#F59E0B" },  // Orange
-                { "ColorChip3", "#10B981" },  // Green
-                { "ColorChip4", "#3B82F6" },  // Blue
-                { "ColorChip5", "#8B5CF6" },  // Purple
-                { "ColorChip6", "#EC4899" }   // Pink
-            };
-
-            if (colorMap.TryGetValue(chip.StyleId ?? "", out var colorHex))
-            {
-                _selectedColor = colorHex;
-                CustomColorEntry.Text = colorHex;
-            }
-            
-            // Reset all chips
-            ColorChip1.StrokeThickness = 2;
-            ColorChip1.Stroke = Color.FromArgb("#FEE2E2");
-            ColorChip2.StrokeThickness = 2;
-            ColorChip2.Stroke = Color.FromArgb("#FED7AA");
-            ColorChip3.StrokeThickness = 2;
-            ColorChip3.Stroke = Color.FromArgb("#D1FAE5");
-            ColorChip4.StrokeThickness = 2;
-            ColorChip4.Stroke = Color.FromArgb("#DBEAFE");
-            ColorChip5.StrokeThickness = 2;
-            ColorChip5.Stroke = Color.FromArgb("#EDE9FE");
-            ColorChip6.StrokeThickness = 2;
-            ColorChip6.Stroke = Color.FromArgb("#FCE7F3");
-            
-            // Highlight selected
-            chip.StrokeThickness = 3;
-            chip.Stroke = Color.FromArgb(_selectedColor);
+            return;
         }
+
+        var colorMap = new Dictionary<string, string>
+        {
+            { "ColorChip1", "#EF4444" },
+            { "ColorChip2", "#F59E0B" },
+            { "ColorChip3", "#10B981" },
+            { "ColorChip4", "#3B82F6" },
+            { "ColorChip5", "#8B5CF6" },
+            { "ColorChip6", "#EC4899" }
+        };
+
+        if (colorMap.TryGetValue(chip.StyleId ?? "", out var colorHex))
+        {
+            _selectedColor = colorHex;
+            CustomColorEntry.Text = colorHex;
+        }
+
+        ResetColorChipStrokes(chip);
     }
 
     private void OnCustomColorChanged(object sender, TextChangedEventArgs e)
     {
         var colorText = e.NewTextValue?.Trim();
         if (string.IsNullOrEmpty(colorText)) return;
-        
-        // Ensure # prefix
+
         if (!colorText.StartsWith("#"))
         {
             colorText = "#" + colorText;
         }
-        
-        // Validate hex color
+
         if (colorText.Length == 7 && colorText.All(c => "0123456789ABCDEFabcdef#".Contains(c)))
         {
             _selectedColor = colorText.ToUpper();
-            
-            // Reset all color chips
-            ColorChip1.StrokeThickness = 2;
-            ColorChip1.Stroke = Color.FromArgb("#FEE2E2");
-            ColorChip2.StrokeThickness = 2;
-            ColorChip2.Stroke = Color.FromArgb("#FED7AA");
-            ColorChip3.StrokeThickness = 2;
-            ColorChip3.Stroke = Color.FromArgb("#D1FAE5");
-            ColorChip4.StrokeThickness = 2;
-            ColorChip4.Stroke = Color.FromArgb("#DBEAFE");
-            ColorChip5.StrokeThickness = 2;
-            ColorChip5.Stroke = Color.FromArgb("#EDE9FE");
-            ColorChip6.StrokeThickness = 2;
-            ColorChip6.Stroke = Color.FromArgb("#FCE7F3");
+            ResetColorChipStrokes(FindColorChipByHex(_selectedColor));
+        }
+    }
+
+    private void ResetColorChipStrokes(Border? selected)
+    {
+        foreach (var chip in new[] { ColorChip1, ColorChip2, ColorChip3, ColorChip4, ColorChip5, ColorChip6 })
+        {
+            var isSelected = selected != null && ReferenceEquals(chip, selected);
+            chip.StrokeThickness = isSelected ? 2.5 : 2;
+            chip.Stroke = isSelected ? Color.FromArgb("#0F172A") : Colors.White;
+        }
+    }
+
+    private Border? FindColorChipByHex(string hex)
+    {
+        var map = new Dictionary<string, Border>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["#EF4444"] = ColorChip1,
+            ["#F59E0B"] = ColorChip2,
+            ["#10B981"] = ColorChip3,
+            ["#3B82F6"] = ColorChip4,
+            ["#8B5CF6"] = ColorChip5,
+            ["#EC4899"] = ColorChip6
+        };
+        return map.TryGetValue(hex, out var chip) ? chip : null;
+    }
+
+    private void OnExtrasTabTapped(object? sender, TappedEventArgs e)
+    {
+        var tab = (sender as Border)?.StyleId ?? "variants";
+        ShowExtrasTab(tab);
+    }
+
+    private void ShowExtrasTab(string tab)
+    {
+        var isVariants = tab.Equals("variants", StringComparison.OrdinalIgnoreCase);
+        var isAddons = tab.Equals("addons", StringComparison.OrdinalIgnoreCase);
+        var isNotes = tab.Equals("notes", StringComparison.OrdinalIgnoreCase);
+
+        VariantsPanel.IsVisible = isVariants;
+        AddonsPanel.IsVisible = isAddons;
+        NotesPanel.IsVisible = isNotes;
+
+        StyleExtrasTab(ExtrasTabVariants, isVariants);
+        StyleExtrasTab(ExtrasTabAddons, isAddons);
+        StyleExtrasTab(ExtrasTabNotes, isNotes);
+    }
+
+    private static void StyleExtrasTab(Border tab, bool selected)
+    {
+        tab.BackgroundColor = selected ? Colors.White : Colors.Transparent;
+        if (tab.Content is HorizontalStackLayout row)
+        {
+            foreach (var child in row.Children)
+            {
+                if (child is Label label && (label.Text is "Variants" or "Add-ons" or "Notes"))
+                {
+                    label.TextColor = selected ? Color.FromArgb("#0F172A") : Color.FromArgb("#64748B");
+                }
+            }
         }
     }
 
@@ -701,7 +734,7 @@ public partial class AddEditItemPage : ContentPage
     private void UpdateVariantsEmptyState()
     {
         VariantsEmptyState.IsVisible = !_variants.Any();
-        VariantCountLabel.Text = $"{_variants.Count} variant{(_variants.Count == 1 ? string.Empty : "s")}";
+        VariantCountLabel.Text = $"{_variants.Count}";
     }
 
     private bool TryBuildValidatedVariants(out List<MenuItemVariant> validatedVariants, out string validationError)
@@ -921,7 +954,7 @@ public partial class AddEditItemPage : ContentPage
     private void UpdateAddonsEmptyState()
     {
         AddonsEmptyState.IsVisible = !_addons.Any();
-        AddonCountLabel.Text = $"{_addons.Count} addon{(_addons.Count == 1 ? string.Empty : "s")}";
+        AddonCountLabel.Text = $"{_addons.Count}";
     }
 
     private bool TryBuildValidatedAddons(out List<Addon> validatedAddons, out string validationError)
@@ -1368,13 +1401,19 @@ public partial class AddEditItemPage : ContentPage
         card.Stroke = Color.FromArgb(selectedStroke);
         card.StrokeThickness = strokeThickness;
 
+        if (card.Content is Label directLabel)
+        {
+            directLabel.TextColor = Color.FromArgb(selectedTextColor);
+            return;
+        }
+
         if (card.Content is VerticalStackLayout layout)
         {
             foreach (var child in layout.Children)
             {
                 if (child is Label label)
                 {
-                    if (label.Text == "0%" || label.Text == "20%" || label.Text == "Mix VAT")
+                    if (label.Text is "0%" or "20%" or "Mix" or "Mix VAT")
                     {
                         label.TextColor = Color.FromArgb(selectedTextColor);
                     }

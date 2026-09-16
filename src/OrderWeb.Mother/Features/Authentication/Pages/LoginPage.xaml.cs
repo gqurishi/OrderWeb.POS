@@ -212,6 +212,7 @@ public partial class LoginPage : ContentPage
         UserRole.Cashier => "//cashierdashboard",
         UserRole.Manager => "//managerdashboard",
         UserRole.Admin => "//dashboard",
+        UserRole.BarManager => "//inventory",
         UserRole.Staff => "//login",
         _ => "//dashboard"
     };

@@ -30,12 +30,13 @@ public static class PosNavigationCatalog
         Item("loyalty", "Loyalty Points", "loyalty.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.CustomerPoints], 70),
         Item("reservation", "Reservations", "reservation.png", [PosCapabilityKeys.OpenTables], [PosFeatureKeys.Reservations], 80),
         Item("orderhistory", "Order History", "orderhistory.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Payments], 90),
+        Item("advanceorders", "Advance Orders", "liveorder.png", [PosCapabilityKeys.TakeOrders], [PosFeatureKeys.Collection, PosFeatureKeys.Delivery, PosFeatureKeys.LiveOrders], 95),
         Item("report", "Reports", "report.png", [PosCapabilityKeys.ViewReports], [], 140),
         Item("foodmenu", "Menu Admin", "foodmenu.png", [PosCapabilityKeys.EditMenu], [], 150),
         Item("printersetup", "Printer Setup", "printers.png", [PosCapabilityKeys.ConfigurePrinters], [], 160),
         Item("settings", "Settings", "settings.png", [PosCapabilityKeys.AccessAdmin], [], 170),
         Item("staffclock", "Staff Clock", "staff.png", [PosCapabilityKeys.AccessAdmin], [], 180),
-        Item("inventory", "Inventory", "inventory.png", [PosCapabilityKeys.ViewReports], [], 190),
+        Item("inventory", "Bar Inventory", "inventory.png", [PosCapabilityKeys.ViewBarInventory], [PosFeatureKeys.BarInventory], 190),
         Item("terminalhealth", "Terminal", "tarminal.png", [PosCapabilityKeys.AccessAdmin], [], 200),
         Item("customerdata", "Recent Customers", "customers.png", [PosCapabilityKeys.ManageCustomers], [PosFeatureKeys.Customers], 110)
     ];
@@ -88,7 +89,13 @@ public static class PosRoleMenus
     public static IReadOnlySet<string> Manager { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "dashboard", "cashdrawer", "restaurant", "collection", "delivery", "liveorder", "reservation",
-        "weborders", "orderhistory", "giftcards", "loyalty", "customerdata"
+        "weborders", "orderhistory", "advanceorders", "giftcards", "loyalty", "customerdata"
+    };
+
+    /// <summary>Bar Manager — stock workspace only on Mother and Client.</summary>
+    public static IReadOnlySet<string> BarManager { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "inventory"
     };
 
     public static IReadOnlySet<string>? ForRole(string? role)
@@ -101,6 +108,12 @@ public static class PosRoleMenus
         if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase))
         {
             return Manager;
+        }
+
+        if (string.Equals(role, "BarManager", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Bar Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return BarManager;
         }
 
         return null;

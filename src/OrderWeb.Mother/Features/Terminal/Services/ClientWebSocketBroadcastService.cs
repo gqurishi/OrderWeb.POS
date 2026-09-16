@@ -108,6 +108,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/orders/cash-drawer/open", HandleOrderPlaceCashDrawerOpenAsync);
             app.MapGet("/api/client/order-history", HandleOrderHistoryAsync);
             app.MapGet("/api/client/order-history/{orderId}", HandleOrderHistoryDetailAsync);
+            app.MapGet("/api/client/advance-orders", HandleListAdvanceOrdersAsync);
+            app.MapPost("/api/client/advance-orders/{orderId}/print-kitchen", HandleAdvanceOrderPrintKitchenAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
             app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
             app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
@@ -184,6 +186,85 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         finally
         {
             _lifetimeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Tips Client tills that an advance order is due (T−3h / inside window).
+    /// Payload fields are on the WS frame; Clients must not run their own timer.
+    /// Event type: <c>advance.reminder</c>.
+    /// </summary>
+    public async Task PublishAdvanceReminderAsync(
+        string orderId,
+        string? orderNumber,
+        string orderType,
+        DateTime? scheduledTime,
+        string customerName,
+        string? customerPhone,
+        decimal totalAmount,
+        bool kitchenPrinted,
+        string? correlationId = null)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return;
+        }
+
+        var timestamp = DateTimeOffset.UtcNow;
+        var correlation = string.IsNullOrWhiteSpace(correlationId) ? Guid.NewGuid().ToString("N") : correlationId;
+        var scheduledUtc = scheduledTime.HasValue
+            ? scheduledTime.Value.ToUniversalTime().ToString("O")
+            : null;
+        var scheduledDisplay = AdvanceOrderService.FormatScheduledDisplay(scheduledTime);
+
+        long eventId;
+        await using (var connection = new MySqlConnection(_databaseService.GetConnectionString()))
+        {
+            await connection.OpenAsync().ConfigureAwait(false);
+            await EnsureClientConnectionTablesAsync(connection).ConfigureAwait(false);
+            var payload = JsonSerializer.Serialize(new AdvanceOrderReminderDto(
+                orderId.Trim(),
+                orderNumber,
+                orderType,
+                scheduledUtc,
+                scheduledDisplay,
+                customerName ?? string.Empty,
+                customerPhone,
+                totalAmount,
+                kitchenPrinted));
+            eventId = await InsertClientTerminalEventAsync(
+                connection,
+                eventType: "advance.reminder",
+                entityType: "order",
+                entityId: orderId.Trim(),
+                payloadJson: payload).ConfigureAwait(false);
+        }
+
+        var notification = new
+        {
+            type = "advance.reminder",
+            eventId,
+            restaurantId = GetRestaurantSlug(),
+            version = orderId.Trim(),
+            timestamp,
+            correlationId = correlation,
+            orderId = orderId.Trim(),
+            orderNumber,
+            orderType,
+            scheduledTimeUtc = scheduledUtc,
+            scheduledDisplay,
+            customerName,
+            customerPhone,
+            totalAmount,
+            kitchenPrinted
+        };
+
+        foreach (var client in _clients.Values)
+        {
+            if (client.WebSocket.State == WebSocketState.Open)
+            {
+                await SendWebSocketJsonAsync(client.WebSocket, notification, CancellationToken.None).ConfigureAwait(false);
+            }
         }
     }
 
@@ -1581,20 +1662,164 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     ClientOrderHistoryService.MaxPageSize)
             });
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            throw;
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+        }
+    }
+
+    private async Task HandleListAdvanceOrdersAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new AdvanceOrderListResponseDto(
+                false, session.Message, AdvanceOrderRanges.Today, null, null, null, AdvanceOrderErrorCodes.AccessDenied));
+            return;
+        }
+
+        if (!await EnsureManagerAdvanceAccessAsync(context, session))
+        {
+            return;
+        }
+
+        try
+        {
+            var range = context.Request.Query["range"].ToString();
+            var advance = ServiceHelper.GetService<AdvanceOrderService>()
+                ?? new AdvanceOrderService(
+                    _databaseService,
+                    ServiceHelper.GetService<OrderService>() ?? new OrderService(),
+                    ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService());
+
+            var (from, to, normalized) = await advance.ResolveRangeAsync(range);
+            var rows = await advance.ListUpcomingAsync(from, to, context.RequestAborted);
+            var dtos = rows.Select(ToAdvanceOrderDto).ToList();
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new AdvanceOrderListResponseDto(
+                true,
+                null,
+                normalized,
+                from.ToUniversalTime().ToString("O"),
+                to.ToUniversalTime().ToString("O"),
+                dtos));
         }
         catch (Exception ex)
         {
-            AppDiagnostics.Log($"Client order-history failed: {ex.GetType().Name}: {ex.Message}");
-            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new
-            {
-                success = false,
-                message = "Mother POS could not load order history."
-            });
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new AdvanceOrderListResponseDto(
+                false, ex.Message, AdvanceOrderRanges.Today, null, null, null, AdvanceOrderErrorCodes.Unknown));
         }
     }
+
+    private async Task HandleAdvanceOrderPrintKitchenAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new AdvanceOrderPrintResponseDto(
+                false, session.Message, ErrorCode: AdvanceOrderErrorCodes.AccessDenied));
+            return;
+        }
+
+        if (!await EnsureManagerAdvanceAccessAsync(context, session, forPrint: true))
+        {
+            return;
+        }
+
+        var orderId = context.Request.RouteValues["orderId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new AdvanceOrderPrintResponseDto(
+                false, "Order id is required.", ErrorCode: AdvanceOrderErrorCodes.Validation));
+            return;
+        }
+
+        try
+        {
+            var advance = ServiceHelper.GetService<AdvanceOrderService>()
+                ?? new AdvanceOrderService(
+                    _databaseService,
+                    ServiceHelper.GetService<OrderService>() ?? new OrderService(),
+                    ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService());
+
+            var result = await advance.PrintKitchenManualAsync(orderId, context.RequestAborted);
+            if (!result.Success)
+            {
+                var code = result.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                    ? AdvanceOrderErrorCodes.NotFound
+                    : AdvanceOrderErrorCodes.PrintFailed;
+                await WriteJsonAsync(context, HttpStatusCode.OK, new AdvanceOrderPrintResponseDto(
+                    false, result.Message, orderId, result.AlreadyPrinted, code));
+                return;
+            }
+
+            await WriteJsonAsync(context, HttpStatusCode.OK, new AdvanceOrderPrintResponseDto(
+                true, result.Message, orderId, KitchenPrinted: true));
+        }
+        catch (Exception ex)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new AdvanceOrderPrintResponseDto(
+                false, ex.Message, orderId, ErrorCode: AdvanceOrderErrorCodes.Unknown));
+        }
+    }
+
+    /// <summary>Manager-only Advance Orders APIs (Admin cannot hold a Client session).</summary>
+    private async Task<bool> EnsureManagerAdvanceAccessAsync(
+        HttpContext context,
+        ClientSessionValidation session,
+        bool forPrint = false)
+    {
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync(context.RequestAborted);
+        await using var command = new MySqlCommand("SELECT role FROM users WHERE id = @userId AND is_active = TRUE LIMIT 1", connection);
+        command.Parameters.AddWithValue("@userId", session.UserId);
+        var roleValue = await command.ExecuteScalarAsync(context.RequestAborted);
+        if (!Enum.TryParse<UserRole>(roleValue?.ToString(), true, out var role) ||
+            role != UserRole.Manager)
+        {
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "advance_orders_denied", "denied");
+            if (forPrint)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new AdvanceOrderPrintResponseDto(
+                    false,
+                    "Advance Orders is available to Manager accounts.",
+                    ErrorCode: AdvanceOrderErrorCodes.AccessDenied));
+            }
+            else
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new AdvanceOrderListResponseDto(
+                    false,
+                    "Advance Orders is available to Manager accounts.",
+                    AdvanceOrderRanges.Today,
+                    null,
+                    null,
+                    null,
+                    AdvanceOrderErrorCodes.AccessDenied));
+            }
+
+            return false;
+        }
+
+        if (!await EnsureAnyFeatureAsync(context, session, PosFeatureKeys.Collection, PosFeatureKeys.Delivery, PosFeatureKeys.LiveOrders))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static AdvanceOrderDto ToAdvanceOrderDto(AdvanceOrderSummary row) =>
+        new(
+            row.OrderId,
+            row.OrderNumber,
+            AdvanceOrderService.DisplayOrderType(row.OrderType),
+            row.ScheduledTime?.ToUniversalTime().ToString("O"),
+            AdvanceOrderService.FormatScheduledDisplay(row.ScheduledTime),
+            row.CustomerName,
+            row.CustomerPhone,
+            row.TotalAmount,
+            row.AdvanceKitchenPrintedAt.HasValue,
+            AdvanceOrderService.StatusLabel(row));
 
     private async Task HandleOrderHistoryDetailAsync(HttpContext context)
     {
@@ -3886,6 +4111,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             CustomerName = order.CustomerName,
             CustomerPhone = order.CustomerPhone,
             Notes = order.SpecialInstructions,
+            ScheduledTime = order.ScheduledTime,
             OrderMode = string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase) ? "dine_in" : "takeaway",
             StartTime = order.CreatedAt,
             CreatedAt = order.CreatedAt,

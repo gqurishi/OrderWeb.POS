@@ -10,6 +10,7 @@ public sealed class OrderServiceAvailabilityService
     private readonly SemaphoreSlim _loadLock = new(1, 1);
     private OrderServiceAvailabilitySettings _cached = new();
     private bool _hasLoaded;
+    private bool _reservationColumnsEnsured;
 
     public event EventHandler<OrderServiceAvailabilitySettings>? SettingsChanged;
 
@@ -41,20 +42,9 @@ public sealed class OrderServiceAvailabilityService
             }
 
             await using var connection = await _databaseService.GetConnectionAsync();
-            const string sql = """
-                SELECT table_enabled, collection_enabled, delivery_enabled, reservation_enabled,
-                       updated_by_user_id, updated_by_name, updated_at
-                FROM order_service_availability_settings
-                WHERE id = 1
-                """;
-            await using var command = new MySqlCommand(sql, connection);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                throw new InvalidOperationException("Order service settings are missing. Run database migration 029.");
-            }
+            await EnsureReservationColumnsAsync(connection, cancellationToken);
 
-            _cached = Read(reader);
+            _cached = await ReadSettingsAsync(connection, transaction: null, forUpdate: false, cancellationToken);
             _hasLoaded = true;
             return Current;
         }
@@ -134,48 +124,90 @@ public sealed class OrderServiceAvailabilityService
         }
 
         await using var connection = await _databaseService.GetConnectionAsync();
+        await EnsureReservationColumnsAsync(connection, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            var previous = await ReadForUpdateAsync(connection, transaction, cancellationToken);
+            var previous = await ReadSettingsAsync(connection, transaction, forUpdate: true, cancellationToken);
             var actorName = !string.IsNullOrWhiteSpace(actor.Name) ? actor.Name : actor.Username;
+            var hasReservationColumn = await ColumnExistsAsync(
+                connection,
+                "order_service_availability_settings",
+                "reservation_enabled",
+                cancellationToken);
 
-            const string updateSql = """
-                UPDATE order_service_availability_settings
-                SET table_enabled = @tableEnabled,
-                    collection_enabled = @collectionEnabled,
-                    delivery_enabled = @deliveryEnabled,
-                    reservation_enabled = @reservationEnabled,
-                    updated_by_user_id = @userId,
-                    updated_by_name = @userName,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = 1
-                """;
+            var updateSql = hasReservationColumn
+                ? """
+                    UPDATE order_service_availability_settings
+                    SET table_enabled = @tableEnabled,
+                        collection_enabled = @collectionEnabled,
+                        delivery_enabled = @deliveryEnabled,
+                        reservation_enabled = @reservationEnabled,
+                        updated_by_user_id = @userId,
+                        updated_by_name = @userName,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = 1
+                    """
+                : """
+                    UPDATE order_service_availability_settings
+                    SET table_enabled = @tableEnabled,
+                        collection_enabled = @collectionEnabled,
+                        delivery_enabled = @deliveryEnabled,
+                        updated_by_user_id = @userId,
+                        updated_by_name = @userName,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = 1
+                    """;
+
             await using (var update = new MySqlCommand(updateSql, connection, transaction))
             {
                 update.Parameters.AddWithValue("@tableEnabled", tableEnabled);
                 update.Parameters.AddWithValue("@collectionEnabled", collectionEnabled);
                 update.Parameters.AddWithValue("@deliveryEnabled", deliveryEnabled);
-                update.Parameters.AddWithValue("@reservationEnabled", reservationEnabled);
+                if (hasReservationColumn)
+                {
+                    update.Parameters.AddWithValue("@reservationEnabled", reservationEnabled);
+                }
+
                 update.Parameters.AddWithValue("@userId", actor.Id > 0 ? actor.Id : DBNull.Value);
                 update.Parameters.AddWithValue("@userName", actorName);
                 await update.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            const string auditSql = """
-                INSERT INTO order_service_availability_events
-                    (previous_table_enabled, new_table_enabled,
-                     previous_collection_enabled, new_collection_enabled,
-                     previous_delivery_enabled, new_delivery_enabled,
-                     previous_reservation_enabled, new_reservation_enabled,
-                     changed_by_user_id, changed_by_name)
-                VALUES
-                    (@previousTable, @newTable,
-                     @previousCollection, @newCollection,
-                     @previousDelivery, @newDelivery,
-                     @previousReservation, @newReservation,
-                     @userId, @userName)
-                """;
+            var hasReservationAudit = await ColumnExistsAsync(
+                connection,
+                "order_service_availability_events",
+                "previous_reservation_enabled",
+                cancellationToken);
+
+            var auditSql = hasReservationAudit
+                ? """
+                    INSERT INTO order_service_availability_events
+                        (previous_table_enabled, new_table_enabled,
+                         previous_collection_enabled, new_collection_enabled,
+                         previous_delivery_enabled, new_delivery_enabled,
+                         previous_reservation_enabled, new_reservation_enabled,
+                         changed_by_user_id, changed_by_name)
+                    VALUES
+                        (@previousTable, @newTable,
+                         @previousCollection, @newCollection,
+                         @previousDelivery, @newDelivery,
+                         @previousReservation, @newReservation,
+                         @userId, @userName)
+                    """
+                : """
+                    INSERT INTO order_service_availability_events
+                        (previous_table_enabled, new_table_enabled,
+                         previous_collection_enabled, new_collection_enabled,
+                         previous_delivery_enabled, new_delivery_enabled,
+                         changed_by_user_id, changed_by_name)
+                    VALUES
+                        (@previousTable, @newTable,
+                         @previousCollection, @newCollection,
+                         @previousDelivery, @newDelivery,
+                         @userId, @userName)
+                    """;
+
             await using (var audit = new MySqlCommand(auditSql, connection, transaction))
             {
                 audit.Parameters.AddWithValue("@previousTable", previous.TableEnabled);
@@ -184,8 +216,12 @@ public sealed class OrderServiceAvailabilityService
                 audit.Parameters.AddWithValue("@newCollection", collectionEnabled);
                 audit.Parameters.AddWithValue("@previousDelivery", previous.DeliveryEnabled);
                 audit.Parameters.AddWithValue("@newDelivery", deliveryEnabled);
-                audit.Parameters.AddWithValue("@previousReservation", previous.ReservationEnabled);
-                audit.Parameters.AddWithValue("@newReservation", reservationEnabled);
+                if (hasReservationAudit)
+                {
+                    audit.Parameters.AddWithValue("@previousReservation", previous.ReservationEnabled);
+                    audit.Parameters.AddWithValue("@newReservation", reservationEnabled);
+                }
+
                 audit.Parameters.AddWithValue("@userId", actor.Id > 0 ? actor.Id : DBNull.Value);
                 audit.Parameters.AddWithValue("@userName", actorName);
                 await audit.ExecuteNonQueryAsync(cancellationToken);
@@ -213,43 +249,129 @@ public sealed class OrderServiceAvailabilityService
         }
     }
 
-    private static async Task<OrderServiceAvailabilitySettings> ReadForUpdateAsync(
+    private async Task EnsureReservationColumnsAsync(
         MySqlConnection connection,
-        MySqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            SELECT table_enabled, collection_enabled, delivery_enabled, reservation_enabled,
-                   updated_by_user_id, updated_by_name, updated_at
-            FROM order_service_availability_settings
-            WHERE id = 1
-            FOR UPDATE
-            """;
-        await using var command = new MySqlCommand(sql, connection, transaction);
+        if (_reservationColumnsEnsured || RuntimeSchemaPolicy.IsMigrationManaged)
+        {
+            return;
+        }
+
+        try
+        {
+            await using (var settings = new MySqlCommand(
+                """
+                ALTER TABLE order_service_availability_settings
+                    ADD COLUMN IF NOT EXISTS reservation_enabled BOOLEAN NOT NULL DEFAULT TRUE
+                        AFTER delivery_enabled
+                """,
+                connection))
+            {
+                await settings.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var events = new MySqlCommand(
+                """
+                ALTER TABLE order_service_availability_events
+                    ADD COLUMN IF NOT EXISTS previous_reservation_enabled BOOLEAN NOT NULL DEFAULT TRUE
+                        AFTER new_delivery_enabled,
+                    ADD COLUMN IF NOT EXISTS new_reservation_enabled BOOLEAN NOT NULL DEFAULT TRUE
+                        AFTER previous_reservation_enabled
+                """,
+                connection))
+            {
+                await events.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            _reservationColumnsEnsured = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[OrderServices] reservation column ensure skipped: {ex.Message}");
+        }
+    }
+
+    private static async Task<OrderServiceAvailabilitySettings> ReadSettingsAsync(
+        MySqlConnection connection,
+        MySqlTransaction? transaction,
+        bool forUpdate,
+        CancellationToken cancellationToken)
+    {
+        var hasReservation = await ColumnExistsAsync(
+            connection,
+            "order_service_availability_settings",
+            "reservation_enabled",
+            cancellationToken);
+
+        var sql = hasReservation
+            ? """
+                SELECT table_enabled, collection_enabled, delivery_enabled, reservation_enabled,
+                       updated_by_user_id, updated_by_name, updated_at
+                FROM order_service_availability_settings
+                WHERE id = 1
+                """
+            : """
+                SELECT table_enabled, collection_enabled, delivery_enabled,
+                       updated_by_user_id, updated_by_name, updated_at
+                FROM order_service_availability_settings
+                WHERE id = 1
+                """;
+
+        if (forUpdate)
+        {
+            sql += " FOR UPDATE";
+        }
+
+        await using var command = transaction is null
+            ? new MySqlCommand(sql, connection)
+            : new MySqlCommand(sql, connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException("Order service settings are missing. Run database migration 029.");
         }
 
-        return Read(reader);
+        return Read(reader, hasReservation);
     }
 
-    private static OrderServiceAvailabilitySettings Read(MySqlDataReader reader)
+    private static async Task<bool> ColumnExistsAsync(
+        MySqlConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = @tableName
+              AND COLUMN_NAME = @columnName
+            """;
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@tableName", tableName);
+        command.Parameters.AddWithValue("@columnName", columnName);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        return count > 0;
+    }
+
+    private static OrderServiceAvailabilitySettings Read(MySqlDataReader reader, bool hasReservationColumn)
     {
         var reservationEnabled = true;
-        try
+        if (hasReservationColumn)
         {
-            var ordinal = reader.GetOrdinal("reservation_enabled");
-            if (!reader.IsDBNull(ordinal))
+            try
             {
-                reservationEnabled = reader.GetBoolean(ordinal);
+                var ordinal = reader.GetOrdinal("reservation_enabled");
+                if (!reader.IsDBNull(ordinal))
+                {
+                    reservationEnabled = reader.GetBoolean(ordinal);
+                }
             }
-        }
-        catch (IndexOutOfRangeException)
-        {
-            // Pre-migration 043 databases keep Reservation on until the column exists.
-            reservationEnabled = true;
+            catch (IndexOutOfRangeException)
+            {
+                reservationEnabled = true;
+            }
         }
 
         return new OrderServiceAvailabilitySettings

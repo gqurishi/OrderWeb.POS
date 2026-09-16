@@ -35,7 +35,7 @@ namespace POS_in_NET.Views
             EditUsernameEntry.Text = user.Username;
             EditPINEntry.Text = ""; // Always start empty for security
             UpdatePinDisplay();
-            EditSelectedRoleLabel.Text = user.Role.ToString();
+            EditSelectedRoleLabel.Text = UserRoleDisplay.ToDisplayName(user.Role);
             
             IsVisible = true;
             System.Diagnostics.Debug.WriteLine($"Edit user overlay shown for: {user.Name}");
@@ -146,7 +146,7 @@ namespace POS_in_NET.Views
         public void UpdateSelectedRole(UserRole role)
         {
             _selectedRole = role;
-            EditSelectedRoleLabel.Text = role.ToString();
+            EditSelectedRoleLabel.Text = UserRoleDisplay.ToDisplayName(role);
             System.Diagnostics.Debug.WriteLine($"Edit role updated to: {role}");
         }
         

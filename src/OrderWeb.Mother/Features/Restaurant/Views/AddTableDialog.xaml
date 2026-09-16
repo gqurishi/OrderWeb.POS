@@ -5,195 +5,173 @@
              BackgroundColor="{StaticResource DialogOverlayColor}"
              VerticalOptions="Fill"
              HorizontalOptions="Fill">
-    
+
     <Grid x:Name="DialogRoot"
-          VerticalOptions="Fill" 
+          VerticalOptions="Fill"
           HorizontalOptions="Fill"
-          Padding="24,12">
+          Padding="20,10">
         <Border BackgroundColor="White"
-                Stroke="{StaticResource DialogShellStrokeColor}"
+                Stroke="#E5E7EB"
                 StrokeThickness="1"
                 Padding="0"
-                WidthRequest="520"
-                MaximumWidthRequest="560"
-                MaximumHeightRequest="{DynamicResource ResponsiveDialogBodyHeight}"
+                WidthRequest="380"
+                MaximumWidthRequest="400"
                 VerticalOptions="Center"
                 HorizontalOptions="Center">
             <Border.StrokeShape>
-                <RoundRectangle CornerRadius="18"/>
+                <RoundRectangle CornerRadius="14"/>
             </Border.StrokeShape>
             <Border.Shadow>
-                <Shadow Brush="#0F172A" Opacity="0.16" Radius="20" Offset="0,8"/>
+                <Shadow Brush="#0F172A" Opacity="0.10" Radius="14" Offset="0,6"/>
             </Border.Shadow>
-            <Grid RowDefinitions="Auto,*"
-                  RowSpacing="18"
-                  Padding="28">
-                
-                <!-- Title -->
-                <Label Text="Add New Table"
-                       Grid.Row="0"
-                       FontSize="24"
-                       FontFamily="OpenSansSemibold"
-                       FontAttributes="Bold"
-                       TextColor="#1F2937"
-                       HorizontalOptions="Center" />
 
-                <ScrollView Grid.Row="1"
-                            VerticalScrollBarVisibility="Always">
-                    <VerticalStackLayout Spacing="20"
-                                         Padding="0,0,4,0">
-                        
-                        <!-- Floor Selection -->
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Select Floor"
-                                   FontSize="14"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#374151"
-                                   HorizontalOptions="Start" />
-                            
-                            <!-- Custom Floor Selection Cards -->
-                            <ScrollView MaximumHeightRequest="170"
-                                       VerticalScrollBarVisibility="Always">
-                                <VerticalStackLayout x:Name="FloorSelectionStack"
-                                                   Spacing="8">
-                                    <!-- Floor cards will be added dynamically -->
-                                </VerticalStackLayout>
-                            </ScrollView>
-                        </VerticalStackLayout>
-                        
-                        <!-- Table Number Input -->
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Table Number"
-                                   FontSize="14"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#374151"
-                                   HorizontalOptions="Start" />
-                            
-                            <Border x:Name="TableNumberField"
-                                    BackgroundColor="#F9FAFB"
-                                    Stroke="#E5E7EB"
-                                    StrokeThickness="1"
-                                    StrokeShape="RoundRectangle 10"
-                                    Padding="14">
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer Tapped="OnTableNumberTapped" />
-                                </Border.GestureRecognizers>
-                                <Entry x:Name="TableNumberEntry"
-                                       FontSize="16"
-                                       FontFamily="OpenSansRegular"
-                                       TextColor="#1F2937"
-                                       PlaceholderColor="#9CA3AF"
-                                       Placeholder="Tap to enter number"
-                                       BackgroundColor="Transparent"
-                                       IsReadOnly="True"
-                                       InputTransparent="True"
-                                       HeightRequest="40" />
-                            </Border>
-                        </VerticalStackLayout>
-                        
-                        <!-- Table Design Selection -->
-                        <VerticalStackLayout Spacing="10">
-                            <Label Text="Table Design"
-                                   FontSize="14"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="#374151"
-                                   HorizontalOptions="Start" />
-                            
-                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center">
-                                <!-- Design 1 -->
-                                <Border x:Name="Design1Border"
-                                        BackgroundColor="#F0F9FF"
-                                        Stroke="#3B82F6"
-                                        StrokeThickness="3"
-                                        Padding="10"
-                                        WidthRequest="72"
-                                        HeightRequest="72">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="10" />
-                                    </Border.StrokeShape>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnDesign1Clicked" />
-                                    </Border.GestureRecognizers>
-                                    <Image Source="table_1.png"
-                                           WidthRequest="48"
-                                           HeightRequest="48"
-                                           Aspect="AspectFit" />
-                                </Border>
-                                
-                                <!-- Design 2 -->
-                                <Border x:Name="Design2Border"
-                                        BackgroundColor="White"
-                                        Stroke="#E5E7EB"
-                                        StrokeThickness="2"
-                                        Padding="10"
-                                        WidthRequest="72"
-                                        HeightRequest="72">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="10" />
-                                    </Border.StrokeShape>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnDesign2Clicked" />
-                                    </Border.GestureRecognizers>
-                                    <Image Source="table_2.png"
-                                           WidthRequest="48"
-                                           HeightRequest="48"
-                                           Aspect="AspectFit" />
-                                </Border>
-                                
-                                <!-- Design 3 -->
-                                <Border x:Name="Design3Border"
-                                        BackgroundColor="White"
-                                        Stroke="#E5E7EB"
-                                        StrokeThickness="2"
-                                        Padding="10"
-                                        WidthRequest="72"
-                                        HeightRequest="72">
-                                    <Border.StrokeShape>
-                                        <RoundRectangle CornerRadius="10" />
-                                    </Border.StrokeShape>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnDesign3Clicked" />
-                                    </Border.GestureRecognizers>
-                                    <Image Source="table_3.png"
-                                           WidthRequest="48"
-                                           HeightRequest="48"
-                                           Aspect="AspectFit" />
-                                </Border>
-                            </HorizontalStackLayout>
-                        </VerticalStackLayout>
-                        
-                        <!-- Buttons -->
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="12"
-                              Margin="0,4,0,0">
-                            <Button Grid.Column="0"
-                                    x:Name="CancelButton"
-                                    Text="Cancel"
-                                    BackgroundColor="#F3F4F6"
-                                    TextColor="#6B7280"
-                                    FontFamily="OpenSansSemibold"
-                                    CornerRadius="12"
-                                    HeightRequest="48"
-                                    FontSize="15"
-                                    Clicked="OnCancelClicked" />
-                            
-                            <Button Grid.Column="1"
-                                    x:Name="CreateButton"
-                                    Text="Create Table"
-                                    BackgroundColor="#3B82F6"
-                                    TextColor="White"
-                                    FontFamily="OpenSansSemibold"
-                                    CornerRadius="12"
-                                    HeightRequest="48"
-                                    FontSize="15"
-                                    FontAttributes="Bold"
-                                    Clicked="OnCreateClicked" />
-                        </Grid>
-                        
-                    </VerticalStackLayout>
-                </ScrollView>
-            </Grid>
+            <VerticalStackLayout Spacing="14" Padding="18,16">
+
+                <!-- Title -->
+                <Label Text="Add table"
+                       FontSize="17"
+                       FontFamily="OpenSansSemibold"
+                       TextColor="#111827"
+                       HorizontalOptions="Start" />
+
+                <!-- Floor -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Floor"
+                           FontSize="12"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#6B7280" />
+                    <ScrollView MaximumHeightRequest="96"
+                               VerticalScrollBarVisibility="Never">
+                        <VerticalStackLayout x:Name="FloorSelectionStack"
+                                             Spacing="6" />
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <!-- Table number -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Number"
+                           FontSize="12"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#6B7280" />
+                    <Border x:Name="TableNumberField"
+                            BackgroundColor="#F8FAFC"
+                            Stroke="#E5E7EB"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="12,0"
+                            HeightRequest="40">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTableNumberTapped" />
+                        </Border.GestureRecognizers>
+                        <Entry x:Name="TableNumberEntry"
+                               FontSize="14"
+                               FontFamily="OpenSansRegular"
+                               TextColor="#111827"
+                               PlaceholderColor="#9CA3AF"
+                               Placeholder="Tap to enter"
+                               BackgroundColor="Transparent"
+                               IsReadOnly="True"
+                               InputTransparent="True"
+                               VerticalOptions="Center"
+                               HeightRequest="36" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Design -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Design"
+                           FontSize="12"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#6B7280" />
+                    <HorizontalStackLayout Spacing="8" HorizontalOptions="Start">
+                        <Border x:Name="Design1Border"
+                                BackgroundColor="#EFF6FF"
+                                Stroke="#3B82F6"
+                                StrokeThickness="1.5"
+                                Padding="6"
+                                WidthRequest="52"
+                                HeightRequest="52">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDesign1Clicked" />
+                            </Border.GestureRecognizers>
+                            <Image Source="table_1.png"
+                                   WidthRequest="34"
+                                   HeightRequest="34"
+                                   Aspect="AspectFit" />
+                        </Border>
+
+                        <Border x:Name="Design2Border"
+                                BackgroundColor="White"
+                                Stroke="#E5E7EB"
+                                StrokeThickness="1"
+                                Padding="6"
+                                WidthRequest="52"
+                                HeightRequest="52">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDesign2Clicked" />
+                            </Border.GestureRecognizers>
+                            <Image Source="table_2.png"
+                                   WidthRequest="34"
+                                   HeightRequest="34"
+                                   Aspect="AspectFit" />
+                        </Border>
+
+                        <Border x:Name="Design3Border"
+                                BackgroundColor="White"
+                                Stroke="#E5E7EB"
+                                StrokeThickness="1"
+                                Padding="6"
+                                WidthRequest="52"
+                                HeightRequest="52">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnDesign3Clicked" />
+                            </Border.GestureRecognizers>
+                            <Image Source="table_3.png"
+                                   WidthRequest="34"
+                                   HeightRequest="34"
+                                   Aspect="AspectFit" />
+                        </Border>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Actions -->
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="8"
+                      Margin="0,2,0,0">
+                    <Button Grid.Column="0"
+                            x:Name="CancelButton"
+                            Text="Cancel"
+                            BackgroundColor="#F3F4F6"
+                            TextColor="#4B5563"
+                            FontFamily="OpenSansSemibold"
+                            CornerRadius="8"
+                            HeightRequest="40"
+                            FontSize="13"
+                            Clicked="OnCancelClicked" />
+
+                    <Button Grid.Column="1"
+                            x:Name="CreateButton"
+                            Text="Create"
+                            BackgroundColor="#2563EB"
+                            TextColor="White"
+                            FontFamily="OpenSansSemibold"
+                            CornerRadius="8"
+                            HeightRequest="40"
+                            FontSize="13"
+                            Clicked="OnCreateClicked" />
+                </Grid>
+
+            </VerticalStackLayout>
         </Border>
     </Grid>
-    
+
 </ContentView>

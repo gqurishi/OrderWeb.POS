@@ -137,6 +137,16 @@ public static class ClientCapabilityResolver
             ]);
         }
 
+        if (string.Equals(role, "BarManager", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Bar Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return ClientAccessPolicy.FilterCapabilities(
+            [
+                PosCapabilityKeys.ViewDashboard,
+                PosCapabilityKeys.ViewBarInventory
+            ]);
+        }
+
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             PosCapabilityKeys.ViewDashboard,

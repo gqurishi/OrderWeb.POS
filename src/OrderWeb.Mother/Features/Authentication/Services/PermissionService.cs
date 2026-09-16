@@ -250,6 +250,13 @@ public class PermissionService
             return false;
         }
     }
+
+    /// <summary>Seeds inventory.view for Admin and Bar Manager so first open is not blocked.</summary>
+    public async Task EnsureInventoryRolePermissionsAsync()
+    {
+        await SetRolePermissionAsync(UserRole.Admin, PermissionKeys.InventoryView, true);
+        await SetRolePermissionAsync(UserRole.BarManager, PermissionKeys.InventoryView, true);
+    }
 }
 
 public record PermissionDefinition(string Key, string DisplayName);

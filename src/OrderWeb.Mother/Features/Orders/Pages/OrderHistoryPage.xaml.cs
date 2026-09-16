@@ -161,10 +161,32 @@ namespace POS_in_NET.Pages
             var query = $@"
                 SELECT o.id, o.order_id, o.order_number, o.order_type, o.total_amount,
                        o.created_at, o.status, o.customer_name, o.customer_phone,
-                       o.payment_method, {paymentStatusProjection} AS payment_status, o.source_channel,
+                       COALESCE(pay.payment_method, o.payment_method) AS payment_method,
+                       COALESCE(
+                           NULLIF({paymentStatusProjection}, ''),
+                           CASE
+                               WHEN LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid' THEN 'paid'
+                               WHEN pay.payment_method IS NOT NULL THEN 'paid'
+                               ELSE NULL
+                           END
+                       ) AS payment_status,
+                       o.source_channel,
                        CASE WHEN o.local_lifecycle_state = 'voided' OR o.status IN ('void', 'cancelled')
                             THEN 'voided' ELSE 'completed' END AS history_group
                 FROM orders o
+                LEFT JOIN (
+                    SELECT p.order_id, p.payment_method
+                    FROM order_payments p
+                    INNER JOIN (
+                        SELECT order_id, MAX(id) AS max_id
+                        FROM order_payments
+                        WHERE LOWER(COALESCE(status, '')) = 'approved'
+                          AND amount > 0
+                          AND LOWER(REPLACE(REPLACE(COALESCE(payment_method, ''), '_', ''), '-', ''))
+                              IN ('cash', 'card', 'giftcard', 'gift_card')
+                        GROUP BY order_id
+                    ) latest ON latest.max_id = p.id
+                ) pay ON pay.order_id = o.id
                 WHERE 1 = 1
                       {BuildSourceFilter()}
                       {BuildDateFilter()}
@@ -255,6 +277,7 @@ namespace POS_in_NET.Pages
                 StatusDisplay: item.StatusDisplay,
                 TotalDisplay: $"£{item.TotalAmount:F2}",
                 IsVoided: false,
+                IsWebOrder: item.IsWebOrder,
                 Tag: item);
 
         private static string ReadString(MySqlDataReader reader, string column)

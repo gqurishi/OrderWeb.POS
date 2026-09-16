@@ -1,0 +1,34 @@
+# Bar Inventory + Bar Manager (remember)
+
+## Goal
+Bar Inventory is a **SharedUI** workspace. Admin creates a **Bar Manager** user. That role opens Bar Inventory only on **Mother or Client** (online to Mother). No Client→cloud.
+
+## Phase 0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Role name | **Bar Manager** (`UserRole.BarManager`) |
+| Who creates the user | **Admin** (Users / role picker) |
+| What Bar Manager can open | **Bar Inventory only** |
+| UI home | SharedUI `BarInventoryView` |
+| Hosts | Mother thin host (`InventoryPage`) + Client thin host (`BarInventoryPage` / MainPage embed) |
+| Capability | `pos.inventory.bar.view` (`PosCapabilityKeys.ViewBarInventory`) |
+| Terminal Access feature | `pos.bar_inventory` (`PosFeatureKeys.BarInventory`) — label **Bar Inventory** |
+| Mother Admin | Keeps Bar Inventory in Admin sidebar |
+| Manager / User / Cashier | No Bar Inventory menu |
+| Stock data / wine linking | **Later** — chrome + role first |
+
+### Explicit non-goals (this pass)
+- Do **not** build live stock ledger / purchase orders / waste DB yet.
+- Do **not** put MySQL inventory rules inside SharedUI.
+- Do **not** Client→cloud for inventory.
+
+## Build order
+1. **Bar Manager role** + route/capability lock ✅
+2. **SharedUI** `BarInventoryView` (replace coming-soon) ✅
+3. **Mother** thin host + login → inventory ✅
+4. **Client** thin host + Terminal Access feature ✅
+5. **Stock APIs / wine model** ← next
+
+## Architecture reminder
+Cloud / Mother hub owns future stock truth. SharedUI is chrome only. Bar Manager is inventory-only on both POS hosts.

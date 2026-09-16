@@ -434,6 +434,7 @@ public class ReceiptService
             CustomerName = order.CustomerName,
             CustomerPhone = order.CustomerPhone,
             Notes = order.SpecialInstructions,
+            ScheduledTime = order.ScheduledTime,
             OrderMode = isTableOrder ? "dine_in" : "takeaway",
             StartTime = order.CreatedAt,
             CreatedAt = order.CreatedAt,

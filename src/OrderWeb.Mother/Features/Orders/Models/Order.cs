@@ -63,6 +63,12 @@ public class Order
     public DateTime? ScheduledTime { get; set; }
     public string? SpecialInstructions { get; set; }
 
+    /// <summary>When advance kitchen ticket was auto-printed (T−3h / inside-window). Null = not yet.</summary>
+    public DateTime? AdvanceKitchenPrintedAt { get; set; }
+
+    /// <summary>When advance reminder was raised (popup / WS). Null = not yet. Phase 4+.</summary>
+    public DateTime? AdvanceRemindedAt { get; set; }
+
     // Local POS lifecycle fields (Phase 1)
     public LocalLifecycleState LocalLifecycleState { get; set; } = LocalLifecycleState.Draft;
     public bool IsOpen { get; set; } = true;

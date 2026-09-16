@@ -151,11 +151,28 @@ public sealed class PaymentSplitPlan
 
     public string GetPaymentTitle() => Mode switch
     {
-        PaymentSplitMode.EqualSplit => $"SPLIT PAYMENT {CurrentPart} OF {TotalParts}",
+        PaymentSplitMode.EqualSplit => $"SPLIT {CurrentPart} OF {TotalParts}",
         PaymentSplitMode.CustomAmount => "CUSTOM PAYMENT",
         PaymentSplitMode.PayByItems => "PAY BY ITEMS",
         _ => "SELECT PAYMENT METHOD"
     };
+
+    /// <summary>Clear staff title: who pays now + what is left on the bill.</summary>
+    public string GetPaymentTitle(decimal payNow, decimal leftAfterThisPayment)
+    {
+        var baseTitle = GetPaymentTitle();
+        if (Mode == PaymentSplitMode.Full)
+        {
+            return baseTitle;
+        }
+
+        if (leftAfterThisPayment > 0.009m)
+        {
+            return $"{baseTitle} · Pay £{payNow:F2} · £{leftAfterThisPayment:F2} left on bill";
+        }
+
+        return $"{baseTitle} · Pay £{payNow:F2} · closes bill";
+    }
 
     public string DisplayLabel => Mode switch
     {

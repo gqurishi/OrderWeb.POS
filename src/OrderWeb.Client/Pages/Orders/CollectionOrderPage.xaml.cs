@@ -94,8 +94,8 @@ public partial class CollectionOrderPage : ContentPage
         var draft = new CustomerOrderDraft(
             "Collection",
             customer,
-            "ASAP",
-            null,
+            e.ScheduledTime?.ToString("O"),
+            e.ScheduledTime?.ToString("O"),
             string.Empty,
             null,
             null,

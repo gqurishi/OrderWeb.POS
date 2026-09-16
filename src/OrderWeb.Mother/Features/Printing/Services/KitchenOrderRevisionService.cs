@@ -154,6 +154,7 @@ public sealed class KitchenOrderRevisionService
             CreatedAt = source.CreatedAt,
             UpdatedAt = DateTime.Now,
             Notes = source.Notes,
+            ScheduledTime = source.ScheduledTime,
             OrderMode = source.OrderMode,
             Status = source.Status,
             KitchenRevisionNumber = revision.RevisionNumber,

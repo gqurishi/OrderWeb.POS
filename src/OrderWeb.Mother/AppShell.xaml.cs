@@ -21,21 +21,22 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             ["foodmenu"] = 3,
             ["reservation"] = 4,
             ["orderhistory"] = 5,
-            ["report"] = 6,
-            ["inventory"] = 7,
-            ["restaurant"] = 8,
-            ["layout"] = 9,
-            ["collection"] = 10,
-            ["delivery"] = 11,
-            ["weborders"] = 12,
-            ["liveorder"] = 13,
-            ["giftcards"] = 14,
-            ["loyalty"] = 15,
-            ["staffclock"] = 16,
-            ["settings"] = 17,
-            ["printersetup"] = 18,
-            ["customerdata"] = 19,
-            ["terminalhealth"] = 20
+            ["advanceorders"] = 6,
+            ["report"] = 7,
+            ["inventory"] = 8,
+            ["restaurant"] = 9,
+            ["layout"] = 10,
+            ["collection"] = 11,
+            ["delivery"] = 12,
+            ["weborders"] = 13,
+            ["liveorder"] = 14,
+            ["giftcards"] = 15,
+            ["loyalty"] = 16,
+            ["staffclock"] = 17,
+            ["settings"] = 18,
+            ["printersetup"] = 19,
+            ["customerdata"] = 20,
+            ["terminalhealth"] = 21
         };
 
     private string _currentDateTime = string.Empty;
@@ -611,10 +612,11 @@ public partial class AppShell : Shell, INotifyPropertyChanged
             {
                 "dashboard", "cashdrawer", "report"
             },
+            UserRole.BarManager => new HashSet<string>(OrderWeb.SharedUI.Navigation.PosRoleMenus.BarManager, StringComparer.OrdinalIgnoreCase),
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "dashboard", "cashdrawer", "foodmenu", "liveorder", "restaurant", "layout", "collection", "delivery",
-                "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "report", "staffclock",
+                "weborders", "giftcards", "loyalty", "reservation", "orderhistory", "advanceorders", "report", "staffclock",
                 "inventory", "printersetup", "settings", "terminalhealth", "customerdata"
             }
         };
@@ -663,6 +665,7 @@ public partial class AppShell : Shell, INotifyPropertyChanged
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Customers);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.Payments);
         features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.WebOrders);
+        features.Add(OrderWeb.Contracts.Features.PosFeatureKeys.BarInventory);
         return features;
     }
 

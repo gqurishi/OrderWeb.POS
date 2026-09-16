@@ -553,46 +553,7 @@ public sealed class OrderHistoryBoardView : ContentView
             LineBreakMode = LineBreakMode.TailTruncation
         };
 
-        var typeCell = voidedStyle
-            ? (View)new HorizontalStackLayout
-            {
-                Spacing = 6,
-                VerticalOptions = LayoutOptions.Center,
-                Children =
-                {
-                    new Label
-                    {
-                        Text = row.OrderTypeDisplay,
-                        FontSize = 12,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Color.FromArgb("#7F1D1D")
-                    },
-                    new Label
-                    {
-                        Text = "VOID",
-                        FontSize = 11,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Color.FromArgb("#DC2626")
-                    }
-                }
-            }
-            : new Border
-            {
-                BackgroundColor = Color.FromArgb("#EEF2FF"),
-                Stroke = Color.FromArgb("#C7D2FE"),
-                StrokeThickness = 1,
-                Padding = new Thickness(12, 7),
-                HorizontalOptions = LayoutOptions.Start,
-                VerticalOptions = LayoutOptions.Center,
-                StrokeShape = new RoundRectangle { CornerRadius = 16 },
-                Content = new Label
-                {
-                    Text = row.OrderTypeDisplay,
-                    FontSize = 12,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Color.FromArgb("#4338CA")
-                }
-            };
+        var typeCell = BuildTypeCell(row, voidedStyle);
 
         View paymentCell;
         if (voidedStyle)
@@ -701,6 +662,65 @@ public sealed class OrderHistoryBoardView : ContentView
             Content = grid
         };
     }
+
+    private static View BuildTypeCell(OrderHistoryRowPresentation row, bool voidedStyle)
+    {
+        var chips = new HorizontalStackLayout
+        {
+            Spacing = 6,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalOptions = LayoutOptions.Start
+        };
+
+        if (row.IsWebOrder)
+        {
+            chips.Children.Add(BuildChip("WEB", "#DBEAFE", "#BFDBFE", "#1D4ED8"));
+        }
+
+        if (voidedStyle)
+        {
+            chips.Children.Add(new Label
+            {
+                Text = row.OrderTypeDisplay,
+                FontSize = 12,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb("#7F1D1D"),
+                VerticalOptions = LayoutOptions.Center
+            });
+            chips.Children.Add(new Label
+            {
+                Text = "VOID",
+                FontSize = 11,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb("#DC2626"),
+                VerticalOptions = LayoutOptions.Center
+            });
+            return chips;
+        }
+
+        chips.Children.Add(BuildChip(row.OrderTypeDisplay, "#EEF2FF", "#C7D2FE", "#4338CA"));
+        return chips;
+    }
+
+    private static Border BuildChip(string text, string background, string stroke, string foreground) =>
+        new()
+        {
+            BackgroundColor = Color.FromArgb(background),
+            Stroke = Color.FromArgb(stroke),
+            StrokeThickness = 1,
+            Padding = new Thickness(10, 6),
+            HorizontalOptions = LayoutOptions.Start,
+            VerticalOptions = LayoutOptions.Center,
+            StrokeShape = new RoundRectangle { CornerRadius = 16 },
+            Content = new Label
+            {
+                Text = text,
+                FontSize = 11,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Color.FromArgb(foreground),
+                VerticalOptions = LayoutOptions.Center
+            }
+        };
 
     private static Grid BuildVoidedSeparator()
     {

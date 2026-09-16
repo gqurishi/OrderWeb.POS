@@ -5,148 +5,248 @@
              Title="Meal Deal"
              BackgroundColor="#F1F5F9">
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Header -->
         <Border Grid.Row="0"
                 BackgroundColor="White"
                 StrokeThickness="0"
-                Padding="24,20">
-            <Border.Shadow>
-                <Shadow Brush="Black" Offset="0,2" Radius="8" Opacity="0.06" />
-            </Border.Shadow>
-            <Grid ColumnDefinitions="Auto,*,Auto">
+                Padding="0">
+            <Grid Padding="16,10" ColumnDefinitions="Auto,*">
                 <Button Grid.Column="0"
                         Text="← Back"
-                        FontFamily="OpenSansSemibold"
-                        FontSize="14"
-                        TextColor="#64748B"
-                        BackgroundColor="#F1F5F9"
-                        CornerRadius="10"
-                        Padding="16,10"
-                        Clicked="OnBackClicked" />
-                <VerticalStackLayout Grid.Column="1" Spacing="4" Margin="16,0,0,0">
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        TextColor="#D97706"
+                        BackgroundColor="#FFFBEB"
+                        BorderColor="#FDE68A"
+                        BorderWidth="1"
+                        CornerRadius="8"
+                        Padding="12,6"
+                        Clicked="OnBackClicked"
+                        VerticalOptions="Center" />
+                <VerticalStackLayout Grid.Column="1" Spacing="0" Margin="12,0,0,0" VerticalOptions="Center">
                     <Label x:Name="PageTitle"
-                           Text="Create Meal Deal"
-                           FontFamily="OpenSansSemibold"
-                           FontSize="24"
-                           TextColor="#1E293B" />
+                           Text="Create meal deal"
+                           FontSize="17"
+                           FontAttributes="Bold"
+                           TextColor="#0F172A" />
                     <Label x:Name="PageSubtitle"
-                           Text="Set one price and let customers pick items from your list"
-                           FontSize="13"
+                           Text="One price · customer picks from your list"
+                           FontSize="12"
                            TextColor="#64748B" />
                 </VerticalStackLayout>
-                <Button Grid.Column="2"
-                        x:Name="SaveButton"
-                        Text="Save Deal"
-                        FontFamily="OpenSansSemibold"
-                        FontSize="14"
-                        TextColor="White"
-                        BackgroundColor="#F59E0B"
-                        CornerRadius="10"
-                        Padding="20,12"
-                        Clicked="OnSaveClicked" />
             </Grid>
         </Border>
 
-        <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="24" Spacing="20">
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Padding="16,12,16,24" Spacing="12" MaximumWidthRequest="720" HorizontalOptions="Center">
 
+                <!-- Deal details -->
                 <Border BackgroundColor="White"
                         Stroke="#E2E8F0"
                         StrokeThickness="1"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="24">
-                    <VerticalStackLayout Spacing="16">
-                        <Label Text="Deal Information"
-                               FontFamily="OpenSansSemibold"
-                               FontSize="18"
-                               TextColor="#1E293B" />
+                        StrokeShape="RoundRectangle 14"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Deal"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#64748B"
+                                   VerticalOptions="Center" />
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                <Label Text="Active"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569"
+                                       VerticalOptions="Center" />
+                                <Switch x:Name="ActiveSwitch"
+                                        IsToggled="True"
+                                        OnColor="#F59E0B"
+                                        ThumbColor="White"
+                                        Scale="0.85"
+                                        VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                        </Grid>
 
-                        <VerticalStackLayout Spacing="6">
-                            <Label Text="Deal Name *" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
-                            <Entry x:Name="DealNameEntry"
-                                   Placeholder="e.g. Meal Deal 1"
-                                   FontSize="16"
-                                   MaxLength="80" />
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Name *"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC"
+                                    StrokeThickness="1"
+                                    Stroke="#E2E8F0"
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="0"
+                                    HeightRequest="42">
+                                <Entry x:Name="DealNameEntry"
+                                       Placeholder="e.g. Meal Deal 1"
+                                       FontSize="14"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="Transparent"
+                                       MaxLength="80"
+                                       Margin="12,0"
+                                       VerticalOptions="Center" />
+                            </Border>
                         </VerticalStackLayout>
 
-                        <VerticalStackLayout Spacing="6">
-                            <Label Text="Description (optional)" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
-                            <Entry x:Name="DescriptionEntry"
-                                   Placeholder="e.g. Choose any 2 items"
-                                   FontSize="16"
-                                   MaxLength="200" />
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Description"
+                                   FontSize="12"
+                                   FontAttributes="Bold"
+                                   TextColor="#475569" />
+                            <Border BackgroundColor="#F8FAFC"
+                                    StrokeThickness="1"
+                                    Stroke="#E2E8F0"
+                                    StrokeShape="RoundRectangle 8"
+                                    Padding="0"
+                                    HeightRequest="42">
+                                <Entry x:Name="DescriptionEntry"
+                                       Placeholder="Optional — e.g. Choose any 2 items"
+                                       FontSize="14"
+                                       TextColor="#0F172A"
+                                       BackgroundColor="Transparent"
+                                       MaxLength="200"
+                                       Margin="12,0"
+                                       VerticalOptions="Center" />
+                            </Border>
                         </VerticalStackLayout>
 
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
-                            <VerticalStackLayout Grid.Column="0" Spacing="6">
-                                <Label Text="Deal Price *" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <Label Grid.Column="0" Text="£" FontSize="18" VerticalOptions="Center" Margin="0,0,8,0" />
-                                    <Entry x:Name="PriceEntry"
-                                           Grid.Column="1"
-                                           Placeholder="10.00"
-                                           Keyboard="Numeric"
-                                           FontSize="16" />
-                                </Grid>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="Price *"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#FFFBEB"
+                                        StrokeThickness="1"
+                                        Stroke="#FDE68A"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="10,0"
+                                        HeightRequest="42">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="4">
+                                        <Label Grid.Column="0"
+                                               Text="£"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#D97706"
+                                               VerticalOptions="Center" />
+                                        <Entry x:Name="PriceEntry"
+                                               Grid.Column="1"
+                                               Placeholder="10.00"
+                                               Keyboard="Numeric"
+                                               FontSize="15"
+                                               FontAttributes="Bold"
+                                               TextColor="#0F172A"
+                                               PlaceholderColor="#CBD5E1"
+                                               BackgroundColor="Transparent"
+                                               VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
                             </VerticalStackLayout>
-                            <VerticalStackLayout Grid.Column="1" Spacing="6">
-                                <Label Text="Customer picks *" FontSize="13" FontAttributes="Bold" TextColor="#475569" />
-                                <Entry x:Name="PickCountEntry"
-                                       Placeholder="2"
-                                       Keyboard="Numeric"
-                                       FontSize="16"
-                                       Text="2" />
-                                <Label Text="How many items the customer must choose"
+
+                            <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                <Label Text="Customer picks *"
+                                       FontSize="12"
+                                       FontAttributes="Bold"
+                                       TextColor="#475569" />
+                                <Border BackgroundColor="#F8FAFC"
+                                        StrokeThickness="1"
+                                        Stroke="#E2E8F0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Padding="0"
+                                        HeightRequest="42">
+                                    <Entry x:Name="PickCountEntry"
+                                           Placeholder="2"
+                                           Keyboard="Numeric"
+                                           FontSize="15"
+                                           FontAttributes="Bold"
+                                           TextColor="#0F172A"
+                                           BackgroundColor="Transparent"
+                                           Text="2"
+                                           Margin="12,0"
+                                           VerticalOptions="Center" />
+                                </Border>
+                                <Label Text="Items they must choose"
                                        FontSize="11"
                                        TextColor="#94A3B8" />
                             </VerticalStackLayout>
                         </Grid>
-
-                        <HorizontalStackLayout Spacing="12">
-                            <Label Text="Active" FontSize="14" FontAttributes="Bold" TextColor="#475569" VerticalOptions="Center" />
-                            <Switch x:Name="ActiveSwitch" IsToggled="True" />
-                        </HorizontalStackLayout>
                     </VerticalStackLayout>
                 </Border>
 
+                <!-- Choices -->
                 <Border BackgroundColor="White"
                         Stroke="#E2E8F0"
                         StrokeThickness="1"
-                        StrokeShape="RoundRectangle 16"
-                        Padding="24">
-                    <VerticalStackLayout Spacing="16">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <VerticalStackLayout Grid.Column="0" Spacing="4">
-                                <Label Text="Customer Choices"
-                                       FontFamily="OpenSansSemibold"
-                                       FontSize="18"
-                                       TextColor="#1E293B" />
-                                <Label Text="Names only — no price per choice"
-                                       FontSize="12"
+                        StrokeShape="RoundRectangle 14"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                <Label Text="Choices"
+                                       FontSize="13"
+                                       FontAttributes="Bold"
                                        TextColor="#64748B" />
+                                <Label Text="Names only — no price per choice"
+                                       FontSize="11"
+                                       TextColor="#94A3B8" />
                             </VerticalStackLayout>
                             <Button Grid.Column="1"
-                                    Text="+ Add Choice"
-                                    FontFamily="OpenSansSemibold"
+                                    Text="+ Add"
                                     FontSize="13"
+                                    FontAttributes="Bold"
                                     TextColor="White"
-                                    BackgroundColor="#3B82F6"
+                                    BackgroundColor="#2563EB"
                                     CornerRadius="8"
-                                    Padding="14,8"
+                                    HeightRequest="36"
+                                    Padding="14,0"
+                                    VerticalOptions="Center"
                                     Clicked="OnAddChoiceClicked" />
                         </Grid>
 
-                        <VerticalStackLayout x:Name="ChoicesContainer" Spacing="10" />
-                        <Label x:Name="ChoicesEmptyLabel"
-                               Text="Add at least 2 choices (e.g. Rice, Dal, Chicken...)"
-                               FontSize="13"
-                               TextColor="#94A3B8"
-                               HorizontalOptions="Center"
-                               Margin="0,8,0,0" />
+                        <VerticalStackLayout x:Name="ChoicesContainer" Spacing="8" />
+
+                        <Border x:Name="ChoicesEmptyLabel"
+                                BackgroundColor="#F8FAFC"
+                                StrokeThickness="1"
+                                Stroke="#E2E8F0"
+                                StrokeShape="RoundRectangle 8"
+                                Padding="12,14"
+                                IsVisible="False">
+                            <Label Text="Add at least 2 choices — e.g. Rice, Dal, Chicken"
+                                   FontSize="12"
+                                   TextColor="#94A3B8"
+                                   HorizontalOptions="Center"
+                                   HorizontalTextAlignment="Center" />
+                        </Border>
                     </VerticalStackLayout>
                 </Border>
 
             </VerticalStackLayout>
         </ScrollView>
+
+        <!-- Footer -->
+        <Border Grid.Row="2"
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="16,10">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Button Grid.Column="1"
+                        x:Name="SaveButton"
+                        Text="Save deal"
+                        BackgroundColor="#F59E0B"
+                        TextColor="White"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        CornerRadius="8"
+                        WidthRequest="140"
+                        HeightRequest="40"
+                        Padding="0"
+                        Clicked="OnSaveClicked" />
+            </Grid>
+        </Border>
     </Grid>
 </ContentPage>

@@ -36,7 +36,8 @@ public static class ClientAccessPolicy
         PosFeatureKeys.Customers,
         PosFeatureKeys.Payments,
         PosFeatureKeys.GiftCards,
-        PosFeatureKeys.CustomerPoints
+        PosFeatureKeys.CustomerPoints,
+        PosFeatureKeys.BarInventory
     };
 
     public static readonly IReadOnlyList<(string Key, string Label)> EditableFeatures =
@@ -50,7 +51,8 @@ public static class ClientAccessPolicy
         (PosFeatureKeys.Payments, "Payments / cash drawer"),
         (PosFeatureKeys.GiftCards, "Gift cards"),
         // Terminal Access UI label "Loyalty" maps to PosFeatureKeys.CustomerPoints (pos.customer_points).
-        (PosFeatureKeys.CustomerPoints, "Loyalty")
+        (PosFeatureKeys.CustomerPoints, "Loyalty"),
+        (PosFeatureKeys.BarInventory, "Bar Inventory")
     ];
 
     /// <summary>Features Mother may grant a Client terminal. Web Orders is never in this set.</summary>
@@ -64,7 +66,8 @@ public static class ClientAccessPolicy
         PosFeatureKeys.Customers,
         PosFeatureKeys.Payments,
         PosFeatureKeys.GiftCards,
-        PosFeatureKeys.CustomerPoints
+        PosFeatureKeys.CustomerPoints,
+        PosFeatureKeys.BarInventory
     };
 
     /// <summary>Navigation routes Client may show when Mother has granted the matching feature/capability.</summary>
@@ -84,7 +87,9 @@ public static class ClientAccessPolicy
         "giftcards",
         "loyalty",
         "cashdrawer",
-        "orderhistory"
+        "orderhistory",
+        "advanceorders",
+        "inventory"
     };
 
     /// <summary>Never shown or served on Client POS. These stay on Mother.</summary>
@@ -111,7 +116,6 @@ public static class ClientAccessPolicy
         "terminalhealth",
         "terminalsetup",
         "initialadminsetup",
-        "inventory",
         "report",
         "reportdetails",
         "fullreports",
@@ -150,7 +154,8 @@ public static class ClientAccessPolicy
         PosCapabilityKeys.OpenCashDrawer,
         PosCapabilityKeys.ApproveManagerAction,
         PosCapabilityKeys.ReconcileCashDrawer,
-        PosCapabilityKeys.AddReconciliationNotes
+        PosCapabilityKeys.AddReconciliationNotes,
+        PosCapabilityKeys.ViewBarInventory
     };
 
     /// <summary>Never issued on a Client session. Mother UI may still use these locally.</summary>
@@ -227,14 +232,15 @@ public static class ClientAccessPolicy
     private static readonly Dictionary<string, string[]> FeatureRouteMap = new(StringComparer.OrdinalIgnoreCase)
     {
         [PosFeatureKeys.DineIn] = ["restaurant"],
-        [PosFeatureKeys.Collection] = ["collection"],
-        [PosFeatureKeys.Delivery] = ["delivery"],
-        [PosFeatureKeys.LiveOrders] = ["liveorder"],
+        [PosFeatureKeys.Collection] = ["collection", "advanceorders"],
+        [PosFeatureKeys.Delivery] = ["delivery", "advanceorders"],
+        [PosFeatureKeys.LiveOrders] = ["liveorder", "advanceorders"],
         [PosFeatureKeys.Reservations] = ["reservation"],
         [PosFeatureKeys.Customers] = ["customers", "customerdata"],
         [PosFeatureKeys.Payments] = ["payments", "cashdrawer", "orderhistory"],
         [PosFeatureKeys.GiftCards] = ["giftcards"],
-        [PosFeatureKeys.CustomerPoints] = ["loyalty"]
+        [PosFeatureKeys.CustomerPoints] = ["loyalty"],
+        [PosFeatureKeys.BarInventory] = ["inventory"]
     };
 
     private static IReadOnlySet<string> Filter(IEnumerable<string>? values, Func<string?, bool> allowed)

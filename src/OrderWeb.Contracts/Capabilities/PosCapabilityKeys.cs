@@ -34,6 +34,8 @@ public static class PosCapabilityKeys
     public const string AccessSettings = "pos.settings.access";
     public const string ApproveManagerAction = "pos.manager.approve";
     public const string AccessAdmin = "pos.admin.access";
+    /// <summary>Bar Inventory workspace (Receive / Count / Waste / Stock). Admin + Bar Manager.</summary>
+    public const string ViewBarInventory = "pos.inventory.bar.view";
 }
 
 public sealed record PosCapability(string Key, bool IsAvailable);

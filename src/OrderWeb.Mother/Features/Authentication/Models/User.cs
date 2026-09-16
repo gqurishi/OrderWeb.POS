@@ -28,5 +28,27 @@ public enum UserRole
     User,
     Cashier,
     Manager,
-    Admin
+    Admin,
+    /// <summary>Bar stock only — Mother/Client Bar Inventory workspace.</summary>
+    BarManager
+}
+
+public static class UserRoleDisplay
+{
+    public static string ToDisplayName(UserRole role) => role switch
+    {
+        UserRole.BarManager => "Bar Manager",
+        _ => role.ToString()
+    };
+
+    public static bool TryParse(string? text, out UserRole role)
+    {
+        if (string.Equals(text?.Trim(), "Bar Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            role = UserRole.BarManager;
+            return true;
+        }
+
+        return Enum.TryParse(text, true, out role);
+    }
 }
