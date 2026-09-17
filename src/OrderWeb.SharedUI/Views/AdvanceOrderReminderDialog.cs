@@ -19,7 +19,8 @@ public sealed record AdvanceOrderReminderPresentation(
     string ScheduledDisplay,
     string CustomerName,
     string? CustomerPhone = null,
-    bool KitchenPrinted = false);
+    bool KitchenPrinted = false,
+    bool IsFromWeb = false);
 
 /// <summary>
 /// Till popup when Mother fires an advance kitchen reminder (T−3h / inside window).
@@ -97,7 +98,8 @@ public sealed class AdvanceOrderReminderDialog : ContentView
         var when = string.IsNullOrWhiteSpace(data.ScheduledDisplay) ? "—" : data.ScheduledDisplay;
         var customer = string.IsNullOrWhiteSpace(data.CustomerName) ? "Customer" : data.CustomerName;
         var number = string.IsNullOrWhiteSpace(data.OrderNumber) ? "#" : data.OrderNumber;
-        _bodyLabel.Text = $"{type} · {when} · {customer} · {number}";
+        var webTag = data.IsFromWeb ? " · WEB" : string.Empty;
+        _bodyLabel.Text = $"{type}{webTag} · {when} · {customer} · {number}";
 
         if (_printAsync == null)
         {

@@ -520,7 +520,8 @@ public class OrderWebWebSocketService
                 ?? GetStringProperty(orderElement, "customer_email")
                 ?? GetNestedStringProperty(orderElement, "customer", "email")
                 ?? "";
-            var customerAddress = GetStringProperty(orderElement, "deliveryAddress")
+            var customerAddress = GetStringProperty(orderElement, "address")
+                ?? GetStringProperty(orderElement, "deliveryAddress")
                 ?? GetStringProperty(orderElement, "delivery_address")
                 ?? GetNestedStringProperty(orderElement, "customer", "address")
                 ?? "";

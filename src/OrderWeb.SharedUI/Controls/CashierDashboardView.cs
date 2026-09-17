@@ -23,11 +23,13 @@ public sealed class CashierDashboardView : ContentView
     private readonly Button _drawer;
     private readonly Button _preview;
     private readonly Button _print;
+    private readonly Button _uploadReport;
 
     public event EventHandler? RefreshRequested;
     public event EventHandler? OpenDrawerRequested;
     public event EventHandler? PreviewZRequested;
     public event EventHandler? PrintZRequested;
+    public event EventHandler? UploadReportRequested;
 
     public CashierDashboardView()
     {
@@ -103,23 +105,33 @@ public sealed class CashierDashboardView : ContentView
         _drawer = ActionButton("Open Cash Drawer", "#0F766E", "#FFFFFF", 64);
         _preview = ActionButton("Z Report Preview", "#1D4ED8", "#FFFFFF", 64);
         _print = ActionButton("Print Z Report", "#7C3AED", "#FFFFFF", 64);
+        _uploadReport = ActionButton("Upload Report", "#0F766E", "#FFFFFF", 64);
         _drawer.Clicked += (_, e) => OpenDrawerRequested?.Invoke(this, e);
         _preview.Clicked += (_, e) => PreviewZRequested?.Invoke(this, e);
         _print.Clicked += (_, e) => PrintZRequested?.Invoke(this, e);
+        _uploadReport.Clicked += (_, e) => UploadReportRequested?.Invoke(this, e);
 
         var actions = new Grid
         {
             ColumnSpacing = 14,
+            RowSpacing = 12,
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Star)
+            },
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto)
             }
         };
         actions.Add(_drawer);
         actions.Add(_preview, 1);
         actions.Add(_print, 2);
+        actions.Add(_uploadReport, 0, 1);
+        Grid.SetColumnSpan(_uploadReport, 3);
 
         Content = new ScrollView
         {
@@ -150,11 +162,40 @@ public sealed class CashierDashboardView : ContentView
         set => _drawer.IsVisible = value;
     }
 
+    /// <summary>Mother Cashier: Upload Report → OrderWeb Business Reports only (not VAT filing).</summary>
+    public bool ShowUploadReport
+    {
+        get => _uploadReport.IsVisible;
+        set => _uploadReport.IsVisible = value;
+    }
+
     public void SetActionsEnabled(bool enabled)
     {
         _drawer.IsEnabled = enabled && _drawer.IsVisible;
         _preview.IsEnabled = enabled;
         _print.IsEnabled = enabled;
+        _uploadReport.IsEnabled = enabled && _uploadReport.IsVisible;
+        if (enabled)
+        {
+            _uploadReport.Text = "Upload Report";
+        }
+    }
+
+    /// <summary>Phase 3 busy / double-tap guard while Cashier upload is in flight.</summary>
+    public void SetUploadReportBusy(bool busy)
+    {
+        _uploadReport.IsEnabled = !busy && _uploadReport.IsVisible;
+        _uploadReport.Text = busy ? "Uploading…" : "Upload Report";
+        if (busy)
+        {
+            _drawer.IsEnabled = false;
+            _preview.IsEnabled = false;
+            _print.IsEnabled = false;
+        }
+        else
+        {
+            SetActionsEnabled(true);
+        }
     }
 
     public void Apply(CashierDayBoard board)

@@ -1054,7 +1054,7 @@ public async Task<ReportSummary> GetSummaryAsync(
 }
 
 /// <summary>
-/// VAT tab period snapshot: Sales Summary totals + count of paid orders with £0 tax.
+/// VAT tab period snapshot: Local POS Gross/Net/VAT (aligned with 3 AM cloud upload) + £0-tax count.
 /// </summary>
 public async Task<VatPeriodSnapshot> GetVatPeriodAsync(
 	DateTime startDate,
@@ -1064,16 +1064,24 @@ public async Task<VatPeriodSnapshot> GetVatPeriodAsync(
 	var queryStartDate = TradingDayHelper.GetBusinessDayStart(startDate.Date);
 	var queryEndDate = TradingDayHelper.GetBusinessDayEnd(endDate.Date);
 
+	// Phase V3: Local only — web stays on cloud Online VAT; POS share matches 3 AM daily-report.
 	var summary = await LoadSummaryWithConnectionAsync(
 		queryStartDate,
 		queryEndDate,
-		ReportSourceFilter.All,
+		ReportSourceFilter.Local,
 		ReportOrderTypeFilter.All);
+
+	var orderTaxTotal = await GetPaidOrderTaxTotalAsync(queryStartDate, queryEndDate, localOnly: true);
+	var heroVat = orderTaxTotal > 0m
+		? decimal.Round(orderTaxTotal, 2, MidpointRounding.AwayFromZero)
+		: decimal.Round(summary.VatAmount, 2, MidpointRounding.AwayFromZero);
+	summary.VatAmount = heroVat;
+	summary.NetSales = decimal.Round(Math.Max(0m, summary.GrossSales - heroVat), 2, MidpointRounding.AwayFromZero);
 
 	int zeroTaxOrderCount;
 	try
 	{
-		zeroTaxOrderCount = await CountZeroTaxOrdersAsync(queryStartDate, queryEndDate);
+		zeroTaxOrderCount = await CountZeroTaxOrdersAsync(queryStartDate, queryEndDate, localOnly: true);
 	}
 	catch
 	{
@@ -1083,7 +1091,8 @@ public async Task<VatPeriodSnapshot> GetVatPeriodAsync(
 	List<VatRateBandRow> rateBands;
 	try
 	{
-		rateBands = await LoadVatRateBandsAsync(queryStartDate, queryEndDate);
+		rateBands = await LoadVatRateBandsAsync(queryStartDate, queryEndDate, localOnly: true);
+		ScaleVatRateBandsToHero(rateBands, heroVat);
 	}
 	catch
 	{
@@ -1100,7 +1109,106 @@ public async Task<VatPeriodSnapshot> GetVatPeriodAsync(
 	};
 }
 
-private async Task<List<VatRateBandRow>> LoadVatRateBandsAsync(DateTime startDate, DateTime endDate)
+/// <summary>
+/// Local-POS VAT rate bands for one trading day (cloud daily-report <c>vatByRate</c>).
+/// </summary>
+public async Task<List<VatRateBandRow>> GetLocalVatRateBandsForDayAsync(DateTime businessDate)
+{
+	var start = TradingDayHelper.GetBusinessDayStart(businessDate.Date);
+	var end = TradingDayHelper.GetBusinessDayEnd(businessDate.Date);
+	try
+	{
+		return await LoadVatRateBandsAsync(start, end, localOnly: true);
+	}
+	catch
+	{
+		return BuildStandardVatBands(new Dictionary<string, VatRateBandRow>(StringComparer.OrdinalIgnoreCase));
+	}
+}
+
+/// <summary>
+/// Order-level VAT for cloud / HMRC hero totals (Local paid only).
+/// Prefer <c>SUM(tax_amount)</c> over line pro-rata so service charge does not dilute Box 1.
+/// </summary>
+public Task<decimal> GetLocalPaidOrderTaxTotalAsync(DateTime businessDate)
+{
+	var start = TradingDayHelper.GetBusinessDayStart(businessDate.Date);
+	var end = TradingDayHelper.GetBusinessDayEnd(businessDate.Date);
+	return GetPaidOrderTaxTotalAsync(start, end, localOnly: true);
+}
+
+/// <summary>
+/// Scale band VAT/net so band sum ≈ hero VAT (filing explanation of Box 1 / 6).
+/// </summary>
+public static void ScaleVatRateBandsToHero(IList<VatRateBandRow> rateBands, decimal heroVat)
+{
+	if (rateBands == null || rateBands.Count == 0)
+	{
+		return;
+	}
+
+	var bandVatSum = rateBands.Sum(b => b.VatAmount);
+	if (heroVat <= 0m || bandVatSum <= 0m || Math.Abs(heroVat - bandVatSum) <= 0.05m)
+	{
+		return;
+	}
+
+	var scale = heroVat / bandVatSum;
+	foreach (var band in rateBands)
+	{
+		band.VatAmount = decimal.Round(band.VatAmount * scale, 2, MidpointRounding.AwayFromZero);
+		band.TaxableNet = decimal.Round(band.TaxableNet * scale, 2, MidpointRounding.AwayFromZero);
+	}
+
+	var drift = heroVat - rateBands.Sum(b => b.VatAmount);
+	if (Math.Abs(drift) < 0.01m || Math.Abs(drift) > 0.05m)
+	{
+		return;
+	}
+
+	var anchor = rateBands
+		.OrderByDescending(b => b.VatAmount)
+		.FirstOrDefault(b => b.VatAmount != 0m)
+		?? rateBands[0];
+	anchor.VatAmount = decimal.Round(anchor.VatAmount + drift, 2, MidpointRounding.AwayFromZero);
+}
+
+private async Task<decimal> GetPaidOrderTaxTotalAsync(DateTime start, DateTime end, bool localOnly)
+{
+	await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+	await connection.OpenAsync();
+
+	const string query = """
+		SELECT COALESCE(SUM(COALESCE(o.tax_amount, 0.00)), 0.00) AS tax_total
+		FROM orders o
+		WHERE o.created_at >= @startDate
+		  AND o.created_at < @endDate
+		  AND (@localOnly = 0 OR COALESCE(o.source_channel, 'local') = 'local')
+		  AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+		  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+		  AND (
+			LOWER(COALESCE(o.local_lifecycle_state), '') = 'paid'
+			OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+			OR o.paid_at IS NOT NULL
+			OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+			OR EXISTS (
+				SELECT 1
+				FROM order_payments op
+				WHERE op.order_id = o.id
+				  AND LOWER(COALESCE(op.status, '')) = 'approved'
+			)
+		  )
+		""";
+
+	await using var command = new MySqlCommand(query, connection);
+	command.Parameters.AddWithValue("@startDate", start);
+	command.Parameters.AddWithValue("@endDate", end);
+	command.Parameters.AddWithValue("@localOnly", localOnly ? 1 : 0);
+	var scalar = await command.ExecuteScalarAsync();
+	return Convert.ToDecimal(scalar ?? 0m, CultureInfo.InvariantCulture);
+}
+
+private async Task<List<VatRateBandRow>> LoadVatRateBandsAsync(DateTime startDate, DateTime endDate, bool localOnly)
 {
 	await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 	await connection.OpenAsync();
@@ -1146,51 +1254,85 @@ private async Task<List<VatRateBandRow>> LoadVatRateBandsAsync(DateTime startDat
 						f.calculated_vat_rate,
 						f.vat_category,
 						CASE
-							WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+							WHEN COALESCE(items.order_items_gross, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
 								THEN ROUND(
-									((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
-									/ COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00), 4)
+									(line_gross / items.order_items_gross) * COALESCE(o.tax_amount, 0.00), 4)
 							ELSE 0.0000
 						END AS line_vat,
 						CASE
-							WHEN COALESCE(o.total_amount, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
+							WHEN COALESCE(items.order_items_gross, 0.00) > 0 AND COALESCE(o.tax_amount, 0.00) > 0
 								THEN ROUND(
-									((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
-									- (((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0))
-									/ COALESCE(o.total_amount, 1.00) * COALESCE(o.tax_amount, 0.00)), 4)
-							ELSE ROUND((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0), 4)
+									line_gross
+									- ((line_gross / items.order_items_gross) * COALESCE(o.tax_amount, 0.00)), 4)
+							ELSE ROUND(line_gross, 4)
 						END AS line_net
-					FROM orders o
-					INNER JOIN order_items oi ON oi.order_id = o.id
-					LEFT JOIN (
+					FROM (
 						SELECT
-							order_item_id,
-							SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
-						FROM order_item_addons
-						GROUP BY order_item_id
-					) addons ON addons.order_item_id = oi.id
-					LEFT JOIN FoodMenuItems f ON CAST(f.Id AS CHAR) = CAST(oi.menu_item_id AS CHAR)
-					WHERE o.created_at >= @startDate
-					  AND o.created_at < @endDate
-					  AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
-					  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
-					  AND (
-						LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
-						OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
-						OR o.paid_at IS NOT NULL
-						OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
-						OR (
-							LOWER(COALESCE(o.source_channel, '')) IN ('web', 'online')
-							AND LOWER(COALESCE(o.payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
-							AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
-						)
-						OR EXISTS (
-							SELECT 1
-							FROM order_payments op
-							WHERE op.order_id = o.id
-							  AND LOWER(COALESCE(op.status, '')) = 'approved'
-						)
-					  )
+							o.id AS order_id,
+							o.order_type,
+							o.tax_amount,
+							o.status,
+							o.local_lifecycle_state,
+							o.paid_at,
+							o.payment_status,
+							o.payment_method,
+							o.source_channel,
+							o.created_at,
+							oi.id AS order_item_id,
+							oi.menu_item_id,
+							((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) AS line_gross
+						FROM orders o
+						INNER JOIN order_items oi ON oi.order_id = o.id
+						LEFT JOIN (
+							SELECT
+								order_item_id,
+								SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+							FROM order_item_addons
+							GROUP BY order_item_id
+						) addons ON addons.order_item_id = oi.id
+						WHERE o.created_at >= @startDate
+						  AND o.created_at < @endDate
+						  AND (@localOnly = 0 OR COALESCE(o.source_channel, 'local') = 'local')
+						  AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+						  AND COALESCE(LOWER(o.local_lifecycle_state), '') <> 'voided'
+						  AND (
+							LOWER(COALESCE(o.local_lifecycle_state, '')) = 'paid'
+							OR LOWER(COALESCE(o.status, '')) IN ('completed', 'paid', 'closed')
+							OR o.paid_at IS NOT NULL
+							OR LOWER(COALESCE(o.payment_status, '')) IN ('paid', 'complete', 'completed', 'captured', 'settled', 'success', 'succeeded')
+							OR (
+								LOWER(COALESCE(o.source_channel, '')) IN ('web', 'online')
+								AND LOWER(COALESCE(o.payment_method, '')) NOT IN ('cash', 'cod', 'cash_on_delivery', 'cash_on_collection')
+								AND LOWER(COALESCE(o.payment_status, '')) NOT IN ('pending', 'failed', 'refunded', 'unpaid', 'declined', 'cancelled', 'canceled')
+							)
+							OR EXISTS (
+								SELECT 1
+								FROM order_payments op
+								WHERE op.order_id = o.id
+								  AND LOWER(COALESCE(op.status, '')) = 'approved'
+							)
+						  )
+					) o
+					INNER JOIN (
+						SELECT
+							order_id,
+							SUM(line_gross) AS order_items_gross
+						FROM (
+							SELECT
+								oi.order_id,
+								((COALESCE(oi.item_price, 0.00) + COALESCE(addons.addon_unit_total, 0.00)) * COALESCE(oi.quantity, 0)) AS line_gross
+							FROM order_items oi
+							LEFT JOIN (
+								SELECT
+									order_item_id,
+									SUM(COALESCE(addon_price, 0.00) * COALESCE(quantity, 1)) AS addon_unit_total
+								FROM order_item_addons
+								GROUP BY order_item_id
+							) addons ON addons.order_item_id = oi.id
+						) ig
+						GROUP BY order_id
+					) items ON items.order_id = o.order_id
+					LEFT JOIN FoodMenuItems f ON CAST(f.Id AS CHAR) = CAST(o.menu_item_id AS CHAR)
 				) lines_raw
 			) rated
 		) banded
@@ -1202,6 +1344,7 @@ private async Task<List<VatRateBandRow>> LoadVatRateBandsAsync(DateTime startDat
 	{
 		command.Parameters.AddWithValue("@startDate", startDate);
 		command.Parameters.AddWithValue("@endDate", endDate);
+		command.Parameters.AddWithValue("@localOnly", localOnly ? 1 : 0);
 		await using var reader = await command.ExecuteReaderAsync();
 		while (await reader.ReadAsync())
 		{
@@ -1275,7 +1418,7 @@ private static List<VatRateBandRow> BuildStandardVatBands(IReadOnlyDictionary<st
 	];
 }
 
-private async Task<int> CountZeroTaxOrdersAsync(DateTime startDate, DateTime endDate)
+private async Task<int> CountZeroTaxOrdersAsync(DateTime startDate, DateTime endDate, bool localOnly = true)
 {
 	await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
 	await connection.OpenAsync();
@@ -1286,11 +1429,13 @@ private async Task<int> CountZeroTaxOrdersAsync(DateTime startDate, DateTime end
 		WHERE o.created_at >= @startDate
 		  AND o.created_at < @endDate
 		  AND COALESCE(o.tax_amount, 0) <= 0
+		  AND (@localOnly = 0 OR COALESCE(o.source_channel, 'local') = 'local')
 		""";
 
 	await using var command = new MySqlCommand(query, connection);
 	command.Parameters.AddWithValue("@startDate", startDate);
 	command.Parameters.AddWithValue("@endDate", endDate);
+	command.Parameters.AddWithValue("@localOnly", localOnly ? 1 : 0);
 	var result = await command.ExecuteScalarAsync();
 	return Convert.ToInt32(result ?? 0, CultureInfo.InvariantCulture);
 }
@@ -1308,7 +1453,7 @@ public async Task<string> ExportVatCsvAsync(VatPeriodSnapshot period)
 	builder.AppendLine("VAT Summary");
 	builder.AppendLine($"Period,{EscapeCsv($"{period.StartDate:dd MMM yyyy} – {period.EndDate:dd MMM yyyy}")}");
 	builder.AppendLine($"Days,{dayCount}");
-	builder.AppendLine("Filters,All sources / All order types");
+	builder.AppendLine("Filters,Local POS / All order types (matches cloud VAT → POS)");
 	builder.AppendLine($"Generated,{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 	builder.AppendLine();
 	builder.AppendLine("Metric,Amount");
@@ -1384,7 +1529,7 @@ public async Task<string> ExportVatPdfAsync(
 		PdfBrushes.DarkSlateGray,
 		new PdfPointF(20, y));
 	y += 14;
-	graphics.DrawString("Filters: All sources / All order types", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
+	graphics.DrawString("Filters: Local POS / All order types (matches cloud VAT → POS)", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
 	y += 14;
 	graphics.DrawString($"Generated: {DateTime.Now:dd MMM yyyy HH:mm}", metaFont, PdfBrushes.DarkSlateGray, new PdfPointF(20, y));
 	y += 24;
@@ -2553,7 +2698,12 @@ private async Task<List<ServiceChargeRemovalAuditRow>> LoadServiceChargeRemovalA
 
 	private static void AppendOptionalFilters(StringBuilder query, ReportSourceFilter sourceFilter, ReportOrderTypeFilter orderTypeFilter)
 	{
-		if (sourceFilter != ReportSourceFilter.All)
+		if (sourceFilter == ReportSourceFilter.Local)
+		{
+			// Treat NULL/empty as local — same as order-tax / 3 AM upload filters.
+			query.Append(" AND COALESCE(NULLIF(source_channel, ''), 'local') = @sourceChannel");
+		}
+		else if (sourceFilter != ReportSourceFilter.All)
 		{
 			query.Append(" AND source_channel = @sourceChannel");
 		}

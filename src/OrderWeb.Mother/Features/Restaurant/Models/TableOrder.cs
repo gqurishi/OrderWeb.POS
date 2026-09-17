@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using MyFirstMauiApp.Services;
 
 namespace POS_in_NET.Models
 {
@@ -329,7 +330,18 @@ namespace POS_in_NET.Models
         public void CalculateTotal()
         {
             // VAT is extracted from VAT-inclusive item prices for reporting only.
-            VAT = Math.Round(Items.Sum(i => i.VatAmount), 2);
+            var lineVat = Math.Round(Items.Sum(i => i.VatAmount), 2);
+
+            // Discount reduces the customer gross — scale stored VAT so Box 1 tracks the bill paid.
+            if (Discount > 0m && Subtotal > 0m)
+            {
+                var taxableGross = Math.Max(0m, Subtotal - Discount);
+                VAT = Math.Round(lineVat * (taxableGross / Subtotal), 2, MidpointRounding.AwayFromZero);
+            }
+            else
+            {
+                VAT = lineVat;
+            }
 
             // The calculator total is the discounted item basis plus table service
             // charge. Delivery is added separately and is never charged itself.
@@ -506,6 +518,12 @@ namespace POS_in_NET.Models
             set { _vatCategory = string.IsNullOrWhiteSpace(value) ? "HotFood" : value; OnPropertyChanged(); }
         }
 
+        /// <summary>
+        /// Takeaway effective rate for Mix / component menu items (from <c>calculated_vat_rate</c>).
+        /// Dine-in still forces 20%. Null = use <see cref="VatCategory"/> via VATCalculator.
+        /// </summary>
+        public decimal? TakeawayVatRateOverride { get; set; }
+
         public string? Notes
         {
             get => _notes;
@@ -610,39 +628,27 @@ namespace POS_in_NET.Models
         public void UpdateTaxSnapshot(string orderMode)
         {
             var grossPrice = Math.Round(TotalPrice, 2);
+            var orderType = string.Equals(orderMode, "dine_in", StringComparison.OrdinalIgnoreCase)
+                ? "DineIn"
+                : "Takeaway";
 
-            if (string.Equals(orderMode, "dine_in", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(orderType, "DineIn", StringComparison.OrdinalIgnoreCase))
             {
                 VatRateApplied = 20m;
             }
+            else if (TakeawayVatRateOverride.HasValue)
+            {
+                VatRateApplied = Math.Max(0m, TakeawayVatRateOverride.Value);
+            }
             else
             {
-                VatRateApplied = VatCategory switch
-                {
-                    "NoVAT" => 0m,
-                    "ColdFood" => 0m,
-                    "ColdBeverage" => 0m,
-                    "HotFood" => 20m,
-                    "HotBeverage" => 20m,
-                    "Alcohol" => 20m,
-                    _ => 20m
-                };
+                // UK: cold takeaway 0%; hot / alcohol 20% (same rules as Client VATCalculator path).
+                VatRateApplied = VATCalculator.CalculateVatRateForCategory(orderType, VatCategory);
             }
 
             // Prices are VAT-inclusive, so VAT is extracted from gross rather than added.
-            if (VatRateApplied <= 0m)
-            {
-                VatAmount = 0m;
-                BasePrice = grossPrice;
-            }
-            else
-            {
-                var divisor = 1m + (VatRateApplied / 100m);
-                var netPrice = grossPrice / divisor;
-                BasePrice = Math.Round(netPrice, 2);
-                VatAmount = Math.Round(grossPrice - BasePrice, 2);
-            }
-
+            VatAmount = VATCalculator.ExtractVatFromInclusiveGross(grossPrice, VatRateApplied);
+            BasePrice = Math.Round(grossPrice - VatAmount, 2, MidpointRounding.AwayFromZero);
             TotalPriceWithVat = grossPrice;
         }
 

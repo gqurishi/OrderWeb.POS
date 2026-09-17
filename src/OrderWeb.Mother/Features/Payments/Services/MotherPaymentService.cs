@@ -379,6 +379,11 @@ public sealed class MotherPaymentService : IPaymentService
 
             await _orders.UpdateOrderStatusAsync(order.Id, OrderStatus.Completed);
 
+            // Phase 5 — fallback deduct when Client pays without prior Mother send.
+            await BarStockSaleHooks.DeductForOrderSafeAsync(
+                order,
+                new BarStockMovementActorDto { Source = "client" });
+
             if (order.TableSessionId is > 0)
             {
                 await new TableSessionService().CloseSessionForOrderAsync(

@@ -1,6 +1,7 @@
 using MySqlConnector;
 using POS_in_NET.Models;
 using System.Globalization;
+using System.Linq;
 
 namespace POS_in_NET.Services;
 
@@ -207,6 +208,13 @@ public sealed class ZReportService
         return snapshot;
     }
 
+    /// <summary>
+    /// Shared daily-report body builder (Phase 1): totals + VAT fields only.
+    /// Callers set <see cref="OrderWebDailyReportPayload.Purpose"/> and
+    /// <see cref="OrderWebDailyReportPayload.Trigger"/> afterwards
+    /// (Cashier = operations/cashier, scheduler = vat/automatic_3am).
+    /// Hero VAT uses order-level <c>tax_amount</c> (not SC-diluted line pro-rata) for HMRC Box 1.
+    /// </summary>
     public async Task<OrderWebDailyReportPayload> BuildInRestaurantDailyUploadAsync(DateTime reportDate)
     {
         var businessDate = reportDate.Date;
@@ -219,15 +227,31 @@ public sealed class ZReportService
             sourceFilter: ReportSourceFilter.Local);
 
         var payments = await LoadPaymentBreakdownForLocalAsync(start, end);
+        var rateBands = await _dailyReportService.GetLocalVatRateBandsForDayAsync(businessDate);
 
-        return new OrderWebDailyReportPayload
+        // Prefer SUM(orders.tax_amount) so service charge / delivery in total_amount
+        // does not dilute VAT below what the till stored from item rates.
+        var orderTaxTotal = await _dailyReportService.GetLocalPaidOrderTaxTotalAsync(businessDate);
+        var lineVatTotal = dailyReport.Summary.VatAmount;
+        var grossSales = dailyReport.Summary.GrossSales;
+        // Prefer order-level tax_amount (same hero as Mother VAT tab). Line VAT is fallback only.
+        var vatAmount = orderTaxTotal > 0m
+            ? decimal.Round(orderTaxTotal, 2, MidpointRounding.AwayFromZero)
+            : decimal.Round(lineVatTotal, 2, MidpointRounding.AwayFromZero);
+
+        var netSales = decimal.Round(Math.Max(0m, grossSales - vatAmount), 2, MidpointRounding.AwayFromZero);
+
+        var vatByRate = BuildScaledVatByRate(rateBands, vatAmount);
+
+        var payload = new OrderWebDailyReportPayload
         {
             ContractVersion = 2,
             ReportDate = businessDate,
-            TotalSales = dailyReport.Summary.GrossSales,
+            TotalSales = grossSales,
             TotalOrders = dailyReport.Summary.OrderCount,
             CashSales = payments.CashTotal,
             CardSales = payments.CardTotal,
+            GiftCardSales = payments.GiftCardTotal,
             ItemSales = dailyReport.Summary.ItemSales,
             Discounts = dailyReport.Summary.DiscountTotal,
             ServiceCharges = dailyReport.Summary.ServiceChargeTotal,
@@ -237,9 +261,78 @@ public sealed class ZReportService
             CardTips = dailyReport.Summary.CardTips,
             DeliveryFees = dailyReport.Summary.DeliveryChargeTotal,
             Refunds = dailyReport.Summary.RefundTotal,
-            Vat = dailyReport.Summary.VatAmount,
+            Vat = vatAmount,
+            NetSales = netSales,
+            VatAmount = vatAmount,
+            GrossSales = grossSales,
+            VatByRate = vatByRate,
             FinalMoneyCollected = dailyReport.Summary.FinalMoneyCollected
         };
+
+        // Phase V3: same-day VAT tab vs upload (Local POS) — deltas should be ~0.
+        try
+        {
+            var vatTab = await _dailyReportService.GetVatPeriodAsync(businessDate, businessDate);
+            var dVat = Math.Abs(vatTab.Summary.VatAmount - payload.VatAmount);
+            var dNet = Math.Abs(vatTab.Summary.NetSales - payload.NetSales);
+            var dGross = Math.Abs(vatTab.Summary.GrossSales - payload.GrossSales);
+            var bandSum = payload.VatByRate.Sum(r => r.VatAmount);
+            AppDiagnostics.Log(
+                $"[OrderWeb Report] V3 align date={businessDate:yyyy-MM-dd} source=local " +
+                $"tabVat={vatTab.Summary.VatAmount:0.00} uploadVat={payload.VatAmount:0.00} dVat={dVat:0.00} " +
+                $"dNet={dNet:0.00} dGross={dGross:0.00} bandSum={bandSum:0.00} " +
+                $"match={(dVat <= 0.05m && dNet <= 0.05m && dGross <= 0.05m && Math.Abs(bandSum - payload.VatAmount) <= 0.05m)}");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"[OrderWeb Report] V3 align check failed: {ex.Message}");
+        }
+
+        return payload;
+    }
+
+    /// <summary>
+    /// Scale band VAT so band sum ≈ hero VAT (filing explanation of Box 1).
+    /// </summary>
+    private static List<OrderWebDailyVatByRateRow> BuildScaledVatByRate(
+        IReadOnlyList<VatRateBandRow> rateBands,
+        decimal heroVat)
+    {
+        var rows = rateBands
+            .Where(b => b.RatePercent.HasValue && (b.TaxableNet != 0m || b.VatAmount != 0m))
+            .Select(b => new OrderWebDailyVatByRateRow
+            {
+                VatRate = b.RatePercent!.Value,
+                NetAmount = decimal.Round(b.TaxableNet, 2, MidpointRounding.AwayFromZero),
+                VatAmount = decimal.Round(b.VatAmount, 2, MidpointRounding.AwayFromZero),
+                GrossAmount = decimal.Round(b.TaxableNet + b.VatAmount, 2, MidpointRounding.AwayFromZero)
+            })
+            .OrderByDescending(r => r.VatRate)
+            .ToList();
+
+        var bandVatSum = rows.Sum(r => r.VatAmount);
+        if (heroVat <= 0m || bandVatSum <= 0m || Math.Abs(heroVat - bandVatSum) <= 0.05m)
+        {
+            return rows;
+        }
+
+        var scale = heroVat / bandVatSum;
+        foreach (var row in rows)
+        {
+            row.VatAmount = decimal.Round(row.VatAmount * scale, 2, MidpointRounding.AwayFromZero);
+            row.NetAmount = decimal.Round(row.NetAmount * scale, 2, MidpointRounding.AwayFromZero);
+            row.GrossAmount = decimal.Round(row.NetAmount + row.VatAmount, 2, MidpointRounding.AwayFromZero);
+        }
+
+        // Fix 1p drift on the largest band.
+        var drift = heroVat - rows.Sum(r => r.VatAmount);
+        if (rows.Count > 0 && Math.Abs(drift) >= 0.01m && Math.Abs(drift) <= 0.05m)
+        {
+            rows[0].VatAmount = decimal.Round(rows[0].VatAmount + drift, 2, MidpointRounding.AwayFromZero);
+            rows[0].GrossAmount = decimal.Round(rows[0].NetAmount + rows[0].VatAmount, 2, MidpointRounding.AwayFromZero);
+        }
+
+        return rows;
     }
 
     public async Task LogPrintAsync(

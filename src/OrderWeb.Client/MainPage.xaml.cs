@@ -104,6 +104,7 @@ public partial class MainPage : ContentPage
     private ApplicationShellFrame? _activeApplicationFrame;
     private DashboardViewModel? _sharedDashboardViewModel;
     private RestaurantTablesView? _restaurantTablesView;
+    private BarInventoryView? _barInventoryView;
     private LiveOrderBoardView? _liveOrderBoard;
     private IReadOnlyList<MotherOrderState> _liveOrderCachedOrders = Array.Empty<MotherOrderState>();
     private bool _suppressLiveOrderFilterEvent;
@@ -531,6 +532,15 @@ public partial class MainPage : ContentPage
                 return;
             }
 
+            if (IsBarInventoryUpdatedEvent(e) &&
+                (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "inventory") ||
+                 string.Equals(_posSelectedMenu, "Bar Inventory", StringComparison.OrdinalIgnoreCase)) &&
+                _barInventoryView is not null)
+            {
+                _ = QuietRefreshBarInventoryAsync();
+                return;
+            }
+
             RefreshCurrentPosPage();
         });
     }
@@ -657,6 +667,70 @@ public partial class MainPage : ContentPage
     private static bool IsOrderUpdatedEvent(MotherDataChangedEventArgs e) =>
         !string.IsNullOrWhiteSpace(e.EventType) &&
         e.EventType.Contains("order", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBarInventoryUpdatedEvent(MotherDataChangedEventArgs e) =>
+        !string.IsNullOrWhiteSpace(e.EventType) &&
+        e.EventType.Contains("barinventory", StringComparison.OrdinalIgnoreCase);
+
+    private async Task QuietRefreshBarInventoryAsync()
+    {
+        if (_barInventoryView is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+            var result = await client.ListBoardAsync();
+            if (!result.Success && !result.FromCache)
+            {
+                return;
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_barInventoryView is null)
+                {
+                    return;
+                }
+
+                var rows = result.Items ?? Array.Empty<BarStockBoardRowDto>();
+                _barInventoryView.SetSectionChips(rows.Select(r => r.Section));
+                var section = _barInventoryView.SelectedSection;
+                var filtered = rows
+                    .Where(r => section == BarStockSections.All ||
+                                string.Equals(BarStockSections.Normalize(r.Section), section, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                _barInventoryView.SetBoard(filtered.Select(r => new BarStockBoardRowPresentation(
+                    r.StockId,
+                    r.Name,
+                    r.StockUnit,
+                    $"{r.OnHand:0.###} {r.StockUnit}",
+                    r.Status,
+                    string.IsNullOrWhiteSpace(r.Sku) ? $"{r.LinkedMenuItemCount} menu link(s)" : $"{r.Sku} · {r.LinkedMenuItemCount} menu link(s)",
+                    BarStockSections.DisplayName(r.Section),
+                    r.SuggestOrderDisplay,
+                    BarStockSections.Normalize(r.Section),
+                    r.Sku,
+                    r.OnHand,
+                    r.PackSize,
+                    r.LowLevel > 0 ? r.LowLevel : 0m,
+                    r.MaxLevel > 0 ? r.MaxLevel : r.ParLevel,
+                    r.SuggestOrderQty)).ToList(), suggestMode: _barInventoryView.IsSuggestMode);
+                if (result.FromCache)
+                {
+                    _barInventoryView.SetStatus(result.Message ?? "Mother offline · showing last saved stock");
+                }
+
+                _barInventoryView.SetAdvisoryNote(null);
+            });
+        }
+        catch
+        {
+            // Quiet refresh must never disturb the till.
+        }
+    }
 
     private async Task ReloadOpenOrderFromMotherLiveAsync()
     {
@@ -1878,7 +1952,8 @@ public partial class MainPage : ContentPage
         var drawerAllowed = ClientHostAccess.Features.Contains(PosFeatureKeys.Payments);
         var dashboard = new CashierDashboardView
         {
-            ShowOpenDrawer = drawerAllowed
+            ShowOpenDrawer = drawerAllowed,
+            ShowUploadReport = false
         };
         dashboard.SetActionsEnabled(online);
         dashboard.RefreshRequested += async (_, _) => await RefreshCashierDashboardAsync();
@@ -1914,34 +1989,405 @@ public partial class MainPage : ContentPage
         Root.BackgroundColor = Color.FromArgb(PageBackground);
 
         var inventory = new BarInventoryView();
-        inventory.SetStatus("Bar Manager · online via Mother · shared stock workspace");
-        inventory.SetStockSummary(
-            "No stock lines yet",
-            [
-                ("Receive Stock", "Log bottles and cases when deliveries arrive."),
-                ("Stock Count", "Count before service so low-stock alerts stay accurate."),
-                ("Waste / Breakage", "Record spills and breakage against the correct item.")
-            ]);
+        _barInventoryView = inventory;
+        inventory.ShowAdminCreate = false;
+        inventory.ShowReport = false;
+        inventory.SetStatus("Bar Manager · loading stock from Mother…");
+        inventory.SetBoard(Array.Empty<BarStockBoardRowPresentation>());
+        var lastBoard = new List<BarStockBoardRowDto>();
+        BarStockWeeklyReportResponseDto? lastReport = null;
+        var reportStart = DateTime.Today.AddDays(-6);
+        var reportEnd = DateTime.Today;
+        int? reportPresetDays = 7;
+        var stickyKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        var actionBusy = false;
+
+        void PaintCachedReport()
+        {
+            if (lastReport is null)
+            {
+                return;
+            }
+
+            var section = inventory.SelectedSection;
+            var items = (lastReport.Items ?? Array.Empty<BarStockWeeklyReportRowDto>())
+                .Where(r => section == BarStockSections.All ||
+                            string.Equals(BarStockSections.Normalize(r.Section), section, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            inventory.SetStatus($"Stock report · {BarStockSections.DisplayName(section)}");
+            inventory.SetUsageReport(
+                lastReport.PeriodLabel,
+                $"{BarStockQtyDisplay.FormatQty(items.Sum(i => i.EndingOnHand))} bottle{(Math.Abs(items.Sum(i => i.EndingOnHand)) == 1m ? "" : "s")}",
+                $"{BarStockQtyDisplay.FormatQty(items.Sum(i => i.UsedTotal))} bottle{(Math.Abs(items.Sum(i => i.UsedTotal)) == 1m ? "" : "s")}",
+                $"{BarStockQtyDisplay.FormatQty(items.Sum(i => i.WasteTotal))} bottle{(Math.Abs(items.Sum(i => i.WasteTotal)) == 1m ? "" : "s")}",
+                reportStart,
+                reportEnd,
+                reportPresetDays,
+                items.Select(r => new BarStockWeeklyReportRowPresentation(
+                    r.Name,
+                    BarStockSections.DisplayName(r.Section),
+                    string.IsNullOrWhiteSpace(r.HaveDisplay) ? $"{r.EndingOnHand:0.###} {r.StockUnit}" : r.HaveDisplay,
+                    string.IsNullOrWhiteSpace(r.UsedDisplay) ? $"{r.UsedTotal:0.###} {r.StockUnit}" : r.UsedDisplay,
+                    string.IsNullOrWhiteSpace(r.WasteDisplay) ? $"{r.WasteTotal:0.###} {r.StockUnit}" : r.WasteDisplay,
+                    r.Sku)).ToList());
+        }
+
+        void PaintBoard(bool suggestedOnly)
+        {
+            inventory.SetSectionChips(lastBoard.Select(r => r.Section));
+            var section = inventory.SelectedSection;
+            var source = lastBoard
+                .Where(r => section == BarStockSections.All ||
+                            string.Equals(BarStockSections.Normalize(r.Section), section, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (suggestedOnly)
+            {
+                source = source
+                    .Where(r =>
+                        string.Equals(r.Status, "Low", StringComparison.OrdinalIgnoreCase) &&
+                        r.SuggestOrderQty > 0m)
+                    .ToList();
+                inventory.SetStatus(source.Count == 0
+                    ? $"Order · {BarStockSections.DisplayName(section)} · nothing to order"
+                    : $"Order · {BarStockSections.DisplayName(section)} · {source.Count} item(s) to order");
+            }
+            else
+            {
+                inventory.SetStatus("Bar Manager · online via Mother · shared stock workspace");
+            }
+
+            inventory.SetBoard(source.Select(r =>
+            {
+                var detailParts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(r.Sku))
+                {
+                    detailParts.Add(r.Sku!);
+                }
+
+                if (r.PackSize > 0 && string.Equals(r.StockUnit, BarStockUnits.Bottle, StringComparison.OrdinalIgnoreCase))
+                {
+                    detailParts.Add($"{r.PackSize:0.###} ml/btl");
+                }
+
+                if (r.ParLevel > 0 || r.MaxLevel > 0 || r.LowLevel > 0)
+                {
+                    var low = r.LowLevel > 0 ? r.LowLevel : 0m;
+                    var max = r.MaxLevel > 0 ? r.MaxLevel : r.ParLevel;
+                    detailParts.Add($"low {low:0.###} · max {max:0.###}");
+                }
+
+                detailParts.Add($"{r.LinkedMenuItemCount} menu link(s)");
+                return new BarStockBoardRowPresentation(
+                    r.StockId,
+                    r.Name,
+                    r.StockUnit,
+                    $"{r.OnHand:0.###} {r.StockUnit}",
+                    r.Status,
+                    string.Join(" · ", detailParts),
+                    BarStockSections.DisplayName(r.Section),
+                    r.SuggestOrderDisplay,
+                    BarStockSections.Normalize(r.Section),
+                    r.Sku,
+                    r.OnHand,
+                    r.PackSize,
+                    r.LowLevel > 0 ? r.LowLevel : 0m,
+                    r.MaxLevel > 0 ? r.MaxLevel : r.ParLevel,
+                    r.SuggestOrderQty);
+            }).ToList(), suggestMode: suggestedOnly);
+        }
+
+        inventory.SectionChanged += (_, _) =>
+        {
+            if (inventory.IsReportMode)
+            {
+                PaintCachedReport();
+            }
+            else
+            {
+                PaintBoard(suggestedOnly: inventory.IsSuggestMode);
+            }
+        };
+        inventory.SuggestPdfDownloadRequested += async (_, _) =>
+        {
+            try
+            {
+                var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+                var path = await client.DownloadSuggestPdfAsync(inventory.SelectedSection);
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    await DisplayAlertAsync("Order", "Could not download PDF.", "OK");
+                    return;
+                }
+
+                await Launcher.Default.OpenAsync(new OpenFileRequest
+                {
+                    File = new ReadOnlyFile(path)
+                });
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Order PDF", ex.Message, "OK");
+            }
+        };
+        inventory.ReportRangeRequested += async (_, range) =>
+        {
+            try
+            {
+                var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+                var report = await client.GetUsageReportAsync(range.StartDate, range.EndDate, range.PresetDays);
+                if (!report.Success)
+                {
+                    inventory.SetStatus(report.Message ?? "Could not load stock report.");
+                    return;
+                }
+
+                lastReport = report;
+                reportStart = report.StartDate.Date;
+                reportEnd = report.EndDate.Date;
+                reportPresetDays = range.PresetDays is 7 or 15 or 30 or 365 ? range.PresetDays : null;
+                PaintCachedReport();
+            }
+            catch (Exception ex)
+            {
+                inventory.SetStatus(ex.Message);
+            }
+        };
+        inventory.ReportCsvDownloadRequested += async (_, _) =>
+        {
+            try
+            {
+                var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+                var path = await client.DownloadUsageReportCsvAsync(reportStart, reportEnd);
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    await DisplayAlertAsync("Stock report CSV", "Could not download CSV from Mother.", "OK");
+                    return;
+                }
+
+                await Launcher.Default.OpenAsync(new OpenFileRequest
+                {
+                    Title = "Stock report CSV",
+                    File = new ReadOnlyFile(path)
+                });
+                inventory.SetStatus($"CSV saved · {System.IO.Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Stock report CSV", ex.Message, "OK");
+            }
+        };
+
+        inventory.QuickAddRequested += async (_, row) =>
+        {
+            if (actionBusy)
+            {
+                return;
+            }
+
+            actionBusy = true;
+            try
+            {
+                inventory.UnfocusSearch();
+                SharedTouchKeyboard.SuppressAllBriefly(500);
+                var fromSuggest = inventory.IsSuggestMode;
+                var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+                var stickyKey = stickyKeys.TryGetValue("Receive", out var existing) && !string.IsNullOrWhiteSpace(existing)
+                    ? existing
+                    : Guid.NewGuid().ToString("N");
+                stickyKeys["Receive"] = stickyKey;
+                var dialog = new BarStockQuickAddDialog();
+                var result = await dialog.ShowAsync(this, row, async draft =>
+                {
+                    var response = await client.ReceiveAsync(new BarStockReceiveRequestDto
+                    {
+                        StockId = draft.StockId ?? row.StockId,
+                        Qty = draft.QtyBottles,
+                        InputUnit = BarStockUnits.Bottle,
+                        Note = fromSuggest ? "Suggest delivery IN" : "Quick Stock IN",
+                        IdempotencyKey = stickyKey
+                    });
+                    if (!response.Success)
+                    {
+                        return (false, response.Message);
+                    }
+
+                    stickyKeys.Remove("Receive");
+                    return (true, null);
+                }, deliveryFromSuggest: fromSuggest);
+
+                if (result.Confirmed)
+                {
+                    await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                    PaintBoard(suggestedOnly: fromSuggest);
+                    inventory.SetStatus(fromSuggest
+                        ? $"Delivery +{result.QtyBottles:0.###} · {row.Name}"
+                        : $"Stock IN +{result.QtyBottles:0.###} · {row.Name}");
+                }
+            }
+            finally
+            {
+                actionBusy = false;
+            }
+        };
+
+        inventory.EditRequested += async (_, _) =>
+            await DisplayAlert("Bar Inventory", "Edit stock is Admin-only on Mother POS.", "OK");
+
         inventory.ActionRequested += async (_, action) =>
         {
-            var title = action switch
+            if (actionBusy)
             {
-                BarInventoryActionKind.Receive => "Receive Stock",
-                BarInventoryActionKind.Count => "Stock Count",
-                BarInventoryActionKind.Waste => "Waste / Breakage",
-                BarInventoryActionKind.CurrentStock => "Current Stock",
-                BarInventoryActionKind.SuggestedOrder => "Suggested Order",
-                BarInventoryActionKind.WeeklyReport => "Weekly Report",
-                _ => "Bar Inventory"
-            };
-            await DisplayAlertAsync(
-                title,
-                "This stock tool is ready in SharedUI. Next step: Mother stock APIs for live data.",
-                "OK");
+                return;
+            }
+
+            actionBusy = true;
+            try
+            {
+                var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+                if (action is BarInventoryActionKind.AddStock)
+                {
+                    await DisplayAlert("Bar Inventory", "Add stock is Admin-only on Mother POS.", "OK");
+                    return;
+                }
+
+                if (action is BarInventoryActionKind.CurrentStock)
+                {
+                    await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                    PaintBoard(suggestedOnly: false);
+                    return;
+                }
+
+                if (action is BarInventoryActionKind.SuggestedOrder)
+                {
+                    if (lastBoard.Count == 0)
+                    {
+                        await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                    }
+
+                    PaintBoard(suggestedOnly: true);
+                    return;
+                }
+
+                if (action is BarInventoryActionKind.WeeklyReport)
+                {
+                    await DisplayAlert(
+                        "Stock report",
+                        "Stock report is Admin-only on Mother POS. Bar Manager can Waste and Order.",
+                        "OK");
+                    return;
+                }
+
+                var kind = action switch
+                {
+                    BarInventoryActionKind.Receive => BarStockMovementKind.Receive,
+                    BarInventoryActionKind.Waste => BarStockMovementKind.Waste,
+                    _ => (BarStockMovementKind?)null
+                };
+                if (kind is null)
+                {
+                    return;
+                }
+
+                if (lastBoard.Count == 0)
+                {
+                    await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                }
+
+                var sectionRows = lastBoard
+                    .Where(r => inventory.SelectedSection == BarStockSections.All ||
+                                string.Equals(BarStockSections.Normalize(r.Section), inventory.SelectedSection, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (sectionRows.Count == 0)
+                {
+                    await DisplayAlertAsync(
+                        "Bar Inventory",
+                        "No tracked items in this section — Admin must enable Track on Add Item.",
+                        "OK");
+                    return;
+                }
+
+                var stickyKey = stickyKeys.TryGetValue(kind.Value.ToString(), out var existing) && !string.IsNullOrWhiteSpace(existing)
+                    ? existing
+                    : Guid.NewGuid().ToString("N");
+                stickyKeys[kind.Value.ToString()] = stickyKey;
+
+                var pickers = sectionRows.Select(r => new BarStockPickerItem(
+                    r.StockId, r.Name, r.StockUnit, r.OnHand, r.PackSize, r.ParLevel)).ToList();
+                var dialog = new BarStockMovementDialog();
+                await dialog.ShowAsync(this, kind.Value, pickers, async draft =>
+                {
+                    BarStockMovementResponseDto result = kind.Value switch
+                    {
+                        BarStockMovementKind.Receive => await client.ReceiveAsync(new BarStockReceiveRequestDto
+                        {
+                            StockId = draft.StockId ?? string.Empty,
+                            Qty = draft.Qty,
+                            InputUnit = draft.InputUnit,
+                            Note = draft.NoteOrReason,
+                            IdempotencyKey = draft.IdempotencyKey
+                        }),
+                        BarStockMovementKind.Waste => await client.WasteAsync(new BarStockWasteRequestDto
+                        {
+                            StockId = draft.StockId ?? string.Empty,
+                            Qty = draft.Qty,
+                            Reason = draft.NoteOrReason ?? string.Empty,
+                            IdempotencyKey = draft.IdempotencyKey
+                        }),
+                        _ => new BarStockMovementResponseDto { Success = false, Message = "Unknown action." }
+                    };
+
+                    if (!result.Success)
+                    {
+                        return (false, result.Message);
+                    }
+
+                    stickyKeys.Remove(kind.Value.ToString());
+                    return (true, null);
+                }, stickyKey);
+
+                inventory.SetStatus("Current Stock · updated");
+                await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                PaintBoard(suggestedOnly: false);
+            }
+            finally
+            {
+                actionBusy = false;
+            }
         };
 
         var frame = SharedAppFrame("Bar Inventory", inventory, "inventory");
         Root.Children.Add(frame);
+        _ = LoadBarInventoryBoardAsync(inventory, lastBoard).ContinueWith(_ =>
+            MainThread.BeginInvokeOnMainThread(() => PaintBoard(suggestedOnly: false)));
+    }
+
+    private async Task LoadBarInventoryBoardAsync(
+        BarInventoryView inventory,
+        List<BarStockBoardRowDto> lastBoard)
+    {
+        var client = new MotherBarInventoryClient(_cache, _offlinePolicy);
+        var result = await client.ListBoardAsync();
+        if (!result.Success && !result.FromCache)
+        {
+            inventory.SetStatus(result.Message ?? "Could not load stock board.");
+            inventory.SetBoard(Array.Empty<BarStockBoardRowPresentation>());
+            inventory.SetAdvisoryNote(null);
+            lastBoard.Clear();
+            return;
+        }
+
+        if (result.Success || result.FromCache)
+        {
+            lastBoard.Clear();
+            lastBoard.AddRange(result.Items ?? Array.Empty<BarStockBoardRowDto>());
+            if (result.FromCache)
+            {
+                inventory.SetStatus(result.Message ?? "Mother offline · showing last saved stock");
+            }
+
+            // Bar Manager — no soft Track On advisory.
+            inventory.SetAdvisoryNote(null);
+        }
     }
 
     private async Task RefreshCashierDashboardAsync()
@@ -2716,6 +3162,7 @@ public partial class MainPage : ContentPage
             case "advanceorders":
             case "customerdata":
             case "customers":
+            case "inventory":
                 // Pushed tool / customer-form pages must stay put on Mother sync.
                 // Re-opening them restarts the side-slide and clears in-progress input.
                 break;
@@ -3284,6 +3731,14 @@ public partial class MainPage : ContentPage
         if (ClientHostAccess.IsMenuRoute(_posSelectedMenu, "liveorder"))
         {
             _ = SoftRefreshLiveOrdersAsync();
+            return;
+        }
+
+        if ((ClientHostAccess.IsMenuRoute(_posSelectedMenu, "inventory") ||
+             string.Equals(_posSelectedMenu, "Bar Inventory", StringComparison.OrdinalIgnoreCase)) &&
+            _barInventoryView is not null)
+        {
+            _ = QuietRefreshBarInventoryAsync();
         }
     }
 
@@ -6995,6 +7450,7 @@ public partial class MainPage : ContentPage
             $"Connection: {_connectionStatus}",
             ClientGiftCardDiagnostics.Last.SummaryLine,
             ClientLoyaltyDiagnostics.Last.SummaryLine,
+            ClientBarInventoryDiagnostics.Last.SummaryLine,
             last is null ? "Session result: none" : string.Join(Environment.NewLine, last.SectionLines()));
 
         if (_activeApplicationFrame is { } frame)

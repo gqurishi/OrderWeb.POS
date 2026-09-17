@@ -23,7 +23,8 @@ Advance Collection/Delivery (`ScheduledTime`) get a **3h** kitchen auto-print (+
 | Manager list | SharedUI Advance Orders — Admin/Manager Mother + Manager Client |
 | List filters v1 | Today / Tomorrow / Next 7 days |
 | Architecture | Mother timer + DB + print · Client → Mother · SharedUI chrome |
-| Source of truth | Local POS orders with `ScheduledTime` (Collection/Delivery) |
+| Source of truth | Local + **web** POS orders with `ScheduledTime` / `scheduled_for` (Collection/Delivery) |
+| Web advance | Same 3h hold/print/popup; small **WEB** tag on list + reminder; no ASAP kitchen on `new_order` when scheduled |
 
 ### Explicit non-goals (v1)
 - No SMS · no lead-time settings UI · no Client→cloud · no offline Client scheduler
@@ -61,7 +62,7 @@ Advance Collection/Delivery (`ScheduledTime`) get a **3h** kitchen auto-print (+
 
 ### WS `advance.reminder`
 Mother fan-out + `terminal_events` payload (`AdvanceOrderReminderDto`):
-`orderId`, `orderNumber`, `orderType`, `scheduledTimeUtc`, `scheduledDisplay`, `customerName`, `customerPhone`, `totalAmount`, `kitchenPrinted`
+`orderId`, `orderNumber`, `orderType`, `scheduledTimeUtc`, `scheduledDisplay`, `customerName`, `customerPhone`, `totalAmount`, `kitchenPrinted`, `isFromWeb`
 Fired from `AdvanceOrderService` after successful once-print (`PublishAdvanceReminderAsync`).
 
 **Done when:** test tool can hit list API; WS payload documented on DTO.
@@ -90,6 +91,15 @@ Fired from `AdvanceOrderService` after successful once-print (`PublishAdvanceRem
 - One Mother print; many till popups OK
 - Soft note when ≥5 pending today on list
 
+## Web advance (done)
+- List/due include `source_channel` **local** + **web** (real collection/delivery types; not web-* types)
+- SharedUI small **WEB** chip on rows; reminder body shows `· WEB`
+- DTOs + WS `isFromWeb`; Mother/Client hosts map it
+- Cloud ingest: if `scheduled_for` / `ScheduledTime` set → **skip** ASAP `OnlineOrderAutoPrint` (Mother T−3h path owns kitchen)
+- `scheduled_for` already maps to `Order.ScheduledTime` on WS/API ingest
+
+**Done when:** web scheduled Collection/Delivery appears on Advance Orders with WEB tag; kitchen waits until T−3h.
+
 ## Phase 7 — QA checklist
 Code-path review (manual till still required):
 
@@ -105,6 +115,7 @@ Code-path review (manual till still required):
 | 8 | Client WS popup; offline refuse | ✅ `advance.reminder` + `ClientOperation.AdvanceOrders` |
 | 9 | Kitchen ticket Collection/Delivery time | ✅ `KitchenTicketTemplateService` |
 | 10 | Non-manager gated | ✅ Mother Manager/Admin; Client Manager + route |
+| 11 | Web scheduled → Advance list + WEB tag; no ASAP kitchen | ✅ source_channel web + skip AutoPrint when ScheduledTime |
 
 **Manual till still required** for real printer + popup timing.
 
@@ -118,3 +129,4 @@ Code-path review (manual till still required):
 8. Client popup on WS; offline refuse
 9. Kitchen ticket shows Collection/Delivery time line
 10. Non-manager cannot open Advance Orders (if gated)
+11. Web order with `scheduled_for` → WEB tag on Advance Orders; kitchen only at T−3h (not on new_order)

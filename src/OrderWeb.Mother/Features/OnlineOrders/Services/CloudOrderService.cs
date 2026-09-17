@@ -458,7 +458,9 @@ public class CloudOrderService
                     System.Diagnostics.Debug.WriteLine($" Cloud enrichment warning for {cloudOrder.OrderNumber}: {enrichment.Message}");
                 }
 
-                if (autoPrintEnabled && !await OrderHasPrintJobsAsync(cloudOrder.Id))
+                if (autoPrintEnabled &&
+                    !cloudOrder.ScheduledTime.HasValue &&
+                    !await OrderHasPrintJobsAsync(cloudOrder.Id))
                 {
                     System.Diagnostics.Debug.WriteLine($" Existing web order {cloudOrder.OrderNumber} has no print jobs; queueing now");
                     _ = AutoPrintOrderAsync(cloudOrder);
@@ -480,9 +482,15 @@ public class CloudOrderService
 
             _ = SendOrderReceivedAsync(cloudOrder.Id, "queued_for_print");
 
-            if (autoPrintEnabled)
+            // Advance web orders (scheduled_for set): hold for Mother T−3h path — do not ASAP kitchen-print.
+            if (autoPrintEnabled && !cloudOrder.ScheduledTime.HasValue)
             {
                 _ = AutoPrintOrderAsync(cloudOrder);
+            }
+            else if (cloudOrder.ScheduledTime.HasValue)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $" Advance web order {cloudOrder.OrderNumber} scheduled {cloudOrder.ScheduledTime:dd MMM HH:mm} — skip ASAP auto-print");
             }
 
             if (notifyUi)

@@ -110,6 +110,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapGet("/api/client/order-history/{orderId}", HandleOrderHistoryDetailAsync);
             app.MapGet("/api/client/advance-orders", HandleListAdvanceOrdersAsync);
             app.MapPost("/api/client/advance-orders/{orderId}/print-kitchen", HandleAdvanceOrderPrintKitchenAsync);
+            app.MapGet("/api/client/bar-inventory", HandleBarInventoryBoardAsync);
+            app.MapPost("/api/client/bar-inventory/receive", HandleBarInventoryReceiveAsync);
+            app.MapPost("/api/client/bar-inventory/count", HandleBarInventoryCountAsync);
+            app.MapPost("/api/client/bar-inventory/waste", HandleBarInventoryWasteAsync);
+            app.MapGet("/api/client/bar-inventory/report", HandleBarInventoryWeeklyReportAsync);
+            app.MapGet("/api/client/bar-inventory/report-csv", HandleBarInventoryReportCsvAsync);
+            app.MapGet("/api/client/bar-inventory/suggest-pdf", HandleBarInventorySuggestPdfAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
             app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
             app.MapPost("/api/client/reservations/status", HandleUpdateReservationStatusAsync);
@@ -203,7 +210,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         string? customerPhone,
         decimal totalAmount,
         bool kitchenPrinted,
-        string? correlationId = null)
+        string? correlationId = null,
+        bool isFromWeb = false)
     {
         if (string.IsNullOrWhiteSpace(orderId))
         {
@@ -231,7 +239,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                 customerName ?? string.Empty,
                 customerPhone,
                 totalAmount,
-                kitchenPrinted));
+                kitchenPrinted,
+                isFromWeb));
             eventId = await InsertClientTerminalEventAsync(
                 connection,
                 eventType: "advance.reminder",
@@ -256,7 +265,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             customerName,
             customerPhone,
             totalAmount,
-            kitchenPrinted
+            kitchenPrinted,
+            isFromWeb
         };
 
         foreach (var client in _clients.Values)
@@ -1711,6 +1721,480 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         }
     }
 
+    private async Task HandleBarInventoryBoardAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new BarStockBoardResponseDto
+            {
+                Success = false,
+                Message = session.Message,
+                ErrorCode = BarInventoryErrorCodes.AccessDenied
+            });
+            return;
+        }
+
+        var roleName = await ResolveSessionUserRoleAsync(session.UserId);
+        if (!Enum.TryParse<UserRole>(roleName, true, out var role) ||
+            !MotherCapabilityResolver.ForRole(role).Contains(PosCapabilityKeys.ViewBarInventory))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockBoardResponseDto
+            {
+                Success = false,
+                Message = "Bar Inventory is available to Bar Manager accounts.",
+                ErrorCode = BarInventoryErrorCodes.AccessDenied
+            });
+            return;
+        }
+
+        var features = await GetEffectiveClientFeaturesAsync(session.TerminalId, context.RequestAborted);
+        if (!features.Contains(PosFeatureKeys.BarInventory))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockBoardResponseDto
+            {
+                Success = false,
+                Message = "This Client terminal is not allowed to use Bar Inventory (Terminal Access).",
+                ErrorCode = BarInventoryErrorCodes.AccessDenied
+            });
+            return;
+        }
+
+        try
+        {
+            var stock = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
+            var rows = await stock.ListTrackedBoardAsync();
+            var advisory = await stock.GetUntrackedDrinkAdvisoryAsync();
+            await WriteJsonAsync(context, HttpStatusCode.OK, new BarStockBoardResponseDto
+            {
+                Success = true,
+                Items = rows,
+                AdvisoryNote = advisory
+            });
+        }
+        catch (Exception ex)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new BarStockBoardResponseDto
+            {
+                Success = false,
+                Message = ex.Message,
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+        }
+    }
+
+    private async Task HandleBarInventoryReceiveAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "bar-inventory-receive", 20, TimeSpan.FromMinutes(1)))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.TooManyRequests, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Too many stock requests. Try again shortly.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            return;
+        }
+
+        var gateResult = await GateBarInventoryMutateAsync(context);
+        if (gateResult is null)
+        {
+            return;
+        }
+
+        var (session, actor) = gateResult.Value;
+
+        BarStockReceiveRequestDto? request;
+        try
+        {
+            request = await ReadJsonAsync<BarStockReceiveRequestDto>(context);
+        }
+        catch
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Invalid receive payload.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        if (request is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Receive payload is required.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        try
+        {
+            var stock = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
+            var result = await stock.ReceiveAsync(request, actor);
+            var status = result.Success ? HttpStatusCode.OK : ResolveBarInventoryStatus(result.ErrorCode);
+            await WriteJsonAsync(context, status, result);
+            await AuditSensitiveOperationAsync(
+                session.TerminalId,
+                session.UserId,
+                "client_bar_inventory_receive",
+                result.Success ? "ok" : "fail");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync(
+                    "barinventory.updated",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client bar inventory receive failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Mother POS could not receive stock.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_bar_inventory_receive", "error");
+        }
+    }
+
+    private async Task HandleBarInventoryCountAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "bar-inventory-count", 20, TimeSpan.FromMinutes(1)))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.TooManyRequests, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Too many stock requests. Try again shortly.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            return;
+        }
+
+        var gateResult = await GateBarInventoryMutateAsync(context);
+        if (gateResult is null)
+        {
+            return;
+        }
+
+        var (session, actor) = gateResult.Value;
+
+        BarStockCountRequestDto? request;
+        try
+        {
+            request = await ReadJsonAsync<BarStockCountRequestDto>(context);
+        }
+        catch
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Invalid count payload.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        if (request is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Count payload is required.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        try
+        {
+            var stock = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
+            var result = await stock.CountAsync(request, actor);
+            var status = result.Success ? HttpStatusCode.OK : ResolveBarInventoryStatus(result.ErrorCode);
+            await WriteJsonAsync(context, status, result);
+            await AuditSensitiveOperationAsync(
+                session.TerminalId,
+                session.UserId,
+                "client_bar_inventory_count",
+                result.Success ? "ok" : "fail");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync(
+                    "barinventory.updated",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client bar inventory count failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Mother POS could not save stock count.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_bar_inventory_count", "error");
+        }
+    }
+
+    private async Task HandleBarInventoryWasteAsync(HttpContext context)
+    {
+        if (!TryAllowRequest(context, "bar-inventory-waste", 20, TimeSpan.FromMinutes(1)))
+        {
+            await WriteJsonAsync(context, HttpStatusCode.TooManyRequests, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Too many stock requests. Try again shortly.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            return;
+        }
+
+        var gateResult = await GateBarInventoryMutateAsync(context);
+        if (gateResult is null)
+        {
+            return;
+        }
+
+        var (session, actor) = gateResult.Value;
+
+        BarStockWasteRequestDto? request;
+        try
+        {
+            request = await ReadJsonAsync<BarStockWasteRequestDto>(context);
+        }
+        catch
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Invalid waste payload.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        if (request is null)
+        {
+            await WriteJsonAsync(context, HttpStatusCode.BadRequest, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Waste payload is required.",
+                ErrorCode = BarInventoryErrorCodes.Validation
+            });
+            return;
+        }
+
+        try
+        {
+            var stock = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
+            var result = await stock.WasteAsync(request, actor);
+            var status = result.Success ? HttpStatusCode.OK : ResolveBarInventoryStatus(result.ErrorCode);
+            await WriteJsonAsync(context, status, result);
+            await AuditSensitiveOperationAsync(
+                session.TerminalId,
+                session.UserId,
+                "client_bar_inventory_waste",
+                result.Success ? "ok" : "fail");
+            if (result.Success)
+            {
+                await PublishDataChangedAsync(
+                    "barinventory.updated",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client bar inventory waste failed: {ex.GetType().Name}: {ex.Message}");
+            await WriteJsonAsync(context, HttpStatusCode.InternalServerError, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = "Mother POS could not log waste.",
+                ErrorCode = BarInventoryErrorCodes.Unknown
+            });
+            await AuditSensitiveOperationAsync(session.TerminalId, session.UserId, "client_bar_inventory_waste", "error");
+        }
+    }
+
+    private async Task HandleBarInventoryWeeklyReportAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new BarStockWeeklyReportResponseDto
+            {
+                Success = false,
+                Message = session.Message,
+                ErrorCode = BarInventoryErrorCodes.AccessDenied
+            });
+            return;
+        }
+
+        // Stock report is Mother Admin only — Client sessions are never Admin.
+        await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockWeeklyReportResponseDto
+        {
+            Success = false,
+            Message = "Stock report is available to Admin on Mother POS only.",
+            ErrorCode = BarInventoryErrorCodes.AccessDenied
+        });
+    }
+
+    private async Task HandleBarInventoryReportCsvAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            context.Response.StatusCode = (int)session.StatusCode;
+            await context.Response.WriteAsync(session.Message ?? "Access denied.");
+            return;
+        }
+
+        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+        await context.Response.WriteAsync("Stock report CSV is available to Admin on Mother POS only.");
+    }
+
+    private async Task HandleBarInventorySuggestPdfAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            context.Response.StatusCode = (int)session.StatusCode;
+            await context.Response.WriteAsync(session.Message ?? "Access denied.");
+            return;
+        }
+
+        if (!await EnsureBarInventoryAccessAsync(context, session))
+        {
+            return;
+        }
+
+        try
+        {
+            var section = context.Request.Query["section"].FirstOrDefault();
+            var stock = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
+            var path = await stock.ExportSuggestedOrderPdfAsync(section);
+            var bytes = await File.ReadAllBytesAsync(path);
+            context.Response.ContentType = "application/pdf";
+            context.Response.Headers.ContentDisposition =
+                $"attachment; filename=\"{Path.GetFileName(path)}\"";
+            await context.Response.Body.WriteAsync(bytes);
+            await AuditSensitiveOperationAsync(
+                session.TerminalId,
+                session.UserId,
+                "client_bar_inventory_suggest_pdf",
+                "ok");
+        }
+        catch (Exception ex)
+        {
+            AppDiagnostics.Log($"Client bar inventory suggest PDF failed: {ex.GetType().Name}: {ex.Message}");
+            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            await context.Response.WriteAsync("Could not build suggested-order PDF.");
+        }
+    }
+
+    private async Task<(ClientSessionValidation Session, BarStockMovementActorDto Actor)?> GateBarInventoryMutateAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            await WriteJsonAsync(context, session.StatusCode, new BarStockMovementResponseDto
+            {
+                Success = false,
+                Message = session.Message,
+                ErrorCode = BarInventoryErrorCodes.AccessDenied
+            });
+            return null;
+        }
+
+        if (!await EnsureBarInventoryAccessAsync(context, session, forMutate: true))
+        {
+            return null;
+        }
+
+        var display = await ResolveSessionUserNameAsync(session.UserId);
+        var actor = new BarStockMovementActorDto
+        {
+            StaffUserId = session.UserId.ToString(),
+            StaffDisplayName = string.IsNullOrWhiteSpace(display) ? "Client staff" : display,
+            TerminalId = session.TerminalId,
+            TerminalLabel = session.TerminalId,
+            Source = "client"
+        };
+        return (session, actor);
+    }
+
+    private async Task<bool> EnsureBarInventoryAccessAsync(
+        HttpContext context,
+        ClientSessionValidation session,
+        bool forMutate = false)
+    {
+        var roleName = await ResolveSessionUserRoleAsync(session.UserId);
+        if (!Enum.TryParse<UserRole>(roleName, true, out var role) ||
+            !MotherCapabilityResolver.ForRole(role).Contains(PosCapabilityKeys.ViewBarInventory))
+        {
+            if (forMutate)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockMovementResponseDto
+                {
+                    Success = false,
+                    Message = "Bar Inventory is available to Bar Manager accounts.",
+                    ErrorCode = BarInventoryErrorCodes.AccessDenied
+                });
+            }
+            else
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockWeeklyReportResponseDto
+                {
+                    Success = false,
+                    Message = "Bar Inventory is available to Bar Manager accounts.",
+                    ErrorCode = BarInventoryErrorCodes.AccessDenied
+                });
+            }
+
+            return false;
+        }
+
+        var features = await GetEffectiveClientFeaturesAsync(session.TerminalId, context.RequestAborted);
+        if (!features.Contains(PosFeatureKeys.BarInventory))
+        {
+            if (forMutate)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockMovementResponseDto
+                {
+                    Success = false,
+                    Message = "This Client terminal is not allowed to use Bar Inventory (Terminal Access).",
+                    ErrorCode = BarInventoryErrorCodes.AccessDenied
+                });
+            }
+            else
+            {
+                await WriteJsonAsync(context, HttpStatusCode.Forbidden, new BarStockWeeklyReportResponseDto
+                {
+                    Success = false,
+                    Message = "This Client terminal is not allowed to use Bar Inventory (Terminal Access).",
+                    ErrorCode = BarInventoryErrorCodes.AccessDenied
+                });
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static HttpStatusCode ResolveBarInventoryStatus(string? errorCode) =>
+        errorCode switch
+        {
+            BarInventoryErrorCodes.Validation => HttpStatusCode.BadRequest,
+            BarInventoryErrorCodes.NotFound => HttpStatusCode.NotFound,
+            BarInventoryErrorCodes.AccessDenied => HttpStatusCode.Forbidden,
+            _ => HttpStatusCode.BadRequest
+        };
+
     private async Task HandleAdvanceOrderPrintKitchenAsync(HttpContext context)
     {
         var session = await ValidateClientSessionAsync(context);
@@ -1819,7 +2303,8 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             row.CustomerPhone,
             row.TotalAmount,
             row.AdvanceKitchenPrintedAt.HasValue,
-            AdvanceOrderService.StatusLabel(row));
+            AdvanceOrderService.StatusLabel(row),
+            row.IsFromWeb);
 
     private async Task HandleOrderHistoryDetailAsync(HttpContext context)
     {
@@ -3875,6 +4360,17 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
                     routingResult.PrintedItemIds,
                     session.TerminalId,
                     order);
+
+                // Phase 5 — primary Client deduct after kitchen print (idempotent with pay fallback).
+                await BarStockSaleHooks.DeductForOrderSafeAsync(
+                    order,
+                    new BarStockMovementActorDto
+                    {
+                        TerminalId = session.TerminalId,
+                        StaffUserId = session.UserId.ToString(),
+                        StaffDisplayName = await ResolveSessionUserNameAsync(session.UserId),
+                        Source = "client"
+                    });
             }
             else
             {

@@ -296,18 +296,11 @@
                             Margin="0,8,0,0"
                             IsEnabled="False"/>
 
-                    <Button x:Name="UploadDailyReportButton"
-                            Text="Upload In-Restaurant Daily Report"
-                            Clicked="OnUploadDailyReportClicked"
-                            IsVisible="False"
-                            BackgroundColor="#0F766E"
-                            TextColor="White"
-                            FontSize="16"
-                            FontAttributes="Bold"
-                            CornerRadius="8"
-                            HeightRequest="50"
-                            Margin="0,8,0,0"
-                            IsEnabled="False"/>
+                    <Label Text="VAT finalises automatically at 3:00 AM. There is no manual VAT upload here. Cashier Upload Report (Cashier dashboard) updates Business Reports only — it is not VAT filing."
+                           FontSize="13"
+                           TextColor="#64748B"
+                           Margin="0,12,0,0"
+                           LineBreakMode="WordWrap"/>
 
                 </VerticalStackLayout>
 

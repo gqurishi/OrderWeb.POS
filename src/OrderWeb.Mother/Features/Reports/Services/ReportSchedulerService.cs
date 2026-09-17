@@ -1,23 +1,22 @@
 using System.Diagnostics;
+using System.Linq;
 
 namespace POS_in_NET.Services;
 
 /// <summary>
-/// Background service that automatically generates daily, weekly, and monthly reports
-/// Runs on schedule:
-/// - Daily: Admin normally uploads manually; after 2:00 AM the mother terminal
-///   automatically uploads any missed completed business day.
-/// - Weekly: Every Sunday at 2:00 AM
-/// - Monthly: 1st of month at 2:00 AM
-/// Reports are stored in database for historical access (1+ years)
+/// Background service that automatically generates daily, weekly, and monthly reports.
+/// Phase 2 — OrderWeb VAT final:
+/// - Every scheduled / catch-up daily upload uses purpose=vat, trigger=automatic_3am
+/// - Runs at 3:00 AM + hourly/startup catch-up of last 7 completed days
+/// - Skips days with open orders; retries on the next run
 /// </summary>
 public class ReportSchedulerService
 {
     private readonly ReportGenerationService _reportService;
     private readonly OrderWebDailyReportSyncService _orderWebDailyReportSyncService;
     private Timer? _reportTimer;
-    private const int CHECK_INTERVAL_HOURS = 1; // Check every hour
-    private const int REPORT_HOUR = 3; // 3 AM safety upload / daily report generation
+    private const int CHECK_INTERVAL_HOURS = 1; // Catch-up if Mother was offline at 3 AM
+    private const int REPORT_HOUR = 3; // VAT final + local report generation
     private const int REPORT_MINUTE = 0;
 
     public bool IsRunning { get; private set; }
@@ -94,8 +93,7 @@ public class ReportSchedulerService
             var now = DateTime.Now;
             var scheduledReportTime = now.Date.AddHours(REPORT_HOUR).AddMinutes(REPORT_MINUTE);
 
-            // Catch up missed completed days on every startup/check. This is safe to
-            // repeat because successful cloud uploads are idempotent and immutable.
+            // Phase 2: catch up missing VAT-final days (last 7). Each upload is purpose=vat.
             await UploadMissingDailyReportsAsync(now);
 
             // Check if we've already run today
@@ -131,14 +129,27 @@ public class ReportSchedulerService
     private async Task UploadMissingDailyReportsAsync(DateTime now)
     {
         var missingDates = await _orderWebDailyReportSyncService.GetMissingCompletedReportDatesAsync(now);
+        if (missingDates.Count == 0)
+        {
+            Debug.WriteLine(" OrderWeb VAT final: no pending days in the 7-day catch-up window.");
+            return;
+        }
+
+        Debug.WriteLine($" OrderWeb VAT final: {missingDates.Count} pending day(s) — purpose=vat / trigger=automatic_3am");
+        AppDiagnostics.Log(
+            $"[OrderWeb Report] V1 catch-up pending={missingDates.Count} " +
+            $"dates={string.Join(",", missingDates.Select(d => d.ToString("yyyy-MM-dd")))} " +
+            "purpose=vat trigger=automatic_3am");
         foreach (var reportDate in missingDates)
         {
             await _reportService.GenerateDailyReportAsync(reportDate);
             var uploadResult = await _orderWebDailyReportSyncService.UploadScheduledAsync(reportDate);
             Debug.WriteLine(
-                uploadResult.Success
-                    ? $" OrderWeb automatic safety upload: {uploadResult.Message}"
-                    : $" OrderWeb automatic safety upload failed: {uploadResult.Message}");
+                uploadResult.Skipped
+                    ? $" OrderWeb VAT final deferred {reportDate:yyyy-MM-dd}: {uploadResult.Message}"
+                    : uploadResult.Success
+                        ? $" OrderWeb VAT final OK {reportDate:yyyy-MM-dd}: {uploadResult.Message}"
+                        : $" OrderWeb VAT final failed {reportDate:yyyy-MM-dd}: {uploadResult.Message}");
         }
     }
 

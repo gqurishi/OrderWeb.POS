@@ -225,7 +225,8 @@ public partial class AdvanceOrdersPage : ContentPage
             dto.KitchenPrinted,
             string.IsNullOrWhiteSpace(dto.Status)
                 ? (dto.KitchenPrinted ? "Printed" : "Pending")
-                : dto.Status);
+                : dto.Status,
+            dto.IsFromWeb);
 
     private async Task OpenSidebarAsync()
     {

@@ -21,7 +21,8 @@ public sealed record AdvanceOrderRowPresentation(
     string? CustomerPhone,
     string TotalText,
     bool KitchenPrinted,
-    string Status);
+    string Status,
+    bool IsFromWeb = false);
 
 public sealed class AdvanceOrderRangeChangedEventArgs(AdvanceOrderRange range) : EventArgs
 {
@@ -53,6 +54,17 @@ public static class AdvanceOrderSampleData
             TotalText: "£24.50",
             KitchenPrinted: false,
             Status: "Pending"),
+        new(
+            OrderId: "sample-adv-web-1",
+            OrderNumber: "#A-1042",
+            OrderType: "Collection",
+            ScheduledDisplay: "15 Sep 22:00",
+            CustomerName: "Web Guest",
+            CustomerPhone: "07700 900999",
+            TotalText: "£18.00",
+            KitchenPrinted: false,
+            Status: "Pending",
+            IsFromWeb: true),
         new(
             OrderId: "sample-adv-2",
             OrderNumber: "#ADV1002",

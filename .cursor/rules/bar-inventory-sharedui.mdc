@@ -1,34 +1,317 @@
-# Bar Inventory + Bar Manager (remember)
+---
+description: Bar Inventory SharedUI + Admin stock setup (Phase 0–7 rules)
+alwaysApply: true
+---
+
+# Bar Inventory + Admin stock setup (remember)
 
 ## Goal
-Bar Inventory is a **SharedUI** workspace. Admin creates a **Bar Manager** user. That role opens Bar Inventory only on **Mother or Client** (online to Mother). No Client→cloud.
+Admin sets up stock on **Add Item** *or* **Bar Inventory → Add stock**. Bar Manager runs daily stock on **Bar Inventory** (SharedUI). Mother is hub; Client online to Mother only.
 
 ## Phase 0 — product rules (LOCKED)
 
 | Rule | Locked value |
 |--|--|
-| Role name | **Bar Manager** (`UserRole.BarManager`) |
-| Who creates the user | **Admin** (Users / role picker) |
-| What Bar Manager can open | **Bar Inventory only** |
-| UI home | SharedUI `BarInventoryView` |
-| Hosts | Mother thin host (`InventoryPage`) + Client thin host (`BarInventoryPage` / MainPage embed) |
-| Capability | `pos.inventory.bar.view` (`PosCapabilityKeys.ViewBarInventory`) |
-| Terminal Access feature | `pos.bar_inventory` (`PosFeatureKeys.BarInventory`) — label **Bar Inventory** |
-| Mother Admin | Keeps Bar Inventory in Admin sidebar |
-| Manager / User / Cashier | No Bar Inventory menu |
-| Stock data / wine linking | **Later** — chrome + role first |
+| Setup owner | **Admin only** — **Add Item / Edit Item** *or* **Bar Inventory → Add stock** |
+| Daily ops owner | **Bar Manager** (and Admin) — on **Bar Inventory** |
+| Track flag | **Track in Bar Inventory** On/Off per menu item |
+| One stock → many products | **Yes** (e.g. one wine stock → glass + bottle) |
+| Sell vs stock | Menu item sells; **stock item** counts shelf qty |
+| Client | Same SharedUI Bar Inventory; data via Mother (**no Add stock** on Client) |
+| Auto stock-out on sale | **Phase 5** — Mother deducts by sell portion (rules locked below) |
+| Negative stock on sale | **Allow** — soft warning / audit flag; **do not block** sell or pay |
+| Role | **Bar Manager** (`UserRole.BarManager`) — inventory-only nav |
+| Capability | `pos.inventory.bar.view` |
+| Terminal Access | `pos.bar_inventory` (label **Bar Inventory**) |
 
-### Explicit non-goals (this pass)
-- Do **not** build live stock ledger / purchase orders / waste DB yet.
-- Do **not** put MySQL inventory rules inside SharedUI.
-- Do **not** Client→cloud for inventory.
+### Explicit non-goals (early phases)
+- No HMRC / cloud inventory filing
+- No Client→cloud
+- No full supplier ERP / auto PO email
+- No Receive / Count / Waste inside Add Item
 
 ## Build order
-1. **Bar Manager role** + route/capability lock ✅
-2. **SharedUI** `BarInventoryView` (replace coming-soon) ✅
-3. **Mother** thin host + login → inventory ✅
-4. **Client** thin host + Terminal Access feature ✅
-5. **Stock APIs / wine model** ← next
+0. **Phase 0** — lock rules ✅
+1. **Phase 1** — Data model (stock master + menu link) ✅
+2. **Phase 2** — Admin Add Item Stock UI ✅
+3. **Phase 3** — Bar Inventory live list ✅
+4. **Phase 4** — Receive / Count / Waste ✅
+5. **Phase 5** — Sale deduction ✅
+6. **Phase 6** — Reliability / Access / polish ✅
+7. **Phase 7** — QA checklist (locked below) ← you run manual till
+
+### Phase 0 decision (Track Off)
+Keep stock link inactive — hide details; retain `bar_stock_item_id` so re-enable is easy.
+
+### Phase 2–3 shipped
+- Add Item **Stock / Bar Inventory** section (Drink auto-shows; Food via expand)
+- Track On → **multi-SKU rows** (SKU picker + ml per sale); create stock on **Bar Inventory → Add stock** first
+- Junction table `menu_item_bar_stock_components` (legacy single `bar_stock_item_id` migrates on load)
+- Bar Inventory board lists tracked stock (name, unit, on-hand, OK/Low vs par)
+- Mother host loads locally; Client via `GET /api/client/bar-inventory`
+- Empty: “No tracked items — Admin can tap Add stock…”
+
+### Admin Add stock on Bar Inventory (shipped)
+- Mother Admin only: **Add stock** button → SharedUI dialog
+- Fields: SKU, name, category chips + **typed custom category**, 1 bottle = ml, opening bottles, par
+- Live calc: bottles × ml = total ml; `pack_size` = ml/bottle; `on_hand` = bottles
+- Custom categories appear as filter chips for later find
+- Client never creates stock (Ask Admin on Mother)
+
+### Sections + Usage & order (shipped)
+- Stock `bar_section`: Wine / Soft Drink / Spirit / Beer / Other **+ Admin-typed custom**
+- Bar Inventory chips: section filters (no All); Receive/Count/Waste pickers follow section
+- Suggested Order shows Low + suggest qty; **Usage & order** report: Used / Left / Par / Suggest + supplier footer
+- Used v1 = waste + negative count variance (sales usage after Phase 5)
+- Bottle suggest qty ignores ml pack_size (suggest bottles to par)
+
+---
+
+## Phase 4 — Bar Manager ops (LOCKED)
+
+### Goal
+Daily movements update `bar_stock_items.on_hand`. Same number on Mother and Client after refresh.
+
+### Action matrix
+
+| Action | Effect on `on_hand` | Notes |
+|--|--|--|
+| **Receive** | **+** qty (always applied in **stock_unit**) | Cases → bottles (or stock unit) via `pack_size` when receiving in cases |
+| **Count** | ~~Set absolute on-hand~~ | **Removed from Bar Inventory UI** (ops model: opening stock + Receive + sales auto − + Waste; no routine stocktake). Ledger/API may still exist; do not re-add the Count button. |
+| **Waste** | **−** qty (stock_unit) | Reason **required**; refuse if qty ≤ 0 or would drive on-hand &lt; 0 |
+| **Current Stock** | Read-only board | Same Phase 3 list (refresh) |
+| **Suggested Order** | Read-only filter | Items with status **Low** (on-hand ≤ par) |
+| **Weekly Report** | Read-only summary | Last **7 calendar days** of movements (simple v1) |
+
+### Unit / pack rules (locked)
+- Ledger qty is always **`on_hand` in `stock_unit`** (bottle / case / ml).
+- Receive UI: qty + **input unit** = stock unit **or** `case` when `pack_size > 1` and stock unit is bottle (or ml with pack = volume per bottle).
+- Conversion: `delta_stock_unit = input_qty × pack_size` when input unit is case and stock unit ≠ case; else `delta = input_qty`.
+- Count / Waste: qty in **stock_unit only** (no case picker) — keep v1 simple.
+- No invented pack: if staff pick cases but `pack_size ≤ 1`, refuse with clear validation.
+
+### Audit (locked)
+Every Receive / Count / Waste writes one row to **`bar_stock_movements`**:
+- `stock_item_id`, `movement_type` (`receive` / `count` / `waste`)
+- `qty_delta` (signed; Count stores delta vs previous; Receive +, Waste −)
+- `qty_before`, `qty_after`
+- `reason` (required for waste; optional note for receive/count)
+- `staff_user_id` / display name, `terminal_id` / till label, `source` (`mother` / `client`)
+- `idempotency_key` (unique), `created_at_utc`
+- Mother audit trail for Client calls: `client_bar_inventory_*` (same pattern as gift/loyalty)
+
+### Access / online
+| Rule | Locked |
+|--|--|
+| Who can mutate | **Bar Manager** + **Admin** (same as view board) |
+| Client | **Online to Mother only** — refuse offline (`ClientOperation.BarInventory`) |
+| Idempotency | Sticky key per action+stock until success; busy / double-tap guards on Confirm |
+| SharedUI | Dialogs / report chrome only — **no** SQL / HTTP / qty math in SharedUI |
+| Mother | Owns apply + ledger; Client POST → Mother |
+
+### API shape (Client → Mother)
+- `POST /api/client/bar-inventory/receive` — `{ stockId, qty, inputUnit?, note?, idempotencyKey?, sessionToken? }`
+- `POST /api/client/bar-inventory/count` — `{ stockId, countedQty, note?, idempotencyKey?, sessionToken? }`
+- `POST /api/client/bar-inventory/waste` — `{ stockId, qty, reason, idempotencyKey?, sessionToken? }`
+- `GET /api/client/bar-inventory/report?range=7d` — weekly movement summary
+- Existing `GET /api/client/bar-inventory` stays the Current Stock board
+
+Response: success + updated `BarStockItemDto` / board row + message. Errors use `BarInventoryErrorCodes`.
+
+### Weekly Report v1 (simple)
+- Window: **last 7 days** (trading/local Mother clock, inclusive of today)
+- Per stock (or aggregate tiles + expandable rows): Receive total +, Waste total −, Count variance sum, ending on-hand
+- No PDF/CSV in v1 (export later if needed)
+- Empty: “No movements in the last 7 days”
+
+### Explicit non-goals (Phase 4)
+- Do **not** auto-deduct on sale (Phase 5)
+- Do **not** Client→cloud or offline SQLite stock ledger
+- Do **not** supplier PO / email / barcode scanner
+- Do **not** multi-location warehouses
+- Do **not** edit/void past movements (append-only; correct with new Count)
+- Do **not** put Receive/Count/Waste on Add Item
+
+### Build order (Phase 4)
+1. **Data** — `bar_stock_movements` + `BarStockService` ApplyReceive/Count/Waste + WeeklySummary
+2. **Contracts** — movement request/response + report DTOs + error codes if needed
+3. **SharedUI** — Receive / Count / Waste dialogs + Weekly Report panel (chrome only)
+4. **Mother host** — wire InventoryPage actions → local service; busy guards
+5. **Client API + host** — POST endpoints + MotherBarInventoryClient; BarInventoryPage + Bar Manager workspace
+6. **QA** — checklist below
+
+### Done when
+1. Receive **6 bottles** → on-hand +6 (or +6×pack if received as cases)
+2. Count / Waste change qty correctly; waste refuses overdraw
+3. Same on-hand on Mother and Client after refresh
+4. Movement rows show who / when / till
+5. Suggested Order still Low-only; Weekly Report shows the week’s movements
+6. Double-tap Confirm does not double-apply (idempotency)
+
+### Phase 4 shipped
+- Table `bar_stock_movements` + `BarStockService` Receive/Count/Waste + WeeklyReport
+- SharedUI `BarStockMovementDialog` (busy / sticky idempotency)
+- Mother `InventoryPage` + Client `BarInventoryPage` / Bar Manager workspace
+- Client API: POST receive/count/waste, GET report; WS `barinventory.updated` on success
+
+---
+
+## Phase 5 — Sale deduction (LOCKED — implement after Phase 4)
+
+### Goal
+Paying/sending an order reduces stock using **sell portion** rules. Mother owns the ledger; Client never deducts locally.
+
+### Scope (locked)
+
+| Rule | Locked value |
+|--|--|
+| Which items | **Only** menu rows with `track_bar_inventory = 1` **and** a linked `bar_stock_item_id` |
+| Who applies | **Mother only** (Mother till + Client order mutations that hit Mother) |
+| Client ledger | **Never** — no SQLite stock math; Client→Mother order path already applies |
+| Negative policy | **Allow** sale/pay to complete; soft warning + movement flag if `qty_after < 0` |
+| Hard block | **No** — do not refuse Send/Pay for insufficient stock (v1) |
+
+### Portion math (locked)
+- Deduct **`sell_portion_qty` × line qty**, converted into **stock_unit** — never invent a whole bottle when selling a glass.
+- Same unit as stock → `delta = sell_portion_qty × line_qty`.
+- **ml portion → bottle stock**: `delta_bottles = (sell_portion_qty × line_qty) / pack_size` where `pack_size` = ml per bottle (e.g. glass 175, pack 750 → **175/750** per glass).
+- **bottle portion → bottle stock**: glass/bottle SKUs that sell `1 bottle` → deduct **1** (× line qty).
+- **ml stock unit**: deduct ml directly (portion already in ml).
+- Missing / zero portion or missing pack when conversion needed → **skip deduct** + log warning (do not guess).
+
+### When to deduct (locked — once only)
+1. **Primary:** when order lines are first **sent / kitchen-committed** on Mother (covers table pour-before-pay).
+2. **Fallback:** on **payment complete** for any tracked lines not yet deducted (quick collection/pay without prior send).
+3. **Idempotent:** one `sale` movement per **order line id** (or stable line key) — Send then Pay must **not** double-hit.
+4. **Void / remove after deduct:** Mother posts a reversing `sale_void` (or negative sale) restoring the same portion; append-only.
+
+### Audit
+- Movement type: `sale` / `sale_void`
+- Fields: stock id, delta, before/after, order id, order line id, staff, terminal, source (`mother`/`client`), overdraw flag when `qty_after < 0`
+- Soft warning: toast/status on Bar Inventory next load optional; sale path may log only in v1 (must not block till)
+
+### Explicit non-goals (Phase 5)
+- Do **not** Client-local stock ledger or offline deduct
+- Do **not** block checkout on Low / negative
+- Do **not** deduct Track-Off or unlinked items
+- Do **not** component-split meal deals beyond the menu item’s own portion
+- Do **not** require Bar Manager to confirm each sale deduct
+
+### Done when
+1. Sell **one glass** (175 ml, pack 750, bottle stock) → on-hand drops by **175/750** bottle (not 1).
+2. Sell **bottle SKU** (portion 1 bottle) → on-hand drops by **1**.
+3. Send then Pay same line → still **one** deduction.
+4. Insufficient stock → sale still succeeds; on-hand may go negative; movement marked overdraw.
+5. Client sale via Mother shows same on-hand after refresh as Mother till.
+
+### Phase 5 shipped
+- `BarStockService.DeductSalesForOrderAsync` / `ReverseSalesForOrderAsync` — multi-SKU via `menu_item_bar_stock_components` (ml × qty ÷ pack_size)
+- Idempotency `sale:{lineKey}:{stockId}` / `sale_void:…` — Send then Pay does not double-hit
+- Mother hooks: Order Place send + pay fallback + void reverse
+- Client hooks: kitchen print + payment complete + void reverse
+- Movements store `order_id` / `order_line_key` / `overdraw`; WS `barinventory.updated` on apply
+- Never blocks Send/Pay; Client never owns ledger
+
+---
+
+## Phase 6 — Reliability, Access, polish (LOCKED — after Phase 4–5 code)
+
+### Goal
+Access and sync behave like **Loyalty / Gift Cards**: Terminal Access flips menus without reinstall; Client mutates only online to Mother; board stays fresh.
+
+### Access (locked)
+
+| Surface | Rule |
+|--|--|
+| **Bar Manager role** | Inventory-only nav on Mother + Client (`UserRole.BarManager`) — **already started** |
+| **Terminal Access** | `pos.bar_inventory` / label **Bar Inventory** — grant via Access; **already started** |
+| **Capability** | `pos.inventory.bar.view` for board + ops |
+| **Add Item Stock section** | **Admin only** — hide/disable Stock / Bar Inventory block for non-Admin (Manager/Bar Manager cannot change track/link) |
+| **Bar Inventory ops** | Bar Manager + Admin only; Cashier / other roles cannot open mutate tiles |
+| **Client menu refresh** | `GET /api/client/access` + **Update All** + WS **`features.updated`** show/hide Bar Inventory without reinstall (same as Gift Cards) |
+
+### Offline / last-good (locked)
+
+| Mode | Behaviour |
+|--|--|
+| Client **offline** mutate (Receive/Count/Waste) | **Refuse** — `ClientOperation.BarInventory`; clear message; no local ledger write |
+| Client **offline** board read | **Show last-good** cached board if present (warm SQLite/cache from last successful `GET`); status: “Mother offline · showing last saved stock” |
+| Cold offline (no cache) | Empty + refuse; do not invent rows |
+| Mother offline to cloud | **N/A** — stock is local Mother MariaDB only (never Client→cloud) |
+
+### Sync / freshness (locked)
+
+| Mechanism | Behaviour |
+|--|--|
+| WS **`barinventory.updated`** (or `stock.updated`) | Mother publishes after successful Receive/Count/Waste/sale deduct; Client open Bar Inventory refreshes board quietly |
+| Update All | Refreshes access features + pulls latest board into cache |
+| Quiet safety-net | Optional ~45s pull while Bar Inventory page visible (match Client live-till pattern); no toast when warm |
+| Mother host | Local DB — no WS required for self; still publish for Clients |
+
+### Soft notes (locked)
+
+| Note | When |
+|--|--|
+| Untracked drinks sold a lot | On Bar Inventory (Admin/Bar Manager): soft amber note when Drink/Alcohol menu items with **Track Off** appear often in recent paid sales (simple v1: top N untracked drink SKUs in last 7 days). Copy: “Consider Track On for high-volume drinks.” |
+| Not a blocker | Note is advisory only — no auto-enable Track |
+| Empty / none | Hide the note when no candidates |
+
+### Diagnostics (locked — Loyalty/Gift pattern)
+- Sync diagnostics: last Bar Inventory op (Mother vs Client source, success/fail, stock id)
+- Sticky idempotency already required in Phase 4; Phase 6 verifies keys survive retry + restart without double movement
+
+### Explicit non-goals (Phase 6)
+- Do **not** Client→cloud stock
+- Do **not** offline mutate queue that later auto-applies (refuse cleanly; staff retry online)
+- Do **not** redesign Mother TopBar / Client header into SharedUI
+- Do **not** soft-note Food Track Off (drinks/alcohol focus v1)
+
+### Already started (do not regress)
+- Bar Manager role + nav
+- `pos.bar_inventory` feature key + Client gate on Bar Inventory page
+- `ClientOperation.BarInventory` online-only evaluate
+- `GET /api/client/bar-inventory` board
+
+### Done when
+1. Toggle Terminal Access Bar Inventory → Update All or `features.updated` → menu appears/hides on Client.
+2. Non-Admin cannot edit Add Item Stock section.
+3. Offline Client: mutate refused; last-good board still paints when cache warm.
+4. Mother Receive → Client board updates via WS / refresh without reinstall.
+5. Soft note appears for busy untracked drinks (when data qualifies).
+6. Feels like Loyalty/Gift Cards for access + online-only mutate.
+
+### Phase 6 shipped
+- Add Item Stock section gated Admin-only (hide + save refuse)
+- Client last-good board file cache + offline banner “Mother offline · showing last saved stock”
+- WS `barinventory.updated` quiet refresh on Client Bar Inventory / Bar Manager workspace
+- Soft amber advisory from Mother (Track Off Drink/Alcohol sold ≥3 in last 7 days)
+- Sync diagnostics: `ClientBarInventoryDiagnostics`
+- Quiet ~45s pull while `BarInventoryPage` visible; MainPage silent sync also refreshes inventory
+
+---
+
+## Phase 7 — QA checklist (LOCKED)
+
+Manual till required after Phases 4–6 (and Phase 5 for sale rows). Code-path review alone is not enough for printers/WS timing.
+
+| # | Check | Expect |
+|--|--|--|
+| 1 | Admin **Track On** for a wine → save | Item appears on Bar Inventory (Mother + Client) |
+| 2 | Admin **Track Off** same item | Disappears from Bar Manager **list**; `bar_stock_items` row may remain for history / re-link |
+| 3 | Two menu SKUs (glass + bottle) → **one** stock; portions differ | Board shows one stock row; sale deduct (Phase 5) uses each SKU’s portion |
+| 4 | **Receive / Count / Waste** math | On-hand matches; waste refuses overdraw; count sets absolute + variance audited |
+| 5 | Pack receive **1 case = N bottles** | `on_hand` += N × pack when stock unit is bottle |
+| 6 | On-hand ≤ par → **Suggested Order** | Only Low rows; OK rows hidden in that filter |
+| 7 | Bar Manager **Mother + Client** | Same on-hand after refresh |
+| 8 | Non–Bar Manager / Access off | Cannot open Bar Inventory ops (Mother route + Client menu) |
+| 9 | Non-Admin | No Stock section edit on Add Item |
+| 10 | **Sale deduction** (after Phase 5) | Glass → portion; bottle SKU → bottle; Send+Pay once; negative allowed |
+| 11 | Restart Mother after Receive | **No double movements** (idempotency / no job replay) |
+| 12 | Offline Client | Mutate refused; last-good read if cached |
+| 13 | Update All / `features.updated` | Menu grant flips without reinstall |
+| 14 | Weekly Report | Shows week’s Receive/Count/Waste (and sales once Phase 5 lives) |
+
+**Done when:** checklist above passed on a real Mother + Client build.
 
 ## Architecture reminder
-Cloud / Mother hub owns future stock truth. SharedUI is chrome only. Bar Manager is inventory-only on both POS hosts.
+SharedUI = chrome only. Mother owns MariaDB stock + movements. Client never owns the ledger.

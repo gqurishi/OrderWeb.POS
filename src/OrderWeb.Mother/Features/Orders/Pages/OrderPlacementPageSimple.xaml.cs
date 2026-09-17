@@ -1729,6 +1729,9 @@ namespace POS_in_NET.Pages
             {
                 latestTrackingByItemId.TryGetValue(item.Id, out var itemTracking);
 
+                var menuItem = _allMenuItems.FirstOrDefault(m =>
+                    string.Equals(m.Id, item.MenuItemId, StringComparison.OrdinalIgnoreCase));
+
                 _currentOrder.Items.Add(new TableOrderItem
                 {
                     Id = !string.IsNullOrWhiteSpace(item.ClientItemId)
@@ -1743,11 +1746,16 @@ namespace POS_in_NET.Pages
                     Name = item.ItemName,
                     Quantity = item.Quantity,
                     UnitPrice = item.ItemPrice ?? 0m,
+                    VatCategory = !string.IsNullOrWhiteSpace(menuItem?.VatCategory)
+                        ? menuItem!.VatCategory
+                        : "HotFood",
+                    TakeawayVatRateOverride = string.Equals(menuItem?.VatConfigType, "component", StringComparison.OrdinalIgnoreCase)
+                        ? menuItem!.CalculatedVatRate
+                        : null,
                     Notes = item.SpecialInstructions,
                     PrintGroupId = !string.IsNullOrWhiteSpace(item.PrintGroupId)
                         ? item.PrintGroupId
-                        : _allMenuItems.FirstOrDefault(menuItem =>
-                            string.Equals(menuItem.Id, item.MenuItemId, StringComparison.OrdinalIgnoreCase))?.PrintGroupId,
+                        : menuItem?.PrintGroupId,
                     PrintInRed = item.PrintInRed,
                     CourseType = !string.IsNullOrWhiteSpace(item.CourseType)
                         ? item.CourseType
@@ -2248,7 +2256,7 @@ namespace POS_in_NET.Pages
                 })
                 .ToList();
 
-            return new Order
+            var order = new Order
             {
                 OrderId = _currentOrder.Id,
                 OrderNumber = shouldAssignOrderNumber ? _persistentOrderNumber : null,
@@ -2308,6 +2316,35 @@ namespace POS_in_NET.Pages
                 Items = currentOrderItems,
                 OrderData = null
             };
+
+            WarnIfUnexpectedZeroTax(order, _currentOrder);
+            return order;
+        }
+
+        /// <summary>Phase V2: soft log when a dine-in / hot bill would understate HMRC VAT.</summary>
+        private static void WarnIfUnexpectedZeroTax(Order order, TableOrder tableOrder)
+        {
+            if (order.TaxAmount > 0m || tableOrder.Items.Count == 0 || order.TotalAmount <= 0m)
+            {
+                return;
+            }
+
+            var isTable = string.Equals(order.OrderType, "table", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(order.OrderType, "dine_in", StringComparison.OrdinalIgnoreCase);
+            var hasTaxableHint = isTable || tableOrder.Items.Any(i =>
+            {
+                var cat = (i.VatCategory ?? string.Empty).Trim();
+                return cat is "HotFood" or "HotBeverage" or "Alcohol" or "";
+            });
+
+            if (!hasTaxableHint)
+            {
+                return;
+            }
+
+            AppDiagnostics.Log(
+                $"[VAT V2] Unexpected £0 tax on save orderId={order.OrderId} type={order.OrderType} " +
+                $"total={order.TotalAmount:0.00} items={tableOrder.Items.Count} — check item vat_category / Mix rates");
         }
 
         private LocalLifecycleState GetDraftLifecycleState()
@@ -2386,6 +2423,9 @@ namespace POS_in_NET.Pages
                     Quantity = 1,
                     UnitPrice = effectivePrice,
                     VatCategory = string.IsNullOrWhiteSpace(item.VatCategory) ? "HotFood" : item.VatCategory,
+                    TakeawayVatRateOverride = string.Equals(item.VatConfigType, "component", StringComparison.OrdinalIgnoreCase)
+                        ? item.CalculatedVatRate
+                        : null,
                     PrintGroupId = item.PrintGroupId,
                     PrintInRed = item.PrintInRed,
                     CourseType = ResolveCourseType(item),
@@ -3575,6 +3615,26 @@ namespace POS_in_NET.Pages
                 {
                     return false;
                 }
+
+                // Phase 5 — primary deduct when kitchen send commits (idempotent; pay may re-call).
+                try
+                {
+                    var latest = await _orderService.GetOrderByExternalIdAsync(_currentOrder.Id) ?? persistedOrder;
+                    var staff = ResolveCurrentActor();
+                    await BarStockSaleHooks.DeductForOrderSafeAsync(
+                        latest,
+                        new BarStockMovementActorDto
+                        {
+                            StaffUserId = staff.ActorId,
+                            StaffDisplayName = staff.ActorName,
+                            Source = "mother"
+                        });
+                }
+                catch (Exception barEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[BarStockSale] Send hook: {barEx.Message}");
+                }
+
                 AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
                 return true;
             }
@@ -3631,6 +3691,7 @@ namespace POS_in_NET.Pages
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
                     VatCategory = item.VatCategory,
+                    TakeawayVatRateOverride = item.TakeawayVatRateOverride,
                     PrintGroupId = item.PrintGroupId,
                     PrintInRed = item.PrintInRed,
                     Notes = item.Notes,
@@ -5406,6 +5467,14 @@ namespace POS_in_NET.Pages
 
                 await SendOrderWebSettlementIfNeededAsync(order);
 
+                // Phase 5 — fallback for pay-without-send (collection); Send path already deducted via idempotency.
+                await BarStockSaleHooks.DeductForOrderSafeAsync(
+                    order,
+                    new BarStockMovementActorDto
+                    {
+                        Source = "mother"
+                    });
+
                 return true;
             }
             catch (Exception ex)
@@ -5482,6 +5551,7 @@ namespace POS_in_NET.Pages
                 Quantity = 1,
                 UnitPrice = source.UnitPrice,
                 VatCategory = source.VatCategory,
+                TakeawayVatRateOverride = source.TakeawayVatRateOverride,
                 PrintGroupId = source.PrintGroupId,
                 PrintInRed = source.PrintInRed,
                 Notes = source.Notes,
@@ -5573,6 +5643,15 @@ namespace POS_in_NET.Pages
 
                 _lastSavedAt = order.UpdatedAt == default ? DateTime.Now : order.UpdatedAt;
                 ActiveTableOrderCacheService.Remove(order.OrderId, _tableSessionId, _currentOrder.TableNumber.ToString());
+
+                await BarStockSaleHooks.ReverseForOrderSafeAsync(
+                    order,
+                    new BarStockMovementActorDto
+                    {
+                        StaffUserId = approvingUser.Id.ToString(),
+                        StaffDisplayName = approverName,
+                        Source = "mother"
+                    });
 
                 await LogOperationalEventAsync("voided", new
                 {

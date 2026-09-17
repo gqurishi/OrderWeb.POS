@@ -73,12 +73,12 @@ public sealed class AdvanceOrderService
         const string sql = @"
             SELECT o.id, o.order_id, o.order_number, o.order_type, o.customer_name, o.customer_phone,
                    o.total_amount, o.scheduled_time, o.advance_kitchen_printed_at, o.advance_reminded_at,
-                   o.local_lifecycle_state, o.is_open
+                   o.local_lifecycle_state, o.is_open, o.source_channel
             FROM orders o
             WHERE o.scheduled_time IS NOT NULL
               AND o.scheduled_time >= @from
               AND o.scheduled_time < @to
-              AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'
+              AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) IN ('local', 'web')
               AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
               AND LOWER(COALESCE(o.local_lifecycle_state, '')) NOT IN ('voided', 'paid')
             ORDER BY o.scheduled_time ASC, o.id ASC";
@@ -115,12 +115,12 @@ public sealed class AdvanceOrderService
         const string sql = @"
             SELECT o.id, o.order_id, o.order_number, o.order_type, o.customer_name, o.customer_phone,
                    o.total_amount, o.scheduled_time, o.advance_kitchen_printed_at, o.advance_reminded_at,
-                   o.local_lifecycle_state, o.is_open
+                   o.local_lifecycle_state, o.is_open, o.source_channel
             FROM orders o
             WHERE o.scheduled_time IS NOT NULL
               AND o.advance_kitchen_printed_at IS NULL
               AND o.scheduled_time <= @dueBy
-              AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) = 'local'
+              AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) IN ('local', 'web')
               AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
               AND LOWER(COALESCE(o.local_lifecycle_state, '')) NOT IN ('voided', 'paid')
             ORDER BY o.scheduled_time ASC, o.id ASC
@@ -398,6 +398,7 @@ public sealed class AdvanceOrderService
 
     private static async Task NotifyAdvanceReminderAsync(Order order, bool kitchenPrinted)
     {
+        var isFromWeb = string.Equals(order.SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
         var presentation = new OrderWeb.SharedUI.Views.AdvanceOrderReminderPresentation(
             order.OrderId,
             order.OrderNumber,
@@ -405,7 +406,8 @@ public sealed class AdvanceOrderService
             FormatScheduledDisplay(order.ScheduledTime),
             order.CustomerName ?? string.Empty,
             order.CustomerPhone,
-            kitchenPrinted);
+            kitchenPrinted,
+            isFromWeb);
 
         try
         {
@@ -432,7 +434,8 @@ public sealed class AdvanceOrderService
                 order.CustomerName,
                 order.CustomerPhone,
                 order.TotalAmount,
-                kitchenPrinted);
+                kitchenPrinted,
+                isFromWeb: isFromWeb);
         }
         catch (Exception ex)
         {
@@ -509,7 +512,8 @@ public sealed class AdvanceOrderService
             reader["advance_kitchen_printed_at"] as DateTime?,
             reader["advance_reminded_at"] as DateTime?,
             reader["local_lifecycle_state"]?.ToString(),
-            reader["is_open"] != DBNull.Value && Convert.ToBoolean(reader["is_open"]));
+            reader["is_open"] != DBNull.Value && Convert.ToBoolean(reader["is_open"]),
+            reader["source_channel"]?.ToString());
 
     private enum AdvancePrintAttempt
     {
@@ -531,7 +535,12 @@ public sealed record AdvanceOrderSummary(
     DateTime? AdvanceKitchenPrintedAt,
     DateTime? AdvanceRemindedAt,
     string? LocalLifecycleState,
-    bool IsOpen);
+    bool IsOpen,
+    string? SourceChannel = null)
+{
+    public bool IsFromWeb =>
+        string.Equals(SourceChannel, "web", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed class AdvanceOrderReminderEventArgs(OrderWeb.SharedUI.Views.AdvanceOrderReminderPresentation reminder) : EventArgs
 {

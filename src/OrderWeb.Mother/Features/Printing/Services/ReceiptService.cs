@@ -148,7 +148,8 @@ public class ReceiptService
             order.LoyaltyPointsEarned,
             order.LoyaltyPointsRedeemed,
             order.LoyaltyPointsDiscount,
-            order.LoyaltyBalanceAfter);
+            order.LoyaltyBalanceAfter,
+            order.DiscountAmount);
 
         if (!string.IsNullOrEmpty(order.SpecialInstructions))
         {
@@ -279,7 +280,8 @@ public class ReceiptService
             order.Loyalty?.PointsEarned ?? 0,
             order.Loyalty?.PointsRedeemed ?? 0,
             decimal.TryParse(order.Loyalty?.PointsDiscount, out var loyaltyDiscount) ? loyaltyDiscount : 0m,
-            order.Loyalty?.BalanceAfter);
+            order.Loyalty?.BalanceAfter,
+            decimal.TryParse(order.DiscountAmount, out var cloudDiscount) ? cloudDiscount : 0m);
         receipt.AppendLine("========================================");
 
         // Special Instructions
@@ -312,7 +314,8 @@ public class ReceiptService
         int loyaltyPointsEarned,
         int loyaltyPointsRedeemed,
         decimal loyaltyPointsDiscount,
-        int? loyaltyBalanceAfter)
+        int? loyaltyBalanceAfter,
+        decimal discountAmount = 0m)
     {
         if (!string.IsNullOrWhiteSpace(provider))
         {
@@ -325,20 +328,41 @@ public class ReceiptService
             receipt.AppendLine($"Reference: {printableReference}");
         }
 
+        var isGiftCardPayment = OnlineOrderPaymentHelper.NormalizeMethod(paymentMethod) == "gift_card";
         var maskedVoucher = OnlineOrderPaymentHelper.MaskVoucherCode(voucherCode);
-        if (maskedVoucher != null)
+        if (maskedVoucher != null && isGiftCardPayment)
         {
-            var label = OnlineOrderPaymentHelper.NormalizeMethod(paymentMethod) == "gift_card" ? "Gift Card" : "Voucher";
-            receipt.AppendLine($"{label}: {maskedVoucher}");
+            receipt.AppendLine($"Gift Card: {maskedVoucher}");
         }
 
-        if (!string.IsNullOrWhiteSpace(promoCode)) receipt.AppendLine($"Promo Code: {promoCode.Trim()}");
+        var resolvedPromo = promoCode ?? (!isGiftCardPayment ? voucherCode : null);
+        if (!string.IsNullOrWhiteSpace(resolvedPromo))
+        {
+            var promoAmount = Math.Max(0m, discountAmount - Math.Max(0m, loyaltyPointsDiscount));
+            var promoLine = $"Promo: {resolvedPromo.Trim()}";
+            if (promoAmount > 0)
+            {
+                promoLine += $" (−£{promoAmount:F2})";
+            }
+
+            receipt.AppendLine(promoLine);
+        }
+
         var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(giftCardNumberMasked);
         if (safeGiftCardNumber != null) receipt.AppendLine($"Gift Card: {safeGiftCardNumber}");
         if (giftCardRemainingBalance.HasValue) receipt.AppendLine($"Gift Card Balance: £{giftCardRemainingBalance.Value:F2}");
+        if (loyaltyPointsRedeemed > 0)
+        {
+            var redeemLine = $"Loyalty points used: {loyaltyPointsRedeemed}";
+            if (loyaltyPointsDiscount > 0)
+            {
+                redeemLine += $" (−£{loyaltyPointsDiscount:F2})";
+            }
+
+            receipt.AppendLine(redeemLine);
+        }
+
         if (loyaltyPointsEarned > 0) receipt.AppendLine($"Loyalty Earned: {loyaltyPointsEarned} points");
-        if (loyaltyPointsRedeemed > 0) receipt.AppendLine($"Loyalty Redeemed: {loyaltyPointsRedeemed} points");
-        if (loyaltyPointsDiscount > 0) receipt.AppendLine($"Loyalty Discount: £{loyaltyPointsDiscount:F2}");
         if (loyaltyBalanceAfter.HasValue) receipt.AppendLine($"Loyalty Balance: {loyaltyBalanceAfter.Value} points");
     }
 

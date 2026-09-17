@@ -79,6 +79,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<TableServiceChargeOrderAuditService>();
 		builder.Services.AddSingleton<OrderServiceAvailabilityService>();
 		builder.Services.AddSingleton<MenuItemService>();
+		builder.Services.AddSingleton<BarStockService>();
 		builder.Services.AddSingleton<MenuCategoryService>();
 		builder.Services.AddSingleton<MealDealService>();
 		builder.Services.AddSingleton<TastingMenuService>();

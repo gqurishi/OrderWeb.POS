@@ -270,6 +270,14 @@ namespace MyFirstMauiApp.Models.FoodMenu
         public string? ComponentLabelsJson { get; set; }
         public string? PrintGroupId { get; set; }
 
+        /// <summary>Admin: include this sell SKU in Bar Inventory tracking.</summary>
+        public bool TrackBarInventory { get; set; }
+        /// <summary>FK to bar_stock_items — one stock can link many menu items.</summary>
+        public string? BarStockItemId { get; set; }
+        /// <summary>How much one sale uses from stock (Phase 5 deduction).</summary>
+        public decimal? SellPortionQty { get; set; }
+        public string? SellPortionUnit { get; set; }
+
         public List<Addon> Addons { get; set; } = new();
         public List<MenuItemVariant> Variants { get; set; } = new();
         public List<string> Tags { get; set; } = new();

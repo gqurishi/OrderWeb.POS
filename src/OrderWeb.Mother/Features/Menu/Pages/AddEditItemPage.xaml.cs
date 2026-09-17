@@ -3,6 +3,8 @@ using MyFirstMauiApp.Models;
 using MyFirstMauiApp.Models.FoodMenu;
 using MyFirstMauiApp.Services;
 using MySqlConnector;
+using OrderWeb.Contracts.Dtos;
+using POS_in_NET.Models;
 using POS_in_NET.Services;
 using Microsoft.Maui.Controls.Shapes;
 
@@ -14,6 +16,7 @@ public partial class AddEditItemPage : ContentPage
     private readonly MenuCategoryService _categoryService;
     private readonly CommentNoteService _noteService;
     private readonly PrintGroupService _printGroupService;
+    private readonly BarStockService _barStockService;
     
     private ObservableCollection<MenuCategory> _allCategories = new();
     private List<MenuCategory> _topLevelCategories = new();
@@ -24,6 +27,8 @@ public partial class AddEditItemPage : ContentPage
     private ObservableCollection<MenuItemQuickNote> _quickNotes = new();
     private ObservableCollection<ComponentLabelSetting> _componentLabels = new();
     private List<PrintGroup> _printGroups = new();
+    private List<BarStockItemDto> _existingStockItems = new();
+    private readonly List<StockLinkRowUi> _stockLinkRows = new();
     private string _selectedColor = "#3B82F6";
     private string? _selectedCategoryId;
     private string? _selectedSubCategoryId;
@@ -34,6 +39,7 @@ public partial class AddEditItemPage : ContentPage
     private bool _isMixedVatSelected = false;
     private Task _initializationTask = Task.CompletedTask;
     private bool _isApplyingSavedCategory;
+    private bool _stockSectionForcedVisible;
 
     // Constructor for Add Mode
     public AddEditItemPage()
@@ -44,7 +50,9 @@ public partial class AddEditItemPage : ContentPage
         _categoryService = new MenuCategoryService();
         _noteService = new CommentNoteService();
         _printGroupService = new PrintGroupService();
+        _barStockService = ServiceHelper.GetService<BarStockService>() ?? new BarStockService();
         
+        InitializeStockPickers();
         _initializationTask = LoadDataAsync();
     }
 
@@ -119,6 +127,9 @@ public partial class AddEditItemPage : ContentPage
             
             // Initialize Quick Notes UI
             UpdateQuickNotesUI();
+
+            await ReloadExistingStockPickerAsync();
+            RefreshStockSectionVisibility();
         }
         catch (Exception ex)
         {
@@ -268,6 +279,8 @@ public partial class AddEditItemPage : ContentPage
             
             // Load print group
             LoadPrintGroupSelection(_editingItem.PrintGroupId);
+
+            await LoadBarStockSectionAsync();
         }
         catch (Exception ex)
         {
@@ -284,8 +297,19 @@ public partial class AddEditItemPage : ContentPage
     {
         if (sender is Button button)
         {
+            var previousType = _selectedItemType;
             _selectedItemType = NormalizeItemType(button.StyleId);
             UpdateItemTypeSelection();
+            RefreshStockSectionVisibility();
+
+            // Phase V2: drinks default to cold takeaway 0% (ColdBeverage), not HotFood 20%.
+            if (!string.Equals(previousType, _selectedItemType, StringComparison.OrdinalIgnoreCase)
+                && !_isMixedVatSelected
+                && !_isEditMode)
+            {
+                _selectedVatCategory = ResolveStandardVatCategoryForItemType(_selectedItemType, preferZeroRated: _selectedItemType == "Drink");
+                UpdateVatRateCardSelection(_selectedVatCategory);
+            }
         }
     }
 
@@ -294,6 +318,7 @@ public partial class AddEditItemPage : ContentPage
         SetItemTypeButtonState(FoodTypeButton, _selectedItemType == "Food");
         SetItemTypeButtonState(DrinkTypeButton, _selectedItemType == "Drink");
         SetItemTypeButtonState(OtherTypeButton, _selectedItemType == "Other");
+        RefreshStockSectionVisibility();
     }
 
     private static void SetItemTypeButtonState(Button button, bool isSelected)
@@ -1160,6 +1185,11 @@ public partial class AddEditItemPage : ContentPage
                     return;
                 }
 
+                if (!await SaveBarStockSetupAsync(_editingItem.Id))
+                {
+                    return;
+                }
+
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Item updated successfully!");
             }
             else
@@ -1259,6 +1289,11 @@ public partial class AddEditItemPage : ContentPage
                         await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Save Failed", "Item was created but quick notes were not saved. Please edit item and retry.");
                         return;
                     }
+                }
+
+                if (!await SaveBarStockSetupAsync(newItem.Id))
+                {
+                    return;
                 }
 
                 await POS_in_NET.Services.AppAlertService.ShowAlertAsync("Success", "Item created successfully!");
@@ -1375,13 +1410,38 @@ public partial class AddEditItemPage : ContentPage
 
         if (selection == "0")
         {
-            _selectedVatCategory = "NoVAT";
-            UpdateVatRateCardSelection("NoVAT");
+            // Cold takeaway = 0% / dine-in still 20%. NoVAT only for Other (gift cards etc.).
+            _selectedVatCategory = ResolveStandardVatCategoryForItemType(_selectedItemType, preferZeroRated: true);
+            UpdateVatRateCardSelection(_selectedVatCategory);
             return;
         }
 
-        _selectedVatCategory = "HotFood";
-        UpdateVatRateCardSelection("HotFood");
+        _selectedVatCategory = ResolveStandardVatCategoryForItemType(_selectedItemType, preferZeroRated: false);
+        UpdateVatRateCardSelection(_selectedVatCategory);
+    }
+
+    /// <summary>
+    /// Map Admin 0%/20% cards to real UK categories by item type.
+    /// Food: ColdFood / HotFood · Drink: ColdBeverage / HotBeverage · Other 0%: NoVAT.
+    /// </summary>
+    private static string ResolveStandardVatCategoryForItemType(string itemType, bool preferZeroRated)
+    {
+        var type = NormalizeItemType(itemType);
+        if (preferZeroRated)
+        {
+            return type switch
+            {
+                "Drink" => "ColdBeverage",
+                "Other" => "NoVAT",
+                _ => "ColdFood"
+            };
+        }
+
+        return type switch
+        {
+            "Drink" => "HotBeverage",
+            _ => "HotFood"
+        };
     }
 
     private void UpdateVatRateCardSelection(string vatCategoryValue)
@@ -2154,10 +2214,623 @@ public partial class AddEditItemPage : ContentPage
         return System.Text.Json.JsonSerializer.Serialize(
             _componentLabels.Select(label => new { name = label.Name.Trim(), quantity = label.Quantity }));
     }
+
+    // ========================================
+    // Bar Inventory stock setup (multi-SKU)
+    // ========================================
+
+    private void InitializeStockPickers()
+    {
+        ClearStockLinkRows();
+        AddStockLinkRow(null, 0m);
+        UpdateTrackStatusLabel();
+    }
+
+    private async Task ReloadExistingStockPickerAsync()
+    {
+        try
+        {
+            _existingStockItems = (await _barStockService.ListAsync(activeOnly: true)).ToList();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[BarStock] Reload picker failed: {ex.Message}");
+            _existingStockItems = new List<BarStockItemDto>();
+        }
+
+        RefreshAllStockLinkPickers();
+    }
+
+    private async Task LoadBarStockSectionAsync()
+    {
+        await ReloadExistingStockPickerAsync();
+
+        if (_editingItem is null)
+        {
+            RefreshStockSectionVisibility();
+            return;
+        }
+
+        var setup = await _barStockService.GetMenuItemSetupAsync(_editingItem.Id);
+        var track = setup?.TrackBarInventory == true || _editingItem.TrackBarInventory;
+        TrackBarInventorySwitch.IsToggled = track;
+        StockDetailsPanel.IsVisible = track;
+        UpdateTrackStatusLabel();
+
+        ClearStockLinkRows();
+        if (setup?.Components is { Count: > 0 })
+        {
+            foreach (var c in setup.Components)
+            {
+                AddStockLinkRow(c.BarStockItemId, c.SellPortionMl);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(setup?.BarStockItemId ?? _editingItem.BarStockItemId))
+        {
+            var stockId = setup?.BarStockItemId ?? _editingItem.BarStockItemId;
+            var ml = setup?.SellPortionQty
+                     ?? _editingItem.SellPortionQty
+                     ?? 0m;
+            AddStockLinkRow(stockId, ml > 0 ? ml : 0m);
+        }
+        else
+        {
+            AddStockLinkRow(null, 0m);
+        }
+
+        if (track)
+        {
+            _stockSectionForcedVisible = true;
+        }
+
+        RefreshStockSectionVisibility();
+    }
+
+    private void RefreshStockSectionVisibility()
+    {
+        // Phase 6 — Stock / Bar Inventory setup is Admin-only on Add Item.
+        var isAdmin = AuthenticationService.Instance.CurrentUser?.Role == UserRole.Admin;
+        if (!isAdmin)
+        {
+            StockSectionBorder.IsVisible = false;
+            ShowStockSectionButton.IsVisible = false;
+            StockDetailsPanel.IsVisible = false;
+            return;
+        }
+
+        var isDrink = string.Equals(_selectedItemType, "Drink", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(_selectedItemType, "Alcohol", StringComparison.OrdinalIgnoreCase);
+        var showSection = isDrink || _stockSectionForcedVisible || TrackBarInventorySwitch.IsToggled;
+        StockSectionBorder.IsVisible = showSection;
+        ShowStockSectionButton.IsVisible = !showSection;
+        StockDetailsPanel.IsVisible = TrackBarInventorySwitch.IsToggled;
+    }
+
+    private void UpdateTrackStatusLabel()
+    {
+        var on = TrackBarInventorySwitch.IsToggled;
+        TrackStatusLabel.Text = on ? "Track On" : "Track Off";
+        TrackStatusLabel.TextColor = on ? Color.FromArgb("#0F766E") : Color.FromArgb("#94A3B8");
+    }
+
+    private void OnTrackBarInventoryToggled(object? sender, ToggledEventArgs e)
+    {
+        StockDetailsPanel.IsVisible = e.Value;
+        UpdateTrackStatusLabel();
+        RefreshStockSectionVisibility();
+        if (e.Value && _stockLinkRows.Count == 0)
+        {
+            AddStockLinkRow(null, 0m);
+        }
+    }
+
+    private void OnShowStockSectionClicked(object? sender, EventArgs e)
+    {
+        _stockSectionForcedVisible = true;
+        RefreshStockSectionVisibility();
+    }
+
+    private void OnAddStockLinkClicked(object? sender, EventArgs e)
+    {
+        AddStockLinkRow(null, 0m);
+    }
+
+    private void ClearStockLinkRows()
+    {
+        _stockLinkRows.Clear();
+        StockLinksHost.Children.Clear();
+    }
+
+    private void AddStockLinkRow(string? stockId, decimal ml)
+    {
+        var searchEntry = new Entry
+        {
+            Placeholder = "Type SKU or name…",
+            FontSize = 13,
+            TextColor = Color.FromArgb("#0F172A"),
+            BackgroundColor = Colors.Transparent,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalOptions = LayoutOptions.Fill,
+            Margin = new Thickness(4, 0)
+        };
+
+        var mlEntry = new Entry
+        {
+            Placeholder = "0",
+            Keyboard = Keyboard.Numeric,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#0F172A"),
+            BackgroundColor = Colors.Transparent,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalOptions = LayoutOptions.Center,
+            Text = ml > 0 ? ml.ToString("0.###") : string.Empty,
+            Margin = new Thickness(4, 0, 0, 0)
+        };
+
+        var removeBtn = new Button
+        {
+            Text = "×",
+            FontSize = 18,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#94A3B8"),
+            BackgroundColor = Colors.Transparent,
+            WidthRequest = 32,
+            HeightRequest = 32,
+            CornerRadius = 8,
+            Padding = 0,
+            VerticalOptions = LayoutOptions.Center
+        };
+
+        var suggestionsHost = new VerticalStackLayout
+        {
+            Spacing = 2,
+            IsVisible = false,
+            Margin = new Thickness(14, 0, 44, 4)
+        };
+
+        var row = new StockLinkRowUi
+        {
+            StockId = stockId,
+            SearchEntry = searchEntry,
+            MlEntry = mlEntry,
+            RemoveButton = removeBtn,
+            SuggestionsHost = suggestionsHost
+        };
+
+        if (!string.IsNullOrWhiteSpace(stockId))
+        {
+            var stock = _existingStockItems.FirstOrDefault(s =>
+                string.Equals(s.Id, stockId, StringComparison.OrdinalIgnoreCase));
+            if (stock is not null)
+            {
+                row.SuppressSearchText = true;
+                searchEntry.Text = FormatStockPickerLabel(stock);
+                row.SuppressSearchText = false;
+            }
+        }
+
+        searchEntry.TextChanged += (_, _) => OnSkuSearchTextChanged(row);
+        searchEntry.Completed += (_, _) => TrySelectExactOrFirstSku(row);
+        searchEntry.Unfocused += (_, _) =>
+        {
+            // Keep suggestions briefly usable; hide if already locked to a match display.
+            if (!string.IsNullOrWhiteSpace(row.StockId) &&
+                string.Equals(searchEntry.Text, FormatSelectedSkuText(row.StockId), StringComparison.Ordinal))
+            {
+                HideSkuSuggestions(row);
+            }
+        };
+
+        removeBtn.Clicked += (_, _) =>
+        {
+            _stockLinkRows.Remove(row);
+            StockLinksHost.Children.Remove(row.Container);
+            if (_stockLinkRows.Count == 0 && TrackBarInventorySwitch.IsToggled)
+            {
+                AddStockLinkRow(null, 0m);
+            }
+        };
+
+        var skuBorder = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(10) },
+            Padding = new Thickness(8, 0),
+            HeightRequest = 40,
+            VerticalOptions = LayoutOptions.Center
+        };
+        skuBorder.Content = searchEntry;
+
+        var mlInner = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 2,
+            VerticalOptions = LayoutOptions.Center
+        };
+        mlInner.Add(mlEntry, 0);
+        mlInner.Add(new Label
+        {
+            Text = "ml",
+            FontSize = 11,
+            FontAttributes = FontAttributes.Bold,
+            TextColor = Color.FromArgb("#94A3B8"),
+            VerticalOptions = LayoutOptions.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        }, 1);
+
+        var mlBorder = new Border
+        {
+            BackgroundColor = Colors.White,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(10) },
+            HeightRequest = 40,
+            VerticalOptions = LayoutOptions.Center
+        };
+        mlBorder.Content = mlInner;
+
+        var accent = new BoxView
+        {
+            WidthRequest = 3,
+            Color = Color.FromArgb("#14B8A6"),
+            VerticalOptions = LayoutOptions.Fill,
+            Margin = new Thickness(4, 8, 4, 8)
+        };
+
+        var inputRow = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(11) },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = new GridLength(100) },
+                new ColumnDefinition { Width = new GridLength(36) }
+            },
+            ColumnSpacing = 8,
+            HeightRequest = 44,
+            Padding = new Thickness(6, 2, 6, 2)
+        };
+        inputRow.Add(accent, 0);
+        inputRow.Add(skuBorder, 1);
+        inputRow.Add(mlBorder, 2);
+        inputRow.Add(removeBtn, 3);
+
+        var stack = new VerticalStackLayout { Spacing = 0 };
+        stack.Add(inputRow);
+        stack.Add(suggestionsHost);
+
+        var container = new Border
+        {
+            BackgroundColor = Colors.Transparent,
+            StrokeThickness = 0,
+            Padding = new Thickness(0, 2)
+        };
+        container.Content = stack;
+
+        row.Container = container;
+        _stockLinkRows.Add(row);
+        StockLinksHost.Children.Add(container);
+    }
+
+    private void OnSkuSearchTextChanged(StockLinkRowUi row)
+    {
+        if (row.SuppressSearchText)
+        {
+            return;
+        }
+
+        var query = row.SearchEntry.Text?.Trim() ?? string.Empty;
+
+        // Typing again clears a previous lock unless text still matches the locked label.
+        if (!string.IsNullOrWhiteSpace(row.StockId))
+        {
+            var locked = FormatSelectedSkuText(row.StockId);
+            if (!string.Equals(query, locked, StringComparison.OrdinalIgnoreCase))
+            {
+                row.StockId = null;
+            }
+            else
+            {
+                HideSkuSuggestions(row);
+                return;
+            }
+        }
+
+        if (query.Length < 1)
+        {
+            HideSkuSuggestions(row);
+            return;
+        }
+
+        var matches = FindSkuMatches(query, take: 8);
+        ShowSkuSuggestions(row, matches);
+    }
+
+    private void ShowSkuSuggestions(StockLinkRowUi row, IReadOnlyList<BarStockItemDto> matches)
+    {
+        row.SuggestionsHost.Children.Clear();
+        if (matches.Count == 0)
+        {
+            row.SuggestionsHost.IsVisible = true;
+            row.SuggestionsHost.Children.Add(new Label
+            {
+                Text = "No match — create stock on Bar Inventory first",
+                FontSize = 11,
+                TextColor = Color.FromArgb("#94A3B8"),
+                Margin = new Thickness(8, 4)
+            });
+            return;
+        }
+
+        row.SuggestionsHost.IsVisible = true;
+        foreach (var stock in matches)
+        {
+            var item = stock;
+            var btn = new Button
+            {
+                Text = FormatStockPickerLabel(item),
+                FontSize = 12,
+                FontAttributes = FontAttributes.None,
+                TextColor = Color.FromArgb("#0F172A"),
+                BackgroundColor = Colors.White,
+                BorderColor = Color.FromArgb("#E2E8F0"),
+                BorderWidth = 1,
+                CornerRadius = 8,
+                HeightRequest = 36,
+                Padding = new Thickness(10, 0),
+                HorizontalOptions = LayoutOptions.Fill
+            };
+            btn.Clicked += (_, _) => SelectSkuForRow(row, item);
+            row.SuggestionsHost.Children.Add(btn);
+        }
+    }
+
+    private static void HideSkuSuggestions(StockLinkRowUi row)
+    {
+        row.SuggestionsHost.Children.Clear();
+        row.SuggestionsHost.IsVisible = false;
+    }
+
+    private void SelectSkuForRow(StockLinkRowUi row, BarStockItemDto stock)
+    {
+        row.StockId = stock.Id;
+        row.SuppressSearchText = true;
+        row.SearchEntry.Text = FormatStockPickerLabel(stock);
+        row.SuppressSearchText = false;
+        HideSkuSuggestions(row);
+        row.SearchEntry.Unfocus();
+        row.MlEntry.Focus();
+    }
+
+    private void TrySelectExactOrFirstSku(StockLinkRowUi row)
+    {
+        var query = row.SearchEntry.Text?.Trim() ?? string.Empty;
+        if (query.Length < 1)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.StockId))
+        {
+            HideSkuSuggestions(row);
+            return;
+        }
+
+        var matches = FindSkuMatches(query, take: 8);
+        if (matches.Count == 0)
+        {
+            return;
+        }
+
+        var exact = matches.FirstOrDefault(s =>
+            string.Equals(s.Sku?.Trim(), query, StringComparison.OrdinalIgnoreCase));
+        SelectSkuForRow(row, exact ?? matches[0]);
+    }
+
+    private List<BarStockItemDto> FindSkuMatches(string query, int take)
+    {
+        var q = query.Trim();
+        if (q.Length == 0 || _existingStockItems.Count == 0)
+        {
+            return new List<BarStockItemDto>();
+        }
+
+        // Prefer SKU / name starts-with, then contains. Cap list for busy tills.
+        var scored = _existingStockItems
+            .Select(s =>
+            {
+                var sku = s.Sku?.Trim() ?? string.Empty;
+                var name = s.Name?.Trim() ?? string.Empty;
+                var score = 0;
+                if (sku.StartsWith(q, StringComparison.OrdinalIgnoreCase)) score = 300;
+                else if (name.StartsWith(q, StringComparison.OrdinalIgnoreCase)) score = 200;
+                else if (sku.Contains(q, StringComparison.OrdinalIgnoreCase)) score = 120;
+                else if (name.Contains(q, StringComparison.OrdinalIgnoreCase)) score = 80;
+                else score = 0;
+                return (Stock: s, Score: score);
+            })
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Stock.Sku ?? x.Stock.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(take)
+            .Select(x => x.Stock)
+            .ToList();
+
+        return scored;
+    }
+
+    private string? FormatSelectedSkuText(string? stockId)
+    {
+        if (string.IsNullOrWhiteSpace(stockId))
+        {
+            return null;
+        }
+
+        var stock = _existingStockItems.FirstOrDefault(s =>
+            string.Equals(s.Id, stockId, StringComparison.OrdinalIgnoreCase));
+        return stock is null ? null : FormatStockPickerLabel(stock);
+    }
+
+    private void RefreshAllStockLinkPickers()
+    {
+        foreach (var row in _stockLinkRows)
+        {
+            if (string.IsNullOrWhiteSpace(row.StockId))
+            {
+                continue;
+            }
+
+            var label = FormatSelectedSkuText(row.StockId);
+            if (label is null)
+            {
+                continue;
+            }
+
+            row.SuppressSearchText = true;
+            row.SearchEntry.Text = label;
+            row.SuppressSearchText = false;
+        }
+    }
+
+    private static string FormatStockPickerLabel(BarStockItemDto s)
+    {
+        var sku = string.IsNullOrWhiteSpace(s.Sku) ? "—" : s.Sku.Trim();
+        return $"{sku} · {s.Name}";
+    }
+
+    private async Task<bool> SaveBarStockSetupAsync(string menuItemId)
+    {
+        if (AuthenticationService.Instance.CurrentUser?.Role != UserRole.Admin)
+        {
+            // Non-Admin cannot change Track / SKU links (defense in depth).
+            return true;
+        }
+
+        var track = TrackBarInventorySwitch.IsToggled;
+        if (!track)
+        {
+            var off = await _barStockService.SaveMenuItemSetupAsync(new MenuItemBarStockSetupDto
+            {
+                MenuItemId = menuItemId,
+                TrackBarInventory = false
+            });
+            if (!off.Success)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Bar Inventory",
+                    off.Message ?? "Could not save stock tracking Off.");
+                return false;
+            }
+
+            return true;
+        }
+
+        var components = CollectStockLinkComponents();
+        if (components.Count == 0)
+        {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                "Validation Error",
+                "Type a SKU and pick a match + ml on each row, or turn Track Off.");
+            return false;
+        }
+
+        foreach (var c in components)
+        {
+            if (c.SellPortionMl <= 0)
+            {
+                await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                    "Validation Error",
+                    "Each SKU needs ml greater than zero (e.g. 25, 175, 330).");
+                return false;
+            }
+        }
+
+        var result = await _barStockService.SaveMenuItemSetupAsync(new MenuItemBarStockSetupDto
+        {
+            MenuItemId = menuItemId,
+            TrackBarInventory = true,
+            Components = components,
+            BarStockItemId = components[0].BarStockItemId,
+            SellPortionQty = components[0].SellPortionMl,
+            SellPortionUnit = BarStockUnits.Ml
+        });
+
+        if (!result.Success)
+        {
+            await POS_in_NET.Services.AppAlertService.ShowAlertAsync(
+                "Bar Inventory",
+                result.Message ?? "Could not save stock setup.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private List<MenuItemBarStockComponentDto> CollectStockLinkComponents()
+    {
+        var list = new List<MenuItemBarStockComponentDto>();
+        var order = 0;
+        foreach (var row in _stockLinkRows)
+        {
+            if (string.IsNullOrWhiteSpace(row.StockId))
+            {
+                continue;
+            }
+
+            var stock = _existingStockItems.FirstOrDefault(s =>
+                string.Equals(s.Id, row.StockId, StringComparison.OrdinalIgnoreCase));
+            if (stock is null)
+            {
+                continue;
+            }
+
+            if (!TryParseDecimal(row.MlEntry.Text, out var ml) || ml <= 0)
+            {
+                ml = 0m;
+            }
+
+            list.Add(new MenuItemBarStockComponentDto
+            {
+                BarStockItemId = stock.Id,
+                Sku = stock.Sku,
+                StockName = stock.Name,
+                SellPortionMl = ml,
+                SortOrder = order++
+            });
+        }
+
+        return list;
+    }
+
+    private static decimal? TryParseDecimal(string? text)
+    {
+        return decimal.TryParse(text, out var value) ? value : null;
+    }
+
+    private static bool TryParseDecimal(string? text, out decimal value) =>
+        decimal.TryParse(text, out value);
 }
 
 public sealed class ComponentLabelSetting
 {
     public string Name { get; set; } = string.Empty;
     public int Quantity { get; set; } = 1;
+}
+
+internal sealed class StockLinkRowUi
+{
+    public string? StockId { get; set; }
+    public Entry SearchEntry { get; set; } = null!;
+    public Entry MlEntry { get; set; } = null!;
+    public Button RemoveButton { get; set; } = null!;
+    public VerticalStackLayout SuggestionsHost { get; set; } = null!;
+    public Border Container { get; set; } = null!;
+    public bool SuppressSearchText { get; set; }
 }

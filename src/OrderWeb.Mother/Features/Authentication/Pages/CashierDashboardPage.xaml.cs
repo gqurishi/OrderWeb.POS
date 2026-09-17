@@ -1,5 +1,6 @@
 using POS_in_NET.Models;
 using POS_in_NET.Services;
+using POS_in_NET.Views;
 using OrderWeb.SharedUI.Controls;
 
 namespace POS_in_NET.Pages;
@@ -11,6 +12,7 @@ public partial class CashierDashboardPage : ContentPage
     private readonly ZReportService _zReportService;
     private readonly ZReportPrintService _zReportPrintService;
     private readonly ApplicationShellFrame _shellFrame;
+    private bool _uploadReportBusy;
 
     public CashierDashboardPage()
     {
@@ -44,6 +46,8 @@ public partial class CashierDashboardPage : ContentPage
         Dashboard.OpenDrawerRequested += OnOpenCashDrawerClicked;
         Dashboard.PreviewZRequested += OnReportsClicked;
         Dashboard.PrintZRequested += OnPrintZReportClicked;
+        Dashboard.UploadReportRequested += OnUploadReportClicked;
+        Dashboard.ShowUploadReport = TerminalRoleService.CanRunMotherJobs;
         Content = _shellFrame;
     }
 
@@ -142,6 +146,88 @@ public partial class CashierDashboardPage : ContentPage
         }
 
         await flow.RunAsync(new CashDrawerFlowContext { SourceArea = "cashier_dashboard" });
+    }
+
+    private async void OnUploadReportClicked(object sender, EventArgs e)
+    {
+        // Phase 3: busy / double-tap guard (before confirm dialog).
+        if (_uploadReportBusy)
+        {
+            return;
+        }
+
+        var user = _authService.CurrentUser;
+        var permissionService = ServiceHelper.GetService<PermissionService>();
+        if (user is not { IsActive: true, Role: UserRole.Cashier } || permissionService is null ||
+            !await permissionService.HasCashierCapabilityAsync(CashierCapabilities.UploadCloudReport))
+        {
+            await AppAlertService.ShowAlertAsync("Upload Report", "You do not have permission to upload the daily report.");
+            return;
+        }
+
+        if (!TerminalRoleService.CanRunMotherJobs)
+        {
+            await AppAlertService.ShowAlertAsync("Upload Report", "Upload Report runs on the mother terminal only.");
+            return;
+        }
+
+        var syncService = ServiceHelper.GetService<OrderWebDailyReportSyncService>();
+        if (syncService is null)
+        {
+            await AppAlertService.ShowAlertAsync("Upload Report", "OrderWeb daily report service is unavailable.");
+            return;
+        }
+
+        // Phase 5 UX: confirm makes clear this is Reports only, not VAT filing.
+        var businessDate = OrderWebDailyReportSyncService.ResolveCashierReportDate();
+        var confirmDialog = new ModernConfirmDialog();
+        confirmDialog.SetConfirm(
+            "Upload Report",
+            $"Send today's closed totals to OrderWeb Reports?\n\n" +
+            $"Day: {businessDate:ddd dd MMM yyyy}\n\n" +
+            "This updates Business Reports only.\n" +
+            "VAT finalises automatically at 3:00 AM — this button does not file VAT.",
+            "Upload Report",
+            "Cancel",
+            "!",
+            "#0F766E");
+
+        if (!await confirmDialog.ShowAsync())
+        {
+            return;
+        }
+
+        _uploadReportBusy = true;
+        Dashboard.SetUploadReportBusy(true);
+        try
+        {
+            var result = await syncService.UploadCashierOperationsAsync();
+            if (result.Success)
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Upload Complete",
+                    $"Sent to OrderWeb Reports for {businessDate:ddd dd MMM yyyy}.\n\n" +
+                    "Check Admin → Reports → In-Restaurant for this day.\n" +
+                    "VAT → Sales → POS should stay empty / not final until 3:00 AM.");
+            }
+            else
+            {
+                await AppAlertService.ShowAlertAsync(
+                    "Upload Failed",
+                    string.IsNullOrWhiteSpace(result.Message)
+                        ? "Could not upload to OrderWeb. Check internet / Cloud Settings and try again."
+                        : result.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Upload Failed", ex.Message);
+        }
+        finally
+        {
+            _uploadReportBusy = false;
+            Dashboard.SetUploadReportBusy(false);
+        }
     }
 
     private async void OnLogoutClicked(object sender, EventArgs e)

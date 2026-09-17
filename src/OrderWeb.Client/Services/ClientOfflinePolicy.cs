@@ -27,7 +27,9 @@ public enum ClientOperation
     /// <summary>Request Collection/Delivery kitchen/receipt print through Mother. Requires Mother online.</summary>
     PrintCollectionOrder,
     /// <summary>Manager Advance Orders list / kitchen print via Mother. Requires Mother online.</summary>
-    AdvanceOrders
+    AdvanceOrders,
+    /// <summary>Bar Inventory stock board via Mother. Requires Mother online.</summary>
+    BarInventory
 }
 
 public enum MotherProbeStatus
@@ -65,6 +67,7 @@ public sealed class ClientOfflinePolicy
         ClientOperation.VoidCollectionOrder => OnlineOnly(motherOnline, "Voiding this order requires Mother POS. No void was created."),
         ClientOperation.PrintCollectionOrder => OnlineOnly(motherOnline, "Printing is confirmed only by Mother POS. No print was recorded."),
         ClientOperation.AdvanceOrders => OnlineOnly(motherOnline, "Advance Orders requires Mother POS. No advance list was loaded."),
+        ClientOperation.BarInventory => OnlineOnly(motherOnline, "Bar Inventory requires Mother POS. No stock board was loaded."),
         ClientOperation.SubmitFinalOrder => OnlineOnly(motherOnline, "Final orders require Mother confirmation. No order was submitted."),
         ClientOperation.CardPayment => OnlineOnly(motherOnline, "Card payment requires Mother POS. No payment was taken."),
         ClientOperation.GiftCard => OnlineOnly(motherOnline, "Gift-card operations require Mother POS. No gift-card balance was changed."),

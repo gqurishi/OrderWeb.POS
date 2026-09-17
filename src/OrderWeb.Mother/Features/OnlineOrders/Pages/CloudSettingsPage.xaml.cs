@@ -329,7 +329,6 @@ public partial class CloudSettingsPage : ContentPage
                 ConnectButton.IsEnabled = canUseCloudControls;
                 SyncOrdersButton.IsEnabled = canUseCloudControls;
                 SyncHistoricalButton.IsEnabled = canUseCloudControls;
-                UploadDailyReportButton.IsEnabled = canUseCloudControls;
                 
                 System.Diagnostics.Debug.WriteLine($" Settings loaded: Restaurant={_currentConfig.TenantSlug}");
                 System.Diagnostics.Debug.WriteLine($" Credentials are configured and ready!");
@@ -877,55 +876,6 @@ public partial class CloudSettingsPage : ContentPage
         {
             SyncHistoricalButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
             SyncHistoricalButton.Text = "Sync Last 2 Months (Historical Orders)";
-            UploadDailyReportButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
-            UploadDailyReportButton.Text = "Upload In-Restaurant Daily Report";
-        }
-    }
-
-    private async void OnUploadDailyReportClicked(object? sender, EventArgs e)
-    {
-        if (!TerminalRoleService.CanRunMotherJobs)
-        {
-            await ShowAlertAsync("Mother Terminal Required", "Daily report upload runs on the mother terminal only.");
-            return;
-        }
-
-        var syncService = ServiceHelper.GetService<OrderWebDailyReportSyncService>();
-        if (syncService == null)
-        {
-            await ShowAlertAsync("Error", "Daily report sync service is not available.");
-            return;
-        }
-
-        var uploadToday = await DisplayAlert(
-            "Upload Daily Report",
-            "Upload today's final in-restaurant totals to OrderWeb.net? A successful report is permanent and cannot be replaced.",
-            "Upload Today",
-            "Cancel");
-
-        if (!uploadToday)
-        {
-            return;
-        }
-
-        try
-        {
-            UploadDailyReportButton.IsEnabled = false;
-            UploadDailyReportButton.Text = "Uploading daily report...";
-
-            var result = await syncService.UploadManualAsync(DateTime.Today);
-            await ShowAlertAsync(
-                result.Success ? "Upload Complete" : "Upload Failed",
-                result.Message);
-        }
-        catch (Exception ex)
-        {
-            await ShowAlertAsync("Upload Failed", ex.Message);
-        }
-        finally
-        {
-            UploadDailyReportButton.IsEnabled = TerminalConfigurationService.IsMotherTerminal;
-            UploadDailyReportButton.Text = "Upload In-Restaurant Daily Report";
         }
     }
 

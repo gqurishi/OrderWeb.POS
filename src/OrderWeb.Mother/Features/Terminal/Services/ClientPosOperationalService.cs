@@ -863,6 +863,15 @@ public sealed partial class ClientPosOperationalService
 
         AppDataRefreshService.RequestRefresh(AppDataRefreshType.Orders | AppDataRefreshType.Tables);
 
+        await BarStockSaleHooks.ReverseForOrderSafeAsync(
+            existing,
+            new BarStockMovementActorDto
+            {
+                StaffUserId = approval.User.Id.ToString(),
+                StaffDisplayName = approverName,
+                Source = "client"
+            });
+
         var persisted = await _orderService.GetOrderByExternalIdAsync(existing.OrderId);
         if (persisted == null)
         {
@@ -1321,8 +1330,19 @@ public sealed partial class ClientPosOperationalService
     {
         var foodSubtotal = order.Items.Sum(item => item.TotalPrice);
         order.SubtotalAmount = foodSubtotal;
-        order.TaxAmount = CalculateClientOrderInclusiveTax(order, orderType, menuById);
+        var lineTax = CalculateClientOrderInclusiveTax(order, orderType, menuById);
         order.DiscountAmount = Math.Max(0m, order.DiscountAmount);
+
+        // Discount reduces customer gross — scale VAT so cloud Box 1 matches the bill.
+        if (order.DiscountAmount > 0m && foodSubtotal > 0m)
+        {
+            var taxableGross = Math.Max(0m, foodSubtotal - order.DiscountAmount);
+            order.TaxAmount = Math.Round(lineTax * (taxableGross / foodSubtotal), 2, MidpointRounding.AwayFromZero);
+        }
+        else
+        {
+            order.TaxAmount = lineTax;
+        }
 
         var isTable = string.Equals(orderType, "table", StringComparison.OrdinalIgnoreCase);
         var status = (order.ServiceChargeStatus ?? "not_configured").Trim().ToLowerInvariant();
@@ -1337,6 +1357,13 @@ public sealed partial class ClientPosOperationalService
         order.ServiceChargeBasis = calc.ChargeBasis;
         order.ServiceChargeAmount = calc.ServiceCharge;
         order.TotalAmount = calc.OrderTotal + Math.Max(0m, order.DeliveryFee);
+
+        if (order.TaxAmount <= 0m && order.Items.Count > 0 && order.TotalAmount > 0m && isTable)
+        {
+            AppDiagnostics.Log(
+                $"[VAT V2] Client upsert unexpected £0 tax orderId={order.OrderId} type={orderType} " +
+                $"total={order.TotalAmount:0.00} items={order.Items.Count}");
+        }
     }
 
     /// <summary>

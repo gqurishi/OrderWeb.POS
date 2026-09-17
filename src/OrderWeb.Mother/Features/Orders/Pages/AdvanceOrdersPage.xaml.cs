@@ -159,5 +159,6 @@ public partial class AdvanceOrdersPage : ContentPage
             row.CustomerPhone,
             $"£{row.TotalAmount:0.00}",
             row.AdvanceKitchenPrintedAt.HasValue,
-            AdvanceOrderService.StatusLabel(row));
+            AdvanceOrderService.StatusLabel(row),
+            row.IsFromWeb);
 }

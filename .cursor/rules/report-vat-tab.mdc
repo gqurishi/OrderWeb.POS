@@ -22,7 +22,7 @@ On Mother **Report**, admin opens a **VAT** tab to see **how much VAT for a date
 | Access | Same as full Report tools (`CanUseFullReportTools` / Admin–manager reports) |
 | Source of truth | Same paid-order VAT as Sales Summary + Detailed All Orders (`DailyReportService` / `vw_report_order_lines_live`) |
 | Date basis | Same trading / report dates as the rest of Report (must match Sales Summary for same range) |
-| Filters v1 | **Locked: all sources / all order types** (no source/type chips on VAT tab; matches unfiltered Sales Summary) |
+| Filters v1 | **Locked: Local POS / all order types** (matches cloud VAT → POS / 3 AM upload; web stays on cloud Online) |
 | Export | CSV + PDF of period summary (Phase 3); not required to lock Phase 0 |
 | Wording | “VAT collected (from paid orders)” — **not** “already paid to HMRC” |
 

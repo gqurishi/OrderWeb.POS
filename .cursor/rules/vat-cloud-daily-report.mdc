@@ -1,0 +1,142 @@
+---
+description: VAT → OrderWeb cloud (auto 3 AM) — Phase V0 product rules locked
+alwaysApply: true
+---
+
+# VAT → OrderWeb cloud (auto 3 AM)
+
+## Goal
+Admin sets correct item VAT → till stores real tax → Mother **3 AM** daily-report (`purpose: vat`) → cloud **VAT → Sales → POS / Return** (Box 1 / 6).  
+Cashier upload stays **Reports only**. No MTD from Mother.
+
+## Phase V0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Who fills cloud VAT / Return | **Only `purpose: vat`** (trigger `automatic_3am`) |
+| Cashier alone | **Reports** (`purpose: operations` / `trigger: cashier`); cloud **VAT empty / not final** until 3 AM |
+| Missing flags on cloud | Treated as **Reports only** — Mother **always** sends `purpose` + `trigger` |
+| Till VAT vs cloud estimate | **Real till VAT preferred** (`netSales` / `vatAmount` / `grossSales` / `vatByRate`). Cloud may estimate if missing — **Mother must not rely on that** |
+| Online web orders | Stay **cloud-native**; POS HMRC share = **daily Z / daily-report**, not per-ticket feed |
+| Upload source | **Local POS day only** (do not double-count web into POS share) |
+| Same `reportDate` twice | **One day** (restatement), not two |
+| Endpoint | One API: `POST …/reports/daily` (no second VAT URL) |
+| Catch-up | 7-day missing days still as **`purpose: vat` / `automatic_3am`** |
+| Purchases from Mother | **No** |
+| MTD submit from POS | **No** (cloud owns filing later) |
+| Client → cloud | **No** (Client → Mother only; Mother → cloud for daily-report) |
+
+### Explicit non-goals (this track)
+- Do **not** turn Cashier **Upload Report** into VAT final.
+- Do **not** add a manual VAT upload button on Report / Cloud Settings.
+- Do **not** per-item POS transaction feed to cloud for HMRC.
+- Do **not** Client→cloud or MTD from Mother.
+- Do **not** invent VAT when item rates / `tax_amount` are wrong — fix till truth instead.
+
+### Related (already exists — do not remove)
+- CashierDashboard **Upload Report** → `operations` / `cashier`
+- `ReportSchedulerService` 3 AM + 7-day catch-up → `vat` / `automatic_3am`
+- Mother Report → **VAT** tab (local period summary)
+- Payload: `netSales`, `vatAmount`, `grossSales`, `vatByRate[]`, cash/card/gift
+- `OrderWebDailyReportUploadRules` purpose/trigger constants
+
+**Done when:** rules written and agreed ✅ (this doc).
+
+## Build order
+0. **Phase V0** — lock rules ✅
+1. **Phase V1** — Live pipe spot-check — runbook ready; **live till still required**
+2. **Phase V2** — Item VAT → order tax ✅ code (sample tickets on till recommended)
+3. **Phase V3** — VAT tab = upload math ✅ code; **live cloud match still required**
+4. **Phase V4** — QA checklist — code paths ready; **live till still required** ← you
+
+## Phase V1 — Live pipe spot-check (ops)
+
+### Goal
+Prove one real trading day: Cashier = Reports only; 3 AM / catch-up = VAT final; same `reportDate` = one cloud day.
+
+### Prep
+1. Mother online to OrderWeb (Cloud Settings key + tenant OK).
+2. At least one **paid** local order on the trading day you will test (no open orders left).
+3. Restart Mother after build so scheduler is running (~30s first catch-up tick).
+
+### Runbook (do in order)
+
+| Step | Action | Expect |
+|--|--|--|
+| 1 | Cashier → **Upload Report** for the day | Success toast: Reports only; VAT empty until 3 AM |
+| 2 | OrderWeb Admin → **Reports → In-Restaurant** | Day present |
+| 3 | OrderWeb Admin → **VAT → Sales → POS** | Empty / **not final** for that day |
+| 4 | Wait for **3:00 AM** *or* restart Mother and wait ~30s–1h catch-up (day must be **completed** in catch-up window) | Mother posts `purpose=vat` / `trigger=automatic_3am` |
+| 5 | Re-check **VAT → Sales → POS** + Return POS share | Day filled / final |
+| 6 | Open AppData `orderweb-daily-report.log` (or DEBUG Output) | Two lines same `date=`: one `purpose=operations trigger=cashier`, one `purpose=vat trigger=automatic_3am`, both with `netSales` / `vatAmount` / `vatByRate` |
+| 7 | Same `reportDate` on cloud | **One** day (restatement), not two |
+
+### Log line to grep
+`[OrderWeb Report] V1 spot-check`  
+File: Mother AppData → `orderweb-daily-report.log` (Release + Debug).
+
+**Done when:** one real day matches the checklist (manual — code alone cannot ✅).
+
+## Phase V2 — Item VAT → order tax (data quality) ✅
+
+### Shipped
+| Task | Status |
+|--|--|
+| Admin Add Item VAT cards | **0% = Cold** (ColdFood / ColdBeverage by type); **20% = Hot**; Drink defaults ColdBeverage |
+| Mother till `UpdateTaxSnapshot` | `VATCalculator` + Mix override; dine-in **20%** |
+| Client → Mother upsert | Real inclusive tax (no force £0); discount scales VAT |
+| Soft £0-tax | VAT tab + `[VAT V2]` diagnostics |
+
+### Known limits
+- Old Client £0 tax **not** backfilled · meal deals without Mix may default hot/20% · line VAT often pro-rata
+
+## Phase V3 — 3 AM numbers = Mother VAT tab ✅ code
+
+VAT tab = **Local POS** + `SUM(tax_amount)` hero + scaled bands; upload same source. Log: `V3 align … match=`.  
+**Live:** cloud VAT → POS ≈ tab for one day still required.
+
+## Phase V4 — QA (cloud HMRC self-file readiness)
+
+Code-path review (manual till still required):
+
+| # | Check | Expect | Code |
+|--|--|--|--|
+| 1 | Cashier only | Reports yes; VAT not final | `UploadCashierOperationsAsync` → `purpose=operations` / `trigger=cashier` |
+| 2 | 3 AM only | Reports + VAT | `UploadScheduledAsync` → `purpose=vat` / `trigger=automatic_3am` |
+| 3 | Cashier then 3 AM | One day; VAT = 3 AM | Same `reportDate`; ops does **not** clear vat backlog; vat restates day |
+| 4 | 3 AM twice | No duplicate day | `WasVatFinalUploadedAsync` → skip if vat already success |
+| 5 | Mixed 0% / 20% | `vatByRate` explains Box 1/6 | Scaled bands; V3 align log |
+| 6 | Offline Cashier | Refuse; later 3 AM OK | Cashier refuses if cloud offline; scheduler catch-up later |
+| 7 | Open orders | Refuse / defer | Cashier refuse; auto **Skipped**/defer until closed |
+| 8 | Bad item VAT | Understated (fix items) | No invented VAT; soft £0 warning on tab |
+| 9 | Restart Mother | 7-day vat backlog as `vat` | `GetMissingCompletedReportDatesAsync` + scheduler ~30s / hourly |
+| 10 | Admin banner | Pending vs last OK (Mother); cloud shows finalised | Report `FormatVatFinalBannerText` status-only; cloud Admin UI |
+
+**Done when:** checklist passed on real Mother + OrderWeb (manual — not ✅ until you run it).
+
+## C. What local does **not** need (LOCKED)
+
+- Second VAT-only URL  
+- Per-item POS transaction feed to cloud  
+- Purchases from Mother  
+- MTD submit from POS  
+- Client → cloud  
+- Changing Cashier upload into VAT final  
+
+## D. Work order (status)
+
+| Phase | Status |
+|--|--|
+| V0 rules | ✅ |
+| V1 live pipe | Runbook ready · **you on till** |
+| V2 item → tax | ✅ code |
+| V3 tab = upload | ✅ code · **you confirm cloud** |
+| V4 full QA | Code paths ready · **you on till** |
+
+## E. One-line summary
+
+**Code ready:** Cashier Reports vs auto 3 AM VAT, real payload fields, till tax quality, VAT tab = Local POS upload math.  
+**Still need on till:** one live day (V1) + cloud POS ≈ tab (V3) + full V4 checklist so filing week is proven, not only coded.
+
+## Architecture reminder
+Mother owns local tax + daily-report upload. Cloud owns VAT Reports Online/POS/All and later MTD. Client never posts daily-report or VAT to cloud.

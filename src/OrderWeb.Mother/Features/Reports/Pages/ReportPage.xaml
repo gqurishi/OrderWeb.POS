@@ -161,30 +161,17 @@
                       BackgroundColor="#F0FDFA"
                       StrokeShape="RoundRectangle 16"
                       Padding="14">
-                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                            <VerticalStackLayout Spacing="4" VerticalOptions="Center">
-                                   <Label Text="OrderWeb Daily Upload"
-                                          FontFamily="OpenSansSemibold"
-                                          FontSize="14"
-                                          TextColor="#0F766E" />
-                                   <Label Text="{Binding OrderWebUploadBannerText}"
-                                          FontFamily="OpenSansRegular"
-                                          FontSize="12"
-                                          TextColor="#115E59"
-                                          LineBreakMode="WordWrap" />
-                            </VerticalStackLayout>
-                            <Button Grid.Column="1"
-                                    Text="Upload to OrderWeb"
-                                    CommandParameter="Upload to OrderWeb"
-                                    Clicked="OnUploadOrderWebReportClicked"
-                                    IsEnabled="{Binding CanUploadOrderWebReport}"
-                                    BackgroundColor="#0F766E"
-                                    TextColor="White"
-                                    FontFamily="OpenSansSemibold"
-                                    CornerRadius="10"
-                                    Padding="16,10"
-                                    VerticalOptions="Center" />
-                     </Grid>
+                     <VerticalStackLayout Spacing="4" VerticalOptions="Center">
+                            <Label Text="OrderWeb VAT (automatic)"
+                                   FontFamily="OpenSansSemibold"
+                                   FontSize="14"
+                                   TextColor="#0F766E" />
+                            <Label Text="{Binding OrderWebUploadBannerText}"
+                                   FontFamily="OpenSansRegular"
+                                   FontSize="12"
+                                   TextColor="#115E59"
+                                   LineBreakMode="WordWrap" />
+                     </VerticalStackLayout>
               </Border>
 
               <Border Grid.Row="2"
@@ -1360,7 +1347,7 @@
                                           FontFamily="AlegreyaBold"
                                           FontSize="32"
                                           TextColor="#0F172A" />
-                                   <Label Text="VAT collected from paid orders for the selected period. Export CSV or PDF for an HMRC-facing one-page summary. Per-order VAT stays on Detailed All Orders."
+                                   <Label Text="VAT collected from paid local POS orders for the selected period (same as cloud VAT → POS / 3 AM upload). Web/online orders are excluded here — they stay on cloud Online VAT. Export CSV or PDF for an HMRC-facing one-page summary. Per-order VAT stays on Detailed All Orders."
                                           FontFamily="OpenSansRegular"
                                           FontSize="12"
                                           TextColor="#64748B"
@@ -1463,7 +1450,7 @@
                                                  FontFamily="AlegreyaBold"
                                                  FontSize="36"
                                                  TextColor="#9A3412" />
-                                          <Label Text="VAT collected (from paid orders) for this period — not already paid to HMRC. Use for filing estimates; per-order VAT is on Detailed All Orders."
+                                          <Label Text="VAT collected (from paid local POS orders) for this period — not already paid to HMRC. Matches cloud VAT → Sales → POS. Per-order VAT is on Detailed All Orders."
                                                  FontFamily="OpenSansRegular"
                                                  FontSize="11"
                                                  TextColor="#9A3412"

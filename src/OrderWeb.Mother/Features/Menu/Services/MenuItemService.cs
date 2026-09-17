@@ -17,6 +17,14 @@ namespace MyFirstMauiApp.Services
         private static bool _foodMenuItemSchemaReady;
         private static bool _quickNotesSchemaReady;
 
+        private const string FoodMenuSelectColumns = @"
+                    Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
+                    IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
+                    Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
+                    vat_config_type, vat_category, calculated_vat_rate, ItemType,
+                    label_text, print_component_labels, component_labels_json, also_print_main_label, print_group_id,
+                    track_bar_inventory, bar_stock_item_id, sell_portion_qty, sell_portion_unit";
+
         public MenuItemService()
         {
             _connectionString = POS_in_NET.Services.TerminalConfigurationService.GetPosConnectionString();
@@ -35,12 +43,8 @@ namespace MyFirstMauiApp.Services
                 await connection.OpenAsync();
                 await EnsureFoodMenuItemSchemaAsync(connection);
 
-                var query = @"
-                    SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
-                           IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
-                           Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                           vat_config_type, vat_category, calculated_vat_rate, ItemType,
-                           label_text, print_component_labels, component_labels_json, print_group_id
+                var query = $@"
+                    SELECT {FoodMenuSelectColumns}
                     FROM FoodMenuItems
                     ORDER BY IsFeatured DESC, DisplayOrder ASC, CreatedAt DESC";
 
@@ -77,12 +81,8 @@ namespace MyFirstMauiApp.Services
                 await connection.OpenAsync();
                 await EnsureFoodMenuItemSchemaAsync(connection);
 
-                var query = @"
-                      SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
-                           IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
-                          Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
-                          label_text, print_component_labels, component_labels_json, print_group_id
+                var query = $@"
+                      SELECT {FoodMenuSelectColumns}
                     FROM FoodMenuItems
                     WHERE CategoryId = @CategoryId
                     ORDER BY IsFeatured DESC, DisplayOrder ASC, CreatedAt DESC";
@@ -119,12 +119,8 @@ namespace MyFirstMauiApp.Services
                 await connection.OpenAsync();
                 await EnsureFoodMenuItemSchemaAsync(connection);
 
-                var query = @"
-                      SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
-                           IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
-                          Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
-                          label_text, print_component_labels, component_labels_json, print_group_id
+                var query = $@"
+                      SELECT {FoodMenuSelectColumns}
                     FROM FoodMenuItems
                     WHERE Id = @Id";
 
@@ -171,12 +167,16 @@ namespace MyFirstMauiApp.Services
                     (Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder, IsFeatured,
                      PreparationTime, VatRate, VatType, IsVatExempt, VatNotes, Addons, Tags, print_in_red,
                      vat_config_type, vat_category, calculated_vat_rate, ItemType, label_text, print_component_labels,
-                     component_labels_json, also_print_main_label, print_group_id, CreatedAt, UpdatedAt)
+                     component_labels_json, also_print_main_label, print_group_id,
+                     track_bar_inventory, bar_stock_item_id, sell_portion_qty, sell_portion_unit,
+                     CreatedAt, UpdatedAt)
                     VALUES 
                     (@Id, @CategoryId, @Name, @Description, @Price, @PriceDineIn, @PriceTakeaway, @Color, @DisplayOrder, @IsFeatured,
                      @PreparationTime, @VatRate, @VatType, @IsVatExempt, @VatNotes, @Addons, @Tags, @PrintInRed,
                      @VatConfigType, @VatCategory, @CalculatedVatRate, @ItemType, @LabelText, @PrintComponentLabels,
-                     @ComponentLabelsJson, @AlsoPrintMainLabel, @PrintGroupId, @CreatedAt, @UpdatedAt)";
+                     @ComponentLabelsJson, @AlsoPrintMainLabel, @PrintGroupId,
+                     @TrackBarInventory, @BarStockItemId, @SellPortionQty, @SellPortionUnit,
+                     @CreatedAt, @UpdatedAt)";
 
                 using var command = new MySqlCommand(query, connection);
                 AddFoodMenuItemParameters(command, item);
@@ -236,6 +236,10 @@ namespace MyFirstMauiApp.Services
                         component_labels_json = @ComponentLabelsJson,
                         also_print_main_label = @AlsoPrintMainLabel,
                         print_group_id = @PrintGroupId,
+                        track_bar_inventory = @TrackBarInventory,
+                        bar_stock_item_id = @BarStockItemId,
+                        sell_portion_qty = @SellPortionQty,
+                        sell_portion_unit = @SellPortionUnit,
                         UpdatedAt = @UpdatedAt
                     WHERE Id = @Id";
 
@@ -332,12 +336,8 @@ namespace MyFirstMauiApp.Services
                 await connection.OpenAsync();
                 await EnsureFoodMenuItemSchemaAsync(connection);
 
-                var query = @"
-                      SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
-                           IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
-                          Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
-                          label_text, print_component_labels, component_labels_json, print_group_id
+                var query = $@"
+                      SELECT {FoodMenuSelectColumns}
                     FROM FoodMenuItems
                     WHERE Name LIKE @SearchTerm 
                        OR Description LIKE @SearchTerm
@@ -378,12 +378,8 @@ namespace MyFirstMauiApp.Services
                 await connection.OpenAsync();
                 await EnsureFoodMenuItemSchemaAsync(connection);
 
-                var query = @"
-                      SELECT Id, CategoryId, Name, Description, Price, price_dine_in, price_takeaway, Color, DisplayOrder,
-                           IsFeatured, PreparationTime, VatRate, VatType, IsVatExempt, VatNotes,
-                          Addons, Tags, print_in_red, CreatedAt, UpdatedAt,
-                          vat_config_type, vat_category, calculated_vat_rate, ItemType,
-                          label_text, print_component_labels, component_labels_json, print_group_id
+                var query = $@"
+                      SELECT {FoodMenuSelectColumns}
                     FROM FoodMenuItems
                     WHERE IsFeatured = TRUE
                     ORDER BY DisplayOrder ASC, CreatedAt DESC";
@@ -431,7 +427,11 @@ namespace MyFirstMauiApp.Services
                 ADD COLUMN IF NOT EXISTS print_component_labels TINYINT(1) NOT NULL DEFAULT 0,
                 ADD COLUMN IF NOT EXISTS component_labels_json TEXT NULL,
                 ADD COLUMN IF NOT EXISTS also_print_main_label TINYINT(1) NOT NULL DEFAULT 0,
-                ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL";
+                ADD COLUMN IF NOT EXISTS print_group_id VARCHAR(36) NULL,
+                ADD COLUMN IF NOT EXISTS track_bar_inventory TINYINT(1) NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS bar_stock_item_id VARCHAR(36) NULL,
+                ADD COLUMN IF NOT EXISTS sell_portion_qty DECIMAL(12,3) NULL,
+                ADD COLUMN IF NOT EXISTS sell_portion_unit VARCHAR(20) NULL";
 
             using (var alterCommand = new MySqlCommand(alterSql, connection))
             {
@@ -441,7 +441,9 @@ namespace MyFirstMauiApp.Services
             const string indexSql = @"
                 ALTER TABLE FoodMenuItems
                 ADD INDEX IF NOT EXISTS idx_foodmenu_item_type (ItemType),
-                ADD INDEX IF NOT EXISTS idx_foodmenu_print_group (print_group_id)";
+                ADD INDEX IF NOT EXISTS idx_foodmenu_print_group (print_group_id),
+                ADD INDEX IF NOT EXISTS idx_foodmenu_track_bar (track_bar_inventory),
+                ADD INDEX IF NOT EXISTS idx_foodmenu_bar_stock (bar_stock_item_id)";
 
             try
             {
@@ -473,6 +475,9 @@ namespace MyFirstMauiApp.Services
             {
                 await variantsCommand.ExecuteNonQueryAsync();
             }
+
+            // Stock master table + indexes (Phase 1 Bar Inventory).
+            await new BarStockService().EnsureSchemaAsync(connection);
 
             _foodMenuItemSchemaReady = true;
         }
@@ -848,6 +853,46 @@ namespace MyFirstMauiApp.Services
             }
             catch { /* Column doesn't exist yet */ }
 
+            try
+            {
+                var trackOrdinal = reader.GetOrdinal("track_bar_inventory");
+                if (!reader.IsDBNull(trackOrdinal))
+                {
+                    item.TrackBarInventory = reader.GetBoolean(trackOrdinal);
+                }
+            }
+            catch { /* Column doesn't exist yet */ }
+
+            try
+            {
+                var stockIdOrdinal = reader.GetOrdinal("bar_stock_item_id");
+                if (!reader.IsDBNull(stockIdOrdinal))
+                {
+                    item.BarStockItemId = reader.GetString(stockIdOrdinal);
+                }
+            }
+            catch { /* Column doesn't exist yet */ }
+
+            try
+            {
+                var portionQtyOrdinal = reader.GetOrdinal("sell_portion_qty");
+                if (!reader.IsDBNull(portionQtyOrdinal))
+                {
+                    item.SellPortionQty = reader.GetDecimal(portionQtyOrdinal);
+                }
+            }
+            catch { /* Column doesn't exist yet */ }
+
+            try
+            {
+                var portionUnitOrdinal = reader.GetOrdinal("sell_portion_unit");
+                if (!reader.IsDBNull(portionUnitOrdinal))
+                {
+                    item.SellPortionUnit = reader.GetString(portionUnitOrdinal);
+                }
+            }
+            catch { /* Column doesn't exist yet */ }
+
             return item;
         }
 
@@ -892,6 +937,12 @@ namespace MyFirstMauiApp.Services
             
             // Add print group
             command.Parameters.AddWithValue("@PrintGroupId", (object?)item.PrintGroupId ?? DBNull.Value);
+
+            // Bar Inventory track/link (Phase 1)
+            command.Parameters.AddWithValue("@TrackBarInventory", item.TrackBarInventory);
+            command.Parameters.AddWithValue("@BarStockItemId", (object?)item.BarStockItemId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@SellPortionQty", (object?)item.SellPortionQty ?? DBNull.Value);
+            command.Parameters.AddWithValue("@SellPortionUnit", (object?)item.SellPortionUnit ?? DBNull.Value);
         }
 
         private static string NormalizeItemType(string? itemType)

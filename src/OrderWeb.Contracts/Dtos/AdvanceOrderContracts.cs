@@ -35,7 +35,8 @@ public sealed record AdvanceOrderDto(
     string? CustomerPhone,
     decimal TotalAmount,
     bool KitchenPrinted,
-    string Status);
+    string Status,
+    bool IsFromWeb = false);
 
 /// <summary><c>GET /api/client/advance-orders</c> envelope.</summary>
 public sealed record AdvanceOrderListResponseDto(
@@ -76,7 +77,8 @@ public sealed record AdvanceOrderPrintResponseDto(
 ///   "customerName": "…",
 ///   "customerPhone": "…",
 ///   "totalAmount": 0.00,
-///   "kitchenPrinted": true
+///   "kitchenPrinted": true,
+///   "isFromWeb": false
 /// }
 /// </code>
 /// Stored payload matches <see cref="AdvanceOrderReminderDto"/>.
@@ -90,4 +92,5 @@ public sealed record AdvanceOrderReminderDto(
     string CustomerName,
     string? CustomerPhone,
     decimal TotalAmount,
-    bool KitchenPrinted);
+    bool KitchenPrinted,
+    bool IsFromWeb = false);

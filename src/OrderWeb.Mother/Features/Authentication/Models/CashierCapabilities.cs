@@ -12,6 +12,7 @@ public static class CashierCapabilities
     public const string PreviewZ = "reports.preview_z";
     public const string PrintZ = "reports.print_z";
     public const string ReprintZ = "reports.reprint_z";
+    public const string UploadCloudReport = "reports.upload_cloud";
     public const string Export = "reports.export";
     public const string ViewVoids = "reports.view_voids";
     public const string ViewDiscounts = "reports.view_discounts";
@@ -22,7 +23,7 @@ public static class CashierCapabilities
 
     public static IReadOnlySet<string> CashierDefaults { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        ViewDaily, ViewYesterday, ViewFull, PreviewZ, PrintZ, ReprintZ, Export,
+        ViewDaily, ViewYesterday, ViewFull, PreviewZ, PrintZ, ReprintZ, UploadCloudReport, Export,
         ViewVoids, ViewDiscounts, OpenDrawer, ViewDrawer, ReconcileDrawer, ViewPrintHistory
     };
 

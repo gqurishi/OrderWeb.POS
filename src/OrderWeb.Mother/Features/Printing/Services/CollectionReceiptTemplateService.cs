@@ -573,7 +573,21 @@ public static class CollectionReceiptTemplateService
         var promoCode = order.PromoCode ?? (!isGiftCardPayment ? order.VoucherCode : null);
         if (!string.IsNullOrWhiteSpace(promoCode))
         {
-            PrintWrapped(builder, $"Promo code: {promoCode.Trim()}");
+            var loyaltyPointsDiscount = 0m;
+            if (decimal.TryParse(order.Loyalty?.PointsDiscount, out var parsedLoyaltyDiscount))
+            {
+                loyaltyPointsDiscount = Math.Max(0m, parsedLoyaltyDiscount);
+            }
+
+            // discount_amount is voucher + points combined; peel off loyalty for the promo £.
+            var promoAmount = Math.Max(0m, discountAmount - loyaltyPointsDiscount);
+            var promoLine = $"Promo: {promoCode.Trim()}";
+            if (promoAmount > 0)
+            {
+                promoLine += $" (−£{promoAmount:0.00})";
+            }
+
+            PrintWrapped(builder, promoLine);
         }
 
         var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(order.GiftCard?.CardNumberMasked);
@@ -587,14 +601,20 @@ public static class CollectionReceiptTemplateService
             PrintAmountLine(builder, "Gift card balance:", giftCardBalance);
         }
 
+        if ((order.Loyalty?.PointsRedeemed ?? 0) > 0)
+        {
+            var redeemLine = $"Loyalty points used: {order.Loyalty!.PointsRedeemed}";
+            if (decimal.TryParse(order.Loyalty.PointsDiscount, out var pointsDiscount) && pointsDiscount > 0)
+            {
+                redeemLine += $" (−£{pointsDiscount:0.00})";
+            }
+
+            PrintWrapped(builder, redeemLine);
+        }
+
         if ((order.Loyalty?.PointsEarned ?? 0) > 0)
         {
             PrintWrapped(builder, $"Loyalty earned: {order.Loyalty!.PointsEarned} points");
-        }
-
-        if ((order.Loyalty?.PointsRedeemed ?? 0) > 0)
-        {
-            PrintWrapped(builder, $"Loyalty redeemed: {order.Loyalty!.PointsRedeemed} points");
         }
 
         if (order.Loyalty?.BalanceAfter is int loyaltyBalance)
@@ -966,28 +986,44 @@ public static class CollectionReceiptTemplateService
             PrintWrapped(builder, $"Reference: {reference}");
         }
 
+        var isGiftCardPayment = OnlineOrderPaymentHelper.NormalizeMethod(order.DeclaredPaymentMethod) == "gift_card";
         var voucher = OnlineOrderPaymentHelper.MaskVoucherCode(order.DeclaredVoucherCode);
-        if (voucher != null)
+        if (voucher != null && isGiftCardPayment)
         {
-            var label = OnlineOrderPaymentHelper.NormalizeMethod(order.DeclaredPaymentMethod) == "gift_card"
-                ? "Gift Card"
-                : "Voucher";
-            PrintWrapped(builder, $"{label}: {voucher}");
+            PrintWrapped(builder, $"Gift Card: {voucher}");
         }
 
-        if (!string.IsNullOrWhiteSpace(order.DeclaredPromoCode))
-            PrintWrapped(builder, $"Promo Code: {order.DeclaredPromoCode.Trim()}");
+        var promoCode = order.DeclaredPromoCode
+            ?? (!isGiftCardPayment ? order.DeclaredVoucherCode : null);
+        if (!string.IsNullOrWhiteSpace(promoCode))
+        {
+            var promoAmount = Math.Max(0m, order.Discount - Math.Max(0m, order.DeclaredLoyaltyPointsDiscount));
+            var promoLine = $"Promo: {promoCode.Trim()}";
+            if (promoAmount > 0)
+            {
+                promoLine += $" (−£{promoAmount:0.00})";
+            }
+
+            PrintWrapped(builder, promoLine);
+        }
         var safeGiftCardNumber = OnlineOrderPaymentHelper.MaskVoucherCode(order.DeclaredGiftCardNumberMasked);
         if (safeGiftCardNumber != null)
             PrintWrapped(builder, $"Gift Card: {safeGiftCardNumber}");
         if (order.DeclaredGiftCardRemainingBalance.HasValue)
             PrintAmountLine(builder, "Gift Card Balance:", order.DeclaredGiftCardRemainingBalance.Value);
+        if (order.DeclaredLoyaltyPointsRedeemed > 0)
+        {
+            var redeemLine = $"Loyalty points used: {order.DeclaredLoyaltyPointsRedeemed}";
+            if (order.DeclaredLoyaltyPointsDiscount > 0)
+            {
+                redeemLine += $" (−£{order.DeclaredLoyaltyPointsDiscount:0.00})";
+            }
+
+            PrintWrapped(builder, redeemLine);
+        }
+
         if (order.DeclaredLoyaltyPointsEarned > 0)
             PrintWrapped(builder, $"Loyalty Earned: {order.DeclaredLoyaltyPointsEarned} points");
-        if (order.DeclaredLoyaltyPointsRedeemed > 0)
-            PrintWrapped(builder, $"Loyalty Redeemed: {order.DeclaredLoyaltyPointsRedeemed} points");
-        if (order.DeclaredLoyaltyPointsDiscount > 0)
-            PrintAmountLine(builder, "Loyalty Discount:", order.DeclaredLoyaltyPointsDiscount);
         if (order.DeclaredLoyaltyBalanceAfter.HasValue)
             PrintWrapped(builder, $"Loyalty Balance: {order.DeclaredLoyaltyBalanceAfter.Value} points");
     }

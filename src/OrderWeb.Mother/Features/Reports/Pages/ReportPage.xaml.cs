@@ -2192,8 +2192,8 @@ public partial class ReportPage : ContentPage
         else
         {
             VatStatusText =
-                $"VAT collected from {period.Summary.OrderCount} paid order{(period.Summary.OrderCount == 1 ? string.Empty : "s")}. " +
-                "Same Gross / Net / VAT as Sales Summary for this date range (all sources / all types).";
+                $"VAT collected from {period.Summary.OrderCount} paid local POS order{(period.Summary.OrderCount == 1 ? string.Empty : "s")}. " +
+                "Local POS only (same totals as cloud VAT → Sales → POS / 3 AM upload). Web orders stay on cloud Online.";
 
             VatRateBandsInsightText = period.RateBandsExplainTotal
                 ? $"Rate bands total £{period.RateBandsVatTotal:F2} — matches VAT collected."
@@ -4168,125 +4168,43 @@ public partial class ReportPage : ContentPage
 
     private async Task RefreshOrderWebUploadStateAsync()
     {
-        var uploadDate = ResolveOrderWebUploadDate();
-        var alreadyUploaded = uploadDate.HasValue
-            && await _orderWebDailyReportSyncService.IsAlreadyUploadedAsync(uploadDate.Value);
-        var pendingDate = _orderWebDailyReportSyncService.GetPendingUploadDate();
-        var bannerText = uploadDate.HasValue
-            ? $"In-restaurant totals for {uploadDate.Value:ddd dd MMM yyyy} are ready. Upload once to OrderWeb admin when you have closed the day."
-            : string.Empty;
+        if (!CanUseFullReportTools || !TerminalRoleService.CanRunMotherJobs)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                IsOrderWebUploadBannerVisible = false;
+            });
+            return;
+        }
+
+        OrderWebDailyUploadStatus status;
+        try
+        {
+            status = await _orderWebDailyReportSyncService.GetAutoUploadStatusAsync();
+        }
+        catch
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                IsOrderWebUploadBannerVisible = false;
+            });
+            return;
+        }
+
+        string bannerText;
+        try
+        {
+            bannerText = status.FormatVatFinalBannerText();
+        }
+        catch
+        {
+            bannerText = "VAT final at 3:00 AM · status unavailable.";
+        }
 
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
-            OnPropertyChanged(nameof(CanUploadOrderWebReport));
-
-            if (!CanUploadOrderWebReport || uploadDate == null)
-            {
-                IsOrderWebUploadBannerVisible = false;
-                return;
-            }
-
-            if (alreadyUploaded)
-            {
-                if (pendingDate == uploadDate.Value)
-                {
-                    _orderWebDailyReportSyncService.ClearPendingUpload();
-                }
-
-                IsOrderWebUploadBannerVisible = false;
-                return;
-            }
-
             OrderWebUploadBannerText = bannerText;
             IsOrderWebUploadBannerVisible = true;
         });
-    }
-
-    private DateTime? ResolveOrderWebUploadDate()
-    {
-        var pending = _orderWebDailyReportSyncService.GetPendingUploadDate();
-        if (pending.HasValue)
-        {
-            return pending.Value;
-        }
-
-        if (_startDate.Date == _endDate.Date)
-        {
-            return _startDate.Date;
-        }
-
-        return DateTime.Today.AddDays(-1);
-    }
-
-    private async void OnUploadOrderWebReportClicked(object sender, EventArgs e)
-    {
-        if (!CanUploadOrderWebReport)
-        {
-            await ShowMotherReportOnlyAlertAsync();
-            return;
-        }
-
-        var uploadDate = ResolveOrderWebUploadDate();
-        if (uploadDate == null)
-        {
-            await AppAlertService.ShowAlertAsync(
-                "No Report Date",
-                "Select a single day on the report page, or wait for the nightly scheduler to mark yesterday as ready.");
-            return;
-        }
-
-        if (await _orderWebDailyReportSyncService.IsAlreadyUploadedAsync(uploadDate.Value))
-        {
-            await AppAlertService.ShowAlertAsync(
-                "Already Uploaded",
-                $"Daily report for {uploadDate.Value:dd MMM yyyy} was already sent to OrderWeb.");
-            await RefreshOrderWebUploadStateAsync();
-            return;
-        }
-
-        var uploadConfirmDialog = new ModernConfirmDialog();
-        uploadConfirmDialog.SetConfirm(
-            "Upload to OrderWeb",
-            $"Send in-restaurant totals for {uploadDate.Value:ddd dd MMM yyyy} to OrderWeb.net?",
-            "Upload",
-            "Cancel",
-            "OK",
-            "#0F766E");
-
-        var confirm = await uploadConfirmDialog.ShowAsync();
-
-        if (!confirm)
-        {
-            return;
-        }
-
-        try
-        {
-            if (sender is Button button)
-            {
-                button.IsEnabled = false;
-                button.Text = "Uploading...";
-            }
-
-            var result = await _orderWebDailyReportSyncService.UploadManualAsync(uploadDate.Value);
-            await AppAlertService.ShowAlertAsync(
-                result.Success ? "Upload Complete" : "Upload Failed",
-                result.Message);
-        }
-        catch (Exception ex)
-        {
-            await AppAlertService.ShowAlertAsync("Upload Failed", ex.Message);
-        }
-        finally
-        {
-            if (sender is Button button)
-            {
-                button.IsEnabled = CanUploadOrderWebReport;
-                var originalText = (string?)button.CommandParameter ?? "Upload to OrderWeb";
-                button.Text = originalText;
-            }
-
-            await RefreshOrderWebUploadStateAsync();
-        }
     }
 }

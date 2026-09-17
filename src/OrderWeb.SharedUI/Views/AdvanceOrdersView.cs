@@ -286,6 +286,32 @@ public sealed class AdvanceOrdersView : ContentView
             VerticalTextAlignment = TextAlignment.Center
         };
 
+        View typeRow = type;
+        if (row.IsFromWeb)
+        {
+            var webBadge = new Border
+            {
+                BackgroundColor = Color.FromArgb("#DBEAFE"),
+                StrokeThickness = 0,
+                Padding = new Thickness(8, 2),
+                StrokeShape = new RoundRectangle { CornerRadius = 5 },
+                VerticalOptions = LayoutOptions.Center,
+                Content = new Label
+                {
+                    Text = "WEB",
+                    FontFamily = "OpenSansSemibold",
+                    FontSize = 11,
+                    TextColor = Color.FromArgb("#1D4ED8")
+                }
+            };
+            typeRow = new HorizontalStackLayout
+            {
+                Spacing = 8,
+                VerticalOptions = LayoutOptions.Center,
+                Children = { type, webBadge }
+            };
+        }
+
         var customer = new Label
         {
             Text = string.IsNullOrWhiteSpace(row.CustomerName) ? "Customer" : row.CustomerName,
@@ -370,7 +396,7 @@ public sealed class AdvanceOrdersView : ContentView
                 new HorizontalStackLayout
                 {
                     Spacing = 10,
-                    Children = { time, type, number }
+                    Children = { time, typeRow, number }
                 },
                 customer,
                 phone

@@ -306,6 +306,8 @@ public sealed class MotherEventClient : IAsyncDisposable
         var customerPhone = Str(root, "customerPhone");
         var kitchenPrinted = root.TryGetProperty("kitchenPrinted", out var printed) &&
                              printed.ValueKind == JsonValueKind.True;
+        var isFromWeb = root.TryGetProperty("isFromWeb", out var web) &&
+                        web.ValueKind == JsonValueKind.True;
 
         return new AdvanceOrderReminderPresentation(
             orderId,
@@ -314,7 +316,8 @@ public sealed class MotherEventClient : IAsyncDisposable
             scheduledDisplay,
             customerName,
             customerPhone,
-            kitchenPrinted);
+            kitchenPrinted,
+            isFromWeb);
     }
 
     private static Uri BuildWebSocketUri(MotherConnectionSettings settings)

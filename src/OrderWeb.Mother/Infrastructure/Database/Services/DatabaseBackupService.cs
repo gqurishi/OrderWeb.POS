@@ -45,6 +45,7 @@ public sealed class DatabaseBackupService : IDisposable
         "order_payments",
         "FoodMenuCategories",
         "FoodMenuItems",
+        "bar_stock_items",
         "ReportSnapshots",
         "ReportVatBreakdown",
         "settings",
