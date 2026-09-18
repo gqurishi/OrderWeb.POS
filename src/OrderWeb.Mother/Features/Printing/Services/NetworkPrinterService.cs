@@ -224,7 +224,8 @@ public class NetworkPrinterService
     }
 
     /// <summary>
-    /// Get printer status (online, paper, cover, errors)
+    /// Get printer status (online, paper, cover, errors) via ESC/POS DLE EOT when the device replies.
+    /// Weak printers that ignore DLE keep <see cref="PrinterStatus.StatusProbeSucceeded"/> false — honest target.
     /// </summary>
     public async Task<PrinterStatus> GetPrinterStatusAsync(string ipAddress, int port = 9100)
     {
@@ -240,85 +241,54 @@ public class NetworkPrinterService
             if (await Task.WhenAny(connectTask, Task.Delay(DefaultTimeout)) != connectTask)
             {
                 status.IsOnline = false;
+                status.ErrorDescription = "Connection timed out";
+                status.CheckedAt = DateTime.Now;
                 return status;
             }
 
             if (!client.Connected)
             {
                 status.IsOnline = false;
+                status.ErrorDescription = "Not connected";
+                status.CheckedAt = DateTime.Now;
                 return status;
             }
 
             status.IsOnline = true;
             var stream = client.GetStream();
 
-            // Request different status types
-            // DLE EOT 1 = Printer status
-            // DLE EOT 2 = Offline cause status
-            // DLE EOT 3 = Error cause status
-            // DLE EOT 4 = Paper roll sensor status
-
-            // Request paper status (DLE EOT 4)
-            byte[] paperStatusRequest = { 0x10, 0x04, 0x04 };
-            await stream.WriteAsync(paperStatusRequest);
-            await stream.FlushAsync();
-            await Task.Delay(100);
-
-            if (stream.DataAvailable)
+            // DLE EOT 4 = Paper roll sensor
+            if (await TryReadDleEotAsync(stream, n: 4) is { } paperByte)
             {
-                byte[] buffer = new byte[16];
-                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                
-                if (bytesRead > 0)
+                status.StatusProbeSucceeded = true;
+                status.PaperStatusKnown = true;
+                // Bits 5–6: 11 = paper end
+                var paperBits = (paperByte >> 5) & 0x03;
+                status.HasPaper = paperBits != 0x03;
+            }
+
+            // DLE EOT 3 = Error cause
+            if (await TryReadDleEotAsync(stream, n: 3) is { } errorByte)
+            {
+                status.StatusProbeSucceeded = true;
+                status.HasError = (errorByte & 0x6C) != 0;
+                if (status.HasError)
                 {
-                    // Parse paper status (bit 5-6 of response)
-                    // Bit 5-6: 00 = paper present, 11 = paper end
-                    var paperBits = (buffer[0] >> 5) & 0x03;
-                    status.HasPaper = paperBits != 0x03;
+                    status.ErrorDescription = "Printer error detected";
                 }
             }
 
-            // Request error status (DLE EOT 3)
-            byte[] errorStatusRequest = { 0x10, 0x04, 0x03 };
-            await stream.WriteAsync(errorStatusRequest);
-            await stream.FlushAsync();
-            await Task.Delay(100);
-
-            if (stream.DataAvailable)
+            // DLE EOT 2 = Offline cause (cover)
+            if (await TryReadDleEotAsync(stream, n: 2) is { } offlineByte)
             {
-                byte[] buffer = new byte[16];
-                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                
-                if (bytesRead > 0)
-                {
-                    // Bit 2: Recoverable error
-                    // Bit 3: Auto-cutter error
-                    // Bit 5: Unrecoverable error
-                    // Bit 6: Auto-recoverable error
-                    status.HasError = (buffer[0] & 0x6C) != 0;
-                    if (status.HasError)
-                    {
-                        status.ErrorDescription = "Printer error detected";
-                    }
-                }
+                status.StatusProbeSucceeded = true;
+                status.CoverOpen = (offlineByte & 0x04) != 0;
             }
 
-            // Request offline cause (DLE EOT 2)
-            byte[] offlineRequest = { 0x10, 0x04, 0x02 };
-            await stream.WriteAsync(offlineRequest);
-            await stream.FlushAsync();
-            await Task.Delay(100);
-
-            if (stream.DataAvailable)
+            // DLE EOT 1 = Printer status — proves replies even if paper probe silent
+            if (!status.StatusProbeSucceeded && await TryReadDleEotAsync(stream, n: 1) is not null)
             {
-                byte[] buffer = new byte[16];
-                int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                
-                if (bytesRead > 0)
-                {
-                    // Bit 2: Cover open
-                    status.CoverOpen = (buffer[0] & 0x04) != 0;
-                }
+                status.StatusProbeSucceeded = true;
             }
         }
         catch (Exception ex)
@@ -333,13 +303,61 @@ public class NetworkPrinterService
         return status;
     }
 
+    private static async Task<byte?> TryReadDleEotAsync(NetworkStream stream, byte n)
+    {
+        try
+        {
+            // Drain any leftover bytes so we read the reply for this request.
+            while (stream.DataAvailable)
+            {
+                _ = stream.ReadByte();
+            }
+
+            byte[] request = { 0x10, 0x04, n };
+            await stream.WriteAsync(request);
+            await stream.FlushAsync();
+            await Task.Delay(120);
+
+            if (!stream.DataAvailable)
+            {
+                return null;
+            }
+
+            var buffer = new byte[16];
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length));
+            return bytesRead > 0 ? buffer[0] : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>
-    /// Check status for a NetworkPrinter
+    /// Check status for a NetworkPrinter. Label printers skip ESC/POS DLE (no false paper blocks).
     /// </summary>
     public async Task<PrinterStatus> GetPrinterStatusAsync(NetworkPrinter printer)
     {
+        if (printer.PrinterType == NetworkPrinterType.Label)
+        {
+            var reach = await TestConnectionAsync(printer.IpAddress, printer.Port);
+            return new PrinterStatus
+            {
+                IsOnline = reach.Success,
+                StatusProbeSucceeded = false,
+                PaperStatusKnown = false,
+                HasPaper = true,
+                CheckedAt = DateTime.Now,
+                ErrorDescription = reach.Success ? null : reach.Message
+            };
+        }
+
         return await GetPrinterStatusAsync(printer.IpAddress, printer.Port);
     }
+
+    /// <summary>True when this printer type can use ESC/POS realtime status.</summary>
+    public static bool SupportsEscPosRealtimeStatus(NetworkPrinter printer) =>
+        printer.PrinterType != NetworkPrinterType.Label;
 
     /// <summary>
     /// Send a test print to verify printer is working

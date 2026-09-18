@@ -18,32 +18,60 @@ public sealed class AdvanceOrderService
     private readonly DatabaseService _databaseService;
     private readonly OrderService _orderService;
     private readonly OrderRoutingPrintService _printService;
+    private readonly NetworkPrintQueueService _printQueueService;
     private bool _schemaEnsured;
+    private bool _lifecycleHooked;
 
     public AdvanceOrderService(
         DatabaseService databaseService,
         OrderService orderService,
-        OrderRoutingPrintService printService)
+        OrderRoutingPrintService printService,
+        NetworkPrintQueueService printQueueService)
     {
         _databaseService = databaseService;
         _orderService = orderService;
         _printService = printService;
+        _printQueueService = printQueueService;
+    }
+
+    /// <summary>Phase 4: stamp + popup only after queue JobCompleted (not on enqueue).</summary>
+    public void Start()
+    {
+        if (_lifecycleHooked)
+        {
+            return;
+        }
+
+        _lifecycleHooked = true;
+        _printQueueService.JobCompleted += OnPrintJobCompleted;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await EnsureSchemaAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AdvanceOrder] Start schema: {ex.Message}");
+            }
+        });
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken = default)
     {
-        if (_schemaEnsured || RuntimeSchemaPolicy.IsMigrationManaged)
+        if (_schemaEnsured)
         {
-            _schemaEnsured = true;
             return;
         }
 
         await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
         await connection.OpenAsync(cancellationToken);
 
+        // Always try IF NOT EXISTS so Phase 4 queued-at works even under migration-managed mode.
         const string sql = @"
             ALTER TABLE orders
             ADD COLUMN IF NOT EXISTS advance_kitchen_printed_at DATETIME NULL,
+            ADD COLUMN IF NOT EXISTS advance_kitchen_queued_at DATETIME NULL,
             ADD COLUMN IF NOT EXISTS advance_reminded_at DATETIME NULL";
 
         try
@@ -119,6 +147,7 @@ public sealed class AdvanceOrderService
             FROM orders o
             WHERE o.scheduled_time IS NOT NULL
               AND o.advance_kitchen_printed_at IS NULL
+              AND o.advance_kitchen_queued_at IS NULL
               AND o.scheduled_time <= @dueBy
               AND LOWER(COALESCE(NULLIF(o.source_channel, ''), 'local')) IN ('local', 'web')
               AND LOWER(COALESCE(o.order_type, '')) IN ('pickup', 'collection', 'col', 'takeaway', 'delivery', 'del')
@@ -159,6 +188,7 @@ public sealed class AdvanceOrderService
             UPDATE orders
             SET advance_kitchen_printed_at = @printedAt,
                 advance_reminded_at = COALESCE(advance_reminded_at, @printedAt),
+                advance_kitchen_queued_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE order_id = @orderId
               AND advance_kitchen_printed_at IS NULL";
@@ -167,6 +197,56 @@ public sealed class AdvanceOrderService
         command.Parameters.AddWithValue("@printedAt", printedAt);
         command.Parameters.AddWithValue("@orderId", orderId.Trim());
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    /// <summary>Mark that kitchen tickets are in the durable queue (not paper-confirmed).</summary>
+    public async Task<bool> MarkQueuedAsync(
+        string orderId,
+        DateTime queuedAt,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return false;
+        }
+
+        await EnsureSchemaAsync(cancellationToken);
+
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            UPDATE orders
+            SET advance_kitchen_queued_at = @queuedAt,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE order_id = @orderId
+              AND advance_kitchen_printed_at IS NULL
+              AND advance_kitchen_queued_at IS NULL";
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@queuedAt", queuedAt);
+        command.Parameters.AddWithValue("@orderId", orderId.Trim());
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task ClearQueuedAsync(string orderId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(orderId))
+        {
+            return;
+        }
+
+        await EnsureSchemaAsync(cancellationToken);
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new MySqlCommand(@"
+            UPDATE orders
+            SET advance_kitchen_queued_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE order_id = @orderId
+              AND advance_kitchen_printed_at IS NULL", connection);
+        command.Parameters.AddWithValue("@orderId", orderId.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<(DateTime From, DateTime ToExclusive, string NormalizedRange)> ResolveRangeAsync(
@@ -234,7 +314,7 @@ public sealed class AdvanceOrderService
             printOrder,
             NormalizePrintOrderType(order.OrderType));
 
-        if (!printResult.AnyPrinted)
+        if (!printResult.AnyQueued)
         {
             var reason = printResult.FailedRoutes.Count > 0
                 ? string.Join("; ", printResult.FailedRoutes)
@@ -242,12 +322,15 @@ public sealed class AdvanceOrderService
             return (false, reason, alreadyPrinted);
         }
 
+        // Phase 4: first-time stamp waits for JobCompleted; reprints keep the once-flag.
         if (!alreadyPrinted)
         {
-            await MarkPrintedAsync(order.OrderId, DateTime.Now, cancellationToken);
+            await MarkQueuedAsync(order.OrderId, DateTime.Now, cancellationToken);
         }
 
-        return (true, "Kitchen ticket sent.", alreadyPrinted);
+        return (true, alreadyPrinted
+            ? "Kitchen ticket queued (reprint)."
+            : "Kitchen ticket queued — stamped printed when the printer confirms.", alreadyPrinted);
     }
 
     public static string FormatScheduledDisplay(DateTime? scheduled) =>
@@ -347,6 +430,18 @@ public sealed class AdvanceOrderService
             return AdvancePrintAttempt.Skipped;
         }
 
+        // Already in queue (waiting for paper / ready-retry) — do not enqueue again.
+        if (order.AdvanceKitchenQueuedAt.HasValue)
+        {
+            if (await HasWaitingAdvanceKitchenJobsAsync(order.OrderId))
+            {
+                return AdvancePrintAttempt.Skipped;
+            }
+
+            // Stale queued flag (jobs cancelled/gone) — allow one more enqueue.
+            await ClearQueuedAsync(order.OrderId, cancellationToken);
+        }
+
         if (order.LocalLifecycleState is LocalLifecycleState.Voided or LocalLifecycleState.Paid)
         {
             return AdvancePrintAttempt.Skipped;
@@ -372,28 +467,94 @@ public sealed class AdvanceOrderService
         var orderType = NormalizePrintOrderType(order.OrderType);
         var printResult = await _printService.PrintTakeawayOrderAsync(printOrder, orderType);
 
-        if (!printResult.AnyPrinted)
+        if (!printResult.AnyQueued)
         {
             var reason = printResult.FailedRoutes.Count > 0
                 ? string.Join("; ", printResult.FailedRoutes)
-                : "no items printed";
-            System.Diagnostics.Debug.WriteLine($"[AdvanceOrder] Kitchen print not sent for {orderId}: {reason}");
+                : "no items queued";
+            System.Diagnostics.Debug.WriteLine($"[AdvanceOrder] Kitchen print not queued for {orderId}: {reason}");
             return AdvancePrintAttempt.Failed;
         }
 
-        var marked = await MarkPrintedAsync(orderId, now, cancellationToken);
+        var marked = await MarkQueuedAsync(orderId, now, cancellationToken);
         if (!marked)
         {
-            // Another tick already stamped — treat as success (idempotent).
+            // Another tick already queued — treat as success (idempotent).
             return AdvancePrintAttempt.Skipped;
         }
 
         AppDiagnostics.Log(
-            $"[AdvanceOrder] Kitchen printed once for {order.OrderNumber ?? orderId} " +
+            $"[AdvanceOrder] Kitchen queued (await print confirm) for {order.OrderNumber ?? orderId} " +
+            $"scheduled {order.ScheduledTime:dd MMM HH:mm}");
+
+        // Popup + stamp wait for JobCompleted (Phase 4).
+        return AdvancePrintAttempt.Printed;
+    }
+
+    private void OnPrintJobCompleted(object? sender, PrintJobCompletedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(e.OrderId)
+            || !PrintJobLifecycle.IsKitchenQueueJob(e.JobType)
+            || string.Equals(e.JobType, "takeaway_ticket", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await TryConfirmAdvancePrintAsync(e.OrderId!);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AdvanceOrder] Confirm print: {ex.Message}");
+            }
+        });
+    }
+
+    private async Task TryConfirmAdvancePrintAsync(string orderId)
+    {
+        var order = await _orderService.GetOrderByExternalIdAsync(orderId);
+        if (order == null
+            || !order.ScheduledTime.HasValue
+            || order.AdvanceKitchenPrintedAt.HasValue
+            || !order.AdvanceKitchenQueuedAt.HasValue)
+        {
+            return;
+        }
+
+        if (await HasWaitingAdvanceKitchenJobsAsync(order.OrderId))
+        {
+            return;
+        }
+
+        var marked = await MarkPrintedAsync(order.OrderId, DateTime.Now);
+        if (!marked)
+        {
+            return;
+        }
+
+        AppDiagnostics.Log(
+            $"[AdvanceOrder] Kitchen print confirmed once for {order.OrderNumber ?? order.OrderId} " +
             $"scheduled {order.ScheduledTime:dd MMM HH:mm}");
 
         await NotifyAdvanceReminderAsync(order, kitchenPrinted: true);
-        return AdvancePrintAttempt.Printed;
+    }
+
+    private async Task<bool> HasWaitingAdvanceKitchenJobsAsync(string orderId)
+    {
+        await using var connection = new MySqlConnection(_databaseService.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(@"
+            SELECT COUNT(*)
+            FROM network_print_queue
+            WHERE order_id = @orderId
+              AND status IN ('pending', 'printing', 'failed', 'needs_attention')
+              AND LOWER(job_type) IN ('kitchen', 'bar', 'kitchen_takeaway')", connection);
+        command.Parameters.AddWithValue("@orderId", orderId);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0);
+        return count > 0;
     }
 
     private static async Task NotifyAdvanceReminderAsync(Order order, bool kitchenPrinted)

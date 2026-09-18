@@ -167,25 +167,20 @@ public class PrinterHealthService : IDisposable
     }
 
     /// <summary>
-    /// Check health of a single printer
+    /// Check health of a single printer (Phase 5: paper/cover when DLE replies; else TCP reachability).
+    /// Paper-out / cover-open → not ready so offline→ready flush runs when paper is loaded.
     /// </summary>
     private async Task<bool> CheckPrinterHealthAsync(NetworkPrinter printer)
     {
         if (!printer.IsEnabled)
         {
-            // Disabled printers are considered offline
             return false;
         }
 
         try
         {
-            // Quick connection test
-            var result = await _printerService.TestConnectionAsync(
-                printer.IpAddress, 
-                printer.Port
-            );
-            
-            return result.Success;
+            var status = await _printerService.GetPrinterStatusAsync(printer);
+            return status.IsReadyForPrint;
         }
         catch (Exception ex)
         {

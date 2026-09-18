@@ -72,9 +72,11 @@ public partial class App : Application
 					AppDiagnostics.Log($"Attempting navigation to {startupRoute}");
 					await appShell.GoToAsync(startupRoute);
 					AppDiagnostics.Log($"Navigation to {startupRoute} successful");
-					Current?.Handler?.MauiContext?.Services
-						.GetService<OnlineOrderPrintNoticePresenter>()
-						?.Start();
+					var services = Current?.Handler?.MauiContext?.Services;
+					services?.GetService<OnlineOrderPrintNoticePresenter>()?.Start();
+					services?.GetService<PrintReliabilityCoordinator>()?.Start();
+					services?.GetService<PrintReliabilityToastPresenter>()?.Start();
+					services?.GetService<AdvanceOrderService>()?.Start();
 				}
 				catch (Exception ex)
 				{
@@ -170,6 +172,9 @@ public partial class App : Application
 			_cloudOrderService = serviceProvider.GetService<CloudOrderService>();
 			serviceProvider.GetService<OnlineOrderPrintNoticePresenter>()?.Start();
 			serviceProvider.GetService<AdvanceOrderReminderPresenter>()?.Start();
+			serviceProvider.GetService<PrintReliabilityCoordinator>()?.Start();
+			serviceProvider.GetService<PrintReliabilityToastPresenter>()?.Start();
+			serviceProvider.GetService<AdvanceOrderService>()?.Start();
 
 			var reservationSyncService = serviceProvider.GetService<ReservationSyncService>();
 			if (reservationSyncService != null)

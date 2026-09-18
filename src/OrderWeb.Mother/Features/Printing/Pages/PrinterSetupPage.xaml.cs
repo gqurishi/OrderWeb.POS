@@ -1948,54 +1948,7 @@ public partial class PrinterSetupPage : ContentPage
 
         var printers = await _dbService.GetAllPrintersAsync();
         var dialog = new PrintQueueManagementDialog(_queueService, printers);
-        var selection = await dialog.ShowAsync();
-        if (selection.Action == PrintQueueManagementAction.Close)
-        {
-            return;
-        }
-
-        if (selection.Action == PrintQueueManagementAction.RetryFailed)
-        {
-            var retried = await _queueService.RetryAllFailedJobsAsync(selection.PrinterId);
-            await AppAlertService.ShowAlertAsync("Complete", $"{retried} failed print job(s) queued for retry.");
-            await UpdateStatusAsync();
-            return;
-        }
-
-        var cutoff = selection.Action == PrintQueueManagementAction.CancelPreviousDays
-            ? DateTime.Today.AddMilliseconds(-1)
-            : DateTime.Now;
-        var candidateCount = selection.Action == PrintQueueManagementAction.CancelPreviousDays
-            ? selection.Snapshot.PreviousDayJobs
-            : selection.Snapshot.WaitingJobs;
-        var actionName = selection.Action == PrintQueueManagementAction.CancelPreviousDays
-            ? "previous-day"
-            : "waiting";
-
-        var confirm = new ModernConfirmDialog();
-        confirm.SetConfirm(
-            "Cancel Print Jobs",
-            $"Cancel {candidateCount} {actionName} print job(s) for {selection.ScopeName}? Jobs already printing and jobs created after this confirmation started will not be cancelled.",
-            "Cancel Jobs",
-            "Keep Jobs",
-            "!",
-            "#DC2626");
-        if (!await confirm.ShowAsync())
-        {
-            return;
-        }
-
-        var result = await _queueService.CancelWaitingJobsAsync(
-            cutoff,
-            selection.PrinterId,
-            currentUser.Id,
-            string.IsNullOrWhiteSpace(currentUser.Name) ? currentUser.Username : currentUser.Name,
-            $"Cancelled by {currentUser.Username} from Printer Setup ({actionName})",
-            selection.PrinterId.HasValue ? "printer" : "all_printers");
-
-        await AppAlertService.ShowAlertAsync(
-            "Complete",
-            $"{result.CancelledJobs} print job(s) cancelled. Completed jobs, active printing, and newer jobs were left unchanged.");
+        await dialog.ShowAsync();
         await UpdateStatusAsync();
     }
 

@@ -146,8 +146,9 @@ public class OnlineOrderAutoPrintService
             if (result.OnlinePrintJobId != null && result.TakeawayPrintJobId != null)
             {
                 result.Success = true;
+                await UpdateLocalOrderPrintStatusAsync(order.Id, PrintJobLifecycle.Queued);
                 PrintSucceeded?.Invoke(this, order.OrderNumber);
-                Debug.WriteLine($"Order {order.OrderNumber} queued for Online Receipt and Takeaway Kitchen printers");
+                Debug.WriteLine($"Order {order.OrderNumber} queued for Online Receipt and Takeaway Kitchen printers (not printed until queue completes)");
             }
             else
             {
@@ -183,12 +184,18 @@ public class OnlineOrderAutoPrintService
                 return;
             }
 
+            // Phase 4: claim once — both job handlers may race when the second ticket completes.
+            if (!await TryClaimPrintedAckAsync(e.OrderId))
+            {
+                Debug.WriteLine($" Printed ACK already claimed for OrderWeb order {e.OrderId}; skip duplicate");
+                return;
+            }
+
             var durationMs = await GetOrderPrintDurationMsAsync(e.OrderId);
             var printStartedAt = await GetOrderPrintStartedAtAsync(e.OrderId);
             var printerInfo = await GetOrderPrinterInfoAsync(e.OrderId);
 
             await SendPrintAckAsync(e.OrderId, "printed", null, printStartedAt ?? DateTime.UtcNow, durationMs, printerInfo);
-            await UpdateLocalOrderPrintStatusAsync(e.OrderId, "printed");
 
             Debug.WriteLine($" Physical print complete for OrderWeb order {e.OrderId}; printed ACK sent");
         }
@@ -207,6 +214,11 @@ public class OnlineOrderAutoPrintService
 
         try
         {
+            if (await IsPrintAlreadyAckedPrintedAsync(e.OrderId))
+            {
+                return;
+            }
+
             var reason = string.IsNullOrWhiteSpace(e.PrinterName)
                 ? e.ErrorMessage
                 : $"{e.PrinterName}: {e.ErrorMessage}";
@@ -214,8 +226,8 @@ public class OnlineOrderAutoPrintService
             var printStartedAt = await GetOrderPrintStartedAtAsync(e.OrderId);
             var printerInfo = await GetOrderPrinterInfoAsync(e.OrderId);
 
+            await UpdateLocalOrderPrintStatusAsync(e.OrderId, PrintJobLifecycle.NeedsAttention, reason);
             await SendPrintAckAsync(e.OrderId, "failed", reason, printStartedAt ?? DateTime.UtcNow, null, printerInfo);
-            await UpdateLocalOrderPrintStatusAsync(e.OrderId, "failed", reason);
 
             Debug.WriteLine($" Physical print failed for OrderWeb order {e.OrderId}; failed ACK sent");
         }
@@ -345,13 +357,45 @@ public class OnlineOrderAutoPrintService
         command.CommandText = @"
             UPDATE orders
             SET print_status = @status,
-                printed_at = CASE WHEN @status = 'printed' THEN NOW() ELSE printed_at END,
+                printed_at = CASE WHEN @status = @printed THEN NOW() ELSE printed_at END,
                 print_error = @error
             WHERE order_id = @orderId OR cloud_order_id = @orderId";
         command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@printed", PrintJobLifecycle.Printed);
         command.Parameters.AddWithValue("@error", error ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("@orderId", orderId);
         await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>CAS: only one printed ACK per OrderWeb order after both queue jobs complete.</summary>
+    private async Task<bool> TryClaimPrintedAckAsync(string orderId)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            UPDATE orders
+            SET print_status = @printed,
+                printed_at = COALESCE(printed_at, NOW()),
+                print_error = NULL
+            WHERE (order_id = @orderId OR cloud_order_id = @orderId)
+              AND COALESCE(print_status, '') <> @printed";
+        command.Parameters.AddWithValue("@printed", PrintJobLifecycle.Printed);
+        command.Parameters.AddWithValue("@orderId", orderId);
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    private async Task<bool> IsPrintAlreadyAckedPrintedAsync(string orderId)
+    {
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT COUNT(*)
+            FROM orders
+            WHERE (order_id = @orderId OR cloud_order_id = @orderId)
+              AND print_status = @printed";
+        command.Parameters.AddWithValue("@orderId", orderId);
+        command.Parameters.AddWithValue("@printed", PrintJobLifecycle.Printed);
+        return Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0) > 0;
     }
 
     /// <summary>

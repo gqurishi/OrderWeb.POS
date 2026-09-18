@@ -320,11 +320,13 @@ public class OrderService
             if (existingOrder != null && HasScheduledTimeChanged(existingOrder.ScheduledTime, order.ScheduledTime))
             {
                 order.AdvanceKitchenPrintedAt = null;
+                order.AdvanceKitchenQueuedAt = null;
                 order.AdvanceRemindedAt = null;
             }
             else if (existingOrder != null)
             {
                 order.AdvanceKitchenPrintedAt ??= existingOrder.AdvanceKitchenPrintedAt;
+                order.AdvanceKitchenQueuedAt ??= existingOrder.AdvanceKitchenQueuedAt;
                 order.AdvanceRemindedAt ??= existingOrder.AdvanceRemindedAt;
             }
 
@@ -385,6 +387,7 @@ public class OrderService
                     special_instructions = @specialInstructions,
 					scheduled_time = @scheduledTime,
                     advance_kitchen_printed_at = @advanceKitchenPrintedAt,
+                    advance_kitchen_queued_at = @advanceKitchenQueuedAt,
                     advance_reminded_at = @advanceRemindedAt,
                     local_lifecycle_state = @localLifecycleState,
                     is_open = @isOpen,
@@ -433,6 +436,7 @@ public class OrderService
             command.Parameters.AddWithValue("@specialInstructions", order.SpecialInstructions ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@scheduledTime", order.ScheduledTime ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@advanceKitchenPrintedAt", order.AdvanceKitchenPrintedAt ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@advanceKitchenQueuedAt", order.AdvanceKitchenQueuedAt ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@advanceRemindedAt", order.AdvanceRemindedAt ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@localLifecycleState", ToDbLifecycleState(order.LocalLifecycleState));
             command.Parameters.AddWithValue("@isOpen", order.IsOpen);
@@ -3114,9 +3118,9 @@ public class OrderService
         {
             using var command = new MySqlCommand(@"
                 UPDATE order_item_send_tracking
-                SET send_status = 'printed',
+                SET send_status = 'queued',
                     sent_at = COALESCE(sent_at, @now),
-                    printed_at = @now,
+                    printed_at = NULL,
                     failure_reason = NULL,
                     attempt_count = attempt_count + 1,
                     updated_at = @now
@@ -3629,6 +3633,9 @@ public class OrderService
             ScheduledTime = reader["scheduled_time"] as DateTime?,
             AdvanceKitchenPrintedAt = HasColumn(reader, "advance_kitchen_printed_at")
                 ? reader["advance_kitchen_printed_at"] as DateTime?
+                : null,
+            AdvanceKitchenQueuedAt = HasColumn(reader, "advance_kitchen_queued_at")
+                ? reader["advance_kitchen_queued_at"] as DateTime?
                 : null,
             AdvanceRemindedAt = HasColumn(reader, "advance_reminded_at")
                 ? reader["advance_reminded_at"] as DateTime?

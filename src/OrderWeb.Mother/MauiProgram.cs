@@ -165,6 +165,8 @@ public static class MauiProgram
 		builder.Services.AddSingleton<EscPosBuilder>();
 		builder.Services.AddSingleton<PrinterHealthService>();
 		builder.Services.AddSingleton<NetworkPrintQueueService>();
+		builder.Services.AddSingleton<PrintReliabilityCoordinator>();
+		builder.Services.AddSingleton<PrintReliabilityToastPresenter>();
 		builder.Services.AddSingleton<OnlineOrderAutoPrintService>();
 		builder.Services.AddSingleton<OnlineOrderPrintNoticeService>();
 		builder.Services.AddSingleton<OnlineOrderPrintNoticePresenter>();

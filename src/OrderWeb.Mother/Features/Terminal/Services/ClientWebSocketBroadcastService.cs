@@ -1697,11 +1697,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
         try
         {
             var range = context.Request.Query["range"].ToString();
-            var advance = ServiceHelper.GetService<AdvanceOrderService>()
-                ?? new AdvanceOrderService(
-                    _databaseService,
-                    ServiceHelper.GetService<OrderService>() ?? new OrderService(),
-                    ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService());
+            var advance = ServiceHelper.GetService<AdvanceOrderService>();
+            if (advance == null)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new AdvanceOrderListResponseDto(
+                    false, "Advance order service unavailable.", "today", null, null, Array.Empty<AdvanceOrderDto>()));
+                return;
+            }
 
             var (from, to, normalized) = await advance.ResolveRangeAsync(range);
             var rows = await advance.ListUpcomingAsync(from, to, context.RequestAborted);
@@ -2235,11 +2237,13 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         try
         {
-            var advance = ServiceHelper.GetService<AdvanceOrderService>()
-                ?? new AdvanceOrderService(
-                    _databaseService,
-                    ServiceHelper.GetService<OrderService>() ?? new OrderService(),
-                    ServiceHelper.GetService<OrderRoutingPrintService>() ?? new OrderRoutingPrintService());
+            var advance = ServiceHelper.GetService<AdvanceOrderService>();
+            if (advance == null)
+            {
+                await WriteJsonAsync(context, HttpStatusCode.ServiceUnavailable, new AdvanceOrderPrintResponseDto(
+                    false, "Advance order service unavailable.", orderId, false, AdvanceOrderErrorCodes.PrintFailed));
+                return;
+            }
 
             var result = await advance.PrintKitchenManualAsync(orderId, context.RequestAborted);
             if (!result.Success)

@@ -201,14 +201,86 @@ public class PrinterConnectionResult
 }
 
 /// <summary>
-/// Printer status from health check
+/// Printer status from health check / DLE EOT (where hardware replies).
 /// </summary>
 public class PrinterStatus
 {
     public bool IsOnline { get; set; }
+
+    /// <summary>True when at least one DLE EOT reply was received (status supported).</summary>
+    public bool StatusProbeSucceeded { get; set; }
+
+    /// <summary>True when paper sensor reply was parsed — otherwise paper is unknown (honest target).</summary>
+    public bool PaperStatusKnown { get; set; }
+
     public bool HasPaper { get; set; } = true;
     public bool CoverOpen { get; set; }
     public bool HasError { get; set; }
     public string? ErrorDescription { get; set; }
     public DateTime CheckedAt { get; set; } = DateTime.Now;
+
+    /// <summary>
+    /// Ready to accept a job: online, and when status is known also paper present / cover closed / no error.
+    /// Weak printers (no status reply) stay ready if TCP is up — honest target.
+    /// </summary>
+    public bool IsReadyForPrint
+    {
+        get
+        {
+            if (!IsOnline)
+            {
+                return false;
+            }
+
+            if (!StatusProbeSucceeded)
+            {
+                return true; // No status — do not invent blocks
+            }
+
+            if (PaperStatusKnown && !HasPaper)
+            {
+                return false;
+            }
+
+            if (CoverOpen || HasError)
+            {
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    public string? NotReadyReason
+    {
+        get
+        {
+            if (!IsOnline)
+            {
+                return "Printer offline";
+            }
+
+            if (!StatusProbeSucceeded)
+            {
+                return null;
+            }
+
+            if (PaperStatusKnown && !HasPaper)
+            {
+                return "Paper out";
+            }
+
+            if (CoverOpen)
+            {
+                return "Cover open";
+            }
+
+            if (HasError)
+            {
+                return string.IsNullOrWhiteSpace(ErrorDescription) ? "Printer error" : ErrorDescription;
+            }
+
+            return null;
+        }
+    }
 }

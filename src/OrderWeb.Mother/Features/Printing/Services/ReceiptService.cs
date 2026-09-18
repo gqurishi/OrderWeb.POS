@@ -414,8 +414,10 @@ public class ReceiptService
                 "customer_receipt_reprint",
                 order.OrderId);
 
-            System.Diagnostics.Debug.WriteLine($" Full customer receipt queued to {receiptPrinter.Name} as print job #{jobId}");
-            return true;
+            // Phase 1: true = accepted into durable queue (queued), not paper-confirmed printed.
+            System.Diagnostics.Debug.WriteLine(
+                $" Full customer receipt queued to {receiptPrinter.Name} as print job #{jobId} (lifecycle={PrintJobLifecycle.Queued})");
+            return jobId > 0;
         }
         catch (Exception ex)
         {

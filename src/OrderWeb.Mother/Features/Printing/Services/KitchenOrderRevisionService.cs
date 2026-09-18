@@ -94,8 +94,8 @@ public sealed class KitchenOrderRevisionService
             FROM order_kitchen_revisions r
             JOIN order_kitchen_revision_items i ON i.revision_id = r.id
             WHERE r.order_id = @orderId
-              AND r.status IN ('queued', 'partial', 'failed')
-              AND i.print_status <> 'printed'
+              AND r.status IN ('queued', 'partial', 'failed', 'needs_attention')
+              AND i.print_status IN ('failed', 'needs_attention')
             ORDER BY r.revision_number, i.id";
         command.Parameters.AddWithValue("@orderId", orderDbId);
         await using var reader = await command.ExecuteReaderAsync();
@@ -199,14 +199,15 @@ public sealed class KitchenOrderRevisionService
         await using var connection = await _databaseService.GetConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         var now = DateTime.Now;
-        var printedCount = 0;
+        var queuedCount = 0;
 
         foreach (var line in revision.Lines)
         {
-            var printed = result.PrintedItemIds.Contains(line.LineId);
-            if (printed)
+            // Phase 1: enqueue success = queued (not paper-confirmed printed).
+            var queued = result.QueuedItemIds.Contains(line.LineId);
+            if (queued)
             {
-                printedCount++;
+                queuedCount++;
             }
 
             await using var command = connection.CreateCommand();
@@ -215,34 +216,33 @@ public sealed class KitchenOrderRevisionService
                 UPDATE order_kitchen_revision_items
                 SET print_status = @status,
                     failure_reason = @failure,
-                    printed_at = @printedAt
+                    printed_at = NULL
                 WHERE line_id = @lineId";
-            command.Parameters.AddWithValue("@status", printed ? "printed" : "failed");
-            command.Parameters.AddWithValue("@failure", printed
+            command.Parameters.AddWithValue("@status", queued ? PrintJobLifecycle.Queued : PrintJobLifecycle.Failed);
+            command.Parameters.AddWithValue("@failure", queued
                 ? DBNull.Value
                 : result.FailedRoutes.FirstOrDefault() ?? "No printer accepted this revision line");
-            command.Parameters.AddWithValue("@printedAt", printed ? now : DBNull.Value);
             command.Parameters.AddWithValue("@lineId", line.LineId);
             await command.ExecuteNonQueryAsync();
         }
 
-        var status = printedCount == revision.Lines.Count
-            ? "printed"
-            : printedCount == 0 ? "failed" : "partial";
+        // queued = waiting for physical print; do not mark revision "printed" on enqueue.
+        var status = queuedCount == revision.Lines.Count
+            ? PrintJobLifecycle.Queued
+            : queuedCount == 0 ? PrintJobLifecycle.Failed : "partial";
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
             command.CommandText = @"
                 UPDATE order_kitchen_revisions
                 SET status = @status,
-                    completed_at = @completedAt,
+                    completed_at = NULL,
                     failure_reason = @failure
                 WHERE id = @id";
             command.Parameters.AddWithValue("@status", status);
-            command.Parameters.AddWithValue("@completedAt", status == "printed" ? now : DBNull.Value);
-            command.Parameters.AddWithValue("@failure", status == "printed"
-                ? DBNull.Value
-                : result.FailedRoutes.FirstOrDefault() ?? "One or more revision lines failed");
+            command.Parameters.AddWithValue("@failure", status == PrintJobLifecycle.Failed
+                ? result.FailedRoutes.FirstOrDefault() ?? "One or more revision lines failed"
+                : (object)DBNull.Value);
             command.Parameters.AddWithValue("@id", revision.DatabaseId);
             await command.ExecuteNonQueryAsync();
         }

@@ -6,80 +6,126 @@
              HorizontalOptions="Fill"
              VerticalOptions="Fill">
     <Grid Padding="16" HorizontalOptions="Fill" VerticalOptions="Center">
-        <Border MaximumWidthRequest="640"
+        <Border MaximumWidthRequest="820"
+                MaximumHeightRequest="720"
                 HorizontalOptions="Fill"
+                VerticalOptions="Fill"
                 BackgroundColor="White"
                 Stroke="#CBD5E1"
                 StrokeThickness="1"
-                Padding="26">
+                Padding="22">
             <Border.StrokeShape>
                 <RoundRectangle CornerRadius="8"/>
             </Border.StrokeShape>
-            <VerticalStackLayout Spacing="20">
+            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="14">
                 <Grid ColumnDefinitions="*,Auto">
                     <VerticalStackLayout Spacing="4">
-                        <Label Text="Manage Print Queue" FontSize="24" FontAttributes="Bold" TextColor="#0F172A"/>
-                        <Label Text="Physical print jobs only" FontSize="13" TextColor="#64748B"/>
+                        <Label Text="Print problems" FontSize="24" FontAttributes="Bold" TextColor="#0F172A"/>
+                        <Label Text="Failed / Needs attention — fix here without opening every order"
+                               FontSize="13" TextColor="#64748B"/>
                     </VerticalStackLayout>
                     <Button Grid.Column="1" Text="X" WidthRequest="42" HeightRequest="42"
                             BackgroundColor="#E2E8F0" TextColor="#334155" CornerRadius="6"
                             Clicked="OnCloseClicked"/>
                 </Grid>
 
-                <VerticalStackLayout Spacing="6">
+                <VerticalStackLayout Grid.Row="1" Spacing="6">
                     <Label Text="Scope" FontSize="12" FontAttributes="Bold" TextColor="#475569"/>
                     <Picker x:Name="ScopePicker" BackgroundColor="#F8FAFC" TextColor="#0F172A"
                             ItemDisplayBinding="{Binding DisplayName}"
                             SelectedIndexChanged="OnScopeChanged"/>
                 </VerticalStackLayout>
 
-                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="18">
-                    <VerticalStackLayout Spacing="3">
+                <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
+                    <VerticalStackLayout Spacing="2">
                         <Label Text="WAITING" FontSize="11" FontAttributes="Bold" TextColor="#64748B"/>
-                        <Label x:Name="WaitingCountLabel" Text="0" FontSize="28" FontAttributes="Bold" TextColor="#0F172A"/>
+                        <Label x:Name="WaitingCountLabel" Text="0" FontSize="24" FontAttributes="Bold" TextColor="#0F172A"/>
                     </VerticalStackLayout>
-                    <VerticalStackLayout Grid.Column="1" Spacing="3">
-                        <Label Text="FAILED" FontSize="11" FontAttributes="Bold" TextColor="#64748B"/>
-                        <Label x:Name="FailedCountLabel" Text="0" FontSize="28" FontAttributes="Bold" TextColor="#DC2626"/>
+                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                        <Label Text="FAILED / ATTENTION" FontSize="11" FontAttributes="Bold" TextColor="#64748B"/>
+                        <Label x:Name="FailedCountLabel" Text="0" FontSize="24" FontAttributes="Bold" TextColor="#DC2626"/>
                     </VerticalStackLayout>
-                    <VerticalStackLayout Grid.Column="2" Spacing="3">
+                    <VerticalStackLayout Grid.Column="2" Spacing="2">
                         <Label Text="PRINTING" FontSize="11" FontAttributes="Bold" TextColor="#64748B"/>
-                        <Label x:Name="PrintingCountLabel" Text="0" FontSize="28" FontAttributes="Bold" TextColor="#2563EB"/>
+                        <Label x:Name="PrintingCountLabel" Text="0" FontSize="24" FontAttributes="Bold" TextColor="#2563EB"/>
                     </VerticalStackLayout>
-                    <VerticalStackLayout Grid.Column="3" Spacing="3">
+                    <VerticalStackLayout Grid.Column="3" Spacing="2">
                         <Label Text="PREVIOUS DAYS" FontSize="11" FontAttributes="Bold" TextColor="#64748B"/>
-                        <Label x:Name="PreviousDayCountLabel" Text="0" FontSize="28" FontAttributes="Bold" TextColor="#D97706"/>
+                        <Label x:Name="PreviousDayCountLabel" Text="0" FontSize="24" FontAttributes="Bold" TextColor="#D97706"/>
                     </VerticalStackLayout>
                 </Grid>
 
-                <BoxView HeightRequest="1" BackgroundColor="#E2E8F0"/>
+                <Grid Grid.Row="3" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Failed / Needs attention" FontSize="14" FontAttributes="Bold" TextColor="#0F172A"/>
+                        <Label x:Name="LoadingLabel" Grid.Column="1" Text="Refreshing…" FontSize="12"
+                               TextColor="#64748B" IsVisible="False"/>
+                    </Grid>
 
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
-                    <VerticalStackLayout Spacing="3">
-                        <Label Text="Oldest waiting job" FontSize="12" TextColor="#64748B"/>
-                        <Label x:Name="OldestJobLabel" Text="None" FontSize="14" FontAttributes="Bold" TextColor="#334155"/>
-                    </VerticalStackLayout>
-                    <VerticalStackLayout Grid.Column="1" Spacing="3">
-                        <Label Text="Last cancellation" FontSize="12" TextColor="#64748B"/>
-                        <Label x:Name="LastCancellationLabel" Text="None" FontSize="14" FontAttributes="Bold" TextColor="#334155"/>
-                    </VerticalStackLayout>
+                    <CollectionView x:Name="JobsList" Grid.Row="1"
+                                    SelectionMode="None"
+                                    EmptyView="No failed or needs-attention tickets for this scope.">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="#F8FAFC"
+                                        Padding="12" Margin="0,0,0,8">
+                                    <Border.StrokeShape>
+                                        <RoundRectangle CornerRadius="6"/>
+                                    </Border.StrokeShape>
+                                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="{Binding TitleDisplay}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A"/>
+                                                <Label Text="{Binding MetaDisplay}" FontSize="12" TextColor="#64748B"/>
+                                            </VerticalStackLayout>
+                                            <Border Grid.Column="1" Padding="8,4" BackgroundColor="#FEF2F2"
+                                                    Stroke="#FECACA" StrokeThickness="1"
+                                                    VerticalOptions="Start">
+                                                <Border.StrokeShape>
+                                                    <RoundRectangle CornerRadius="4"/>
+                                                </Border.StrokeShape>
+                                                <Label Text="{Binding StatusDisplay}" FontSize="11"
+                                                       FontAttributes="Bold" TextColor="#B91C1C"/>
+                                            </Border>
+                                        </Grid>
+                                        <Label Grid.Row="1" Text="{Binding ErrorMessage}" FontSize="12"
+                                               TextColor="#94A3B8" LineBreakMode="TailTruncation" MaxLines="2"/>
+                                        <Grid Grid.Row="2" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                            <Button Text="Retry" HeightRequest="40" CornerRadius="6"
+                                                    BackgroundColor="#2563EB" TextColor="White"
+                                                    CommandParameter="{Binding Id}"
+                                                    Clicked="OnRetryJobClicked"/>
+                                            <Button Grid.Column="1" Text="Reprint" HeightRequest="40" CornerRadius="6"
+                                                    BackgroundColor="#0F766E" TextColor="White"
+                                                    CommandParameter="{Binding Id}"
+                                                    Clicked="OnReprintJobClicked"/>
+                                            <Button Grid.Column="2" Text="Dismiss" HeightRequest="40" CornerRadius="6"
+                                                    BackgroundColor="#E2E8F0" TextColor="#334155"
+                                                    CommandParameter="{Binding Id}"
+                                                    Clicked="OnDismissJobClicked"/>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <Label Grid.Row="2" Text="Reprint may print a duplicate ticket. Dismiss needs a reason."
+                           FontSize="12" TextColor="#94A3B8"/>
                 </Grid>
 
-                <Label x:Name="LoadingLabel" Text="Refreshing..." FontSize="13" TextColor="#64748B"
-                       HorizontalOptions="Center" IsVisible="False"/>
-
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="12">
-                    <Button x:Name="CancelOldButton" Text="Cancel Previous Days"
-                            BackgroundColor="#D97706" TextColor="White" CornerRadius="8" HeightRequest="48"
+                <Grid Grid.Row="4" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                    <Button x:Name="CancelOldButton" Text="Cancel previous days"
+                            BackgroundColor="#D97706" TextColor="White" CornerRadius="8" HeightRequest="46"
                             Clicked="OnCancelOldClicked"/>
-                    <Button x:Name="CancelAllButton" Grid.Column="1" Text="Cancel All Waiting"
-                            BackgroundColor="#DC2626" TextColor="White" CornerRadius="8" HeightRequest="48"
+                    <Button x:Name="CancelAllButton" Grid.Column="1" Text="Cancel all waiting"
+                            BackgroundColor="#DC2626" TextColor="White" CornerRadius="8" HeightRequest="46"
                             Clicked="OnCancelAllClicked"/>
-                    <Button x:Name="RetryFailedButton" Grid.Row="1" Grid.ColumnSpan="2" Text="Retry Failed Jobs"
-                            BackgroundColor="#2563EB" TextColor="White" CornerRadius="8" HeightRequest="48"
+                    <Button x:Name="RetryFailedButton" Grid.Column="2" Text="Retry all failed"
+                            BackgroundColor="#2563EB" TextColor="White" CornerRadius="8" HeightRequest="46"
                             Clicked="OnRetryFailedClicked"/>
                 </Grid>
-            </VerticalStackLayout>
+            </Grid>
         </Border>
     </Grid>
 </ContentView>

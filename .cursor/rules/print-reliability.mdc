@@ -1,0 +1,165 @@
+---
+description: Print reliability — hold until printed; auto-retry on printer ready (Phase 0 locked)
+alwaysApply: true
+---
+
+# Print reliability (remember)
+
+## Goal
+Kitchen + online order + receipt prints reach: **almost never miss · sometimes duplicate one ticket · never silent-lose a whole day.**
+
+## Core rule
+Hold until **“printed”** as far as we can know → when printer is **ready again** (incl. after new paper) → **auto-retry failed / unconfirmed jobs for that printer only** — not all open orders.
+
+## Phase 0 — product rules (LOCKED)
+
+| Rule | Locked value |
+|--|--|
+| Scope | **Kitchen** · **Online/web** kitchen (+ receipt if used) · **Customer receipt** |
+| Hosts | **Mother** owns printers/queue; **Client** still prints via Mother only |
+| Success | Best signal printer can give (ready / job OK / not paper-out). If unknown → treat carefully (**retry** or **Needs attention**) |
+| On paper change | = **printer healthy again** → auto-retry **failed + waiting** jobs for **that printer** |
+| What retries | **Same job / same ticket** — not whole day / all tables |
+| Duplicates | Allowed rarely for **one** ticket; **warn** on manual reprint |
+| Max auto-retries | Cap + backoff, then **Needs attention** (staff must see it) |
+| Client offline | **Refuse** print while Mother offline (no Client-local print). Clear message: retry Send/Print when online. **No** Client pending-flush queue in v1 (optional later) |
+| Honest target | Almost never miss; sometimes duplicate one ticket; never silent-lose a whole day — **not** “never miss a print” |
+
+### Explicit non-goals (v1)
+- Do **not** auto-reprint all open orders / whole day.
+- Do **not** promise 100% paper proof on every cheap ESC/POS printer.
+- Do **not** link this track to MTD / VAT / daily-report.
+- Do **not** Client→cloud printing.
+
+### Related (already exists — do not remove / build on)
+- `NetworkPrintQueueService` + background process
+- `OrderRoutingPrintService` / kitchen routing
+- `ReceiptService` / customer receipt
+- Online order auto-print path
+- Label queue (can follow same “ready → retry” idea later; **not** required to lock v1 kitchen/receipt/online)
+
+**Done when:** rules written and agreed ✅ (this doc). Client offline = refuse + staff retry for v1.
+
+## Build order
+0. **Phase 0** — lock rules ✅
+1. **Phase 1** — One truth: printed vs not done ✅
+2. **Phase 2** — Queue + auto-retry when printer ready (kitchen + online + receipt) ✅
+3. **Phase 3** — Staff UI: Failed / Needs attention + Retry / Reprint warn ✅
+4. **Phase 4** — Client + advance/online edges ✅
+5. **Phase 5** — Richer printer status where hardware allows ✅
+6. **Phase 6** — QA on real paper / real till ← next
+
+## Phase 1 — One truth: “printed” vs “not done” ✅
+
+### Shipped
+| Piece | Behaviour |
+|--|--|
+| `PrintJobLifecycle` | Shared states: **queued → sending → printed / failed / needs_attention** |
+| Queue DB | `pending` / `printing` / `completed` / `failed` / **`needs_attention`** (retries exhausted) |
+| Enqueue | = **queued** only — not physical printed |
+| Physical printed | Queue `completed` after `SendToPrinter` OK (+ online ACK waits for that) |
+| Kitchen revision / send tracking | Enqueue success → **`queued`**, not `printed`; next Send only retries **failed / needs_attention** lines |
+| Receipt reprint | Returns true only when job id queued |
+| Visibility | `GetNotPrintedVisibleJobsAsync` / `CountNeedsAttentionAsync` + queue snapshot includes Needs attention; Retry Failed resets needs_attention too |
+
+**Done when:** failed/unclear stays not printed and is visible in print queue (Needs attention) ✅
+
+## Phase 2 — Queue + auto-retry when printer ready ✅
+
+### Shipped
+| Piece | Behaviour |
+|--|--|
+| `FlushWaitingJobsForPrinterAsync` | On ready: clear backoff; re-queue **pending + failed + needs_attention** for **that printer only**; kick queue process |
+| `PrintReliabilityCoordinator` | Subscribes `PrinterStatusChanged` (offline→online); starts 30s health probe |
+| Kitchen lifecycle | `JobCompleted` → promote revision/send **queued/needs_attention → printed** when no other kitchen jobs waiting for that order |
+| Needs attention | Max retries / permanent fail → queue `needs_attention` + kitchen lines marked; ready-flush resets attempts |
+| Coverage | Kitchen/bar/kitchen_takeaway routes, online tickets (existing queue + ACK), customer receipts — same durable queue |
+| Status column | Migrate to `VARCHAR(32)` so `needs_attention` is accepted |
+
+**Done when:** load new paper → last failed kitchen/receipt/online ticket reprints without staff hunting the order (in normal cases) ✅
+
+## Phase 3 — Staff UI (Mother) ✅
+
+### Shipped
+| Piece | Behaviour |
+|--|--|
+| **Print problems** dialog | Printer Setup → Manage Queue — Failed / Needs attention list |
+| Row fields | Order # · type (Kitchen / Receipt / Online) · printer · time · status |
+| **Retry** | Same job back to pending (no second copy) |
+| **Reprint** | Confirm “may duplicate” → new queue job + dismiss original |
+| **Dismiss** | Reason required → cancelled with audit |
+| Bulk | Retry all failed · Cancel previous days · Cancel all waiting |
+| Ready toast | `Printer ready — retrying N failed ticket(s)…` (~4.5s) |
+
+**Done when:** Manager can fix a miss in one place without opening every order ✅
+
+## Phase 4 — Client + online edges ✅
+
+### Shipped
+| Piece | Behaviour |
+|--|--|
+| Client print | Still via Mother only; Mother down → clear refuse (“tap Send/Print again when Mother is back”) |
+| Client reconnect | **No** pending-flush queue (Phase 0) — staff Send/Print again |
+| Online/web | Same durable queue + ready-retry; **CAS** printed ACK so both tickets completing never double-ACK |
+| Advance kitchen | `advance_kitchen_queued_at` on enqueue; **once-stamp + popup only after JobCompleted** |
+| Advance miss→paper | Queued jobs wait for Phase 2 ready-flush; stale queued cleared if jobs gone |
+
+**Done when:** Client and web behave like Mother for “miss then paper change” ✅
+
+## Phase 5 — Safer status (where printer allows) ✅
+
+### Shipped
+| Piece | Behaviour |
+|--|--|
+| ESC/POS DLE EOT | Probe paper / cover / error before send when the printer replies |
+| Paper out / cover / error | Do **not** mark printed — retry (then Needs attention); health treats as not-ready so paper load → ready-flush |
+| No status reply | Honest target: TCP send still allowed; rare duplicate/miss accepted |
+| Labels | Skip DLE (no false paper blocks) |
+| Support log | AppData `print-reliability.log` — job id, printer, attempts, outcome, last error, status detail |
+
+**Done when:** better printers get fewer false “printed”; weak printers still auto-retry on ready ✅
+
+## Phase 6 — QA (real till + real paper) ← you
+
+Code paths ready (Phases 0–5). **Manual till + real paper still required** — code alone cannot ✅.
+
+| # | Check | Expect | Code path |
+|--|--|--|--|
+| 1 | Pull paper mid-kitchen print | Job not left as silent success; ends failed / needs attention or retries | DLE probe → retry; no `completed` on paper-out |
+| 2 | Load new paper | Last failed kitchen ticket auto-prints | Health not-ready→ready → `FlushWaitingJobsForPrinterAsync` |
+| 3 | Same for receipt | Last failed receipt auto-prints | Same queue + flush for that printer |
+| 4 | Online order + paper out | Auto-retry when ready; not lost for the day | Queue hold + ready-flush; ACK only after both jobs complete |
+| 5 | Printer offline then back | Queue flushes failed for **that printer only** | `PrinterStatusChanged` offline→online |
+| 6 | Client Mother down | Clear fail; reconnect = staff Send/Print again (Phase 0 — no Client pending-flush) | `ClientOfflinePolicy` Print / Advance refuse |
+| 7 | Manual reprint | One ticket; warn possible duplicate | Print problems → Reprint confirm |
+| 8 | Never | Auto-reprint all open tables / whole day | Flush scoped to `printer_id` only |
+| 9 | Max retries | Visible Needs attention — not invisible lose | Queue + Print problems list |
+| 10 | Duplicate case | At most same ticket twice, not a flood | Ready-flush same jobs; reprint is explicit |
+
+### How to run (ops)
+1. Restart Mother after build (coordinator + health probe running).
+2. Use a real kitchen + receipt printer (and online path if testing #4).
+3. Optional: watch AppData `print-reliability.log` for job id / attempts / paper status.
+4. Client (#6): turn Mother off → Send/Print refuse → bring Mother back → staff Send/Print again.
+
+**Done when:** checklist passed on real Mother + printers (+ Client if used). Not ✅ until you run it.
+
+## Suggested build order (status)
+
+| Step | Status |
+|--|--|
+| Lock rules (esp. Client offline) | ✅ Phase 0 |
+| Honest “printed” state | ✅ Phase 1 |
+| Auto-retry on printer ready (kitchen + online + receipt) | ✅ Phase 2 |
+| Failed / Needs attention UI | ✅ Phase 3 |
+| Client + advance/online edges | ✅ Phase 4 |
+| Better printer status where possible | ✅ Phase 5 |
+| Live QA | ← **you** Phase 6 |
+
+## One-line summary
+
+**Code ready:** honest printed · auto-retry last failed when paper/printer ready (kitchen, online, receipt) · staff Print problems · Client refuse offline · DLE where supported.  
+**Still need on till:** Phase 6 checklist on real paper so the target is proven, not only coded — *almost never miss; sometimes duplicate one ticket; never silent-lose a whole day.*
+
+## Architecture reminder
+Mother owns print hardware + queue. Client never prints locally. Paper change ≈ printer ready → retry **that printer’s** failed jobs only.

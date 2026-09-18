@@ -13,11 +13,23 @@ namespace POS_in_NET.Services;
 
 public sealed class OrderRoutingPrintResult
 {
-    public HashSet<string> PrintedItemIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Item ids accepted into the durable print queue (Phase 1: not physical paper yet).
+    /// Prefer this over treating enqueue as "printed".
+    /// </summary>
+    public HashSet<string> QueuedItemIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Backward-compatible alias filled with the same ids as <see cref="QueuedItemIds"/>.
+    /// Do not treat as paper-confirmed; use queue <see cref="PrintJobLifecycle.Printed"/> for that.
+    /// </summary>
+    public HashSet<string> PrintedItemIds => QueuedItemIds;
+
     public List<string> FailedRoutes { get; } = new();
     public List<PrintRouteFailure> FailedRouteDetails { get; } = new();
 
-    public bool AnyPrinted => PrintedItemIds.Count > 0;
+    public bool AnyQueued => QueuedItemIds.Count > 0;
+    public bool AnyPrinted => AnyQueued;
     public bool HasFailures => FailedRoutes.Count > 0;
 }
 
@@ -505,7 +517,7 @@ public sealed class OrderRoutingPrintService
         {
             foreach (var item in itemsToPrint)
             {
-                result.PrintedItemIds.Add(item.Id);
+                result.QueuedItemIds.Add(item.Id);
             }
         }
         else
@@ -556,7 +568,7 @@ public sealed class OrderRoutingPrintService
             {
                 foreach (var item in groupItems)
                 {
-                    result.PrintedItemIds.Add(item.Id);
+                    result.QueuedItemIds.Add(item.Id);
                 }
                 System.Diagnostics.Debug.WriteLine($" PDF saved: {pdfMsg}");
             }
@@ -595,7 +607,7 @@ public sealed class OrderRoutingPrintService
         {
             foreach (var item in itemsToPrint)
             {
-                result.PrintedItemIds.Add(item.Id);
+                result.QueuedItemIds.Add(item.Id);
             }
             System.Diagnostics.Debug.WriteLine($" Printed to {singlePrinter.Name}");
         }
@@ -688,7 +700,7 @@ public sealed class OrderRoutingPrintService
             {
                 foreach (var item in batchItems)
                 {
-                    result.PrintedItemIds.Add(item.Id);
+                    result.QueuedItemIds.Add(item.Id);
                 }
             }
             else

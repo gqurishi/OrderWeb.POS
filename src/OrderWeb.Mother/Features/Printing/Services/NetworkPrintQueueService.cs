@@ -15,12 +15,32 @@ public class NetworkPrintJob
     public string JobType { get; set; } = "receipt"; // receipt, kitchen, bar, test
     public byte[] PrintData { get; set; } = Array.Empty<byte>();
     public string? OrderId { get; set; }
-    public string Status { get; set; } = "pending"; // pending, printing, completed, failed
-    public int RetryCount { get; set; } = 0;
+    /// <summary>pending(=queued) → printing(=sending) → completed(=printed) | failed | needs_attention</summary>
+    public string Status { get; set; } = PrintJobLifecycle.DbPending;
+    public int RetryCount { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? PrintedAt { get; set; }
     public DateTime? LastAttempt { get; set; }
+
+    public string LifecycleStatus => PrintJobLifecycle.FromQueueStatus(Status);
+
+    public string StaffCategory => PrintJobLifecycle.FormatStaffCategory(JobType);
+
+    public string OrderDisplay =>
+        string.IsNullOrWhiteSpace(OrderId) ? "—" : OrderId.Trim();
+
+    public string TimeDisplay =>
+        (LastAttempt ?? CreatedAt).ToString("dd/MM HH:mm");
+
+    public string StatusDisplay =>
+        string.Equals(Status, PrintJobLifecycle.DbNeedsAttention, StringComparison.OrdinalIgnoreCase)
+            ? "Needs attention"
+            : "Failed";
+
+    public string TitleDisplay => $"#{OrderDisplay} · {StaffCategory}";
+
+    public string MetaDisplay => $"{PrinterName} · {TimeDisplay}";
 }
 
 /// <summary>
@@ -39,12 +59,13 @@ public sealed class PrintQueueManagementSnapshot
 {
     public int PendingJobs { get; init; }
     public int FailedJobs { get; init; }
+    public int NeedsAttentionJobs { get; init; }
     public int PrintingJobs { get; init; }
     public int PreviousDayJobs { get; init; }
     public DateTime? OldestWaitingJob { get; init; }
     public DateTime? LastCancellationAt { get; init; }
     public int LastCancellationCount { get; init; }
-    public int WaitingJobs => PendingJobs + FailedJobs;
+    public int WaitingJobs => PendingJobs + FailedJobs + NeedsAttentionJobs;
 }
 
 public sealed class PrintQueueCancellationResult
@@ -190,7 +211,8 @@ public class NetworkPrintQueueService : IDisposable
     }
 
     /// <summary>
-    /// Add a print job to the queue
+    /// Add a print job to the queue. Returns job id when <see cref="PrintJobLifecycle.Queued"/> —
+    /// not physical <see cref="PrintJobLifecycle.Printed"/> (that happens after SendToPrinter succeeds).
     /// </summary>
     public async Task<int> EnqueueAsync(int printerId, byte[] printData, string jobType = "receipt", string? orderId = null)
     {
@@ -340,25 +362,70 @@ public class NetworkPrintQueueService : IDisposable
                 return;
             }
             
-            // Get printer
             var printer = await _dbService.GetPrinterByIdAsync(job.PrinterId);
             if (printer == null)
             {
+                PrintReliabilitySupportLog.Write(
+                    job.Id, job.PrinterName, job.PrinterId, job.RetryCount + 1,
+                    "failed_permanent", "Printer not found", job.OrderId, job.JobType);
                 await FailJobAsync(job, "Printer not found");
                 return;
             }
 
-            if (!printer.IsOnline)
+            // Phase 5: probe paper/ready when ESC/POS status is supported.
+            string? statusDetail = null;
+            if (NetworkPrinterService.SupportsEscPosRealtimeStatus(printer))
             {
+                var status = await _printerService.GetPrinterStatusAsync(printer);
+                statusDetail = status.StatusProbeSucceeded
+                    ? (status.PaperStatusKnown
+                        ? $"probe=ok paper={(status.HasPaper ? "yes" : "OUT")} cover={(status.CoverOpen ? "open" : "ok")} err={(status.HasError ? "yes" : "no")}"
+                        : "probe=ok paper=unknown")
+                    : "probe=none (honest target)";
+
+                if (!status.IsOnline)
+                {
+                    PrintReliabilitySupportLog.Write(
+                        job.Id, printer.Name, printer.Id, job.RetryCount + 1,
+                        "retry", status.NotReadyReason ?? "Printer offline", job.OrderId, job.JobType, statusDetail);
+                    await RetryJobAsync(job, status.NotReadyReason ?? "Printer offline");
+                    return;
+                }
+
+                if (!status.IsReadyForPrint)
+                {
+                    var reason = status.NotReadyReason ?? "Printer not ready";
+                    PrintReliabilitySupportLog.Write(
+                        job.Id, printer.Name, printer.Id, job.RetryCount + 1,
+                        "retry", reason, job.OrderId, job.JobType, statusDetail);
+                    await RetryJobAsync(job, reason);
+                    return;
+                }
+            }
+            else if (!printer.IsOnline)
+            {
+                PrintReliabilitySupportLog.Write(
+                    job.Id, printer.Name, printer.Id, job.RetryCount + 1,
+                    "retry", "Printer is offline", job.OrderId, job.JobType, "label/no-DLE");
                 await RetryJobAsync(job, "Printer is offline");
                 return;
             }
+            else
+            {
+                statusDetail = "probe=skipped (label/honest)";
+            }
 
-            // Send to printer
             var success = await _printerService.SendToPrinterAsync(printer, job.PrintData);
             
             if (success)
             {
+                PrintReliabilitySupportLog.Write(
+                    job.Id, printer.Name, printer.Id, job.RetryCount + 1,
+                    statusDetail?.Contains("probe=ok", StringComparison.Ordinal) == true
+                        ? "printed_status_ok"
+                        : "printed_best_effort",
+                    null, job.OrderId, job.JobType, statusDetail);
+
                 await CompleteJobAsync(job.Id);
                 JobsProcessedToday++;
                 
@@ -374,11 +441,17 @@ public class NetworkPrintQueueService : IDisposable
             }
             else
             {
+                PrintReliabilitySupportLog.Write(
+                    job.Id, printer.Name, printer.Id, job.RetryCount + 1,
+                    "retry", "Send failed", job.OrderId, job.JobType, statusDetail);
                 await RetryJobAsync(job, "Send failed");
             }
         }
         catch (Exception ex)
         {
+            PrintReliabilitySupportLog.Write(
+                job.Id, job.PrinterName, job.PrinterId, job.RetryCount + 1,
+                "retry", ex.Message, job.OrderId, job.JobType);
             Debug.WriteLine($" Job #{job.Id} error: {ex.Message}");
             await RetryJobAsync(job, ex.Message);
         }
@@ -451,7 +524,11 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = CASE WHEN retry_count + 1 >= COALESCE(max_retries, @maxRetries) THEN 'failed' ELSE 'pending' END,
+                SET status = CASE
+                        WHEN retry_count + 1 >= COALESCE(max_retries, @maxRetries)
+                            THEN @needsAttention
+                        ELSE @pending
+                    END,
                     retry_count = retry_count + 1,
                     error_message = @error,
                     last_attempt = NOW()
@@ -460,6 +537,8 @@ public class NetworkPrintQueueService : IDisposable
             command.Parameters.AddWithValue("@id", job.Id);
             command.Parameters.AddWithValue("@error", errorMessage);
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
+            command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
+            command.Parameters.AddWithValue("@pending", PrintJobLifecycle.DbPending);
             
             await command.ExecuteNonQueryAsync();
 
@@ -469,6 +548,9 @@ public class NetworkPrintQueueService : IDisposable
             {
                 JobsFailedToday++;
                 Debug.WriteLine($" Job #{job.Id} permanently failed: {errorMessage}");
+                PrintReliabilitySupportLog.Write(
+                    job.Id, job.PrinterName, job.PrinterId, job.RetryCount + 1,
+                    "needs_attention", errorMessage, job.OrderId, job.JobType);
 
                 JobFailed?.Invoke(this, new PrintJobFailedEventArgs
                 {
@@ -502,7 +584,7 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = 'failed', 
+                SET status = @needsAttention, 
                     retry_count = @maxRetries,
                     error_message = @error,
                     last_attempt = NOW()
@@ -511,6 +593,7 @@ public class NetworkPrintQueueService : IDisposable
             command.Parameters.AddWithValue("@id", job.Id);
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             command.Parameters.AddWithValue("@error", errorMessage);
+            command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
             
             await command.ExecuteNonQueryAsync();
             
@@ -537,11 +620,13 @@ public class NetworkPrintQueueService : IDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries)
+            SELECT status IN (@failed, @needsAttention) AND retry_count >= COALESCE(max_retries, @maxRetries)
             FROM network_print_queue
             WHERE id = @id";
         command.Parameters.AddWithValue("@id", jobId);
         command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
+        command.Parameters.AddWithValue("@failed", "failed");
+        command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
 
         var result = await command.ExecuteScalarAsync();
         return result != null && Convert.ToBoolean(result);
@@ -567,7 +652,7 @@ public class NetworkPrintQueueService : IDisposable
                     SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                     SUM(CASE WHEN status = 'printing' THEN 1 ELSE 0 END) as printing,
                     SUM(CASE WHEN status = 'completed' AND DATE(printed_at) = CURDATE() THEN 1 ELSE 0 END) as completed_today,
-                    SUM(CASE WHEN status = 'failed' AND retry_count >= COALESCE(max_retries, @maxRetries) AND DATE(last_attempt) = CURDATE() THEN 1 ELSE 0 END) as failed_today
+                    SUM(CASE WHEN status IN ('failed', 'needs_attention') AND DATE(COALESCE(last_attempt, created_at)) = CURDATE() THEN 1 ELSE 0 END) as failed_today
                 FROM network_print_queue";
             
             command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
@@ -600,9 +685,10 @@ public class NetworkPrintQueueService : IDisposable
             SELECT
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+                SUM(CASE WHEN status = 'needs_attention' THEN 1 ELSE 0 END) AS needs_attention_count,
                 SUM(CASE WHEN status = 'printing' THEN 1 ELSE 0 END) AS printing_count,
-                SUM(CASE WHEN status IN ('pending', 'failed') AND created_at < CURDATE() THEN 1 ELSE 0 END) AS previous_day_count,
-                MIN(CASE WHEN status IN ('pending', 'failed') THEN created_at END) AS oldest_waiting
+                SUM(CASE WHEN status IN ('pending', 'failed', 'needs_attention') AND created_at < CURDATE() THEN 1 ELSE 0 END) AS previous_day_count,
+                MIN(CASE WHEN status IN ('pending', 'failed', 'needs_attention', 'printing') THEN created_at END) AS oldest_waiting
             FROM network_print_queue
             WHERE (@printerId IS NULL OR printer_id = @printerId);
 
@@ -616,6 +702,7 @@ public class NetworkPrintQueueService : IDisposable
         using var reader = await command.ExecuteReaderAsync();
         var pending = 0;
         var failed = 0;
+        var needsAttention = 0;
         var printing = 0;
         var previousDay = 0;
         DateTime? oldest = null;
@@ -626,9 +713,10 @@ public class NetworkPrintQueueService : IDisposable
         {
             pending = reader.IsDBNull(0) ? 0 : Convert.ToInt32(reader.GetValue(0));
             failed = reader.IsDBNull(1) ? 0 : Convert.ToInt32(reader.GetValue(1));
-            printing = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2));
-            previousDay = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3));
-            oldest = reader.IsDBNull(4) ? null : reader.GetDateTime(4);
+            needsAttention = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2));
+            printing = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3));
+            previousDay = reader.IsDBNull(4) ? 0 : Convert.ToInt32(reader.GetValue(4));
+            oldest = reader.IsDBNull(5) ? null : reader.GetDateTime(5);
         }
 
         if (await reader.NextResultAsync() && await reader.ReadAsync())
@@ -641,12 +729,271 @@ public class NetworkPrintQueueService : IDisposable
         {
             PendingJobs = pending,
             FailedJobs = failed,
+            NeedsAttentionJobs = needsAttention,
             PrintingJobs = printing,
             PreviousDayJobs = previousDay,
             OldestWaitingJob = oldest,
             LastCancellationAt = lastCancellationAt,
             LastCancellationCount = lastCancellationCount
         };
+    }
+
+    /// <summary>
+    /// Phase 1 visibility: jobs that are not physically printed (queued / sending / failed / needs attention).
+    /// </summary>
+    public async Task<IReadOnlyList<NetworkPrintJob>> GetNotPrintedVisibleJobsAsync(int limit = 50)
+    {
+        await EnsureTableExistsAsync();
+        var jobs = new List<NetworkPrintJob>();
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT pq.id, pq.printer_id, pq.job_type, pq.print_data, pq.order_id,
+                   pq.status, pq.retry_count, pq.error_message, pq.created_at,
+                   pq.printed_at, pq.last_attempt, p.name AS printer_name
+            FROM network_print_queue pq
+            JOIN network_printers p ON pq.printer_id = p.id
+            WHERE pq.status IN ('pending', 'printing', 'failed', 'needs_attention')
+            ORDER BY
+                CASE pq.status
+                    WHEN 'needs_attention' THEN 0
+                    WHEN 'failed' THEN 1
+                    WHEN 'printing' THEN 2
+                    ELSE 3
+                END,
+                pq.created_at ASC
+            LIMIT @limit";
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 200));
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            jobs.Add(new NetworkPrintJob
+            {
+                Id = reader.GetInt32("id"),
+                PrinterId = reader.GetInt32("printer_id"),
+                PrinterName = reader.IsDBNull(reader.GetOrdinal("printer_name")) ? "Unknown" : reader.GetString("printer_name"),
+                JobType = reader.GetString("job_type"),
+                PrintData = (byte[])reader["print_data"],
+                OrderId = reader.IsDBNull(reader.GetOrdinal("order_id")) ? null : reader.GetString("order_id"),
+                Status = reader.GetString("status"),
+                RetryCount = reader.GetInt32("retry_count"),
+                ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message")) ? null : reader.GetString("error_message"),
+                CreatedAt = reader.GetDateTime("created_at"),
+                PrintedAt = reader.IsDBNull(reader.GetOrdinal("printed_at")) ? null : reader.GetDateTime("printed_at"),
+                LastAttempt = reader.IsDBNull(reader.GetOrdinal("last_attempt")) ? null : reader.GetDateTime("last_attempt")
+            });
+        }
+
+        return jobs;
+    }
+
+    public async Task<int> CountNeedsAttentionAsync()
+    {
+        await EnsureTableExistsAsync();
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT COUNT(*)
+            FROM network_print_queue
+            WHERE status = @needsAttention";
+        command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
+        return Convert.ToInt32(await command.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>
+    /// Phase 3 staff list: failed + needs_attention only (not pending backoff).
+    /// </summary>
+    public async Task<IReadOnlyList<NetworkPrintJob>> GetStaffAttentionJobsAsync(int? printerId = null, int limit = 80)
+    {
+        await EnsureTableExistsAsync();
+        var jobs = new List<NetworkPrintJob>();
+        using var connection = await _databaseService.GetConnectionAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT pq.id, pq.printer_id, pq.job_type, pq.print_data, pq.order_id,
+                   pq.status, pq.retry_count, pq.error_message, pq.created_at,
+                   pq.printed_at, pq.last_attempt, p.name AS printer_name
+            FROM network_print_queue pq
+            JOIN network_printers p ON pq.printer_id = p.id
+            WHERE pq.status IN ('failed', 'needs_attention')
+              AND (@printerId IS NULL OR pq.printer_id = @printerId)
+            ORDER BY
+                CASE pq.status WHEN 'needs_attention' THEN 0 ELSE 1 END,
+                COALESCE(pq.last_attempt, pq.created_at) DESC
+            LIMIT @limit";
+        command.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 200));
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            jobs.Add(new NetworkPrintJob
+            {
+                Id = reader.GetInt32("id"),
+                PrinterId = reader.GetInt32("printer_id"),
+                PrinterName = reader.IsDBNull(reader.GetOrdinal("printer_name")) ? "Unknown" : reader.GetString("printer_name"),
+                JobType = reader.GetString("job_type"),
+                PrintData = (byte[])reader["print_data"],
+                OrderId = reader.IsDBNull(reader.GetOrdinal("order_id")) ? null : reader.GetString("order_id"),
+                Status = reader.GetString("status"),
+                RetryCount = reader.GetInt32("retry_count"),
+                ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message")) ? null : reader.GetString("error_message"),
+                CreatedAt = reader.GetDateTime("created_at"),
+                PrintedAt = reader.IsDBNull(reader.GetOrdinal("printed_at")) ? null : reader.GetDateTime("printed_at"),
+                LastAttempt = reader.IsDBNull(reader.GetOrdinal("last_attempt")) ? null : reader.GetDateTime("last_attempt")
+            });
+        }
+
+        return jobs;
+    }
+
+    /// <summary>Re-queue one failed / needs_attention job (same ticket, no second copy).</summary>
+    public async Task<bool> RetryJobByIdAsync(int jobId)
+    {
+        if (jobId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            await EnsureTableExistsAsync();
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                UPDATE network_print_queue
+                SET status = @pending,
+                    retry_count = 0,
+                    error_message = NULL,
+                    last_attempt = NULL,
+                    claimed_by_terminal_name = NULL,
+                    claimed_at = NULL
+                WHERE id = @id
+                  AND status IN ('failed', @needsAttention)";
+            command.Parameters.AddWithValue("@id", jobId);
+            command.Parameters.AddWithValue("@pending", PrintJobLifecycle.DbPending);
+            command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
+            var affected = await command.ExecuteNonQueryAsync();
+            if (affected > 0)
+            {
+                _backgroundSyncManager?.RequestRunSoon("network-print-queue");
+            }
+
+            return affected > 0;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Print reliability] RetryJobById failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Enqueue a fresh copy of the ticket (may duplicate on paper), then dismiss the original.
+    /// </summary>
+    public async Task<(bool Ok, int? NewJobId, string Message)> ReprintJobByIdAsync(
+        int jobId,
+        int staffUserId,
+        string staffName)
+    {
+        if (jobId <= 0)
+        {
+            return (false, null, "Invalid job.");
+        }
+
+        try
+        {
+            await EnsureTableExistsAsync();
+            using var connection = await _databaseService.GetConnectionAsync();
+            NetworkPrintJob? source = null;
+            using (var select = connection.CreateCommand())
+            {
+                select.CommandText = @"
+                    SELECT id, printer_id, job_type, print_data, order_id, status
+                    FROM network_print_queue
+                    WHERE id = @id
+                      AND status IN ('failed', 'needs_attention')
+                    LIMIT 1";
+                select.Parameters.AddWithValue("@id", jobId);
+                using var reader = await select.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    source = new NetworkPrintJob
+                    {
+                        Id = reader.GetInt32("id"),
+                        PrinterId = reader.GetInt32("printer_id"),
+                        JobType = reader.GetString("job_type"),
+                        PrintData = (byte[])reader["print_data"],
+                        OrderId = reader.IsDBNull(reader.GetOrdinal("order_id")) ? null : reader.GetString("order_id"),
+                        Status = reader.GetString("status")
+                    };
+                }
+            }
+
+            if (source == null || source.PrintData.Length == 0)
+            {
+                return (false, null, "Job not found or has no print data.");
+            }
+
+            var newId = await EnqueueAsync(source.PrinterId, source.PrintData, source.JobType, source.OrderId);
+            var dismissed = await DismissJobByIdAsync(
+                jobId,
+                staffUserId,
+                staffName,
+                $"Staff reprint → new job #{newId} (may duplicate)");
+            if (!dismissed)
+            {
+                return (true, newId, $"Reprinted as job #{newId}, but the original stay listed — dismiss it if needed.");
+            }
+
+            return (true, newId, $"Reprinted as job #{newId}. Original dismissed.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Print reliability] ReprintJobById failed: {ex.Message}");
+            return (false, null, ex.Message);
+        }
+    }
+
+    /// <summary>Dismiss (cancel) one failed / needs_attention job — reason required.</summary>
+    public async Task<bool> DismissJobByIdAsync(
+        int jobId,
+        int staffUserId,
+        string staffName,
+        string reason)
+    {
+        if (jobId <= 0 || string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        try
+        {
+            await EnsureTableExistsAsync();
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                UPDATE network_print_queue
+                SET status = 'cancelled',
+                    cancelled_at = NOW(),
+                    cancelled_by_user_id = @userId,
+                    cancelled_by_name = @userName,
+                    cancellation_reason = @reason,
+                    error_message = @reason,
+                    claimed_by_terminal_name = NULL,
+                    claimed_at = NULL
+                WHERE id = @id
+                  AND status IN ('failed', 'needs_attention', 'pending')";
+            command.Parameters.AddWithValue("@id", jobId);
+            command.Parameters.AddWithValue("@userId", staffUserId);
+            command.Parameters.AddWithValue("@userName", string.IsNullOrWhiteSpace(staffName) ? "Staff" : staffName);
+            command.Parameters.AddWithValue("@reason", reason.Trim());
+            return await command.ExecuteNonQueryAsync() > 0;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Print reliability] DismissJobById failed: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<PrintQueueCancellationResult> CancelWaitingJobsAsync(
@@ -670,7 +1017,7 @@ public class NetworkPrintQueueService : IDisposable
                 SELECT q.id, q.order_id, q.job_type, p.name
                 FROM network_print_queue q
                 JOIN network_printers p ON p.id = q.printer_id
-                WHERE q.status IN ('pending', 'failed')
+                WHERE q.status IN ('pending', 'failed', 'needs_attention')
                   AND q.created_at <= @cutoff
                   AND (@printerId IS NULL OR q.printer_id = @printerId)
                 FOR UPDATE";
@@ -703,7 +1050,7 @@ public class NetworkPrintQueueService : IDisposable
                     error_message = @reason,
                     claimed_by_terminal_name = NULL,
                     claimed_at = NULL
-                WHERE status IN ('pending', 'failed')
+                WHERE status IN ('pending', 'failed', 'needs_attention')
                   AND created_at <= @cutoff
                   AND (@printerId IS NULL OR printer_id = @printerId)";
             updateCommand.Parameters.AddWithValue("@userId", cancelledByUserId);
@@ -757,6 +1104,68 @@ public class NetworkPrintQueueService : IDisposable
     }
 
     /// <summary>
+    /// Phase 2: printer came back (paper change / online) — clear backoff and re-queue
+    /// failed + needs_attention + pending jobs for <paramref name="printerId"/> only.
+    /// </summary>
+    public async Task<int> FlushWaitingJobsForPrinterAsync(int printerId)
+    {
+        if (printerId <= 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            await EnsureTableExistsAsync();
+            using var connection = await _databaseService.GetConnectionAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                UPDATE network_print_queue
+                SET status = @pending,
+                    last_attempt = NULL,
+                    retry_count = CASE
+                        WHEN status = @needsAttention THEN 0
+                        ELSE retry_count
+                    END,
+                    error_message = CASE
+                        WHEN status = @needsAttention THEN NULL
+                        ELSE error_message
+                    END
+                WHERE printer_id = @printerId
+                  AND status IN (@pending, @failed, @needsAttention)";
+            command.Parameters.AddWithValue("@printerId", printerId);
+            command.Parameters.AddWithValue("@pending", PrintJobLifecycle.DbPending);
+            command.Parameters.AddWithValue("@failed", "failed");
+            command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
+
+            var affected = await command.ExecuteNonQueryAsync();
+            if (affected > 0)
+            {
+                Debug.WriteLine($"[Print reliability] Printer #{printerId} ready — flushed {affected} waiting job(s)");
+                _backgroundSyncManager?.RequestRunSoon("network-print-queue");
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await ProcessQueueAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[Print reliability] Flush process error: {ex.Message}");
+                    }
+                });
+            }
+
+            return affected;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Print reliability] FlushWaitingJobsForPrinter failed: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Retry all failed jobs manually
     /// </summary>
     public async Task<int> RetryAllFailedJobsAsync(int? printerId = null)
@@ -768,13 +1177,14 @@ public class NetworkPrintQueueService : IDisposable
             
             command.CommandText = @"
                 UPDATE network_print_queue 
-                SET status = 'pending', retry_count = 0, error_message = NULL
-                WHERE status = 'failed'
-                  AND retry_count >= COALESCE(max_retries, @maxRetries)
+                SET status = @pending, retry_count = 0, error_message = NULL, last_attempt = NULL
+                WHERE status IN (@failed, @needsAttention)
                   AND (@printerId IS NULL OR printer_id = @printerId)";
             
-            command.Parameters.AddWithValue("@maxRetries", MAX_RETRIES);
             command.Parameters.AddWithValue("@printerId", printerId ?? (object)DBNull.Value);
+            command.Parameters.AddWithValue("@pending", PrintJobLifecycle.DbPending);
+            command.Parameters.AddWithValue("@failed", "failed");
+            command.Parameters.AddWithValue("@needsAttention", PrintJobLifecycle.DbNeedsAttention);
             
             var affected = await command.ExecuteNonQueryAsync();
             if (affected > 0)
@@ -883,6 +1293,18 @@ public class NetworkPrintQueueService : IDisposable
             await ExecuteNonQueryAsync(connection, @"
                 ALTER TABLE network_print_queue
                 ADD COLUMN claimed_at TIMESTAMP NULL AFTER claimed_by_terminal_name");
+        }
+
+        // Phase 1–2: allow needs_attention (ENUM may reject it on older DBs).
+        try
+        {
+            await ExecuteNonQueryAsync(connection, @"
+                ALTER TABLE network_print_queue
+                MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'pending'");
+        }
+        catch
+        {
+            // Column already VARCHAR or alter not permitted under migration-managed mode.
         }
     }
 
