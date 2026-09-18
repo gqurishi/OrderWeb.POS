@@ -362,7 +362,7 @@ public sealed class BarInventoryView : ContentView
                 CompactAction("Order", BarInventoryActionKind.SuggestedOrder, "#0369A1", "#F0F9FF"),
             }
         };
-        _reportAction = CompactAction("Report", BarInventoryActionKind.WeeklyReport, "#334155", "#F8FAFC");
+        _reportAction = CompactAction("Report", BarInventoryActionKind.WeeklyReport, "#6D28D9", "#F5F3FF");
         _reportAction.IsVisible = false;
         _opsRow.Children.Add(_reportAction);
 
