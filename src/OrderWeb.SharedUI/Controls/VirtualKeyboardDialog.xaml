@@ -45,12 +45,12 @@
             <VerticalStackLayout x:Name="KeyboardRootLayout" Spacing="0">
 
                 <!-- Header -->
-                <Grid x:Name="KeyboardHeader" BackgroundColor="#2563EB" Padding="18,12" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <Grid x:Name="KeyboardHeader" BackgroundColor="#DBEAFE" Padding="18,14" ColumnDefinitions="*,Auto" ColumnSpacing="10">
                     <Label x:Name="KeyboardTitleLabel"
                            Text="Search"
                            FontSize="17"
                            FontAttributes="Bold"
-                           TextColor="White"
+                           TextColor="#1E3A8A"
                            VerticalOptions="Center"
                            LineBreakMode="TailTruncation"
                            InputTransparent="True"/>
@@ -66,6 +66,8 @@
                             WidthRequest="96"
                             HeightRequest="44"
                             CornerRadius="17"
+                            BorderColor="#93C5FD"
+                            BorderWidth="1"
                             Clicked="OnCancelClicked"/>
                     <!-- Numeric: Border tap target (more reliable than Button on Windows touch) -->
                     <Border x:Name="HeaderCloseHit"
@@ -98,29 +100,30 @@
                 <!-- Search Input Display -->
                 <Border x:Name="KeyboardInputBorder"
                         BackgroundColor="#F8FAFC"
-                        Stroke="#DCE3EE"
-                        StrokeThickness="1"
-                        Margin="20,14,20,8"
-                        Padding="12,0"
-                        HeightRequest="52">
+                        Stroke="#93C5FD"
+                        StrokeThickness="2"
+                        Margin="20,18,20,14"
+                        Padding="16,0"
+                        HeightRequest="72">
                     <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="14"/>
+                        <RoundRectangle CornerRadius="16"/>
                     </Border.StrokeShape>
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                     <Label x:Name="CurrencyPrefixLabel"
                            Text="£"
                            IsVisible="False"
-                           FontSize="26"
+                           FontSize="28"
                            FontAttributes="Bold"
                            TextColor="#94A3B8"
                            VerticalOptions="Center"/>
                     <Entry x:Name="KeyboardInputEntry"
                            Grid.Column="1"
                            Text=""
-                           FontSize="18"
+                           FontSize="22"
+                           FontAttributes="Bold"
                            TextColor="#0F172A"
                            BackgroundColor="Transparent"
-                           HeightRequest="50"
+                           HeightRequest="68"
                            VerticalOptions="Fill"
                            VerticalTextAlignment="Center"
                            ClearButtonVisibility="Never"
@@ -233,11 +236,11 @@
                     </VerticalStackLayout>
 
                     <!-- Row 6: Space and Action Buttons (full keyboard mode) -->
-                    <Grid x:Name="FullActionsRow" ColumnDefinitions="1.5*,1.5*,5*,2*" ColumnSpacing="6">
-                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="44" CornerRadius="14" Clicked="OnCancelClicked"/>
-                        <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnClearPressed"/>
-                        <Button Grid.Column="2" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="15" HeightRequest="42" CornerRadius="14" Clicked="OnSpacePressed"/>
-                        <Button x:Name="EnterButton" Grid.Column="3" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="42" CornerRadius="14" Clicked="OnSearchPressed"/>
+                    <Grid x:Name="FullActionsRow" ColumnDefinitions="1.4*,1.4*,2.8*,3.6*" ColumnSpacing="6">
+                        <Button Grid.Column="0" Text="CANCEL" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#334155" FontSize="13" FontAttributes="Bold" HeightRequest="48" CornerRadius="14" Clicked="OnCancelClicked"/>
+                        <Button Grid.Column="1" Text="CLEAR" Style="{x:Null}" BackgroundColor="#64748B" TextColor="White" FontSize="13" FontAttributes="Bold" HeightRequest="48" CornerRadius="14" Clicked="OnClearPressed"/>
+                        <Button Grid.Column="2" Text="SPACE" Style="{x:Null}" BackgroundColor="#E2E8F0" TextColor="#475569" FontSize="14" HeightRequest="48" CornerRadius="14" Clicked="OnSpacePressed"/>
+                        <Button x:Name="EnterButton" Grid.Column="3" Text="ENTER" Style="{x:Null}" BackgroundColor="#2563EB" TextColor="White" FontSize="15" FontAttributes="Bold" HeightRequest="48" CornerRadius="14" Clicked="OnSearchPressed"/>
                     </Grid>
 
                     <!-- Numeric mode: Cancel + Done (Cancel must always be reachable) -->

@@ -123,7 +123,8 @@ public partial class VirtualKeyboardDialog : ContentView
         SetNumericOnly(true);
         DecimalKeyButton.IsVisible = mode is VirtualKeyboardNumericMode.Decimal
             or VirtualKeyboardNumericMode.Currency
-            or VirtualKeyboardNumericMode.IpAddress;
+            or VirtualKeyboardNumericMode.IpAddress
+            or VirtualKeyboardNumericMode.Quantity;
         DecimalKeyButton.Text = ".";
         CurrencyPrefixLabel.IsVisible = mode == VirtualKeyboardNumericMode.Currency;
         KeyboardInputEntry.Keyboard = mode is VirtualKeyboardNumericMode.Decimal
@@ -187,10 +188,14 @@ public partial class VirtualKeyboardDialog : ContentView
             KeyboardCard.WidthRequest = 360;
             KeyboardCard.MaximumWidthRequest = 380;
             KeyboardCard.Margin = new Thickness(16);
+            KeyboardHeader.BackgroundColor = Color.FromArgb("#DBEAFE");
             KeyboardHeader.Padding = new Thickness(18, 14);
             KeyboardTitleLabel.FontSize = 18;
+            KeyboardTitleLabel.TextColor = Color.FromArgb("#1E3A8A");
             KeyboardInputBorder.Margin = new Thickness(18, 16, 18, 10);
             KeyboardInputBorder.HeightRequest = 56;
+            KeyboardInputBorder.Stroke = new SolidColorBrush(Color.FromArgb("#93C5FD"));
+            KeyboardInputBorder.StrokeThickness = 2;
             KeyboardInputBorder.StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 14 };
             KeyboardInputEntry.FontSize = 28;
             KeyboardInputEntry.FontAttributes = FontAttributes.Bold;
@@ -219,12 +224,14 @@ public partial class VirtualKeyboardDialog : ContentView
             KeyboardCard.WidthRequest = -1;
             KeyboardCard.MaximumWidthRequest = double.PositiveInfinity;
             KeyboardCard.Margin = new Thickness(12, 0, 12, 10);
-            KeyboardInputEntry.FontAttributes = FontAttributes.None;
-            KeyboardInputEntry.FontSize = 18;
-            CurrencyPrefixLabel.FontSize = 26;
+            KeyboardHeader.BackgroundColor = Color.FromArgb("#DBEAFE");
+            KeyboardTitleLabel.TextColor = Color.FromArgb("#1E3A8A");
+            KeyboardInputEntry.FontAttributes = FontAttributes.Bold;
+            KeyboardInputEntry.FontSize = 22;
+            CurrencyPrefixLabel.FontSize = 28;
             if (_hostPage is not null)
             {
-                ApplyResponsiveLayout(_hostPage.Width, _hostPage.Height);
+                ApplyResponsiveLayoutSafe(_hostPage.Width, _hostPage.Height);
             }
         }
     }
@@ -283,9 +290,15 @@ public partial class VirtualKeyboardDialog : ContentView
 
     public async Task<string?> ShowAsync(Page? hostPage = null)
     {
-        if (_activeDialog is { _isClosed: false })
+        // A stuck prior overlay (failed dismiss / mid-animation) used to block every later open.
+        if (_activeDialog is { _isClosed: false } active && !ReferenceEquals(active, this))
         {
-            return null;
+            active.ForceCloseForReplacement();
+        }
+
+        if (ReferenceEquals(_activeDialog, this) && !_isClosed && _tcs is not null)
+        {
+            return await _tcs.Task;
         }
 
         _activeDialog = this;
@@ -304,8 +317,34 @@ public partial class VirtualKeyboardDialog : ContentView
             return null;
         }
 
-        AddToPage(page);
+        try
+        {
+            AddToPage(page);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[VirtualKeyboard] ShowAsync failed: {ex.Message}");
+            CloseDialog();
+            _tcs.TrySetResult(null);
+            return null;
+        }
+
         return await _tcs.Task;
+    }
+
+    /// <summary>Immediate teardown when another keyboard must take over (no click-through delay).</summary>
+    private void ForceCloseForReplacement()
+    {
+        _isCompleting = true;
+        try
+        {
+            CloseDialog();
+        }
+        finally
+        {
+            Opacity = 1;
+            _tcs?.TrySetResult(null);
+        }
     }
 
     /// <summary>
@@ -318,7 +357,7 @@ public partial class VirtualKeyboardDialog : ContentView
 
         if (_activeDialog is { _isClosed: false } active && !ReferenceEquals(active, this))
         {
-            active.Cancel();
+            active.ForceCloseForReplacement();
         }
 
         _activeDialog = this;
@@ -361,11 +400,11 @@ public partial class VirtualKeyboardDialog : ContentView
         {
             _hostPage.SizeChanged += OnHostPageSizeChanged;
             _hostPage.Disappearing += OnHostPageDisappearing;
-            ApplyResponsiveLayout(_hostPage.Width, _hostPage.Height);
+            ApplyResponsiveLayoutSafe(_hostPage.Width, _hostPage.Height);
         }
         else
         {
-            ApplyResponsiveLayout(overlayHost.Width, overlayHost.Height);
+            ApplyResponsiveLayoutSafe(overlayHost.Width, overlayHost.Height);
         }
 
         FocusInput(moveCursorToEnd: true);
@@ -408,7 +447,7 @@ public partial class VirtualKeyboardDialog : ContentView
         IsVisible = true;
         page.SizeChanged += OnHostPageSizeChanged;
         page.Disappearing += OnHostPageDisappearing;
-        ApplyResponsiveLayout(page.Width, page.Height);
+        ApplyResponsiveLayoutSafe(page.Width, page.Height);
         FocusInput(moveCursorToEnd: true);
     }
 
@@ -465,7 +504,7 @@ public partial class VirtualKeyboardDialog : ContentView
     {
         if (sender is VisualElement element)
         {
-            ApplyResponsiveLayout(element.Width, element.Height);
+            ApplyResponsiveLayoutSafe(element.Width, element.Height);
         }
     }
 
@@ -517,7 +556,9 @@ public partial class VirtualKeyboardDialog : ContentView
         const double verticalPadding = 10;
         KeyboardCard.Margin = new Thickness(horizontalPadding, 0, horizontalPadding, verticalPadding);
         KeyboardCard.MaximumWidthRequest = isSmall ? width - (horizontalPadding * 2) : Math.Min(1100, width - (horizontalPadding * 2));
-        KeyboardCard.MaximumHeightRequest = Math.Max(360, height - (verticalPadding * 2));
+        // Keep room for the taller writer field + full QWERTY without clipping the popup away.
+        KeyboardCard.MaximumHeightRequest = Math.Max(520, height - (verticalPadding * 2));
+        KeyboardCard.MinimumHeightRequest = 280;
 
         var keyHeight = isVeryShort || isShort || isSmall ? 44 : isMedium ? 46 : 48;
         var keyFont = isVeryShort ? 13 : isShort ? 15 : isSmall ? 14 : isMedium ? 16 : 18;
@@ -538,9 +579,11 @@ public partial class VirtualKeyboardDialog : ContentView
             button.CornerRadius = cornerRadius;
         }
 
+        KeyboardHeader.BackgroundColor = Color.FromArgb("#DBEAFE");
+        KeyboardTitleLabel.TextColor = Color.FromArgb("#1E3A8A");
         KeyboardHeader.Padding = isVeryShort
-            ? new Thickness(12, 6)
-            : isShort ? new Thickness(14, 8) : new Thickness(18, 12);
+            ? new Thickness(12, 8)
+            : isShort ? new Thickness(14, 10) : new Thickness(18, 14);
         KeyboardRowsContainer.Padding = isVeryShort
             ? new Thickness(8, 2, 8, 6)
             : isShort ? new Thickness(10, 3, 10, 8) : new Thickness(14, 4, 14, 14);
@@ -548,11 +591,26 @@ public partial class VirtualKeyboardDialog : ContentView
         SetKeyboardRowSpacing(isVeryShort ? 3 : isShort ? 4 : 5);
 
         KeyboardInputBorder.Margin = isVeryShort
-            ? new Thickness(10, 5, 10, 4)
-            : isShort ? new Thickness(12, 8, 12, 5) : new Thickness(20, 14, 20, 8);
-        KeyboardInputBorder.HeightRequest = isVeryShort ? 44 : isShort ? 48 : 52;
-        KeyboardInputEntry.HeightRequest = KeyboardInputBorder.HeightRequest - 2;
-        KeyboardInputEntry.FontSize = isVeryShort ? 16 : isShort || isSmall ? 17 : isMedium ? 18 : 21;
+            ? new Thickness(12, 10, 12, 8)
+            : isShort ? new Thickness(16, 12, 16, 10) : new Thickness(20, 18, 20, 14);
+        KeyboardInputBorder.HeightRequest = isVeryShort ? 56 : isShort ? 64 : 72;
+        KeyboardInputBorder.Stroke = new SolidColorBrush(Color.FromArgb("#93C5FD"));
+        KeyboardInputBorder.StrokeThickness = 2;
+        KeyboardInputEntry.HeightRequest = KeyboardInputBorder.HeightRequest - 4;
+        KeyboardInputEntry.FontSize = isVeryShort ? 18 : isShort || isSmall ? 20 : isMedium ? 22 : 24;
+        KeyboardInputEntry.FontAttributes = FontAttributes.Bold;
+    }
+
+    private void ApplyResponsiveLayoutSafe(double width, double height)
+    {
+        try
+        {
+            ApplyResponsiveLayout(width, height);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[VirtualKeyboard] Layout failed: {ex.Message}");
+        }
     }
 
     private void SetKeyboardRowSpacing(double spacing)
@@ -751,12 +809,24 @@ public partial class VirtualKeyboardDialog : ContentView
                 Opacity = 0.02;
                 IsVisible = true;
                 await Task.Delay(ClickThroughGuardMs);
-                CloseDialog();
-                Opacity = 1;
             });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[VirtualKeyboard] Dismiss guard failed: {ex.Message}");
         }
         finally
         {
+            try
+            {
+                await MainThread.InvokeOnMainThreadAsync(CloseDialog);
+            }
+            catch
+            {
+                CloseDialog();
+            }
+
+            Opacity = 1;
             _tcs?.TrySetResult(result);
         }
     }
@@ -804,7 +874,9 @@ public partial class VirtualKeyboardDialog : ContentView
                 return filtered;
             }
 
-            var allowDecimal = _numericMode is VirtualKeyboardNumericMode.Decimal or VirtualKeyboardNumericMode.Currency;
+            var allowDecimal = _numericMode is VirtualKeyboardNumericMode.Decimal
+                or VirtualKeyboardNumericMode.Currency
+                or VirtualKeyboardNumericMode.Quantity;
             var decimalSeen = false;
             filtered = new string(filtered.Where(character =>
             {
@@ -819,10 +891,11 @@ public partial class VirtualKeyboardDialog : ContentView
 
             if (allowDecimal)
             {
+                var maxFractionDigits = _numericMode == VirtualKeyboardNumericMode.Quantity ? 3 : 2;
                 var dot = filtered.IndexOf('.');
-                if (dot >= 0 && filtered.Length - dot - 1 > 2)
+                if (dot >= 0 && filtered.Length - dot - 1 > maxFractionDigits)
                 {
-                    filtered = filtered[..(dot + 3)];
+                    filtered = filtered[..(dot + 1 + maxFractionDigits)];
                 }
             }
         }

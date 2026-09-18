@@ -44,6 +44,7 @@ public partial class BarInventoryPage : ContentPage
         Inventory.ReportRangeRequested += async (_, range) =>
             await ShowUsageReportAsync(range.StartDate, range.EndDate, range.PresetDays);
         Inventory.ReportCsvDownloadRequested += async (_, _) => await ExportUsageReportCsvAsync();
+        Inventory.ReportPdfDownloadRequested += async (_, _) => await ExportUsageReportPdfAsync();
         Inventory.QuickAddRequested += async (_, row) =>
         {
             if (_actionBusy)
@@ -316,10 +317,15 @@ public partial class BarInventoryPage : ContentPage
                 return;
             }
 
+            if (action is BarInventoryActionKind.Waste)
+            {
+                await RunWasteAsync();
+                return;
+            }
+
             var kind = action switch
             {
                 BarInventoryActionKind.Receive => BarStockMovementKind.Receive,
-                BarInventoryActionKind.Waste => BarStockMovementKind.Waste,
                 _ => (BarStockMovementKind?)null
             };
             if (kind is null)
@@ -413,6 +419,14 @@ public partial class BarInventoryPage : ContentPage
         }
     }
 
+    private async Task ExportUsageReportPdfAsync()
+    {
+        await DisplayAlert(
+            "Stock report PDF",
+            "Stock report export is available to Admin on Mother POS only.",
+            "OK");
+    }
+
     private async Task RunQuickAddAsync(BarStockBoardRowPresentation row)
     {
         if (string.IsNullOrWhiteSpace(row.StockId))
@@ -455,6 +469,57 @@ public partial class BarInventoryPage : ContentPage
             ? $"Delivery +{result.QtyBottles:0.###} · {row.Name}"
             : $"Stock IN +{result.QtyBottles:0.###} · {row.Name}");
         await LoadBoardAsync(keepSuggestMode: fromSuggest);
+    }
+
+    private async Task RunWasteAsync()
+    {
+        if (_allBoard.Count == 0)
+        {
+            await LoadBoardAsync();
+        }
+
+        if (_allBoard.Count == 0)
+        {
+            await DisplayAlert(
+                "Waste",
+                "No tracked items — Admin must enable Track on Add Item.",
+                "OK");
+            return;
+        }
+
+        Inventory.UnfocusSearch();
+        SharedTouchKeyboard.SuppressAllBriefly(500);
+
+        var pickers = _allBoard.Select(r => new BarStockPickerItem(
+            r.StockId, r.Name, r.StockUnit, r.OnHand, r.PackSize, r.ParLevel)).ToList();
+        var stickyKey = GetStickyKey(BarStockMovementKind.Waste);
+        var dialog = new BarStockWasteDialog();
+        var result = await dialog.ShowAsync(this, pickers, async draft =>
+        {
+            var response = await _barInventory.WasteAsync(new BarStockWasteRequestDto
+            {
+                StockId = draft.StockId ?? string.Empty,
+                Qty = draft.QtyInStockUnit,
+                Reason = draft.Reason ?? string.Empty,
+                IdempotencyKey = draft.IdempotencyKey ?? stickyKey
+            });
+
+            if (!response.Success)
+            {
+                return (false, response.Message);
+            }
+
+            ClearStickyKey(BarStockMovementKind.Waste);
+            return (true, null);
+        }, stickyKey);
+
+        if (!result.Confirmed)
+        {
+            return;
+        }
+
+        Inventory.SetStatus($"Waste −{result.QtyInStockUnit:0.###} · {result.Reason}");
+        await LoadBoardAsync();
     }
 
     private async Task RunMovementAsync(BarStockMovementKind kind)

@@ -116,6 +116,7 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
             app.MapPost("/api/client/bar-inventory/waste", HandleBarInventoryWasteAsync);
             app.MapGet("/api/client/bar-inventory/report", HandleBarInventoryWeeklyReportAsync);
             app.MapGet("/api/client/bar-inventory/report-csv", HandleBarInventoryReportCsvAsync);
+            app.MapGet("/api/client/bar-inventory/report-pdf", HandleBarInventoryReportPdfAsync);
             app.MapGet("/api/client/bar-inventory/suggest-pdf", HandleBarInventorySuggestPdfAsync);
             app.MapGet("/api/client/reservations", HandleListReservationsAsync);
             app.MapPost("/api/client/reservations", HandleCreateReservationAsync);
@@ -2055,6 +2056,20 @@ public sealed class ClientWebSocketBroadcastService : IDisposable
 
         context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
         await context.Response.WriteAsync("Stock report CSV is available to Admin on Mother POS only.");
+    }
+
+    private async Task HandleBarInventoryReportPdfAsync(HttpContext context)
+    {
+        var session = await ValidateClientSessionAsync(context);
+        if (!session.Success)
+        {
+            context.Response.StatusCode = (int)session.StatusCode;
+            await context.Response.WriteAsync(session.Message ?? "Access denied.");
+            return;
+        }
+
+        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+        await context.Response.WriteAsync("Stock report PDF is available to Admin on Mother POS only.");
     }
 
     private async Task HandleBarInventorySuggestPdfAsync(HttpContext context)

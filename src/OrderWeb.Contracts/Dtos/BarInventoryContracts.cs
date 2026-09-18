@@ -495,9 +495,22 @@ public static class BarStockQtyDisplay
 /// <summary>CSV for usage report — no Low/Max columns.</summary>
 public static class BarStockUsageReportCsv
 {
-    public static string Build(BarStockWeeklyReportResponseDto report)
+    public static string Build(
+        BarStockWeeklyReportResponseDto report,
+        string? restaurantName = null,
+        DateTime? generatedAt = null)
     {
         var sb = new System.Text.StringBuilder();
+        var name = string.IsNullOrWhiteSpace(restaurantName) ? "POS-in-NET" : restaurantName.Trim();
+        var when = generatedAt ?? DateTime.Now;
+        sb.AppendLine(Csv(name));
+        sb.AppendLine(Csv($"Stock report generated - {when:dd MMM yyyy HH:mm}"));
+        sb.AppendLine(Csv(string.IsNullOrWhiteSpace(report.PeriodLabel)
+            ? $"{report.StartDate:dd MMM yyyy} – {report.EndDate:dd MMM yyyy}"
+            : report.PeriodLabel));
+        sb.AppendLine(Csv(
+            $"Have {report.HaveTotalDisplay} · Use {report.UsedTotalDisplay} · Waste {report.WasteTotalDisplay}"));
+        sb.AppendLine();
         sb.AppendLine("Section,Name,SKU,Have bottles,Have ml,Use bottles,Use ml,Waste bottles,Waste ml,Period start,Period end");
         var start = report.StartDate.ToString("yyyy-MM-dd");
         var end = report.EndDate.ToString("yyyy-MM-dd");

@@ -2176,6 +2176,13 @@ public partial class MainPage : ContentPage
                 await DisplayAlertAsync("Stock report CSV", ex.Message, "OK");
             }
         };
+        inventory.ReportPdfDownloadRequested += async (_, _) =>
+        {
+            await DisplayAlertAsync(
+                "Stock report PDF",
+                "Stock report export is available to Admin on Mother POS only.",
+                "OK");
+        };
 
         inventory.QuickAddRequested += async (_, row) =>
         {
@@ -2277,10 +2284,62 @@ public partial class MainPage : ContentPage
                     return;
                 }
 
+                if (action is BarInventoryActionKind.Waste)
+                {
+                    if (lastBoard.Count == 0)
+                    {
+                        await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                    }
+
+                    if (lastBoard.Count == 0)
+                    {
+                        await DisplayAlertAsync(
+                            "Waste",
+                            "No tracked items — Admin must enable Track on Add Item.",
+                            "OK");
+                        return;
+                    }
+
+                    inventory.UnfocusSearch();
+                    SharedTouchKeyboard.SuppressAllBriefly(500);
+                    var stickyKey = stickyKeys.TryGetValue("Waste", out var existingWaste) && !string.IsNullOrWhiteSpace(existingWaste)
+                        ? existingWaste
+                        : Guid.NewGuid().ToString("N");
+                    stickyKeys["Waste"] = stickyKey;
+                    var pickers = lastBoard.Select(r => new BarStockPickerItem(
+                        r.StockId, r.Name, r.StockUnit, r.OnHand, r.PackSize, r.ParLevel)).ToList();
+                    var wasteDialog = new BarStockWasteDialog();
+                    var wasteResult = await wasteDialog.ShowAsync(this, pickers, async draft =>
+                    {
+                        var response = await client.WasteAsync(new BarStockWasteRequestDto
+                        {
+                            StockId = draft.StockId ?? string.Empty,
+                            Qty = draft.QtyInStockUnit,
+                            Reason = draft.Reason ?? string.Empty,
+                            IdempotencyKey = draft.IdempotencyKey ?? stickyKey
+                        });
+                        if (!response.Success)
+                        {
+                            return (false, response.Message);
+                        }
+
+                        stickyKeys.Remove("Waste");
+                        return (true, null);
+                    }, stickyKey);
+
+                    if (wasteResult.Confirmed)
+                    {
+                        await LoadBarInventoryBoardAsync(inventory, lastBoard);
+                        PaintBoard(suggestedOnly: false);
+                        inventory.SetStatus($"Waste −{wasteResult.QtyInStockUnit:0.###} · {wasteResult.Reason}");
+                    }
+
+                    return;
+                }
+
                 var kind = action switch
                 {
                     BarInventoryActionKind.Receive => BarStockMovementKind.Receive,
-                    BarInventoryActionKind.Waste => BarStockMovementKind.Waste,
                     _ => (BarStockMovementKind?)null
                 };
                 if (kind is null)
@@ -2306,15 +2365,15 @@ public partial class MainPage : ContentPage
                     return;
                 }
 
-                var stickyKey = stickyKeys.TryGetValue(kind.Value.ToString(), out var existing) && !string.IsNullOrWhiteSpace(existing)
+                var stickyKeyRecv = stickyKeys.TryGetValue(kind.Value.ToString(), out var existing) && !string.IsNullOrWhiteSpace(existing)
                     ? existing
                     : Guid.NewGuid().ToString("N");
-                stickyKeys[kind.Value.ToString()] = stickyKey;
+                stickyKeys[kind.Value.ToString()] = stickyKeyRecv;
 
-                var pickers = sectionRows.Select(r => new BarStockPickerItem(
+                var recvPickers = sectionRows.Select(r => new BarStockPickerItem(
                     r.StockId, r.Name, r.StockUnit, r.OnHand, r.PackSize, r.ParLevel)).ToList();
                 var dialog = new BarStockMovementDialog();
-                await dialog.ShowAsync(this, kind.Value, pickers, async draft =>
+                await dialog.ShowAsync(this, kind.Value, recvPickers, async draft =>
                 {
                     BarStockMovementResponseDto result = kind.Value switch
                     {
@@ -2324,13 +2383,6 @@ public partial class MainPage : ContentPage
                             Qty = draft.Qty,
                             InputUnit = draft.InputUnit,
                             Note = draft.NoteOrReason,
-                            IdempotencyKey = draft.IdempotencyKey
-                        }),
-                        BarStockMovementKind.Waste => await client.WasteAsync(new BarStockWasteRequestDto
-                        {
-                            StockId = draft.StockId ?? string.Empty,
-                            Qty = draft.Qty,
-                            Reason = draft.NoteOrReason ?? string.Empty,
                             IdempotencyKey = draft.IdempotencyKey
                         }),
                         _ => new BarStockMovementResponseDto { Success = false, Message = "Unknown action." }
@@ -2343,7 +2395,7 @@ public partial class MainPage : ContentPage
 
                     stickyKeys.Remove(kind.Value.ToString());
                     return (true, null);
-                }, stickyKey);
+                }, stickyKeyRecv);
 
                 inventory.SetStatus("Current Stock · updated");
                 await LoadBarInventoryBoardAsync(inventory, lastBoard);

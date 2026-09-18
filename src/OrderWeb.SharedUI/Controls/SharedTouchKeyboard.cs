@@ -96,7 +96,10 @@ public static class SharedTouchKeyboard
                 maximum);
             keyboard.SetInitialText(entry.Text ?? string.Empty);
 
-            var result = await keyboard.ShowAsync(FindContentPage(entry));
+            var hostPage = FindContentPage(entry)
+                ?? Shell.Current?.CurrentPage as ContentPage
+                ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
+            var result = await keyboard.ShowAsync(hostPage);
             if (result is not null) entry.Text = result;
         }
         finally
@@ -153,7 +156,10 @@ public static class SharedTouchKeyboard
             keyboard.SetMaximumLength(maximumLength == int.MaxValue ? 0 : maximumLength);
             keyboard.SetInitialText(initialValue ?? string.Empty);
 
-            var result = await keyboard.ShowAsync(FindContentPage(input));
+            var hostPage = FindContentPage(input)
+                ?? Shell.Current?.CurrentPage as ContentPage
+                ?? Application.Current?.Windows.FirstOrDefault()?.Page as ContentPage;
+            var result = await keyboard.ShowAsync(hostPage);
             if (result is not null)
             {
                 apply(result);

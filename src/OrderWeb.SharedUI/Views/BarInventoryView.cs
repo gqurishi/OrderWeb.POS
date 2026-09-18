@@ -57,6 +57,12 @@ public sealed class BarInventoryView : ContentView
     private readonly Label _modeHeadingLabel;
     private readonly Border _modeHeadingBar;
     private readonly VerticalStackLayout _stockList;
+    private readonly HorizontalStackLayout _pagerRow;
+    private readonly Button _pagerPrevButton;
+    private readonly Button _pagerNextButton;
+    private readonly Label _pagerLabel;
+    private const int PageSize = 30;
+    private int _listPageIndex;
     private readonly HorizontalStackLayout _sectionChipRow;
     private readonly HorizontalStackLayout _opsRow;
     private readonly Button _addStockAction;
@@ -74,6 +80,7 @@ public sealed class BarInventoryView : ContentView
     private readonly Label _reportUseHero;
     private readonly Label _reportWasteHero;
     private readonly Button _downloadCsvButton;
+    private readonly Button _downloadReportPdfButton;
     private readonly Entry _reportSearchEntry;
     private readonly Dictionary<int, Border> _reportPeriodChips = new();
     private int? _reportPresetDays = 7;
@@ -208,6 +215,22 @@ public sealed class BarInventoryView : ContentView
         };
         _downloadCsvButton.Clicked += (_, _) => ReportCsvDownloadRequested?.Invoke(this, EventArgs.Empty);
 
+        _downloadReportPdfButton = new Button
+        {
+            Text = "Download PDF",
+            Style = null,
+            TextColor = Colors.White,
+            BackgroundColor = Color.FromArgb("#6D28D9"),
+            FontFamily = "OpenSansSemibold",
+            FontSize = 12,
+            CornerRadius = 10,
+            Padding = new Thickness(12, 6),
+            HeightRequest = 34,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalOptions = LayoutOptions.End
+        };
+        _downloadReportPdfButton.Clicked += (_, _) => ReportPdfDownloadRequested?.Invoke(this, EventArgs.Empty);
+
         _reportSearchEntry = new Entry
         {
             Placeholder = "Search report…",
@@ -221,6 +244,7 @@ public sealed class BarInventoryView : ContentView
         {
             if (_showingReport)
             {
+                _listPageIndex = 0;
                 PaintReportRows();
             }
         };
@@ -233,6 +257,13 @@ public sealed class BarInventoryView : ContentView
             Padding = new Thickness(12, 0),
             HeightRequest = 40,
             Content = _reportSearchEntry
+        };
+
+        var reportExportRow = new HorizontalStackLayout
+        {
+            Spacing = 8,
+            VerticalOptions = LayoutOptions.Center,
+            Children = { _downloadCsvButton, _downloadReportPdfButton }
         };
 
         _reportToolbar = new VerticalStackLayout
@@ -264,7 +295,7 @@ public sealed class BarInventoryView : ContentView
                 }
             }
         };
-        ((Grid)_reportToolbar.Children[^1]).Add(_downloadCsvButton, 1);
+        ((Grid)_reportToolbar.Children[^1]).Add(reportExportRow, 1);
 
         _bannerLabel = new Label
         {
@@ -282,7 +313,79 @@ public sealed class BarInventoryView : ContentView
             IsVisible = false,
             Content = _bannerLabel
         };
-        _stockList = new VerticalStackLayout { Spacing = 4 };
+        _stockList = new VerticalStackLayout { Spacing = 2 };
+        _pagerPrevButton = new Button
+        {
+            Text = "Prev",
+            Style = null,
+            TextColor = Color.FromArgb("#334155"),
+            BackgroundColor = Color.FromArgb("#F1F5F9"),
+            FontFamily = "OpenSansSemibold",
+            FontSize = 12,
+            CornerRadius = 8,
+            Padding = new Thickness(12, 4),
+            HeightRequest = 32,
+            MinimumHeightRequest = 32
+        };
+        _pagerNextButton = new Button
+        {
+            Text = "Next",
+            Style = null,
+            TextColor = Color.FromArgb("#334155"),
+            BackgroundColor = Color.FromArgb("#F1F5F9"),
+            FontFamily = "OpenSansSemibold",
+            FontSize = 12,
+            CornerRadius = 8,
+            Padding = new Thickness(12, 4),
+            HeightRequest = 32,
+            MinimumHeightRequest = 32
+        };
+        _pagerLabel = new Label
+        {
+            FontSize = 12,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb("#64748B"),
+            VerticalTextAlignment = TextAlignment.Center,
+            HorizontalTextAlignment = TextAlignment.Center,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+        _pagerPrevButton.Clicked += (_, _) =>
+        {
+            if (_listPageIndex <= 0)
+            {
+                return;
+            }
+
+            _listPageIndex--;
+            if (_showingReport)
+            {
+                PaintReportRows();
+            }
+            else
+            {
+                PaintBoardRows();
+            }
+        };
+        _pagerNextButton.Clicked += (_, _) =>
+        {
+            _listPageIndex++;
+            if (_showingReport)
+            {
+                PaintReportRows();
+            }
+            else
+            {
+                PaintBoardRows();
+            }
+        };
+        _pagerRow = new HorizontalStackLayout
+        {
+            Spacing = 10,
+            IsVisible = false,
+            VerticalOptions = LayoutOptions.Center,
+            HorizontalOptions = LayoutOptions.Fill,
+            Children = { _pagerPrevButton, _pagerLabel, _pagerNextButton }
+        };
         _sectionChipRow = new HorizontalStackLayout { Spacing = 8 };
         RebuildSectionChips(Array.Empty<string>());
 
@@ -302,6 +405,7 @@ public sealed class BarInventoryView : ContentView
                 return;
             }
 
+            _listPageIndex = 0;
             PaintBoardRows();
         };
 
@@ -345,11 +449,15 @@ public sealed class BarInventoryView : ContentView
             Spacing = 10,
             HorizontalOptions = LayoutOptions.End,
             VerticalOptions = LayoutOptions.Center,
-            Children = { _addStockAction, searchBox }
+            Children = { _addStockAction }
         };
 
         // Title only — categories + ops sit on the next row.
         var titleRow = StrongLabel("Bar Inventory", 32);
+
+        var wasteAction = CompactAction("Waste", BarInventoryActionKind.Waste, "#BE185D", "#FDF2F8");
+        searchCluster.Children.Add(wasteAction);
+        searchCluster.Children.Add(searchBox);
 
         _opsRow = new HorizontalStackLayout
         {
@@ -358,7 +466,6 @@ public sealed class BarInventoryView : ContentView
             HorizontalOptions = LayoutOptions.End,
             Children =
             {
-                CompactAction("Waste", BarInventoryActionKind.Waste, "#BE185D", "#FDF2F8"),
                 CompactAction("Order", BarInventoryActionKind.SuggestedOrder, "#0369A1", "#F0F9FF"),
             }
         };
@@ -442,7 +549,8 @@ public sealed class BarInventoryView : ContentView
                 {
                     summaryRow,
                     _reportToolbar,
-                    _stockList
+                    _stockList,
+                    _pagerRow
                 }
             }
         };
@@ -472,6 +580,7 @@ public sealed class BarInventoryView : ContentView
     public event EventHandler? SuggestPdfDownloadRequested;
     public event EventHandler<BarInventoryReportRangeRequest>? ReportRangeRequested;
     public event EventHandler? ReportCsvDownloadRequested;
+    public event EventHandler? ReportPdfDownloadRequested;
 
     public bool IsSuggestMode => _suggestMode;
     public bool IsReportMode => _showingReport;
@@ -529,6 +638,7 @@ public sealed class BarInventoryView : ContentView
     {
         var normalized = BarStockSections.NormalizeFilter(section);
         _selectedSection = normalized;
+        _listPageIndex = 0;
         if (_selectedSection != BarStockSections.All)
         {
             EnsureSectionChip(_selectedSection);
@@ -609,6 +719,7 @@ public sealed class BarInventoryView : ContentView
         _downloadPdfButton.IsVisible = suggestMode;
         _reportToolbar.IsVisible = false;
         _boardRows = rows ?? Array.Empty<BarStockBoardRowPresentation>();
+        _listPageIndex = 0;
         SetModeHeading(suggestMode ? "Order" : "Stock");
         PaintBoardRows();
     }
@@ -640,6 +751,7 @@ public sealed class BarInventoryView : ContentView
         _reportUseHero.Text = string.IsNullOrWhiteSpace(useTotalDisplay) ? "—" : useTotalDisplay.Trim();
         _reportWasteHero.Text = string.IsNullOrWhiteSpace(wasteTotalDisplay) ? "—" : wasteTotalDisplay.Trim();
         _reportRows = rows ?? Array.Empty<BarStockWeeklyReportRowPresentation>();
+        _listPageIndex = 0;
         PaintReportRows();
     }
 
@@ -689,7 +801,7 @@ public sealed class BarInventoryView : ContentView
         var sectionLabel = isHome ? "stock" : BarStockSections.DisplayName(_selectedSection);
         var query = SearchText;
         var rows = string.IsNullOrWhiteSpace(query)
-            ? _boardRows
+            ? _boardRows.ToList()
             : _boardRows
                 .Where(r =>
                     r.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -699,6 +811,7 @@ public sealed class BarInventoryView : ContentView
 
         if (rows.Count == 0)
         {
+            _pagerRow.IsVisible = false;
             _summaryLabel.Text = string.IsNullOrWhiteSpace(query)
                 ? (_suggestMode
                     ? (isHome ? "No items to order" : $"No {sectionLabel} items to order")
@@ -718,6 +831,7 @@ public sealed class BarInventoryView : ContentView
             return;
         }
 
+        var pageRows = SlicePage(rows, out var page, out var pageCount, out var from, out var to);
         _summaryLabel.Text = _suggestMode
             ? (rows.Count == 1
                 ? (isHome ? "Order 1 item" : $"{sectionLabel} · order 1 item")
@@ -726,10 +840,12 @@ public sealed class BarInventoryView : ContentView
                 ? (isHome ? "1 item" : $"{sectionLabel} · 1 item")
                 : (isHome ? $"{rows.Count} items" : $"{sectionLabel} · {rows.Count} items"));
 
-        foreach (var row in rows)
+        foreach (var row in pageRows)
         {
             _stockList.Children.Add(_suggestMode ? BuildSuggestCard(row) : BuildStockCard(row));
         }
+
+        UpdatePager(rows.Count, page, pageCount, from, to);
     }
 
     private void PaintReportRows()
@@ -737,7 +853,7 @@ public sealed class BarInventoryView : ContentView
         _stockList.Children.Clear();
         var query = (_reportSearchEntry.Text ?? string.Empty).Trim();
         var rows = string.IsNullOrWhiteSpace(query)
-            ? _reportRows
+            ? _reportRows.ToList()
             : _reportRows
                 .Where(r =>
                     r.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -748,6 +864,7 @@ public sealed class BarInventoryView : ContentView
 
         if (rows.Count == 0)
         {
+            _pagerRow.IsVisible = false;
             _stockList.Children.Add(MutedLabel(
                 string.IsNullOrWhiteSpace(query)
                     ? "No stock rows for this period"
@@ -756,8 +873,9 @@ public sealed class BarInventoryView : ContentView
             return;
         }
 
+        var pageRows = SlicePage(rows, out var page, out var pageCount, out var from, out var to);
         string? lastSection = null;
-        foreach (var row in rows)
+        foreach (var row in pageRows)
         {
             if (!string.Equals(lastSection, row.SectionDisplay, StringComparison.OrdinalIgnoreCase))
             {
@@ -766,33 +884,103 @@ public sealed class BarInventoryView : ContentView
                 {
                     Text = row.SectionDisplay,
                     FontFamily = "OpenSansSemibold",
-                    FontSize = 13,
+                    FontSize = 11,
                     TextColor = Color.FromArgb("#0F766E"),
-                    Margin = new Thickness(0, 8, 0, 2)
+                    Margin = new Thickness(0, 4, 0, 0)
                 });
             }
 
-            _stockList.Children.Add(new Border
-            {
-                StrokeThickness = 1,
-                Stroke = Color.FromArgb("#E2E8F0"),
-                BackgroundColor = Colors.White,
-                StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                Padding = new Thickness(12, 10),
-                Content = new VerticalStackLayout
-                {
-                    Spacing = 2,
-                    Children =
-                    {
-                        StrongLabel(row.Name, 14),
-                        string.IsNullOrWhiteSpace(row.Sku)
-                            ? MutedLabel($"Have {row.HaveDisplay}", 12)
-                            : MutedLabel($"{row.Sku} · Have {row.HaveDisplay}", 12),
-                        MutedLabel($"Use {row.UsedDisplay} · Waste {row.WasteDisplay}", 12)
-                    }
-                }
-            });
+            _stockList.Children.Add(BuildReportCard(row));
         }
+
+        UpdatePager(rows.Count, page, pageCount, from, to);
+    }
+
+    private IReadOnlyList<T> SlicePage<T>(
+        IReadOnlyList<T> rows,
+        out int page,
+        out int pageCount,
+        out int from,
+        out int to)
+    {
+        pageCount = Math.Max(1, (int)Math.Ceiling(rows.Count / (double)PageSize));
+        if (_listPageIndex >= pageCount)
+        {
+            _listPageIndex = pageCount - 1;
+        }
+
+        if (_listPageIndex < 0)
+        {
+            _listPageIndex = 0;
+        }
+
+        page = _listPageIndex;
+        from = page * PageSize;
+        to = Math.Min(rows.Count, from + PageSize);
+        return rows.Skip(from).Take(PageSize).ToList();
+    }
+
+    private void UpdatePager(int total, int page, int pageCount, int from, int to)
+    {
+        if (total <= PageSize)
+        {
+            _pagerRow.IsVisible = false;
+            return;
+        }
+
+        _pagerRow.IsVisible = true;
+        _pagerLabel.Text = $"{from + 1}–{to} of {total} · page {page + 1}/{pageCount}";
+        _pagerPrevButton.IsEnabled = page > 0;
+        _pagerNextButton.IsEnabled = page + 1 < pageCount;
+        _pagerPrevButton.Opacity = _pagerPrevButton.IsEnabled ? 1 : 0.45;
+        _pagerNextButton.Opacity = _pagerNextButton.IsEnabled ? 1 : 0.45;
+    }
+
+    private View BuildReportCard(BarStockWeeklyReportRowPresentation row)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star)
+            },
+            ColumnSpacing = 8,
+            HeightRequest = 36
+        };
+        grid.Add(new Label
+        {
+            Text = row.Name,
+            FontFamily = "OpenSansSemibold",
+            FontSize = 13,
+            TextColor = Color.FromArgb("#0F172A"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            MaximumWidthRequest = 160
+        }, 0);
+        grid.Add(new Label
+        {
+            Text = string.IsNullOrWhiteSpace(row.Sku)
+                ? $"Have {row.HaveDisplay} · Use {row.UsedDisplay} · Waste {row.WasteDisplay}"
+                : $"{row.Sku} · Have {row.HaveDisplay} · Use {row.UsedDisplay} · Waste {row.WasteDisplay}",
+            FontSize = 11,
+            TextColor = Color.FromArgb("#64748B"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
+        }, 1);
+
+        return new Border
+        {
+            StrokeThickness = 1,
+            Stroke = Color.FromArgb("#E2E8F0"),
+            BackgroundColor = Colors.White,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(8, 2),
+            HeightRequest = 40,
+            Content = grid
+        };
     }
 
     private Border BuildReportPeriodChip(int? days, string? customLabel = null)
@@ -895,7 +1083,7 @@ public sealed class BarInventoryView : ContentView
             ? "Order —"
             : $"Order {row.SuggestDisplay}";
         var nowLine = FormatStockLeftLine(row);
-        var meta = new List<string>();
+        var meta = new List<string> { nowLine };
         if (!string.IsNullOrWhiteSpace(row.Sku))
         {
             meta.Add(row.Sku!);
@@ -906,101 +1094,85 @@ public sealed class BarInventoryView : ContentView
             meta.Add($"low {FormatOnHandQty(row.LowLevel)} · max {FormatOnHandQty(row.MaxLevel)}");
         }
 
-        var body = new VerticalStackLayout
-        {
-            Spacing = 1,
-            VerticalOptions = LayoutOptions.Center,
-            Children =
-            {
-                StrongLabel(row.Name, 14),
-                new Label
-                {
-                    Text = orderText,
-                    FontSize = 15,
-                    FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb("#0369A1"),
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    MaxLines = 1
-                },
-                MutedLabel($"Now {nowLine}" + (meta.Count == 0 ? string.Empty : " · " + string.Join(" · ", meta)), 11)
-            }
-        };
-
-        var rowGrid = new Grid
+        var grid = new Grid
         {
             ColumnDefinitions =
             {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
                 new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto)
             },
-            ColumnSpacing = 10,
-            VerticalOptions = LayoutOptions.Center
+            ColumnSpacing = 8,
+            HeightRequest = 36
         };
-        rowGrid.Add(body, 0);
-        rowGrid.Add(
+        grid.Add(new Label
+        {
+            Text = row.Name,
+            FontFamily = "OpenSansSemibold",
+            FontSize = 13,
+            TextColor = Color.FromArgb("#0F172A"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            MaximumWidthRequest = 160
+        }, 0);
+        grid.Add(new Label
+        {
+            Text = orderText,
+            FontSize = 12,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb("#0369A1"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
+        }, 1);
+        grid.Add(new Label
+        {
+            Text = string.Join(" · ", meta),
+            FontSize = 11,
+            TextColor = Color.FromArgb("#64748B"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
+        }, 2);
+        grid.Add(
             CardButton("Add", Colors.White, Color.FromArgb("#047857"),
                 () => QuickAddRequested?.Invoke(this, row)),
-            1);
+            3);
 
         return new Border
         {
             StrokeThickness = 1,
             Stroke = Color.FromArgb("#BAE6FD"),
             BackgroundColor = Color.FromArgb("#F0F9FF"),
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            Padding = new Thickness(10, 6),
-            Content = rowGrid
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(8, 2),
+            HeightRequest = 40,
+            Content = grid
         };
     }
 
     private View BuildStockCard(BarStockBoardRowPresentation row)
     {
+        var isLow = string.Equals(row.Status, "Low", StringComparison.OrdinalIgnoreCase);
+        var stockLine = FormatStockLeftLine(row);
         var detailParts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(row.Detail))
+        if (!string.IsNullOrWhiteSpace(row.Sku))
         {
-            // Pack size shown in the stock line as total ml — skip "N ml/btl" noise.
-            foreach (var part in row.Detail.Split(" · ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (part.Contains("ml/btl", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                detailParts.Add(part);
-            }
+            detailParts.Add(row.Sku!);
         }
 
         if (!string.IsNullOrWhiteSpace(row.SuggestDisplay) &&
             row.SuggestDisplay != "—" &&
-            string.Equals(row.Status, "Low", StringComparison.OrdinalIgnoreCase))
+            isLow)
         {
             detailParts.Add($"Order {row.SuggestDisplay}");
         }
 
-        var isLow = string.Equals(row.Status, "Low", StringComparison.OrdinalIgnoreCase);
-        var stockLine = FormatStockLeftLine(row);
-        var body = new VerticalStackLayout
-        {
-            Spacing = 0,
-            VerticalOptions = LayoutOptions.Center,
-            Children =
-            {
-                StrongLabel(row.Name, 13),
-                new Label
-                {
-                    Text = stockLine,
-                    FontSize = 12,
-                    FontFamily = "OpenSansSemibold",
-                    TextColor = Color.FromArgb(isLow ? "#C2410C" : "#1D4ED8"),
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    MaxLines = 1
-                }
-            }
-        };
-        if (detailParts.Count > 0)
-        {
-            body.Children.Add(MutedLabel(string.Join(" · ", detailParts), 10));
-        }
+        var mid = detailParts.Count == 0
+            ? stockLine
+            : $"{stockLine} · {string.Join(" · ", detailParts)}";
 
         var actions = new HorizontalStackLayout
         {
@@ -1017,37 +1189,61 @@ public sealed class BarInventoryView : ContentView
                 CardButton("Edit", Color.FromArgb("#1D4ED8"), Color.FromArgb("#EFF6FF"), () => EditRequested?.Invoke(this, row)));
         }
 
-        var grid = new Grid
-        {
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Auto)
-            },
-            ColumnSpacing = 8
-        };
-        grid.Add(body, 0);
-        grid.Add(actions, 1);
         if (isLow)
         {
-            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-            grid.Add(new Label
+            actions.Children.Insert(0, new Label
             {
                 Text = "Low",
                 FontFamily = "OpenSansSemibold",
                 FontSize = 11,
                 TextColor = Color.FromArgb("#C2410C"),
-                VerticalOptions = LayoutOptions.Center
-            }, 2);
+                VerticalTextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0)
+            });
         }
+
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto)
+            },
+            ColumnSpacing = 8,
+            HeightRequest = 36
+        };
+        grid.Add(new Label
+        {
+            Text = row.Name,
+            FontFamily = "OpenSansSemibold",
+            FontSize = 13,
+            TextColor = Color.FromArgb("#0F172A"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
+            MaximumWidthRequest = 180
+        }, 0);
+        grid.Add(new Label
+        {
+            Text = mid,
+            FontSize = 11,
+            FontFamily = "OpenSansSemibold",
+            TextColor = Color.FromArgb(isLow ? "#C2410C" : "#1D4ED8"),
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
+        }, 1);
+        grid.Add(actions, 2);
 
         return new Border
         {
             StrokeThickness = 1,
             Stroke = Color.FromArgb("#E2E8F0"),
             BackgroundColor = Color.FromArgb("#F8FAFC"),
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
-            Padding = new Thickness(10, 4),
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(8, 2),
+            HeightRequest = 40,
             Content = grid
         };
     }

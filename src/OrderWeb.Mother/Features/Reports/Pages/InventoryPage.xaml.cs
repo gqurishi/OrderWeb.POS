@@ -50,6 +50,7 @@ public partial class InventoryPage : ContentPage
             await ShowUsageReportAsync(range.StartDate, range.EndDate, range.PresetDays);
         };
         Inventory.ReportCsvDownloadRequested += async (_, _) => await ExportUsageReportCsvAsync();
+        Inventory.ReportPdfDownloadRequested += async (_, _) => await ExportUsageReportPdfAsync();
         Inventory.QuickAddRequested += async (_, row) =>
         {
             if (_actionBusy)
@@ -266,10 +267,15 @@ public partial class InventoryPage : ContentPage
                 return;
             }
 
+            if (action is BarInventoryActionKind.Waste)
+            {
+                await RunWasteAsync();
+                return;
+            }
+
             var kind = action switch
             {
                 BarInventoryActionKind.Receive => BarStockMovementKind.Receive,
-                BarInventoryActionKind.Waste => BarStockMovementKind.Waste,
                 _ => (BarStockMovementKind?)null
             };
             if (kind is null)
@@ -575,6 +581,99 @@ public partial class InventoryPage : ContentPage
         {
             await AppAlertService.ShowAlertAsync("Stock report CSV", ex.Message);
         }
+    }
+
+    private async Task ExportUsageReportPdfAsync()
+    {
+        if (_authService.CurrentUser?.Role is not UserRole.Admin)
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Stock report PDF",
+                "Stock report export is available to Admin only.");
+            return;
+        }
+
+        try
+        {
+            var path = await _barStockService.ExportUsageReportPdfAsync(_reportStart, _reportEnd);
+            await Launcher.Default.OpenAsync(new OpenFileRequest
+            {
+                Title = "Stock report PDF",
+                File = new ReadOnlyFile(path)
+            });
+            Inventory.SetStatus($"PDF saved · {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            await AppAlertService.ShowAlertAsync("Stock report PDF", ex.Message);
+        }
+    }
+
+    private async Task RunWasteAsync()
+    {
+        if (_allBoard.Count == 0)
+        {
+            await LoadBoardAsync();
+        }
+
+        if (_allBoard.Count == 0)
+        {
+            await AppAlertService.ShowAlertAsync(
+                "Waste",
+                Inventory.ShowAdminCreate
+                    ? "No stock yet — tap Add stock to create one."
+                    : "No tracked items — ask Admin to Add stock or enable Track on Add Item.");
+            return;
+        }
+
+        Inventory.UnfocusSearch();
+        SharedTouchKeyboard.SuppressAllBriefly(500);
+
+        var pickers = _allBoard.Select(r => new BarStockPickerItem(
+            r.StockId, r.Name, r.StockUnit, r.OnHand, r.PackSize, r.ParLevel)).ToList();
+        var stickyKey = GetStickyKey(BarStockMovementKind.Waste);
+        var dialog = new BarStockWasteDialog();
+        var result = await dialog.ShowAsync(this, pickers, async draft =>
+        {
+            var response = await _barStockService.WasteAsync(new BarStockWasteRequestDto
+            {
+                StockId = draft.StockId ?? string.Empty,
+                Qty = draft.QtyInStockUnit,
+                Reason = draft.Reason ?? string.Empty,
+                IdempotencyKey = draft.IdempotencyKey ?? stickyKey
+            }, BuildActor());
+
+            if (!response.Success)
+            {
+                return (false, response.Message);
+            }
+
+            ClearStickyKey(BarStockMovementKind.Waste);
+            try
+            {
+                var broadcast = ServiceHelper.GetService<ClientWebSocketBroadcastService>();
+                if (broadcast is not null)
+                {
+                    await broadcast.PublishDataChangedAsync(
+                        "barinventory.updated",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+                }
+            }
+            catch
+            {
+                // Local refresh still works.
+            }
+
+            return (true, null);
+        }, stickyKey);
+
+        if (!result.Confirmed)
+        {
+            return;
+        }
+
+        await LoadBoardAsync();
+        Inventory.SetStatus($"Waste −{result.QtyInStockUnit:0.###} · {result.Reason}");
     }
 
     private async Task RunMovementAsync(BarStockMovementKind kind)

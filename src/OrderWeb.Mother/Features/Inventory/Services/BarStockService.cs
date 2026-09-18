@@ -916,12 +916,185 @@ public sealed class BarStockService
             throw new InvalidOperationException(report.Message ?? "Could not build report.");
         }
 
+        var restaurantName = await ResolveRestaurantNameAsync();
+        var generatedAt = DateTime.Now;
         var folder = Path.Combine(FileSystem.Current.AppDataDirectory, "BarInventory");
         Directory.CreateDirectory(folder);
-        var fileName = $"BarUsage_{report.StartDate:yyyyMMdd}_{report.EndDate:yyyyMMdd}_{DateTime.Now:HHmmss}.csv";
+        var fileName = $"BarUsage_{report.StartDate:yyyyMMdd}_{report.EndDate:yyyyMMdd}_{generatedAt:HHmmss}.csv";
         var filePath = Path.Combine(folder, fileName);
-        await File.WriteAllTextAsync(filePath, BarStockUsageReportCsv.Build(report));
+        await File.WriteAllTextAsync(
+            filePath,
+            BarStockUsageReportCsv.Build(report, restaurantName, generatedAt));
         return filePath;
+    }
+
+    /// <summary>Have / Use / Waste period report PDF (Admin).</summary>
+    public async Task<string> ExportUsageReportPdfAsync(
+        DateTime startDate,
+        DateTime endDate,
+        string? businessName = null)
+    {
+        var report = await GetUsageReportAsync(startDate, endDate);
+        if (!report.Success)
+        {
+            throw new InvalidOperationException(report.Message ?? "Could not build report.");
+        }
+
+        var restaurantName = string.IsNullOrWhiteSpace(businessName)
+            ? await ResolveRestaurantNameAsync()
+            : businessName.Trim();
+        var generatedAt = DateTime.Now;
+
+        var folder = Path.Combine(FileSystem.Current.AppDataDirectory, "BarInventory");
+        Directory.CreateDirectory(folder);
+        var fileName = $"BarUsage_{report.StartDate:yyyyMMdd}_{report.EndDate:yyyyMMdd}_{generatedAt:HHmmss}.pdf";
+        var filePath = Path.Combine(folder, fileName);
+
+        using var document = new Syncfusion.Pdf.PdfDocument();
+        document.PageSettings.Size = Syncfusion.Pdf.PdfPageSize.A4;
+        var page = document.Pages.Add();
+        var graphics = page.Graphics;
+        var titleFont = new Syncfusion.Pdf.Graphics.PdfStandardFont(
+            Syncfusion.Pdf.Graphics.PdfFontFamily.Helvetica, 18, Syncfusion.Pdf.Graphics.PdfFontStyle.Bold);
+        var headingFont = new Syncfusion.Pdf.Graphics.PdfStandardFont(
+            Syncfusion.Pdf.Graphics.PdfFontFamily.Helvetica, 12, Syncfusion.Pdf.Graphics.PdfFontStyle.Bold);
+        var normalFont = new Syncfusion.Pdf.Graphics.PdfStandardFont(
+            Syncfusion.Pdf.Graphics.PdfFontFamily.Helvetica, 10);
+        var metaFont = new Syncfusion.Pdf.Graphics.PdfStandardFont(
+            Syncfusion.Pdf.Graphics.PdfFontFamily.Helvetica, 9);
+
+        float y = 24f;
+        graphics.DrawString(
+            restaurantName,
+            titleFont,
+            Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+            new Syncfusion.Drawing.PointF(20, y));
+        y += 26;
+        graphics.DrawString(
+            $"Stock report generated - {generatedAt:dd MMM yyyy HH:mm}",
+            headingFont,
+            Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+            new Syncfusion.Drawing.PointF(20, y));
+        y += 18;
+        graphics.DrawString(
+            string.IsNullOrWhiteSpace(report.PeriodLabel)
+                ? $"{report.StartDate:dd MMM yyyy} – {report.EndDate:dd MMM yyyy}"
+                : report.PeriodLabel,
+            metaFont,
+            Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray,
+            new Syncfusion.Drawing.PointF(20, y));
+        y += 14;
+        graphics.DrawString(
+            $"Have {report.HaveTotalDisplay}  ·  Use {report.UsedTotalDisplay}  ·  Waste {report.WasteTotalDisplay}",
+            metaFont,
+            Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray,
+            new Syncfusion.Drawing.PointF(20, y));
+        y += 20;
+
+        var rows = (report.Items ?? Array.Empty<BarStockWeeklyReportRowDto>())
+            .OrderBy(r => BarStockSections.DisplayName(r.Section), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (rows.Count == 0)
+        {
+            graphics.DrawString(
+                "No stock rows for this period.",
+                normalFont,
+                Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                new Syncfusion.Drawing.PointF(20, y));
+        }
+        else
+        {
+            string? lastSection = null;
+            foreach (var row in rows)
+            {
+                if (y > 760)
+                {
+                    page = document.Pages.Add();
+                    graphics = page.Graphics;
+                    y = 24f;
+                    lastSection = null;
+                }
+
+                var sectionName = BarStockSections.DisplayName(row.Section);
+                if (!string.Equals(lastSection, sectionName, StringComparison.OrdinalIgnoreCase))
+                {
+                    lastSection = sectionName;
+                    graphics.DrawString(
+                        sectionName,
+                        headingFont,
+                        Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray,
+                        new Syncfusion.Drawing.PointF(20, y));
+                    y += 16;
+                    graphics.DrawString("Item", metaFont, Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray, new Syncfusion.Drawing.PointF(20, y));
+                    graphics.DrawString("SKU", metaFont, Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray, new Syncfusion.Drawing.PointF(150, y));
+                    graphics.DrawString("Have", metaFont, Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray, new Syncfusion.Drawing.PointF(240, y));
+                    graphics.DrawString("Use", metaFont, Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray, new Syncfusion.Drawing.PointF(350, y));
+                    graphics.DrawString("Waste", metaFont, Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray, new Syncfusion.Drawing.PointF(450, y));
+                    y += 14;
+                }
+
+                graphics.DrawString(
+                    Truncate(row.Name, 22),
+                    normalFont,
+                    Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                    new Syncfusion.Drawing.PointF(20, y));
+                graphics.DrawString(
+                    Truncate(row.Sku ?? "—", 12),
+                    normalFont,
+                    Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                    new Syncfusion.Drawing.PointF(150, y));
+                graphics.DrawString(
+                    Truncate(string.IsNullOrWhiteSpace(row.HaveDisplay) ? "—" : row.HaveDisplay, 16),
+                    normalFont,
+                    Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                    new Syncfusion.Drawing.PointF(240, y));
+                graphics.DrawString(
+                    Truncate(string.IsNullOrWhiteSpace(row.UsedDisplay) ? "—" : row.UsedDisplay, 16),
+                    normalFont,
+                    Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                    new Syncfusion.Drawing.PointF(350, y));
+                graphics.DrawString(
+                    Truncate(string.IsNullOrWhiteSpace(row.WasteDisplay) ? "—" : row.WasteDisplay, 16),
+                    normalFont,
+                    Syncfusion.Pdf.Graphics.PdfBrushes.Black,
+                    new Syncfusion.Drawing.PointF(450, y));
+                y += 15;
+            }
+
+            y += 10;
+            graphics.DrawString(
+                $"{rows.Count} item(s)",
+                metaFont,
+                Syncfusion.Pdf.Graphics.PdfBrushes.DarkSlateGray,
+                new Syncfusion.Drawing.PointF(20, y));
+        }
+
+        await using (var stream = File.Create(filePath))
+        {
+            document.Save(stream);
+        }
+
+        return filePath;
+    }
+
+    private static async Task<string> ResolveRestaurantNameAsync()
+    {
+        try
+        {
+            var info = await new BusinessSettingsService().GetBusinessInfoAsync();
+            if (!string.IsNullOrWhiteSpace(info?.RestaurantName))
+            {
+                return info.RestaurantName.Trim();
+            }
+        }
+        catch
+        {
+            // Fall through to default label.
+        }
+
+        return "POS-in-NET";
     }
 
     private async Task<BarStockMovementResponseDto> ApplyMovementCoreAsync(
